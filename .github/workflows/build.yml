@@ -1,0 +1,66 @@
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15-intel
+            arch: intel
+          - runner: macos-15
+            arch: apple-silicon
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release -j 4
+
+      - name: Core tests
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Package app
+        run: |
+          codesign --force --deep --sign - build/Scalpellino.app
+          ditto -c -k --keepParent build/Scalpellino.app Scalpellino-${{ matrix.arch }}.zip
+
+      # Runner VMs have no real GPU; a screenshot may fail. Informational only.
+      - name: Smoke screenshot
+        continue-on-error: true
+        run: |
+          mkdir -p shot && cd shot
+          ../build/Scalpellino.app/Contents/MacOS/Scalpellino --screenshot ci-${{ matrix.arch }}.png &
+          PID=$!; ( sleep 60; kill $PID 2>/dev/null ) & wait $PID
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Scalpellino-${{ matrix.arch }}
+          path: Scalpellino-${{ matrix.arch }}.zip
+          retention-days: 30
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshot-${{ matrix.arch }}
+          path: shot/*.png
+          if-no-files-found: ignore
+          retention-days: 30
+
+  linux-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Core tests (no app)
+        run: |
+          cmake -S . -B build -DSCAL_BUILD_APP=OFF -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j 4
+          ctest --test-dir build --output-on-failure

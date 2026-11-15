@@ -1,6 +1,13 @@
 # Scalpellino — rules for AI sessions
 
 Read `docs/ARCHITECTURE.md` before changing anything. It is the agreed design.
+Then read `docs/PLAN.md`: current status, how to build, open questions, log.
+
+## Keeping records (required)
+- Update `docs/PLAN.md` after every step: status, test results, next steps, parked questions.
+- Every screenshot taken goes into `docs/screenshots/` (`m<milestone>-<nn>-<what>.png`)
+  and is mentioned in the PLAN log.
+- If a question blocks one thing, park it in PLAN.md and continue with other work.
 
 ## Privacy (strict)
 - Never write machine details anywhere in the repo, commits or CI output: no hostnames,
