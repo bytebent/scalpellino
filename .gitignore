@@ -1,0 +1,22 @@
+# Build output
+build/
+out/
+cmake-build-*/
+*.app
+*.zip
+*.dSYM/
+
+# macOS
+.DS_Store
+._*
+
+# Editors / local config
+.vscode/
+.idea/
+*.swp
+*.local.*
+*.user
+
+# Personal settings and recent files never belong in the repo
+settings.json
+recent_files.txt
