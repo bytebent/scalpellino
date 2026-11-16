@@ -75,6 +75,13 @@ Editor::Editor(const EditorOptions& opt) : opt_(opt) {
         if (!opt_.automated()) loadTextureFolders();
         textures_.setBuiltinFolder(builtin);
         if (!textures_.exists(currentTexture_) && !textures_.names().empty()) currentTexture_ = textures_.names()[0];
+#if defined(__APPLE__)
+        const std::string skyDir = appDir + "../Resources/skies";
+#else
+        const std::string skyDir = appDir + "skies";
+#endif
+        if (!opt_.automated()) loadSkyFolders();
+        skies_.setBuiltinFolder(skyDir);
     }
     lastBox_.min = {0, 0, 0};
     lastBox_.max = {64, 64, 64};
@@ -183,6 +190,14 @@ bool Editor::frame(float dt) {
     st.terrainSelected = selectionHasTerrain();
     st.canMakeTerrain = true;
     st.terrainPicking = tool_ == &terrainTool_ && terrainTool_.picking();
+    st.lightTool = tool_ == &lightTool_;
+    st.lightPending = st.lightTool && lightTool_.pending.has_value();
+    st.lightKind = (int)lightTool_.templ.kind;
+    st.lightsSelected = !doc_.lightSelection().empty();
+    st.showSky = showSky_;
+    st.lightPreview = lightPreview_;
+    st.showFog = showFog_;
+    st.showFigure = showFigure_;
     st.groupSelected = selectedGroup() != 0;
     st.facesPicked = tool_ == &textureTool_ && textureTool_.faces(doc_).size() > 1;
     st.canApplyTexture = !doc_.selection().empty() || (tool_ == &textureTool_ && !textureTool_.faces(doc_).empty());
@@ -248,6 +263,27 @@ bool Editor::frame(float dt) {
     if (m.showAll) showAll();
     if (m.toolCurve) setTool(&curveTool_);
     if (m.toolTerrain) setTool(&terrainTool_);
+    if (m.toolLight) setTool(&lightTool_);
+    if (m.lightKind >= 0) { lightTool_.templ.kind = (LightKind)m.lightKind; setTool(&lightTool_); }
+    if (m.createLight) lightTool_.create(doc_);
+    if (m.environment) { worldError_.clear(); envBuf_ = doc_.environment(); askEnvironment_ = true; }
+    if (m.bookmarks) { worldError_.clear(); askBookmarks_ = true; }
+    if (m.figurePos) {
+        const Vec3 f = doc_.figure() ? *doc_.figure() : Vec3{};
+        figureBuf_[0] = f.x; figureBuf_[1] = f.y; figureBuf_[2] = f.z;
+        askFigure_ = true;
+    }
+    if (m.toggleSky) showSky_ = !showSky_;
+    if (m.toggleLightPreview) { lightPreview_ = !lightPreview_; if (!lightPreview_) lighting_.clear(); }
+    if (m.toggleFog) showFog_ = !showFog_;
+    if (m.toggleFigure) {
+        showFigure_ = !showFigure_;
+        if (showFigure_ && !doc_.figure()) {
+            double u = 0, v = 0;
+            views_[1]->screenToWorld2D({views_[1]->width() * 0.5f, views_[1]->height() * 0.5f}, u, v);
+            doc_.setFigure(groundBelow(grid_.snapValue(u), grid_.snapValue(v)));
+        }
+    }
     if (m.terrainMode >= 0) { terrainTool_.mode = (SculptMode)m.terrainMode; setTool(&terrainTool_); terrainTool_.stopPicking(); }
     if (m.makeTerrain) startMakeTerrain();
     if (m.terrainGrid) {
@@ -293,6 +329,7 @@ bool Editor::frame(float dt) {
     drawPrecisionDialogs();
     drawShapingDialogs();
     drawTerrainDialogs();
+    drawWorldDialogs();
     drawControlsWindow(&controlsOpen_);
     drawOverlapsWindow();
     closeDialogs_ = false;
@@ -349,6 +386,7 @@ void Editor::handleKeyboard() {
     if (shift_ && IsKeyPressed(KEY_A)) setTool(&textureTool_);
     if (shift_ && IsKeyPressed(KEY_C)) setTool(&curveTool_);
     if (shift_ && IsKeyPressed(KEY_G)) setTool(&terrainTool_);
+    if (shift_ && IsKeyPressed(KEY_L)) setTool(&lightTool_);
     if (IsKeyPressed(KEY_H)) { if (shift_) hideUnselected(); else hideSelected(); }
     if (shift_ && IsKeyPressed(KEY_X)) { if (tool_ == &clipTool_) clipTool_.cycleKeep(); else setTool(&clipTool_); }
     if (shift_ && IsKeyPressed(KEY_T)) applyCurrentTexture();
@@ -362,6 +400,7 @@ Scene Editor::buildScene() {
     s.brushes = cache_.get(doc_);
     // The texture tool works on faces; brush selection tint would compete with it.
     if (tool_ != &textureTool_) s.selected = doc_.selection();
+    for (const Light& l : doc_.lights()) s.lights.push_back({l, doc_.lightSelection().count(l.id) > 0});
     tool_->decorate(doc_, s);
     for (SceneBrush& r : s.replaced)
         for (SceneBrush& b : s.brushes)
@@ -369,6 +408,17 @@ Scene Editor::buildScene() {
     s.replaced.clear();
     if (pivotMode_ != 0) s.pivot = pivotPoint();
     if (textured3D_) s.textures = &textures_;
+    if (showSky_ && !doc_.environment().sky.empty())
+        if (const Texture2D* t = skies_.get(doc_.environment().sky)) s.skyTexture = t->id;
+    if (showFigure_) s.figure = doc_.figure() ? *doc_.figure() : Vec3{};
+    if (lightPreview_) s.lighting = &lighting_.get(doc_, cache_.get(doc_));
+    const Environment& env = doc_.environment();
+    if (showFog_ && env.fogOn) {
+        s.fog = true;
+        s.fogColor = env.fog.color;
+        s.fogStart = env.fog.start;
+        s.fogEnd = env.fog.end;
+    }
     return s;
 }
 
@@ -528,6 +578,7 @@ void Editor::drawToolsPanel() {
         toolButton(&clipTool_, "Shift+X");
         toolButton(&curveTool_, "Shift+C");
         toolButton(&terrainTool_, "Shift+G");
+        toolButton(&lightTool_, "Shift+L");
     }
     ImGui::End();
 }
@@ -654,6 +705,19 @@ void Editor::selectNone() {
 }
 
 void Editor::duplicate() {
+    if (doc_.selection().empty() && !doc_.lightSelection().empty()) {
+        tool_->cancel();
+        std::vector<Light> copies;
+        for (LightId id : doc_.lightSelection())
+            if (const Light* l = doc_.findLight(id)) {
+                Light c = *l;
+                c.id = 0;
+                c.pos += Vec3{grid_.size, grid_.size, 0};
+                copies.push_back(std::move(c));
+            }
+        doc_.apply(doc_.makeAddLights(std::move(copies), "Duplicate light"));
+        return;
+    }
     if (doc_.selection().empty()) return;
     tool_->cancel();
     std::vector<Brush> copies;
@@ -669,9 +733,11 @@ void Editor::duplicate() {
 }
 
 void Editor::deleteSelection() {
-    if (doc_.selection().empty()) return;
+    if (doc_.selection().empty() && doc_.lightSelection().empty()) return;
     tool_->cancel();
-    doc_.apply(doc_.makeDelete(doc_.selection(), "Delete"));
+    Command c = doc_.makeDelete(doc_.selection(), "Delete");
+    doc_.addLightDeletes(c, doc_.lightSelection());
+    doc_.apply(std::move(c));
 }
 
 bool Editor::applyTransform(const TransformSpec& t, const char* name) {
@@ -1479,6 +1545,23 @@ void Editor::loadTextureFolders() {
         if (!line.empty()) textures_.addUserFolder(line);
 }
 
+void Editor::loadSkyFolders() {
+    const std::string dir = settingsDir();
+    if (dir.empty()) return;
+    std::ifstream f(dir + "/sky_folders.txt");
+    std::string line;
+    while (std::getline(f, line))
+        if (!line.empty()) skies_.addUserFolder(line);
+}
+
+void Editor::saveSkyFolders() const {
+    if (opt_.automated()) return; // tests never touch user settings
+    const std::string dir = settingsDir();
+    if (dir.empty()) return;
+    std::ofstream f(dir + "/sky_folders.txt");
+    for (const std::string& d : skies_.userFolders()) f << d << '\n';
+}
+
 void Editor::saveTextureFolders() const {
     if (opt_.automated()) return; // tests never touch user settings
     const std::string dir = settingsDir();
@@ -1841,6 +1924,269 @@ void Editor::drawTerrainPanel() {
     ImGui::EndDisabled();
 }
 
+// ------------------------------------------------------------------ world (milestone 8)
+
+template <class Fn> void Editor::editLights(const char* name, Fn fn) {
+    std::vector<Light> out;
+    for (LightId id : doc_.lightSelection())
+        if (const Light* l = doc_.findLight(id)) {
+            Light c = *l;
+            fn(c);
+            if (c != *l) out.push_back(std::move(c));
+        }
+    if (!out.empty()) doc_.apply(doc_.makeModifyLights(out, name));
+}
+
+namespace {
+// The fields shared by "new light" and "selected lights". Returns a bit per edited field
+// (only when an edit is finished, so one change = one undo step).
+enum LightField : unsigned {
+    LF_Color = 1, LF_Bright = 2, LF_Range = 4, LF_Pitch = 8, LF_Yaw = 16, LF_Inner = 32, LF_Outer = 64, LF_Pos = 128
+};
+unsigned lightFields(Light& l, bool withPos) {
+    unsigned done = 0;
+    float col[3] = {(float)(l.color.x / 255), (float)(l.color.y / 255), (float)(l.color.z / 255)};
+    ImGui::PushItemWidth(150);
+    if (ImGui::ColorEdit3("colour", col, ImGuiColorEditFlags_Uint8)) l.color = {std::round(col[0] * 255), std::round(col[1] * 255), std::round(col[2] * 255)};
+    if (ImGui::IsItemDeactivatedAfterEdit()) done |= LF_Color;
+    auto num = [&](const char* label, double& v, unsigned bit, double lo, double hi) {
+        ImGui::InputDouble(label, &v, 0, 0, "%g");
+        if (ImGui::IsItemDeactivatedAfterEdit()) { v = std::clamp(v, lo, hi); done |= bit; }
+    };
+    num("brightness", l.brightness, LF_Bright, 0, 100000);
+    if (l.kind != LightKind::Sun) num("reach (units)", l.range, LF_Range, 1, 1 << 20);
+    if (l.hasDirection()) {
+        num("pitch (-90 = down)", l.pitch, LF_Pitch, -90, 90);
+        num("yaw", l.yaw, LF_Yaw, -360, 360);
+    }
+    if (l.kind == LightKind::Spot) {
+        num("inner angle", l.inner, LF_Inner, 0, 89);
+        num("outer angle", l.outer, LF_Outer, 1, 89);
+    }
+    if (withPos) {
+        double p[3] = {l.pos.x, l.pos.y, l.pos.z};
+        ImGui::SetNextItemWidth(220);
+        ImGui::InputScalarN("position", ImGuiDataType_Double, p, 3, nullptr, nullptr, "%g");
+        if (ImGui::IsItemDeactivatedAfterEdit()) { l.pos = {p[0], p[1], p[2]}; done |= LF_Pos; }
+        else l.pos = {p[0], p[1], p[2]};
+    }
+    ImGui::PopItemWidth();
+    return done;
+}
+} // namespace
+
+void Editor::drawLightPanel() {
+    const std::set<LightId>& sel = doc_.lightSelection();
+    if (!sel.empty()) {
+        // Fields show the first selected light; an edit goes to every selected light.
+        if (sel != lightBufFor_ || doc_.revision() != lightBufRev_) {
+            if (!ImGui::IsAnyItemActive()) {
+                if (const Light* l = doc_.findLight(*sel.begin())) lightBuf_ = *l;
+                lightBufFor_ = sel;
+                lightBufRev_ = doc_.revision();
+            }
+        }
+        ImGui::Text("%zu %s light(s) selected", sel.size(), lightKindName(lightBuf_.kind));
+        const unsigned done = lightFields(lightBuf_, sel.size() == 1);
+        if (done) {
+            const Light v = lightBuf_;
+            editLights("Edit light", [&](Light& l) {
+                if (done & LF_Color) l.color = v.color;
+                if (done & LF_Bright) l.brightness = v.brightness;
+                if (done & LF_Range) l.range = v.range;
+                if ((done & LF_Pitch) && l.hasDirection()) l.pitch = v.pitch;
+                if ((done & LF_Yaw) && l.hasDirection()) l.yaw = v.yaw;
+                if (done & LF_Inner) l.inner = std::min(v.inner, l.outer);
+                if (done & LF_Outer) { l.outer = v.outer; l.inner = std::min(l.inner, l.outer); }
+                if (done & LF_Pos) l.pos = v.pos;
+            });
+        }
+        if (lightBuf_.hasDirection()) {
+            if (ImGui::SmallButton("point down")) editLights("Aim light", [](Light& l) { if (l.hasDirection()) l.pitch = -90; });
+            ImGui::SameLine();
+            ImGui::TextDisabled("or drag the rings");
+        }
+        ImGui::TextDisabled("Delete removes, Cmd+D duplicates");
+        if (tool_ != &lightTool_) return;
+        ImGui::Separator();
+    }
+    LightTool& t = lightTool_;
+    ImGui::TextUnformatted("New light");
+    int kind = (int)t.templ.kind;
+    ImGui::RadioButton("point", &kind, 0); ImGui::SameLine();
+    ImGui::RadioButton("spot", &kind, 1); ImGui::SameLine();
+    ImGui::RadioButton("sun", &kind, 2);
+    t.templ.kind = (LightKind)kind;
+    if (t.pending) t.templ.pos = *t.pending;
+    lightFields(t.templ, t.pending.has_value());
+    if (t.pending) t.pending = t.templ.pos;
+    ImGui::BeginDisabled(!t.pending);
+    if (ImGui::Button("Create (Return)")) t.create(doc_);
+    ImGui::EndDisabled();
+    if (!t.pending) ImGui::TextDisabled("click in a view to place it");
+}
+
+Vec3 Editor::groundBelow(double x, double y) const {
+    double best = -1;
+    for (const Brush& b : doc_.brushes()) {
+        if (!doc_.visible(b)) continue;
+        for (double t : {rayHit(b, {x, y, 1e5}, {0, 0, -1}), rayHitTerrain(b, {x, y, 1e5}, {0, 0, -1})})
+            if (t >= 0 && (best < 0 || t < best)) best = t;
+    }
+    return {x, y, best >= 0 ? 1e5 - best : 0};
+}
+
+void Editor::addBookmark(const std::string& name) {
+    std::vector<CameraBookmark> b = doc_.bookmarks();
+    const Vector3 c = views_[0]->cameraPos();
+    std::string n = name.empty() ? "view " + std::to_string(b.size() + 1) : name;
+    b.push_back({n, {c.x, c.y, c.z}, views_[0]->yaw(), views_[0]->pitch()});
+    doc_.setBookmarks(std::move(b));
+}
+
+void Editor::goToBookmark(size_t i) {
+    if (i >= doc_.bookmarks().size()) return;
+    const CameraBookmark& b = doc_.bookmarks()[i];
+    views_[0]->setCamera(b.pos, (float)b.yaw, (float)b.pitch);
+}
+
+void Editor::drawWorldDialogs() {
+    const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    if (askEnvironment_) { ImGui::OpenPopup("Environment"); askEnvironment_ = false; }
+    if (askBookmarks_) { ImGui::OpenPopup("Camera bookmarks"); askBookmarks_ = false; }
+    if (askFigure_) { ImGui::OpenPopup("Scale figure"); askFigure_ = false; }
+    auto buttons = [&](bool& apply, bool& cancel, const char* ok = "Apply (Return)") {
+        apply = ImGui::Button(ok) || ImGui::IsKeyPressed(ImGuiKey_Enter, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false);
+        ImGui::SameLine();
+        cancel = ImGui::Button("Cancel (Esc)") || ImGui::IsKeyPressed(ImGuiKey_Escape, false) || closeDialogs_;
+    };
+    bool apply = false, cancel = false;
+    auto color3 = [](const char* label, Vec3& c) {
+        float f[3] = {(float)(c.x / 255), (float)(c.y / 255), (float)(c.z / 255)};
+        if (ImGui::ColorEdit3(label, f, ImGuiColorEditFlags_Uint8))
+            c = {std::round(f[0] * 255), std::round(f[1] * 255), std::round(f[2] * 255)};
+    };
+
+    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    if (ImGui::BeginPopupModal("Environment", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        Environment& e = envBuf_;
+        ImGui::TextUnformatted("Sky");
+        ImGui::SetNextItemWidth(260);
+        if (ImGui::BeginCombo("##sky", e.sky.empty() ? "(none)" : e.sky.c_str())) {
+            if (ImGui::Selectable("(none)", e.sky.empty())) e.sky.clear();
+            for (const std::string& n : skies_.names())
+                if (ImGui::Selectable(n.c_str(), n == e.sky)) e.sky = n;
+            ImGui::EndCombo();
+        }
+        if (!e.sky.empty() && !skies_.exists(e.sky)) ImGui::TextColored(ImVec4(1, 0.6f, 0.3f, 1), "not found in the sky folders");
+        else if (!e.sky.empty() && !skies_.get(e.sky)) ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", skies_.problem(e.sky).c_str());
+        ImGui::TextDisabled("2:1 panoramas or 4:3 cube crosses; shown in the 3D view (View menu)");
+        if (ImGui::TreeNode("Sky folders")) {
+            int remove = -1;
+            for (size_t i = 0; i < skies_.userFolders().size(); ++i) {
+                ImGui::PushID((int)i);
+                if (ImGui::SmallButton("remove")) remove = (int)i;
+                ImGui::SameLine();
+                ImGui::TextUnformatted(skies_.userFolders()[i].c_str());
+                ImGui::PopID();
+            }
+            if (remove >= 0) { skies_.removeUserFolder((size_t)remove); saveSkyFolders(); }
+            if (skies_.userFolders().empty()) ImGui::TextDisabled("(none yet - the built-in skies are always there)");
+            ImGui::SetNextItemWidth(260);
+            ImGui::InputTextWithHint("##skydir", "folder path", skyFolderBuf_, sizeof skyFolderBuf_);
+            ImGui::SameLine();
+            if (ImGui::Button("Add") && skyFolderBuf_[0]) { skies_.addUserFolder(skyFolderBuf_); saveSkyFolders(); skyFolderBuf_[0] = 0; }
+            if (useNative_) {
+                ImGui::SameLine();
+                if (ImGui::Button("Browse...")) { native_ = Native::SkyFolder; ImGui::CloseCurrentPopup(); }
+            }
+            ImGui::TreePop();
+        }
+        ImGui::Separator();
+        color3("ambient light", e.ambient);
+        ImGui::TextDisabled("lights everything a little, even where no light reaches");
+        ImGui::Separator();
+        ImGui::Checkbox("fog", &e.fogOn);
+        ImGui::BeginDisabled(!e.fogOn);
+        color3("fog colour", e.fog.color);
+        ImGui::PushItemWidth(120);
+        ImGui::InputDouble("clear up to (units)", &e.fog.start, 0, 0, "%g");
+        ImGui::InputDouble("fully fogged from", &e.fog.end, 0, 0, "%g");
+        ImGui::PopItemWidth();
+        ImGui::EndDisabled();
+        ImGui::TextDisabled("the 3D view shows fog only when View > 3D view: fog is on");
+        if (!worldError_.empty()) ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", worldError_.c_str());
+        buttons(apply, cancel);
+        if (apply) {
+            e.fog.start = std::max(0.0, e.fog.start);
+            if (e.fog.end <= e.fog.start) worldError_ = "fog: 'fully fogged from' must be farther than 'clear up to'";
+            else {
+                worldError_.clear();
+                if (e != doc_.environment()) doc_.apply(doc_.makeEnvironment(e, "Environment"));
+                ImGui::CloseCurrentPopup();
+            }
+        } else if (cancel) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+
+    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    if (ImGui::BeginPopupModal("Camera bookmarks", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextUnformatted("Saved 3D viewpoints (kept in the map, editor only)");
+        int go = -1, del = -1;
+        for (size_t i = 0; i < doc_.bookmarks().size(); ++i) {
+            ImGui::PushID((int)i);
+            if (ImGui::SmallButton("go")) go = (int)i;
+            ImGui::SameLine();
+            if (ImGui::SmallButton("delete")) del = (int)i;
+            ImGui::SameLine();
+            ImGui::TextUnformatted(doc_.bookmarks()[i].name.c_str());
+            ImGui::PopID();
+        }
+        if (doc_.bookmarks().empty()) ImGui::TextDisabled("(none yet)");
+        if (go >= 0) goToBookmark((size_t)go);
+        if (del >= 0) { auto b = doc_.bookmarks(); b.erase(b.begin() + del); doc_.setBookmarks(std::move(b)); }
+        ImGui::Separator();
+        ImGui::SetNextItemWidth(200);
+        if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+        ImGui::InputTextWithHint("##bm", "name", bookmarkName_, sizeof bookmarkName_);
+        ImGui::SameLine();
+        if (ImGui::Button("Save current 3D view (Return)") || ImGui::IsKeyPressed(ImGuiKey_Enter, false) ||
+            ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false)) {
+            addBookmark(bookmarkName_);
+            bookmarkName_[0] = 0;
+        }
+        if (ImGui::Button("Close (Esc)") || ImGui::IsKeyPressed(ImGuiKey_Escape, false) || closeDialogs_) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+
+    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    if (ImGui::BeginPopupModal("Scale figure", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextUnformatted("Where the 72-unit figure stands (its feet)");
+        ImGui::SetNextItemWidth(260);
+        ImGui::InputScalarN("X Y Z", ImGuiDataType_Double, figureBuf_, 3, nullptr, nullptr, "%g");
+        if (ImGui::Button("Under the 3D view's centre")) {
+            Vec3 o, d;
+            views_[0]->pickRay({views_[0]->width() * 0.5f, views_[0]->height() * 0.5f}, o, d);
+            double best = -1;
+            for (const Brush& b : doc_.brushes()) {
+                if (!doc_.visible(b)) continue;
+                for (double t : {rayHit(b, o, d), rayHitTerrain(b, o, d)})
+                    if (t >= 0 && (best < 0 || t < best)) best = t;
+            }
+            const Vec3 h = o + d * (best >= 0 ? best : 256.0);
+            figureBuf_[0] = grid_.snapValue(h.x); figureBuf_[1] = grid_.snapValue(h.y); figureBuf_[2] = h.z;
+        }
+        ImGui::TextDisabled("View > Scale figure shows or hides it");
+        buttons(apply, cancel);
+        if (apply) {
+            doc_.setFigure(Vec3{figureBuf_[0], figureBuf_[1], figureBuf_[2]});
+            showFigure_ = true;
+            ImGui::CloseCurrentPopup();
+        } else if (cancel) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+}
+
 void Editor::drawTerrainDialogs() {
     const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     if (askMakeTerrain_) { ImGui::OpenPopup("Terrain grid size"); askMakeTerrain_ = false; }
@@ -1910,6 +2256,11 @@ void Editor::drawFacePanel() {
     }
     if (tool_ == &terrainTool_) {
         if (ImGui::Begin("Properties###face", nullptr, ImGuiWindowFlags_NoCollapse)) drawTerrainPanel();
+        ImGui::End();
+        return;
+    }
+    if (tool_ == &lightTool_ || (tool_ == &selectTool_ && !doc_.lightSelection().empty())) {
+        if (ImGui::Begin("Properties###face", nullptr, ImGuiWindowFlags_NoCollapse)) drawLightPanel();
         ImGui::End();
         return;
     }
@@ -2001,7 +2352,8 @@ void Editor::openMap(const std::string& path) {
         return;
     }
     tool_->cancel();
-    doc_.reset(loaded.worldKeys, loaded.brushes(), loaded.otherEntities, loaded.groups(), loaded.visgroups());
+    doc_.reset(loaded.worldKeys, loaded.brushes(), loaded.otherEntities, loaded.groups(), loaded.visgroups(),
+               WorldData{loaded.lights(), loaded.environment(), loaded.bookmarks(), loaded.figure()});
     path_ = path;
     if (r.skippedBrushes > 0)
         errorText_ = "Opened, but skipped " + std::to_string(r.skippedBrushes) + " invalid brush(es).";
@@ -2059,6 +2411,10 @@ void Editor::runNativeDialog() {
             break;
         case Native::Folder:
             if (chooseFolderDialog(docs, picked)) { textures_.addUserFolder(picked); saveTextureFolders(); }
+            break;
+        case Native::SkyFolder:
+            if (chooseFolderDialog(docs, picked)) { skies_.addUserFolder(picked); saveSkyFolders(); }
+            askEnvironment_ = true; // back to the environment dialog
             break;
         case Native::Heightmap:
             if (openFileDialog(docs, {"png", "jpg", "jpeg", "bmp", "tga"}, picked))
@@ -2133,6 +2489,12 @@ void Editor::runPending() {
 //                   faces, else changes the grid size of the selected terrain)
 //   vertexraise <d> | vertexheight <h>   (selected terrain points, vertex tool)
 //   expect terrainpoints <n>   expect paintlayers <n>
+//   tool light   lightset|lightedit kind point|spot|sun | color r g b | brightness|range|pitch|yaw|inner|outer <v>
+//                | pos x y z   (lightset = the next light, pos places it; lightedit = selected lights)
+//   expect lights <n>   expect lightsel <n>   expect lightpos x y z   expect lightdir <pitch> <yaw>
+//   viewset sky|preview|fog|figure on|off   skydir <path>   figure x y z
+//   environment sky <name|none> | ambient r g b | fog on|off | fogcolor r g b | fogrange <start> <end>
+//   bookmark add <name> | go <index>   expect sky <name>   expect bookmarks <n>   expect camera x y z
 //   terrainset mode <raise|lower|smooth|flatten|noise|paint|erase> | radius|amount|strength <n>
 //              | falloff soft|linear|hard      whover <view> <u> <v> (hover, no button)
 //   camera <x> <y> <z> <yaw> <pitch>   (3D view camera, degrees)
@@ -2243,7 +2605,7 @@ void Editor::stepScript() {
         std::string t; in >> t;
         setTool(t == "block" ? (Tool*)&blockTool_ : t == "vertex" ? (Tool*)&vertexTool_
               : t == "texture" ? (Tool*)&textureTool_ : t == "clip" ? (Tool*)&clipTool_
-              : t == "curve" ? (Tool*)&curveTool_ : t == "terrain" ? (Tool*)&terrainTool_ : (Tool*)&selectTool_);
+              : t == "curve" ? (Tool*)&curveTool_ : t == "terrain" ? (Tool*)&terrainTool_ : t == "light" ? (Tool*)&lightTool_ : (Tool*)&selectTool_);
     } else if (cmd == "press") {
         int v; float x, y; in >> v >> x >> y;
         std::string mod;
@@ -2372,6 +2734,93 @@ void Editor::stepScript() {
             std::string path; double lo = 0, hi = 0; in >> path >> lo >> hi;
             if (!importHeightmap(path, lo, hi)) { std::fprintf(stderr, "script FAIL (command %d): %s\n", scriptLine_, terrainError_.c_str()); ++scriptFailures_; }
         }
+    } else if (cmd == "lightset" || cmd == "lightedit") {
+        // lightset <key> <value...>: the next light (light tool); lightedit: the selected lights
+        std::string k; in >> k;
+        auto setField = [&](Light& l, std::istringstream& vals) {
+            if (k == "kind") {
+                std::string v; vals >> v;
+                for (int i = 0; i < 3; ++i) if (v == lightKindName((LightKind)i)) l.kind = (LightKind)i;
+            } else if (k == "color") { vals >> l.color.x >> l.color.y >> l.color.z; }
+            else if (k == "brightness") vals >> l.brightness;
+            else if (k == "range") vals >> l.range;
+            else if (k == "pitch") vals >> l.pitch;
+            else if (k == "yaw") vals >> l.yaw;
+            else if (k == "inner") vals >> l.inner;
+            else if (k == "outer") vals >> l.outer;
+            else if (k == "pos") { vals >> l.pos.x >> l.pos.y >> l.pos.z; }
+        };
+        std::string rest; std::getline(in, rest);
+        if (cmd == "lightset") {
+            std::istringstream vals(rest);
+            setField(lightTool_.templ, vals);
+            if (k == "pos") lightTool_.pending = lightTool_.templ.pos;
+        } else {
+            editLights("Edit light", [&](Light& l) { std::istringstream vals(rest); setField(l, vals); });
+        }
+    } else if (cmd == "expect" && in.str().find(" lights ") != std::string::npos) {
+        std::string w; size_t n = 0; in >> w >> n;
+        if (doc_.lights().size() != n) { std::fprintf(stderr, "script FAIL (command %d): expected %zu lights, got %zu\n", scriptLine_, n, doc_.lights().size()); ++scriptFailures_; }
+    } else if (cmd == "expect" && in.str().find(" lightsel ") != std::string::npos) {
+        std::string w; size_t n = 0; in >> w >> n;
+        if (doc_.lightSelection().size() != n) { std::fprintf(stderr, "script FAIL (command %d): expected %zu selected lights, got %zu\n", scriptLine_, n, doc_.lightSelection().size()); ++scriptFailures_; }
+    } else if (cmd == "expect" && (in.str().find(" lightpos ") != std::string::npos || in.str().find(" lightdir ") != std::string::npos)) {
+        // expect lightpos x y z (+-0.5) | expect lightdir pitch yaw (+-0.01): the first selected light
+        std::string w; in >> w;
+        const Light* l = doc_.lightSelection().empty() ? nullptr : doc_.findLight(*doc_.lightSelection().begin());
+        if (!l) { std::fprintf(stderr, "script FAIL (command %d): no light selected\n", scriptLine_); ++scriptFailures_; }
+        else if (w == "lightpos") {
+            Vec3 v; in >> v.x >> v.y >> v.z;
+            if (length(l->pos - v) > 0.5) { std::fprintf(stderr, "script FAIL (command %d): light at %g %g %g\n", scriptLine_, l->pos.x, l->pos.y, l->pos.z); ++scriptFailures_; }
+        } else {
+            double p = 0, y = 0; in >> p >> y;
+            if (std::fabs(l->pitch - p) > 0.01 || std::fabs(l->yaw - y) > 0.01) { std::fprintf(stderr, "script FAIL (command %d): light pitch %g yaw %g\n", scriptLine_, l->pitch, l->yaw); ++scriptFailures_; }
+        }
+    } else if (cmd == "viewset") {
+        // viewset sky|preview|fog|figure on|off
+        std::string k, v; in >> k >> v;
+        const bool on = v == "on";
+        if (k == "sky") showSky_ = on;
+        else if (k == "preview") { lightPreview_ = on; if (!on) lighting_.clear(); }
+        else if (k == "fog") showFog_ = on;
+        else if (k == "figure") showFigure_ = on;
+    } else if (cmd == "environment") {
+        // environment sky <name|none> | ambient r g b | fog on|off | fogcolor r g b | fogrange <start> <end>
+        std::string k; in >> k;
+        Environment e = doc_.environment();
+        if (k == "sky") { std::string n; in >> n; e.sky = n == "none" ? "" : n; }
+        else if (k == "ambient") in >> e.ambient.x >> e.ambient.y >> e.ambient.z;
+        else if (k == "fog") { std::string v; in >> v; e.fogOn = v == "on"; }
+        else if (k == "fogcolor") in >> e.fog.color.x >> e.fog.color.y >> e.fog.color.z;
+        else if (k == "fogrange") in >> e.fog.start >> e.fog.end;
+        if (e != doc_.environment()) doc_.apply(doc_.makeEnvironment(e, "Environment"));
+    } else if (cmd == "skydir") {
+        std::string d; std::getline(in >> std::ws, d);
+        skies_.addUserFolder(d);
+    } else if (cmd == "bookmark") {
+        // bookmark add <name> | go <index>
+        std::string op; in >> op;
+        if (op == "add") { std::string n; std::getline(in >> std::ws, n); addBookmark(n); }
+        else if (op == "go") { size_t i = 0; in >> i; goToBookmark(i); }
+    } else if (cmd == "figure") {
+        Vec3 f; in >> f.x >> f.y >> f.z;
+        doc_.setFigure(f);
+        showFigure_ = true;
+    } else if (cmd == "expect" && in.str().find(" sky ") != std::string::npos) {
+        // expect sky <name>: the environment's sky, and that it loads
+        std::string w, n; in >> w >> n;
+        if (doc_.environment().sky != n || !skies_.get(n)) {
+            std::fprintf(stderr, "script FAIL (command %d): sky is '%s' (%s)\n", scriptLine_, doc_.environment().sky.c_str(), skies_.problem(n).c_str());
+            ++scriptFailures_;
+        }
+    } else if (cmd == "expect" && in.str().find(" bookmarks ") != std::string::npos) {
+        std::string w; size_t n = 0; in >> w >> n;
+        if (doc_.bookmarks().size() != n) { std::fprintf(stderr, "script FAIL (command %d): expected %zu bookmarks, got %zu\n", scriptLine_, n, doc_.bookmarks().size()); ++scriptFailures_; }
+    } else if (cmd == "expect" && in.str().find(" camera ") != std::string::npos) {
+        // expect camera x y z: the 3D view's camera position (+-0.5)
+        std::string w; Vec3 v; in >> w >> v.x >> v.y >> v.z;
+        const Vector3 c = views_[0]->cameraPos();
+        if (length(Vec3{c.x, c.y, c.z} - v) > 0.5) { std::fprintf(stderr, "script FAIL (command %d): camera at %g %g %g\n", scriptLine_, c.x, c.y, c.z); ++scriptFailures_; }
     } else if (cmd == "terrainset") {
         // terrainset mode raise|lower|smooth|flatten|noise|paint|erase | radius <r> | amount <a>
         //            | strength <percent> | falloff soft|linear|hard

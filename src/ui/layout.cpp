@@ -38,6 +38,7 @@ MenuActions drawMenuBar(const MenuState& st) {
         if (ImGui::MenuItem("Clip", "Shift+X", st.clipTool)) a.toolClip = true;
         if (ImGui::MenuItem("Curve (arch, ring, wall, stairs)", "Shift+C", st.curveTool)) a.toolCurve = true;
         if (ImGui::MenuItem("Terrain (sculpt, paint)", "Shift+G", st.terrainTool)) a.toolTerrain = true;
+        if (ImGui::MenuItem("Light", "Shift+L", st.lightTool)) a.toolLight = true;
         ImGui::Separator();
         if (ImGui::BeginMenu("Clip: keep")) {
             if (ImGui::MenuItem("Both pieces", nullptr, st.clipKeep == 0)) a.clipKeep = 0;
@@ -139,6 +140,20 @@ MenuActions drawMenuBar(const MenuState& st) {
         ImGui::TextDisabled("then Return. Vertex tool: move terrain points.");
         ImGui::EndMenu();
     }
+    if (ImGui::BeginMenu("World")) {
+        if (ImGui::MenuItem("Light tool", "Shift+L", st.lightTool)) a.toolLight = true;
+        static const char* kinds[] = {"New point light", "New spot light", "New sun"};
+        for (int i = 0; i < 3; ++i)
+            if (ImGui::MenuItem(kinds[i], nullptr, st.lightTool && st.lightKind == i)) a.lightKind = i;
+        if (ImGui::MenuItem("Create light", "Return", false, st.lightPending)) a.createLight = true;
+        ImGui::TextDisabled("Light tool: click to place, Return creates;");
+        ImGui::TextDisabled("drag a selected light's rings to aim it");
+        ImGui::Separator();
+        if (ImGui::MenuItem("Environment (sky, ambient, fog)...")) a.environment = true;
+        if (ImGui::MenuItem("Camera bookmarks...")) a.bookmarks = true;
+        if (ImGui::MenuItem("Scale figure position...")) a.figurePos = true;
+        ImGui::EndMenu();
+    }
     if (ImGui::BeginMenu("View")) {
         // Shortcut labels are for an Italian keyboard (the two keys right of P).
         if (ImGui::MenuItem("Smaller grid", "\xC3\xA8")) a.gridSmaller = true;
@@ -158,6 +173,10 @@ MenuActions drawMenuBar(const MenuState& st) {
         if (ImGui::MenuItem("Fly mode (3D view)", "Z", st.flying)) a.flyMode = true;
         if (ImGui::MenuItem("3D view: textured", nullptr, st.textured3D)) a.textured3D = 1;
         if (ImGui::MenuItem("3D view: flat colours", nullptr, !st.textured3D)) a.textured3D = 0;
+        if (ImGui::MenuItem("3D view: sky", nullptr, st.showSky)) a.toggleSky = true;
+        if (ImGui::MenuItem("3D view: rough light preview", nullptr, st.lightPreview)) a.toggleLightPreview = true;
+        if (ImGui::MenuItem("3D view: fog", nullptr, st.showFog)) a.toggleFog = true;
+        if (ImGui::MenuItem("Scale figure (72 units)", nullptr, st.showFigure)) a.toggleFigure = true;
         ImGui::Separator();
         if (ImGui::MenuItem("Reset layout")) a.resetLayout = true;
         ImGui::EndMenu();
@@ -200,6 +219,12 @@ void drawControlsWindow(bool* open) {
             {"Make terrain", "Terrain menu > Make terrain: click faces in 3D (Shift+click adds) or brushes in 2D (face toward you); Return makes them terrain, Esc stops"},
             {"Terrain points", "Vertex tool on a selected terrain: click a point (Cmd+click adds), drag in the 3D view or a side view; Cmd+Shift+T types a height"},
             {"Terrain tool", "Shift+G: drag over terrain (3D, or a 2D view facing it); mode, radius, amount in Properties; Esc cancels a stroke"},
+            {"Light tool", "Shift+L (World menu): pick point / spot / sun and settings in Properties, click in a view to place, Return creates, Esc cancels"},
+            {"Select / move lights", "click a light's marker (any tool that selects: Select, Light); drag it in a 2D view; Delete removes, Cmd+D duplicates"},
+            {"Aim a spot or sun", "drag the rotation rings of the selected light (3D: X red, Y green, Z blue; 2D: the ring around the view's axis), 15 degree steps; or type pitch / yaw"},
+            {"Sky, ambient, fog", "World > Environment (sky folders too: 2:1 panoramas or 4:3 cube crosses)"},
+            {"Show sky / light preview / fog / figure", "View menu (3D view: sky, rough light preview, fog; scale figure)"},
+            {"Camera bookmarks / figure position", "World menu"},
             {"Paint textures", "Terrain tool, Paint mode: paints the current texture (up to 8 per patch); painting the face's own texture uncovers it"},
             {"Heightmap / stitch / remove", "Terrain menu"},
             {"Delete", "Delete or Backspace"},

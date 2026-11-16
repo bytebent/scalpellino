@@ -80,6 +80,24 @@ AABB Document::selectionBounds() const {
     return box;
 }
 
+const Light* Document::findLight(LightId id) const {
+    for (const Light& l : lights_)
+        if (l.id == id) return &l;
+    return nullptr;
+}
+
+void Document::setLight(LightId id, const std::optional<Light>& l) {
+    auto it = std::find_if(lights_.begin(), lights_.end(), [&](const Light& x) { return x.id == id; });
+    if (l) {
+        if (it != lights_.end()) *it = *l;
+        else lights_.push_back(*l);
+        if (id >= nextLightId_) nextLightId_ = id + 1;
+    } else if (it != lights_.end()) {
+        lights_.erase(it);
+        lightSelection_.erase(id);
+    }
+}
+
 void Document::setBrush(BrushId id, const std::optional<Brush>& b) {
     auto it = std::find_if(brushes_.begin(), brushes_.end(), [&](const Brush& x) { return x.id == id; });
     if (b) {
@@ -96,7 +114,10 @@ void Document::apply(Command cmd) {
     pruneEmptyGroups(cmd); // a group whose last brush goes away goes with it (undoable)
     for (const GroupChange& g : cmd.groupChanges) setGroup(g.id, g.after);
     for (const BrushChange& c : cmd.changes) setBrush(c.id, c.after);
+    for (const LightChange& c : cmd.lightChanges) setLight(c.id, c.after);
+    if (cmd.envAfter) env_ = *cmd.envAfter;
     selection_ = cmd.selectionAfter;
+    if (cmd.lightSelectionAfter) lightSelection_ = *cmd.lightSelectionAfter;
     undo_.push_back(std::move(cmd));
     redo_.clear();
     bump();
@@ -108,7 +129,10 @@ bool Document::undo() {
     undo_.pop_back();
     for (auto it = cmd.changes.rbegin(); it != cmd.changes.rend(); ++it) setBrush(it->id, it->before);
     for (auto it = cmd.groupChanges.rbegin(); it != cmd.groupChanges.rend(); ++it) setGroup(it->id, it->before);
+    for (auto it = cmd.lightChanges.rbegin(); it != cmd.lightChanges.rend(); ++it) setLight(it->id, it->before);
+    if (cmd.envBefore) env_ = *cmd.envBefore;
     selection_ = cmd.selectionBefore;
+    if (cmd.lightSelectionBefore) lightSelection_ = *cmd.lightSelectionBefore;
     redo_.push_back(std::move(cmd));
     bump();
     return true;
@@ -120,7 +144,10 @@ bool Document::redo() {
     redo_.pop_back();
     for (const GroupChange& g : cmd.groupChanges) setGroup(g.id, g.after);
     for (const BrushChange& c : cmd.changes) setBrush(c.id, c.after);
+    for (const LightChange& c : cmd.lightChanges) setLight(c.id, c.after);
+    if (cmd.envAfter) env_ = *cmd.envAfter;
     selection_ = cmd.selectionAfter;
+    if (cmd.lightSelectionAfter) lightSelection_ = *cmd.lightSelectionAfter;
     undo_.push_back(std::move(cmd));
     bump();
     return true;
@@ -132,8 +159,18 @@ const std::string& Document::undoName() const {
 }
 
 void Document::reset(KeyValues world, std::vector<Brush> brushes, std::vector<RawEntity> others,
-                     std::map<GroupId, Group> groups, std::vector<Visgroup> visgroups) {
+                     std::map<GroupId, Group> groups, std::vector<Visgroup> visgroups, WorldData extra) {
     worldKeys = std::move(world);
+    lights_.clear();
+    lightSelection_.clear();
+    nextLightId_ = 1;
+    for (Light& l : extra.lights) {
+        l.id = nextLightId_++;
+        lights_.push_back(std::move(l));
+    }
+    env_ = std::move(extra.env);
+    bookmarks_ = std::move(extra.bookmarks);
+    figure_ = extra.figure;
     visgroups_ = std::move(visgroups);
     otherEntities = std::move(others);
     groups_ = std::move(groups);
@@ -185,6 +222,49 @@ Command Document::makeModify(const std::vector<Brush>& modified, const std::stri
     c.selectionAfter = selection_;
     for (const Brush& b : modified)
         if (const Brush* old = find(b.id)) c.changes.push_back({b.id, *old, b});
+    return c;
+}
+
+Command Document::makeAddLights(std::vector<Light> lights, const std::string& name) {
+    Command c;
+    c.name = name;
+    c.selectionBefore = selection_;
+    c.lightSelectionBefore = lightSelection_;
+    c.lightSelectionAfter = std::set<LightId>{};
+    for (Light& l : lights) {
+        if (l.id == 0) l.id = newLightId();
+        c.lightSelectionAfter->insert(l.id);
+        c.lightChanges.push_back({l.id, std::nullopt, std::move(l)});
+    }
+    return c; // brushes deselected (selectionAfter empty)
+}
+
+Command Document::makeModifyLights(const std::vector<Light>& modified, const std::string& name) {
+    Command c;
+    c.name = name;
+    c.selectionBefore = c.selectionAfter = selection_;
+    for (const Light& l : modified)
+        if (const Light* old = findLight(l.id)) c.lightChanges.push_back({l.id, *old, l});
+    return c;
+}
+
+void Document::addLightDeletes(Command& c, const std::set<LightId>& ids) const {
+    std::set<LightId> after = c.lightSelectionAfter ? *c.lightSelectionAfter : lightSelection_;
+    if (!c.lightSelectionBefore) c.lightSelectionBefore = lightSelection_;
+    for (LightId id : ids)
+        if (const Light* l = findLight(id)) {
+            c.lightChanges.push_back({id, *l, std::nullopt});
+            after.erase(id);
+        }
+    c.lightSelectionAfter = after;
+}
+
+Command Document::makeEnvironment(const Environment& env, const std::string& name) {
+    Command c;
+    c.name = name;
+    c.selectionBefore = c.selectionAfter = selection_;
+    c.envBefore = env_;
+    c.envAfter = env;
     return c;
 }
 

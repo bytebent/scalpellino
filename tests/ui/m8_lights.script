@@ -1,0 +1,92 @@
+# Milestone 8: lights. Place a point light, a spot and a sun with the light tool (click,
+# Return), move one in a second view, aim with the rotation rings (top and front view),
+# typed edits, select with the select tool, delete, undo, save + open.
+block -256 -256 -64 256 256 0
+tool light
+lightset kind point
+lightset color 255 200 150
+# top view sets x/y (depth from the last brush), the front view then sets y/z
+wpress 1 -128 -128
+release
+wpress 2 -128 128
+release
+key Return
+expect lights 1
+expect lightsel 1
+expect selected 0
+expect lightpos -128 -128 128
+undo
+expect lights 0
+redo
+expect lights 1
+# -- a spot, pointing along +X, typed up to z = 160
+lightset kind spot
+lightset pitch 0
+lightset yaw 0
+wpress 1 128 0
+release
+key Return
+expect lights 2
+expect lightpos 128 0 -32
+lightedit pos 128 0 160
+expect lightpos 128 0 160
+# ring around Z in the top view (radius 48 px = 96 units at zoom 0.5): a quarter turn
+wpress 1 224 0
+wdrag 200 70
+wdrag 128 96
+release
+expect lightdir 0 90
+undo
+expect lightdir 0 0
+redo
+expect lightdir 0 90
+# ring around X in the front view: from +Y a quarter turn up
+wpress 2 96 160
+wdrag 70 230
+wdrag 0 256
+release
+expect lightdir 90 90
+lightedit pitch -60
+expect lightdir -60 90
+# -- drag the marker in the top view: moves it (snapped)
+wpress 1 128 0
+wdrag 190 60
+release
+expect lightpos 192 64 160
+# -- a sun
+lightset kind sun
+lightset pitch -45
+lightset yaw 30
+lightset color 255 230 190
+wpress 1 0 200
+release
+key Return
+expect lights 3
+expect lightdir -45 30
+# -- select tool: click a marker, then a brush (lights deselected)
+tool select
+key Esc
+wpress 1 192 64
+release
+expect lightsel 1
+expect selected 0
+expect lightpos 192 64 160
+camera -600 -500 420 40 -28
+shot m8-01-lights-and-rings.png
+lightedit brightness 400
+wpress 1 0 -100
+release
+expect lightsel 0
+expect selected 1
+# -- delete a light, undo
+wpress 1 -128 -128
+release
+key Delete
+expect lights 2
+undo
+expect lights 3
+# -- save + open
+save m8-lights.map
+open m8-lights.map
+expect lights 3
+quit

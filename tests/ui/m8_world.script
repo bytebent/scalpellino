@@ -1,0 +1,82 @@
+# Milestone 8: world. Sky (a built-in panorama, and a cube cross from a user folder),
+# fog (shown only when switched on in the View menu), the rough light preview, camera
+# bookmarks, the 72-unit scale figure, save + open.
+block -512 -512 -32 512 512 0
+block -512 448 0 512 512 192
+block 128 -64 0 192 0 256
+block -320 -128 0 -192 0 96
+tool select
+key Esc
+camera -700 -650 260 42 -10
+# -- day sky (built in); the 3D view shows it behind everything
+environment sky Panorama_Sky_04
+expect sky Panorama_Sky_04
+shot m8-02-sky-day.png
+undo
+viewset sky off
+environment sky Panorama_Sky_04
+shot m8-07-sky-hidden.png
+viewset sky on
+# -- a sunset from a user sky folder, given as a cube cross; fog only when shown
+skydir assets/skies
+environment sky Cubemap_Sky_21
+expect sky Cubemap_Sky_21
+environment fog on
+environment fogcolor 170 105 60
+environment fogrange 300 1800
+viewset fog on
+shot m8-03-sunset-cross-fog.png
+viewset fog off
+# -- night: dark ambient, a warm point light and a spot, rough preview
+environment sky Panorama_Sky_15
+environment ambient 18 18 30
+tool light
+lightset kind point
+lightset color 255 170 90
+lightset brightness 300
+lightset range 600
+lightset pos -64 -200 120
+key Return
+lightset kind spot
+lightset color 150 190 255
+lightset brightness 400
+lightset range 900
+lightset pitch -50
+lightset yaw 60
+lightset pos -400 -400 300
+key Return
+expect lights 2
+viewset preview on
+tool select
+key Esc
+shot m8-04-night-light-preview.png
+# moving a light updates the preview
+tool light
+lightset kind sun
+lightset color 255 240 220
+lightset brightness 120
+lightset pitch -35
+lightset yaw 135
+lightset pos 0 0 400
+key Return
+tool select
+key Esc
+shot m8-05-preview-with-sun.png
+viewset preview off
+# -- scale figure next to the pillar
+figure 64 -96 0
+shot m8-06-scale-figure.png
+# -- bookmarks: save the view, look elsewhere, go back
+bookmark add overview
+expect bookmarks 1
+camera 0 0 100 0 0
+expect camera 0 0 100
+bookmark go 0
+expect camera -700 -650 260
+# -- save + open keeps everything
+save m8-world.map
+open m8-world.map
+expect sky Panorama_Sky_15
+expect lights 3
+expect bookmarks 1
+quit

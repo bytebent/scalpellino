@@ -9,6 +9,7 @@
 #include "core/curves.hpp"
 #include "core/primitives.hpp"
 #include "core/terrain.hpp"
+#include "core/sky.hpp"
 #include "io/map_format.hpp"
 #include <cmath>
 #include <random>
@@ -929,7 +930,7 @@ static void testMapRoundTrip() {
     odd.translate({0.5, 1.0 / 3.0, 0}, true); // non-integer coordinates and offsets
     bs.push_back(odd);
     d.apply(d.makeAdd(bs, "Create"));
-    d.otherEntities.push_back({{{"classname", "light"}, {"origin", "0 0 64"}, {"light", "300"}}, {}});
+    d.otherEntities.push_back({{{"classname", "info_null"}, {"origin", "0 0 64"}, {"targetname", "spot"}}, {}});
 
     const std::string a = writeMap(d);
     Document d2;
@@ -1474,6 +1475,161 @@ void testTerrainPoints() {
     }
 }
 
+// ---- Milestone 8: world (lights, environment, bookmarks, figure)
+void testWorld() {
+    // Directions: pitch -90 = straight down, yaw 90 = +Y; angles come back the same.
+    CHECK(nearV(lightDirection(-90, 0), {0, 0, -1}));
+    CHECK(nearV(lightDirection(0, 90), {0, 1, 0}));
+    CHECK(nearV(lightDirection(-45, 180), {-std::sqrt(0.5), 0, -std::sqrt(0.5)}));
+    double p = 0, y = 0;
+    directionAngles(lightDirection(-30, 250), p, y);
+    CHECK(near(p, -30) && near(y, 250));
+    directionAngles({0, 0, -1}, p, y, 77); // straight down keeps the old yaw
+    CHECK(near(p, -90) && near(y, 77));
+    // Rotation rings: about Z turns the yaw, about Y tilts a +X light down.
+    Light l; l.kind = LightKind::Spot; l.pitch = 0; l.yaw = 0;
+    rotateLight(l, 2, 90);
+    CHECK(near(l.pitch, 0) && near(l.yaw, 90));
+    Light t; t.kind = LightKind::Spot; t.pitch = 0; t.yaw = 0;
+    rotateLight(t, 1, 45); // right-hand rule about +Y: +X goes toward -Z
+    CHECK(near(t.pitch, -45) && near(t.yaw, 0));
+    for (int i = 0; i < 8; ++i) rotateLight(t, 1, 45); // full turn and a bit: back to -45
+    CHECK(near(t.pitch, -45) && near(t.yaw, 0));
+
+    // Rough lighting.
+    Environment env; env.ambient = {0, 0, 0};
+    Light pt; pt.kind = LightKind::Point; pt.pos = {0, 0, 100}; pt.range = 200; pt.brightness = 200;
+    const Vec3 up{0, 0, 1};
+    Vec3 c = lightAt(env, {pt}, {0, 0, 0}, up);
+    CHECK(near(c.x, 0.25) && near(c.y, 0.25)); // (1 - 100/200)^2, facing it
+    CHECK(near(lightAt(env, {pt}, {0, 0, 0}, {0, 0, -1}).x, 0)); // facing away
+    CHECK(near(lightAt(env, {pt}, {0, 0, -150}, up).x, 0));      // out of range
+    env.ambient = {51, 51, 51};
+    CHECK(near(lightAt(env, {}, {0, 0, 0}, up).x, 0.2));
+    env.ambient = {0, 0, 0};
+    Light sp = pt; sp.kind = LightKind::Spot; sp.pitch = -90; sp.inner = 10; sp.outer = 20;
+    CHECK(near(lightAt(env, {sp}, {0, 0, 0}, up).x, 0.25));       // in the cone
+    CHECK(near(lightAt(env, {sp}, {60, 0, 0}, up).x, 0));         // 31 degrees off: outside
+    const double edge = lightAt(env, {sp}, {std::tan(15 * 3.14159265358979 / 180) * 100, 0, 0}, up).x;
+    CHECK(edge > 0 && edge < 0.25);                               // between inner and outer
+    Light sun; sun.kind = LightKind::Sun; sun.pitch = -90; sun.color = {255, 128, 0}; sun.brightness = 400;
+    c = lightAt(env, {sun}, {5000, -9000, 3}, up);
+    CHECK(near(c.x, 2) && near(c.y, 2 * 128 / 255.0) && near(c.z, 0)); // everywhere, colour x brightness
+
+    // Document: add, modify, delete lights and change the environment, all undoable.
+    Document d;
+    d.apply(d.makeAdd({makeBox(box({0, 0, 0}, {64, 64, 64}), "a")}, "Create"));
+    CHECK(d.selection().size() == 1);
+    d.apply(d.makeAddLights({pt, sp}, "Create light"));
+    CHECK(d.lights().size() == 2 && d.lightSelection().size() == 2);
+    CHECK(d.selection().empty()); // brushes deselected
+    const LightId a = d.lights()[0].id;
+    Light m = d.lights()[0]; m.pos = {1, 2, 3};
+    d.apply(d.makeModifyLights({m}, "Move light"));
+    CHECK(nearV(d.findLight(a)->pos, {1, 2, 3}));
+    CHECK(d.undo());
+    CHECK(nearV(d.findLight(a)->pos, {0, 0, 100}));
+    CHECK(d.redo());
+    Command del = d.makeDelete({}, "Delete");
+    d.addLightDeletes(del, {a});
+    d.apply(std::move(del));
+    CHECK(d.lights().size() == 1 && !d.findLight(a) && d.lightSelection().size() == 1);
+    CHECK(d.undo());
+    CHECK(d.lights().size() == 2 && d.lightSelection().size() == 2);
+    Environment e2; e2.sky = "Panorama_Sky_04"; e2.fogOn = true; e2.fog.start = 100;
+    d.apply(d.makeEnvironment(e2, "Environment"));
+    CHECK(d.environment() == e2);
+    CHECK(d.undo());
+    CHECK(d.environment() == Environment{});
+    CHECK(d.undo() && d.undo()); // light moved back, then lights gone
+    CHECK(d.lights().empty() && d.lightSelection().empty() && d.selection().size() == 1);
+
+    // File: lights as Hammer entities, environment / bookmarks / figure in worldspawn.
+    Document w;
+    sp.otherKeys = {{"targetname", "lamp1"}};
+    w.apply(w.makeAddLights({pt, sp, sun}, "lights"));
+    Environment e3 = e2; e3.ambient = {10, 20, 30}; e3.fog.color = {1, 2, 3}; e3.fog.end = 2000;
+    w.apply(w.makeEnvironment(e3, "env"));
+    w.setBookmarks({{"hall view", {1, 2, 3}, 45, -10}, {"b", {-5, 0, 7.5}, 300, 20}});
+    w.setFigure(Vec3{64, 32, 0});
+    const std::string text = writeMap(w);
+    CHECK(text.find("\"classname\" \"light_spot\"") != std::string::npos);
+    CHECK(text.find("\"_light\" \"255 128 0 400\"") != std::string::npos);
+    CHECK(text.find("\"pitch\" \"-90\"") != std::string::npos);
+    CHECK(text.find("\"_cone\" \"20\"") != std::string::npos);
+    Document r;
+    CHECK(readMap(text, r).ok);
+    CHECK(r.lights().size() == 3 && r.otherEntities.empty());
+    if (r.lights().size() == 3) {
+        for (size_t i = 0; i < 3; ++i) {
+            Light x = r.lights()[i], o = w.lights()[i];
+            x.id = o.id = 0;
+            CHECK(x == o);
+        }
+    }
+    CHECK(r.environment() == e3);
+    CHECK(r.bookmarks().size() == 2 && r.bookmarks()[0].name == "hall view" && near(r.bookmarks()[1].pitch, 20) &&
+          nearV(r.bookmarks()[1].pos, {-5, 0, 7.5}));
+    CHECK(r.figure() && nearV(*r.figure(), {64, 32, 0}));
+    CHECK(writeMap(r) == text); // byte-identical
+    for (const auto& kv : r.worldKeys) CHECK(kv.first.rfind("_scal_", 0) != 0);
+    // A Quake-style light keeps the keys we don't use.
+    Document q;
+    CHECK(readMap("{\n\"classname\" \"worldspawn\"\n}\n{\n\"classname\" \"light\"\n\"origin\" \"8 16 32\"\n\"light\" \"300\"\n}\n", q).ok);
+    CHECK(q.lights().size() == 1);
+    if (q.lights().size() == 1) {
+        CHECK(nearV(q.lights()[0].pos, {8, 16, 32}));
+        CHECK(writeMap(q).find("\"light\" \"300\"") != std::string::npos);
+    }
+}
+
+// Sky layouts: a cross with one flat colour per face turns into a panorama whose middle
+// looks at the front face, right at the right face, top at the up face (measured against
+// a real pack's matching pair while writing the conversion).
+void testSky() {
+    CHECK(skyLayout(2048, 1024) == SkyLayout::Panorama);
+    CHECK(skyLayout(2048, 1536) == SkyLayout::Cross);
+    CHECK(skyLayout(512, 512) == SkyLayout::Unknown);
+    CHECK(skyLayout(0, 0) == SkyLayout::Unknown);
+    const int F = 8, w = 4 * F, h = 3 * F;
+    std::vector<unsigned char> cross((size_t)w * h * 3, 0);
+    // face colours: (col,row) -> id*30
+    auto setFace = [&](int col, int row, unsigned char id) {
+        for (int y = 0; y < F; ++y)
+            for (int x = 0; x < F; ++x)
+                for (int c = 0; c < 3; ++c) cross[((size_t)(row * F + y) * w + col * F + x) * 3 + c] = id;
+    };
+    setFace(0, 1, 30);  // left
+    setFace(1, 1, 60);  // front
+    setFace(2, 1, 90);  // right
+    setFace(3, 1, 120); // back
+    setFace(1, 0, 150); // up
+    setFace(1, 2, 180); // down
+    const int W = 64;
+    const std::vector<unsigned char> pano = crossToPanorama(cross.data(), w, h, W);
+    CHECK((int)pano.size() == W * (W / 2) * 3);
+    auto at = [&](double u, double v) { return pano[((size_t)(int)(v * (W / 2)) * W + (int)(u * W)) * 3]; };
+    CHECK(at(0.5, 0.5) == 60);   // middle: front
+    CHECK(at(0.75, 0.5) == 90);  // right of it: right
+    CHECK(at(0.25, 0.5) == 30);  // left
+    CHECK(at(0.01, 0.5) == 120); // the edges: back
+    CHECK(at(0.5, 0.02) == 150); // top: up
+    CHECK(at(0.5, 0.98) == 180); // bottom: down
+    // World directions to panorama coordinates: +X in the middle, turning right (toward
+    // -Y) moves right, up is the top.
+    double u = 0, v = 0;
+    skyUV({1, 0, 0}, u, v);
+    CHECK(near(u, 0.5) && near(v, 0.5));
+    skyUV({0, -1, 0}, u, v);
+    CHECK(near(u, 0.75));
+    skyUV({0, 1, 0}, u, v);
+    CHECK(near(u, 0.25));
+    skyUV({0, 0, 1}, u, v);
+    CHECK(near(v, 0));
+    skyUV({-1, 0, -1}, u, v);
+    CHECK((near(u, 0) || near(u, 1)) && near(v, 0.75));
+}
+
 int main() {
     testGrid();
     testBoxGeometry();
@@ -1493,6 +1649,8 @@ int main() {
     testPrimitives();
     testTerrain();
     testTerrainPoints();
+    testWorld();
+    testSky();
     testRay();
     testUndo();
     testMakeChange();

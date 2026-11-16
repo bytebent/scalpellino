@@ -12,14 +12,12 @@ Read in this order:
 
 ## Where things stand
 
-- Released: v0.1.0 … v0.7.0 (milestone 7, Terrain), then **v0.7.1** (terrain fixes the
-  user asked for: any face, vertex tool on terrain, up to 8 textures).
-- **Next: milestone 8 — World**: lights (point, spot, sun), a sky picker (a *setting*,
-  not a sealed skybox), fog, camera bookmarks, a 72-unit human scale figure.
-  Wait for the user's go-ahead before starting it. They had just received the v0.7.1
-  report when this file was last updated.
-- After that: M9 renderer (PNG renders of only what the camera sees, plus a Hammer-style
-  scrolling render log window and a log file), M10 Y2K shaders, M11 export (.glb, Godot).
+- Released: v0.1.0 … v0.7.1, then **v0.8.0** (milestone 8, World: lights with rotation
+  rings, skies, ambient, fog, rough preview toggles, camera bookmarks, scale figure).
+- **Next: milestone 9 — Renderer** (PNG renders of only what the camera sees, a
+  Hammer-style scrolling render log window and a log file). Wait for the user's
+  go-ahead; they had just received the v0.8.0 report when this was written.
+- After that: M10 Y2K shaders, M11 export (.glb, Godot).
 
 ## The user
 
@@ -61,6 +59,9 @@ Read in this order:
 - Apple Silicon builds only on demand (the `apple-silicon` workflow), never in normal CI.
 - Terrain choices are listed under "Open questions (parked)" in PLAN.md and still need
   the user's confirmation. For example, a stroke commits on mouse release.
+- The editor shows the world only roughly, like Hammer (user's wish): sky, light preview
+  and fog are View toggles; the light preview is very rough and never computed while
+  off. The sun's direction is typed on the sun, not tied to the sky.
 - Make terrain is by picking faces (user: "select any face of a shape"), never by
   guessing a face from a selected brush.
 

@@ -200,15 +200,57 @@ Like Hammer's displacements, with fewer rules.
 - **Renders/export (later):** the terrain surface is the visible geometry. The brush's
   other faces count as hidden, as with Hammer displacements.
 
+### World (milestone 8, done)
+The editor shows only a rough idea of the world, like Hammer did; the real look comes
+from the renderer (M9) and the Y2K shaders (M10).
+- **Lights** (`core/world.hpp`, `Document::lights()`): point, spot, sun. Colour (0–255),
+  brightness (Hammer-style, 200 = normal), reach (point, spot), direction as pitch/yaw
+  (spot, sun; pitch −90 = down), inner/outer angles (spot). A light is a marker in every
+  view in its own colour (square; a sun is a circle), a spot has a wire cone, a sun an
+  arrow; a selected light shows its reach (2D circle, 3D three great circles).
+- **Placing:** the Light tool (Shift+L, World menu). Kind and settings in Properties, click
+  in a 2D view (the depth stays from the last click / the last brush) or on a surface in
+  3D (32 units out), click again to adjust, Return creates, Esc cancels.
+- **Editing:** lights are selected separately from brushes (a plain click on one
+  deselects the other), in the Select and Light tools: click a marker; drag it in 2D to
+  move (snapped); Cmd+click adds/removes; Delete, Cmd+D. **Rotation rings** around a
+  selected spot/sun: three in 3D (X red, Y green, Z blue), one per 2D view (around the
+  depth axis). Dragging a ring turns the direction about that world axis in 15° steps.
+  Properties edit every selected light (one undo step per finished field). All light
+  edits are commands (`LightChange`), so undo/redo cover them.
+- **Environment** (World → Environment, a command too): sky name, ambient colour, fog
+  (on/off, colour, clear-up-to and fully-fogged-from distances). Sun direction is typed
+  on the sun light, separate from the sky (user's choice).
+- **Skies** (`core/sky.hpp`, `render/sky_library`): built-in panoramas plus the user's sky
+  folders (saved in the settings like texture folders). 2:1 equirectangular panoramas
+  or 4:3 horizontal cube crosses; a cross is converted to a panorama on load (mapping
+  checked against a pack's matching panorama/cross pair). The panorama's middle faces
+  +X; turning right moves right in the image.
+- **View menu toggles** (3D view only, editor settings, not saved): sky (on: a sphere
+  behind everything), **rough light preview** (off; ambient + lights, Lambert with a
+  smooth falloff to the reach and the spot cone, no shadows; faces cut into ~64-unit
+  triangles; computed only while on and only when the map changes), fog (off; a small
+  shader fading to the fog colour by distance, only if the map has fog), scale figure.
+- **Camera bookmarks** (World menu): name + 3D camera position/yaw/pitch; go / delete.
+  Editor-only, saved with the map, not undone (like visgroups).
+
 ### Scale reference
-Toggleable ghost human figure (72 units tall) to judge proportions. Editor-only,
-never exported.
+Toggleable ghost human figure (72 units tall, blocky, see-through) to judge
+proportions. Its feet position is saved with the map (World → Scale figure position, or
+it appears below the top view's centre). Editor-only, never exported.
 
 ## 7. Entities (complete list)
 
 - **Lights** — point, spot, sun.
 - **Environment** — sky color/texture, fog, ambient light.
 - **Camera bookmarks** — saved viewpoints for renders. Editor-only.
+
+Lights are saved as Hammer entities other tools understand: `light`, `light_spot`,
+`light_environment` with `origin`, `_light "r g b brightness"`, `angles` (pitch positive
+down) + `pitch` (negative down), `_inner_cone` / `_cone`, `_zero_percent_distance`
+(reach). Keys we don't use are kept. Environment, bookmarks and the scale figure are
+worldspawn keys: `_scal_sky`, `_scal_ambient`, `_scal_fog "on r g b start end"`,
+`_scal_cameras "x y z yaw pitch name;…"`, `_scal_figure`.
 
 That's all. No gameplay entities.
 
@@ -301,7 +343,7 @@ docs/         this file, roadmap
 | 5 | Curve tool: arch, ring, curved wall, spiral stairs, arched opening; groups | done (v0.5.0) |
 | 6 | Workflow + shapes: hide/show + visgroups, overlap finder, views to origin, block primitives (wedge, cylinder, cone, pyramid, sphere), more curves (dome, helix ramp, straight stairs, stairs column) | done (v0.6.0) |
 | 7 | Terrain: grid patches from any picked face (3 or 4 corners), sculpt (raise/lower/smooth/flatten/noise; typed radius/strength), point-by-point editing with the vertex tool, painting up to 8 textures per patch, auto-stitched neighbours, heightmap import; stored in our `.map` | done (v0.7.0, v0.7.1) |
-| 8 | World: lights, sky picker (a setting, not a sealed box), fog, camera bookmarks, scale figure | |
+| 8 | World: lights (point, spot, sun; rotation rings), sky picker (a setting, not a sealed box; panoramas and cube crosses), ambient, fog, rough editor preview (sky, light preview, fog toggles), camera bookmarks, scale figure | done (v0.8.0) |
 | 9 | Renderer: PNG renders, only what the camera sees (frustum, back faces, nodraw, optional outside-only), terminal-style render log window (+ log file) | |
 | 10 | Y2K look: shaders (low-res, fog, chrome, bloom, dithering) | |
 | 11 | Export: `.glb`, Godot package, terrain as mesh; nodraw skipped | |

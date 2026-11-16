@@ -1,6 +1,8 @@
 #include "render/viewport.hpp"
 #include "rlgl.h"
 #include "render/texture_library.hpp"
+#include "core/sky.hpp"
+#include "render/lighting.hpp"
 #include <algorithm>
 #include <cmath>
 
@@ -60,6 +62,113 @@ std::vector<Vec3> cursorCircle(const Scene::BrushCursor& c) {
         pts.push_back(c.center + a * (std::cos(t) * c.radius) + b * (std::sin(t) * c.radius));
     }
     return pts;
+}
+
+// ---- lights
+const Color kAxisCol[3] = {{235, 80, 80, 255}, {90, 210, 90, 255}, {90, 140, 245, 255}};
+Color lightColor(const Light& l) {
+    auto c = [](double v) { return (unsigned char)std::clamp((int)std::lround(v), 0, 255); };
+    return {c(l.color.x), c(l.color.y), c(l.color.z), 255};
+}
+Color dim(Color c, float k) {
+    return {(unsigned char)(c.r * k), (unsigned char)(c.g * k), (unsigned char)(c.b * k), c.a};
+}
+// Lines to draw for a light's shape (world segments): a spot's cone (length `len`), a
+// sun's arrow.
+std::vector<std::pair<Vec3, Vec3>> lightShape(const Light& l, double len) {
+    std::vector<std::pair<Vec3, Vec3>> segs;
+    if (!l.hasDirection()) return segs;
+    const Vec3 d = lightDirection(l);
+    Vec3 a = std::fabs(d.z) < 0.9 ? Vec3{0, 0, 1} : Vec3{1, 0, 0};
+    a = normalize(cross(d, a));
+    const Vec3 b = cross(d, a);
+    if (l.kind == LightKind::Spot) {
+        const double r = len * std::tan(std::clamp(l.outer, 1.0, 89.0) * 3.14159265358979323846 / 180);
+        const Vec3 c = l.pos + d * len;
+        Vec3 prev;
+        for (int i = 0; i <= 24; ++i) {
+            const double t = 2 * 3.14159265358979323846 * i / 24;
+            const Vec3 p = c + a * (std::cos(t) * r) + b * (std::sin(t) * r);
+            if (i > 0) segs.push_back({prev, p});
+            if (i % 6 == 0 && i < 24) segs.push_back({l.pos, p});
+            prev = p;
+        }
+    } else { // sun: an arrow
+        const Vec3 tip = l.pos + d * len;
+        segs.push_back({l.pos, tip});
+        for (const Vec3& s : {a, -a, b, -b}) segs.push_back({tip, tip - d * (len * 0.3) + s * (len * 0.15)});
+    }
+    return segs;
+}
+
+// Scale figure: a blocky person 72 units tall, feet at `at`, facing +X.
+const Color kFigure{120, 220, 255, 255};
+std::vector<AABB> figureBoxes(const Vec3& at) {
+    auto box = [&](double x0, double y0, double z0, double x1, double y1, double z1) {
+        AABB b;
+        b.add(at + Vec3{x0, y0, z0});
+        b.add(at + Vec3{x1, y1, z1});
+        return b;
+    };
+    return {
+        box(-4, -9, 0, 4, -1, 34),   // legs
+        box(-4, 1, 0, 4, 9, 34),
+        box(-5, -10, 34, 5, 10, 60), // body
+        box(-3, -15, 35, 3, -10, 60), // arms
+        box(-3, 10, 35, 3, 15, 60),
+        box(-5, -5, 62, 5, 5, 72),   // head
+    };
+}
+
+// Fog preview: textured colour faded to the fog colour by distance from the camera.
+// Loaded the first time fog is shown (needs the GL context).
+const char* kFogVS = R"(#version 330
+in vec3 vertexPosition;
+in vec2 vertexTexCoord;
+in vec4 vertexColor;
+uniform mat4 mvp;
+out vec2 fragTexCoord;
+out vec4 fragColor;
+out vec3 fragPos;
+void main() {
+    fragTexCoord = vertexTexCoord;
+    fragColor = vertexColor;
+    fragPos = vertexPosition; // batched vertices are already in world space
+    gl_Position = mvp * vec4(vertexPosition, 1.0);
+})";
+const char* kFogFS = R"(#version 330
+in vec2 fragTexCoord;
+in vec4 fragColor;
+in vec3 fragPos;
+uniform sampler2D texture0;
+uniform vec4 colDiffuse;
+uniform vec3 camPos;
+uniform vec3 fogColor;
+uniform vec2 fogRange;
+out vec4 finalColor;
+void main() {
+    vec4 c = texture(texture0, fragTexCoord) * colDiffuse * fragColor;
+    float f = clamp((length(fragPos - camPos) - fogRange.x) / max(fogRange.y - fogRange.x, 1.0), 0.0, 1.0);
+    finalColor = vec4(mix(c.rgb, fogColor, f), c.a);
+})";
+struct FogShader {
+    Shader shader{};
+    int camPos = -1, color = -1, range = -1;
+    bool tried = false, ok = false;
+};
+FogShader& fogShader() {
+    static FogShader f;
+    if (!f.tried) {
+        f.tried = true;
+        f.shader = LoadShaderFromMemory(kFogVS, kFogFS);
+        f.ok = f.shader.id != 0 && f.shader.id != rlGetShaderIdDefault();
+        if (f.ok) {
+            f.camPos = GetShaderLocation(f.shader, "camPos");
+            f.color = GetShaderLocation(f.shader, "fogColor");
+            f.range = GetShaderLocation(f.shader, "fogRange");
+        }
+    }
+    return f;
 }
 
 // Stable pastel color per brush (flat-shaded 3D mode, like Hammer's "flat" view).
@@ -229,6 +338,57 @@ void Viewport::render2D(const Grid& grid, const Scene& scene) {
             segment(phys(a[U], a[V]), phys(e[U], e[V]), thick + 1, kPreview);
         }
 
+    // ---- scale figure (outline)
+    if (scene.figure)
+        for (const AABB& b : figureBoxes(*scene.figure)) {
+            const Vector2 a = phys(b.min[U], b.min[V]), c = phys(b.max[U], b.max[V]);
+            segment(a, {c.x, a.y}, thick, kFigure);
+            segment({c.x, a.y}, c, thick, kFigure);
+            segment(c, {a.x, c.y}, thick, kFigure);
+            segment({a.x, c.y}, a, thick, kFigure);
+        }
+
+    // ---- lights: shape (cone / arrow), reach when selected, marker, rotation rings
+    {
+        const double wpp = 1.0 / zoom_;
+        auto drawLight = [&](const Light& l, bool sel, bool pending) {
+            const Color col = lightColor(l);
+            for (const auto& [a, b] : lightShape(l, 40 * wpp))
+                segment(phys(a[U], a[V]), phys(b[U], b[V]), thick, sel ? kSelected : col);
+            if (sel && l.kind != LightKind::Sun) {
+                const auto pts = axisCircle(l.pos, axD(), l.range, 96);
+                for (size_t i = 0; i < pts.size(); ++i) {
+                    const Vec3 &a = pts[i], &b = pts[(i + 1) % pts.size()];
+                    segment(phys(a[U], a[V]), phys(b[U], b[V]), thin, dim(col, 0.6f));
+                }
+            }
+            const Vector2 c = phys(l.pos[U], l.pos[V]);
+            const float hs = (float)(4 * P);
+            const Color frame = pending ? kPreview : sel ? kSelected : BLACK;
+            if (l.kind == LightKind::Sun) {
+                DrawCircleV(c, hs + (float)(sel || pending ? 2 * P : P), frame);
+                DrawCircleV(c, hs, col);
+            } else {
+                const float f = (float)(sel || pending ? 2 * P : P);
+                DrawRectangleRec({std::floor(c.x - hs - f), std::floor(c.y - hs - f), 2 * (hs + f) + 1, 2 * (hs + f) + 1}, frame);
+                DrawRectangleRec({std::floor(c.x - hs), std::floor(c.y - hs), 2 * hs + 1, 2 * hs + 1}, col);
+            }
+        };
+        for (const auto& sl : scene.lights) if (!sl.selected) drawLight(sl.light, false, false);
+        for (const auto& sl : scene.lights) if (sl.selected) drawLight(sl.light, true, false);
+        if (scene.pendingLight) drawLight(*scene.pendingLight, false, true);
+        for (const auto& sl : scene.lights) {
+            if (!sl.selected || !sl.light.hasDirection()) continue;
+            const int ax = axD();
+            const auto pts = axisCircle(sl.light.pos, ax, Scene::kRingPx * wpp, 64);
+            const Color rc = scene.activeRing == ax ? WHITE : kAxisCol[ax];
+            for (size_t i = 0; i < pts.size(); ++i) {
+                const Vec3 &a = pts[i], &b = pts[(i + 1) % pts.size()];
+                segment(phys(a[U], a[V]), phys(b[U], b[V]), thick + 1, rc);
+            }
+        }
+    }
+
     // ---- vertex tool corners: white, selected red (drawn on top); terrain points
     //      smaller and blue under them
     {
@@ -355,10 +515,55 @@ bool Viewport::worldToLocal3D(const Vec3& p, Vector2& out) const {
     return true;
 }
 
+double Viewport::worldPerPixel(const Vec3& at) const {
+    if (is2D()) return 1.0 / zoom_;
+    const Vector3 f = forwardFrom(yaw_, pitch_);
+    const double depth = std::max(1.0, (at.x - pos_.x) * f.x + (at.y - pos_.y) * f.y + (at.z - pos_.z) * f.z);
+    return 2.0 * depth * std::tan(camera().fovy * 0.5 * DEG2RAD) / std::max(1, h_);
+}
+
+bool Viewport::project(const Vec3& p, Vector2& out) const {
+    if (is2D()) { out = worldToLocal2D(p); return true; }
+    return worldToLocal3D(p, out);
+}
+
 void Viewport::render3D(const Grid& grid, const Scene& scene) {
-    ClearBackground(kBg3D);
+    auto byte = [](double v) { return (unsigned char)std::clamp((int)std::lround(v), 0, 255); };
+    const Color fogCol{byte(scene.fogColor.x), byte(scene.fogColor.y), byte(scene.fogColor.z), 255};
+    ClearBackground(scene.fog ? fogCol : kBg3D);
     rlSetClipPlanes(2.0, 32768.0);
     BeginMode3D(camera());
+
+    // Sky: a big sphere around the camera, behind everything (no depth writes).
+    if (scene.skyTexture) {
+        const double R = 16000;
+        const Vec3 c{pos_.x, pos_.y, pos_.z};
+        constexpr int NU = 48, NV = 24;
+        rlDrawRenderBatchActive();
+        rlDisableDepthMask();
+        rlDisableBackfaceCulling();
+        rlSetTexture(scene.skyTexture);
+        rlBegin(RL_QUADS);
+        rlColor4ub(255, 255, 255, 255);
+        for (int j = 0; j < NV; ++j)
+            for (int i = 0; i < NU; ++i) {
+                // Columns go once round (u from 0 to 1 as the yaw falls), rows top to bottom.
+                const int ci[4] = {i, i + 1, i + 1, i}, cj[4] = {j, j, j + 1, j + 1};
+                for (int k = 0; k < 4; ++k) {
+                    const double u = (double)ci[k] / NU, v = (double)cj[k] / NV;
+                    const double yaw = (0.5 - u) * 2 * 3.14159265358979323846, lat = (0.5 - v) * 3.14159265358979323846;
+                    const Vec3 d{std::cos(lat) * std::cos(yaw), std::cos(lat) * std::sin(yaw), std::sin(lat)};
+                    rlTexCoord2f((float)u, (float)v);
+                    const Vec3 p = c + d * R;
+                    rlVertex3f((float)p.x, (float)p.y, (float)p.z);
+                }
+            }
+        rlEnd();
+        rlSetTexture(0);
+        rlDrawRenderBatchActive();
+        rlEnableBackfaceCulling();
+        rlEnableDepthMask();
+    }
 
     if (grid.visible) {
         const float ext = 2048.0f;
@@ -372,11 +577,42 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
     DrawLine3D({0, 0, 0}, {0, 256, 0}, {70, 200, 70, 255});
     DrawLine3D({0, 0, 0}, {0, 0, 256}, {80, 120, 230, 255});
 
+    // Fog: everything solid from here on is drawn through the fog shader.
+    bool fogging = false;
+    if (scene.fog) {
+        FogShader& fs = fogShader();
+        if (fs.ok) {
+            rlDrawRenderBatchActive();
+            BeginShaderMode(fs.shader);
+            const float cam[3] = {pos_.x, pos_.y, pos_.z};
+            const float col[3] = {fogCol.r / 255.0f, fogCol.g / 255.0f, fogCol.b / 255.0f};
+            const float range[2] = {(float)scene.fogStart, (float)scene.fogEnd};
+            SetShaderValue(fs.shader, fs.camPos, cam, SHADER_UNIFORM_VEC3);
+            SetShaderValue(fs.shader, fs.color, col, SHADER_UNIFORM_VEC3);
+            SetShaderValue(fs.shader, fs.range, range, SHADER_UNIFORM_VEC2);
+            fogging = true;
+        }
+    }
+
     // ---- brushes: textured (default) or flat-shaded per brush colour
     // Terrain cells: smooth per-corner shading; each painted texture is drawn over the
     // ones below it with its blend as transparency (same points, so it sits exactly on it).
+    // Rough light preview: the light multipliers of brush `b`, if they match its polygons.
+    auto litOf = [&](const SceneBrush& b) -> const std::vector<LitPoly>* {
+        if (!scene.lighting) return nullptr;
+        auto it = scene.lighting->find(b.id);
+        if (it == scene.lighting->end() || it->second.size() != b.polys.size()) return nullptr;
+        for (size_t i = b.terrain ? b.terrainFirst : b.polys.size(); i < b.polys.size(); ++i)
+            if (it->second[i].light.size() != b.polys[i].verts.size()) return nullptr;
+        return &it->second;
+    };
+    auto litColor = [](Color tint, const Vec3& m) {
+        auto ch = [](unsigned char c, double k) { return (unsigned char)std::clamp((int)std::lround(c * k), 0, 255); };
+        return Color{ch(tint.r, m.x), ch(tint.g, m.y), ch(tint.b, m.z), 255};
+    };
     auto drawTerrain = [&](const SceneBrush& b, Color tint, bool textured) {
         if (!b.terrain) return;
+        const auto* lit = litOf(b);
         const Face& f = b.faces[b.terrain->face];
         const int passes = textured ? 1 + (int)b.layers.size() : 1;
         for (int pass = 0; pass < passes; ++pass) {
@@ -397,7 +633,7 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
                 if (texId) rlSetTexture(texId);
                 rlBegin(RL_TRIANGLES);
                 for (int k : {0, 1, 2, 0, 2, 3}) {
-                    const Color sc = shade(tint, b.cellNormals[4 * c + k]);
+                    const Color sc = lit ? litColor(tint, (*lit)[b.terrainFirst + c].light[k]) : shade(tint, b.cellNormals[4 * c + k]);
                     const unsigned char a = pass == 0 ? 255 : (unsigned char)std::lround(std::clamp(al[k], 0.0f, 1.0f) * 255);
                     rlColor4ub(sc.r, sc.g, sc.b, a);
                     if (texId) {
@@ -413,11 +649,26 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
     };
     auto drawSolid = [&](const SceneBrush& b, Color base) {
         if (b.terrain) drawTerrain(b, base, false);
+        const auto* lit = litOf(b);
         for (size_t pi = 0; pi < (b.terrain ? b.terrainFirst : b.polys.size()); ++pi) {
             const Polygon& p = b.polys[pi];
             const Color c = shade(base, p.normal);
-            for (size_t i = 1; i + 1 < p.verts.size(); ++i)
-                DrawTriangle3D(toRl(p.verts[0]), toRl(p.verts[i]), toRl(p.verts[i + 1]), c);
+            if (!lit) {
+                for (size_t i = 1; i + 1 < p.verts.size(); ++i)
+                    DrawTriangle3D(toRl(p.verts[0]), toRl(p.verts[i]), toRl(p.verts[i + 1]), c);
+                continue;
+            }
+            const LitPoly& lp = (*lit)[pi];
+            for (size_t i = 0; i + 2 < lp.pts.size(); i += 3) {
+                rlCheckRenderBatchLimit(3);
+                rlBegin(RL_TRIANGLES);
+                for (size_t k = i; k < i + 3; ++k) {
+                    const Color lc = litColor(base, lp.light[k]);
+                    rlColor4ub(lc.r, lc.g, lc.b, 255);
+                    rlVertex3f((float)lp.pts[k].x, (float)lp.pts[k].y, (float)lp.pts[k].z);
+                }
+                rlEnd();
+            }
         }
     };
     auto drawTextured = [&](const SceneBrush& b, Color tint, bool faceSelection) {
@@ -426,6 +677,7 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
             if (faceSelection && scene.selectedFaces.count({b.id, b.terrain->face})) t = {255, 105, 105, 255};
             drawTerrain(b, t, true);
         }
+        const auto* lit = litOf(b);
         for (size_t pi = 0; pi < (b.terrain ? b.terrainFirst : b.polys.size()); ++pi) {
             const Polygon& p = b.polys[pi];
             if (p.face < 0 || p.face >= (int)b.faces.size()) continue;
@@ -435,11 +687,30 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
             Color t = tint;
             if (faceSelection && scene.selectedFaces.count({b.id, p.face})) t = {255, 105, 105, 255};
             const Color c = shade(t, p.normal);
+            if (lit) { // rough light preview: the face's small lit triangles
+                const LitPoly& lp = (*lit)[pi];
+                for (size_t i = 0; i + 2 < lp.pts.size(); i += 3) {
+                    rlCheckRenderBatchLimit(3);
+                    rlSetTexture(tex.id);
+                    rlBegin(RL_TRIANGLES);
+                    for (size_t k = i; k < i + 3; ++k) {
+                        const Color lc = litColor(t, lp.light[k]);
+                        rlColor4ub(lc.r, lc.g, lc.b, 255);
+                        const UV uv = texCoord(f, lp.pts[k], ts);
+                        rlTexCoord2f((float)uv.u, (float)uv.v);
+                        rlVertex3f((float)lp.pts[k].x, (float)lp.pts[k].y, (float)lp.pts[k].z);
+                    }
+                    rlEnd();
+                }
+                rlSetTexture(0);
+                continue;
+            }
             rlSetTexture(tex.id);
             rlBegin(RL_TRIANGLES);
             rlColor4ub(c.r, c.g, c.b, 255);
             for (size_t i = 1; i + 1 < p.verts.size(); ++i)
-                for (const Vec3* v : {&p.verts[0], &p.verts[i], &p.verts[i + 1]}) {
+                for (size_t k : {(size_t)0, i, i + 1}) {
+                    const Vec3* v = &p.verts[k];
                     const UV uv = texCoord(f, *v, ts);
                     rlTexCoord2f((float)uv.u, (float)uv.v);
                     rlVertex3f((float)v->x, (float)v->y, (float)v->z);
@@ -480,6 +751,20 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
     }
     for (const SceneBrush& g : scene.invalidGhosts) drawSolid(g, kInvalid);
 
+    // Scale figure: see-through blocks.
+    if (scene.figure) {
+        for (const AABB& b : figureBoxes(*scene.figure)) {
+            const Vec3 c = b.center(), s = b.size();
+            DrawCube(toRl(c), (float)s.x, (float)s.y, (float)s.z, {kFigure.r, kFigure.g, kFigure.b, 90});
+            DrawCubeWires(toRl(c), (float)s.x, (float)s.y, (float)s.z, kFigure);
+        }
+    }
+
+    if (fogging) {
+        rlDrawRenderBatchActive();
+        EndShaderMode();
+    }
+
     // Selection outlines on top (visible through other brushes, like Hammer).
     rlDrawRenderBatchActive();
     rlDisableDepthTest();
@@ -500,6 +785,27 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
         const Vec3 c = pb.center(), s = pb.size();
         DrawCubeWires(toRl(c), (float)s.x, (float)s.y, (float)s.z, kPreview);
     }
+    // Lights: shapes, reach of selected ones, rotation rings (drawn through walls).
+    auto drawLight3D = [&](const Light& l, bool sel) {
+        const Color col = lightColor(l);
+        for (const auto& [a, b] : lightShape(l, 40 * worldPerPixel(l.pos))) DrawLine3D(toRl(a), toRl(b), sel ? kSelected : col);
+        if (sel && l.kind != LightKind::Sun)
+            for (int ax = 0; ax < 3; ++ax) {
+                const auto pts = axisCircle(l.pos, ax, l.range, 96);
+                for (size_t i = 0; i < pts.size(); ++i) DrawLine3D(toRl(pts[i]), toRl(pts[(i + 1) % pts.size()]), dim(col, 0.45f));
+            }
+    };
+    for (const auto& sl : scene.lights) drawLight3D(sl.light, sl.selected);
+    if (scene.pendingLight) drawLight3D(*scene.pendingLight, false);
+    for (const auto& sl : scene.lights) {
+        if (!sl.selected || !sl.light.hasDirection()) continue;
+        const double r = Scene::kRingPx * worldPerPixel(sl.light.pos);
+        for (int ax = 0; ax < 3; ++ax) {
+            const auto pts = axisCircle(sl.light.pos, ax, r, 64);
+            const Color rc = scene.activeRing == ax ? WHITE : kAxisCol[ax];
+            for (size_t i = 0; i < pts.size(); ++i) DrawLine3D(toRl(pts[i]), toRl(pts[(i + 1) % pts.size()]), rc);
+        }
+    }
     if (scene.brushCursor) {
         const auto pts = scene.brushCursor->ring.empty() ? cursorCircle(*scene.brushCursor) : scene.brushCursor->ring;
         for (size_t i = 0; i < pts.size(); ++i) DrawLine3D(toRl(pts[i]), toRl(pts[(i + 1) % pts.size()]), kPreview);
@@ -511,8 +817,26 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
 
     EndMode3D();
 
-    // Vertex tool: terrain points as small squares (the only handles picked in 3D).
+    // Light markers on top (constant size on screen).
     const float P = scale_;
+    auto marker3D = [&](const Light& l, Color frame, float f) {
+        Vector2 c;
+        if (!worldToLocal3D(l.pos, c)) return;
+        c.x *= P;
+        c.y *= P;
+        const float hs = 4 * P;
+        if (l.kind == LightKind::Sun) {
+            DrawCircleV(c, hs + f, frame);
+            DrawCircleV(c, hs, lightColor(l));
+        } else {
+            DrawRectangleRec({std::floor(c.x - hs - f), std::floor(c.y - hs - f), 2 * (hs + f) + 1, 2 * (hs + f) + 1}, frame);
+            DrawRectangleRec({std::floor(c.x - hs), std::floor(c.y - hs), 2 * hs + 1, 2 * hs + 1}, lightColor(l));
+        }
+    };
+    for (const auto& sl : scene.lights) marker3D(sl.light, sl.selected ? kSelected : BLACK, sl.selected ? 2 * P : P);
+    if (scene.pendingLight) marker3D(*scene.pendingLight, kPreview, 2 * P);
+
+    // Vertex tool: terrain points as small squares (the only handles picked in 3D).
     for (int pass = 0; pass < 2; ++pass)
         for (const auto& h : scene.vertexHandles) {
             if (!h.terrain || h.selected != (pass == 1)) continue;

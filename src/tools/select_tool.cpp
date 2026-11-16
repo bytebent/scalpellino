@@ -11,6 +11,8 @@ namespace scal {
 
 void SelectTool::press(ToolEnv& env, const Pointer& p) {
     Document& doc = env.doc;
+    if (lights_.press(env, p)) return;
+    if (!env.cmd) doc.setLightSelection({}); // a plain click elsewhere drops selected lights
     if (!p.view->is2D()) {
         const BrushId id = pick3D(doc, *p.view, p.local);
         std::set<BrushId> sel = doc.selection();
@@ -97,6 +99,7 @@ void SelectTool::updateGhosts(const Document& doc) {
 }
 
 void SelectTool::drag(ToolEnv& env, const Pointer& p) {
+    if (lights_.active()) { lights_.drag(env, p); return; }
     if (mode_ == Mode::Idle || p.view != view_) return;
     if (mode_ == Mode::Rotating) {
         const int U = view_->axU(), V = view_->axV();
@@ -118,6 +121,7 @@ void SelectTool::drag(ToolEnv& env, const Pointer& p) {
 }
 
 void SelectTool::release(ToolEnv& env, const Pointer&) {
+    if (lights_.active()) { lights_.release(env); return; }
     if (mode_ == Mode::Idle) return;
     const bool changed = mode_ == Mode::Rotating ? rotAngle_ != 0
                        : (curBox_.min != startBox_.min || curBox_.max != startBox_.max);
@@ -140,18 +144,22 @@ void SelectTool::release(ToolEnv& env, const Pointer&) {
 bool SelectTool::key(ToolEnv& env, int key) {
     Document& doc = env.doc;
     if (key == KEY_ESCAPE) {
-        if (mode_ != Mode::Idle) cancel();
-        else doc.setSelection({});
+        if (mode_ != Mode::Idle || lights_.active()) cancel();
+        else { doc.setSelection({}); doc.setLightSelection({}); }
         return true;
     }
-    if ((key == KEY_DELETE || key == KEY_BACKSPACE) && !doc.selection().empty() && mode_ == Mode::Idle) {
-        doc.apply(doc.makeDelete(doc.selection(), "Delete"));
+    if ((key == KEY_DELETE || key == KEY_BACKSPACE) && (!doc.selection().empty() || !doc.lightSelection().empty()) &&
+        mode_ == Mode::Idle && !lights_.active()) {
+        Command c = doc.makeDelete(doc.selection(), "Delete");
+        doc.addLightDeletes(c, doc.lightSelection());
+        doc.apply(std::move(c));
         return true;
     }
     return false;
 }
 
 void SelectTool::decorate(const Document& doc, Scene& scene) const {
+    lights_.decorate(scene);
     if (mode_ != Mode::Idle && !ghosts_.empty()) {
         for (const Brush& g : ghosts_) scene.ghosts.push_back(makeSceneBrush(g));
         scene.hideSelected = !clone_;
@@ -162,6 +170,7 @@ void SelectTool::decorate(const Document& doc, Scene& scene) const {
 }
 
 const char* SelectTool::hint() const {
+    if (const char* h = lights_.hint()) return h;
     switch (mode_) {
         case Mode::Moving:   return clone_ ? "cloning - release to place" : "moving - release to place, Esc cancels";
         case Mode::Resizing: return "resizing - release to apply, Esc cancels";
@@ -173,6 +182,7 @@ const char* SelectTool::hint() const {
 }
 
 void SelectTool::cancel() {
+    lights_.cancel();
     mode_ = Mode::Idle;
     view_ = nullptr;
     ghosts_.clear();

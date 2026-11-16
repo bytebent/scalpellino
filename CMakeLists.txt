@@ -29,7 +29,9 @@ add_library(scal_core STATIC
   src/core/csg.cpp
   src/core/curves.cpp
   src/core/primitives.cpp
-  src/core/terrain.cpp)
+  src/core/terrain.cpp
+  src/core/world.cpp
+  src/core/sky.cpp)
 target_include_directories(scal_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 # File formats. Also graphics-free, so it is tested headless too.
@@ -54,6 +56,8 @@ if(SCAL_BUILD_APP)
     src/app/settings.cpp
     src/render/scene.cpp
     src/render/texture_library.cpp
+    src/render/sky_library.cpp
+    src/render/lighting.cpp
     src/render/viewport.cpp
     src/tools/tool.cpp
     src/tools/select_tool.cpp
@@ -63,6 +67,8 @@ if(SCAL_BUILD_APP)
     src/tools/clip_tool.cpp
     src/tools/curve_tool.cpp
     src/tools/terrain_tool.cpp
+    src/tools/light_edit.cpp
+    src/tools/light_tool.cpp
     src/ui/layout.cpp
   )
   if(APPLE)
@@ -75,9 +81,14 @@ if(SCAL_BUILD_APP)
   file(GLOB SCAL_BUILTIN_TEXTURES ${CMAKE_CURRENT_SOURCE_DIR}/assets/textures/*.png
                                   ${CMAKE_CURRENT_SOURCE_DIR}/assets/textures/*.txt)
 
+  # Built-in skies (milestone 8).
+  file(GLOB SCAL_BUILTIN_SKIES ${CMAKE_CURRENT_SOURCE_DIR}/assets/skies/*.png
+                               ${CMAKE_CURRENT_SOURCE_DIR}/assets/skies/*.txt)
+
   if(APPLE)
     set_source_files_properties(${SCAL_BUILTIN_TEXTURES} PROPERTIES MACOSX_PACKAGE_LOCATION Resources/textures)
-    add_executable(Scalpellino MACOSX_BUNDLE ${SCAL_APP_SOURCES} ${SCAL_BUILTIN_TEXTURES})
+    set_source_files_properties(${SCAL_BUILTIN_SKIES} PROPERTIES MACOSX_PACKAGE_LOCATION Resources/skies)
+    add_executable(Scalpellino MACOSX_BUNDLE ${SCAL_APP_SOURCES} ${SCAL_BUILTIN_TEXTURES} ${SCAL_BUILTIN_SKIES})
     set_target_properties(Scalpellino PROPERTIES
       MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/cmake/Info.plist.in
       MACOSX_BUNDLE_BUNDLE_NAME "Scalpellino"
@@ -90,7 +101,9 @@ if(SCAL_BUILD_APP)
     add_executable(Scalpellino ${SCAL_APP_SOURCES})
     add_custom_command(TARGET Scalpellino POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:Scalpellino>/textures
-      COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SCAL_BUILTIN_TEXTURES} $<TARGET_FILE_DIR:Scalpellino>/textures)
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SCAL_BUILTIN_TEXTURES} $<TARGET_FILE_DIR:Scalpellino>/textures
+      COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:Scalpellino>/skies
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SCAL_BUILTIN_SKIES} $<TARGET_FILE_DIR:Scalpellino>/skies)
   endif()
 
   target_include_directories(Scalpellino PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)

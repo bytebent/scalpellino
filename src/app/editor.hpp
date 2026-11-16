@@ -16,6 +16,9 @@
 #include "tools/clip_tool.hpp"
 #include "tools/curve_tool.hpp"
 #include "tools/terrain_tool.hpp"
+#include "tools/light_tool.hpp"
+#include "render/sky_library.hpp"
+#include "render/lighting.hpp"
 #include "render/texture_library.hpp"
 #include <deque>
 #include <memory>
@@ -143,6 +146,21 @@ private:
     double heightLow_ = 0, heightHigh_ = 256;
     std::string terrainError_;
 
+    // World (milestone 8)
+    void drawLightPanel();
+    void drawWorldDialogs();
+    // Applies `fn` to every selected light as one undo step (if anything changed).
+    template <class Fn> void editLights(const char* name, Fn fn);
+    Light lightBuf_;                 // Properties fields for the selected lights
+    std::set<LightId> lightBufFor_;
+    unsigned long long lightBufRev_ = ~0ull;
+    bool showSky_ = true, lightPreview_ = false, showFog_ = false, showFigure_ = false;
+    bool askEnvironment_ = false, askBookmarks_ = false, askFigure_ = false;
+    Environment envBuf_;
+    double figureBuf_[3] = {0, 0, 0};
+    char bookmarkName_[64] = "";
+    std::string worldError_;
+
     // Overlap finder + navigation
     void findOverlapsNow();
     void focusOverlap(int index);
@@ -178,6 +196,7 @@ private:
     ClipTool clipTool_;
     CurveTool curveTool_;
     TerrainTool terrainTool_;
+    LightTool lightTool_;
     Tool* tool_ = &selectTool_;
 
     int capture_ = -1;          // view that owns the current left-button drag
@@ -225,6 +244,16 @@ private:
     std::string precisionError_;
 
     TextureLibrary textures_;
+    SkyLibrary skies_;
+    LightingCache lighting_;   // only used (and built) while the light preview is on
+    void loadSkyFolders();
+    void saveSkyFolders() const;
+    char skyFolderBuf_[1024] = "";
+    // Where the scale figure stands when it is first shown: on whatever is below the
+    // top view's centre (or z = 0).
+    Vec3 groundBelow(double x, double y) const;
+    void addBookmark(const std::string& name);
+    void goToBookmark(size_t i);
     std::string currentTexture_ = "Bricks_24";
     double defaultScale_ = 0.25;     // Source-style default; good for 512px textures
     bool textured3D_ = true;
@@ -236,7 +265,7 @@ private:
 
     // Native file dialogs (macOS). They open only once no modifier key or mouse button is
     // held: the system panel swallows key-up events, which would leave Cmd "stuck".
-    enum class Native { None, Open, SaveAs, Folder, Heightmap };
+    enum class Native { None, Open, SaveAs, Folder, Heightmap, SkyFolder };
     Native native_ = Native::None;
     bool useNative_ = false;
 

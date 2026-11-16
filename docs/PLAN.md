@@ -16,12 +16,15 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 - **v0.6.1 = fixes** the user reported for v0.6.0: rounded domes overlapped themselves;
   spheres lagged when resized. Also fixed the spiral stairs column. See log.
 - **v0.7.0 = milestone 7 Terrain**. Reported to the user.
-- **v0.7.1 = terrain fixes** the user asked for after v0.7.0 (this step): make terrain
-  from any picked face (and triangles), the vertex tool edits terrain point by point,
-  up to 8 textures per patch. Report to the user, then wait for the go-ahead on
-  milestone 8.
-- **Next: milestone 8 — World**: lights, sky picker (a setting, not a sealed box), fog,
-  camera bookmarks, 72-unit scale figure.
+- **v0.7.1 = terrain fixes** the user asked for after v0.7.0: make terrain from any
+  picked face (and triangles), the vertex tool edits terrain point by point, up to 8
+  textures per patch. Reported.
+- **v0.8.0 = milestone 8 World** (this step): lights with rotation rings, skies
+  (panoramas + cube crosses), ambient, fog, rough editor preview toggles, camera
+  bookmarks, scale figure; two more built-in textures. Report to the user, then wait
+  for the go-ahead on milestone 9.
+- **Next: milestone 9 — Renderer**: PNG renders of only what the camera sees, a
+  Hammer-style scrolling render log window and a log file.
 
 ## How to work in this repo
 
@@ -66,13 +69,22 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 
 ## Open questions (parked)
 
-- **Milestone 8, asked the user before starting (2026-11-16):** the editor shows a rough
-  idea of the world, like Hammer, not the render. Proposed: 3D view stays textured with
-  simple face shading; lights as coloured markers (spot = wire cone, sun = arrow), the
-  selected light's reach as a wire circle/sphere; sky as the 3D background; fog not shown
-  (or a simple distance tint). Open: background = sky image or its colour only? Optional
-  rough light preview (vertex lighting, no shadows, off by default) or none? Fog shown
-  or not? Bundle the panorama skies only (cube crosses accepted from user folders)?
+- **Milestone 8, answered by the user (2026-11-16):** sky in the 3D view toggled from the
+  View menu; a very rough light preview, not computed while off; fog on/off, off by
+  default; the sun's direction separate from the sky; selected lights get xyz rotation
+  rings.
+- **World, decided without asking (confirm with the user):**
+  - Lights are selected apart from brushes (a plain click on one drops the other);
+    the select tool also picks lights; only lights move by dragging their marker.
+  - Ring turns snap to 15 degrees (typed pitch/yaw for anything else).
+  - The light preview cuts faces into ~64-unit triangles so lights in the middle of big
+    faces show; brightness 200 = the texture as it is at the light.
+  - Sky, preview, fog and figure toggles are editor settings (not saved in the map);
+    the figure's position and the bookmarks are saved in the map.
+  - Built-in skies: the three panoramas (the matching cube crosses are the same skies).
+- **World extras, later:** hiding lights / lights in visgroups; moving lights together
+  with brushes in one drag; aiming a light at a clicked point; lights in the Transform
+  dialog.
 
 - **Curve tool extras:** drag curved-wall depth in other views; stairs centre column;
   dome / cone / torus / helix ramp; per-shape remembered settings.
@@ -174,6 +186,46 @@ terminal-style render log like Hammer's compile window + log file), 10 Y2K shade
 ## Milestone 1 plan — Brushes (done)
 
 ## Log
+
+### 2026-11-16 — Milestone 8: World (v0.8.0)
+- **Core** (`core/world`, `core/sky`, `core/document`):
+  - `Light` (kind, pos, colour 0–255, brightness, reach, pitch/yaw, inner/outer, kept
+    unknown keys), `lightDirection` / `directionAngles` / `rotateLight` (world axis,
+    right-hand rule), `axisCircle`, `lightAt` (ambient + Lambert, smooth falloff, spot
+    cone, suns everywhere).
+  - `Environment` (sky, ambient, fog), `CameraBookmark`, scale figure position.
+  - `Document`: lights + light selection, `LightChange` in commands (`makeAddLights`,
+    `makeModifyLights`, `addLightDeletes`), environment commands, bookmarks/figure
+    (not undone), `WorldData` on `reset`.
+  - `skyLayout`, `crossToPanorama` (checked against the pack's matching panorama: mean
+    squared error 1.2 on 0–255), `skyUV`.
+- **File:** lights as `light` / `light_spot` / `light_environment` with Hammer keys;
+  `_scal_sky`, `_scal_ambient`, `_scal_fog`, `_scal_cameras`, `_scal_figure` in
+  worldspawn. Byte-identical round trip. Opening a map now carries lights etc. (the
+  editor's open path rebuilt the document and dropped them at first; fixed).
+- **Tools:** `LightEdit` (pick marker / ring, move in 2D, turn by ring), used by the
+  Select tool and the new Light tool (place with click, Return / Esc).
+- **Drawing:** markers, cones, arrows, reach, rings (2D and 3D; constant screen size via
+  `Viewport::worldPerPixel`); sky sphere; rough light preview (`render/lighting`,
+  subdivided faces, terrain corners); fog shader (GLSL 330, loaded on first use); scale
+  figure (2D outlines, 3D see-through).
+- **Editor:** World menu (Light tool, new point/spot/sun, create, Environment…, Camera
+  bookmarks…, Scale figure position…), View toggles, Properties panel for lights
+  (edits all selected), Delete / Cmd+D for lights, sky folders (settings file
+  `sky_folders.txt`), Help → Controls and README.
+- **Assets:** `assets/skies/Panorama_Sky_04|15|21.png` (CC0), test cross
+  `tests/ui/assets/skies/Cubemap_Sky_21.png` (scaled down). `Grass_20`, `Tile_13`
+  textures (previous entry).
+- **Script:** `tool light`, `lightset`, `lightedit`, `expect lights|lightsel|lightpos|
+  lightdir`, `viewset`, `environment`, `skydir`, `bookmark`, `figure`, `expect sky|
+  bookmarks|camera`. New scripts `m8_lights`, `m8_world`.
+- **Tests:** core **3520 checks, 0 failed** (directions, rings, lighting maths, light /
+  environment undo, file round trip incl. unknown keys, sky layouts and mapping). UI:
+  all 14 scripts pass at 1× and 2×. Idle with sky, fog and a light in the map: 0 CPU
+  ticks over 10 s.
+- **Screenshots:** `m8-01-lights-and-rings.png`, `m8-02-sky-day.png`,
+  `m8-03-sunset-cross-fog.png`, `m8-04-night-light-preview.png`,
+  `m8-05-preview-with-sun.png`, `m8-06-scale-figure.png`, `m8-07-sky-hidden.png`.
 
 ### 2026-11-16 — Two more built-in textures
 - `assets/textures/Grass_20.png`, `Tile_13.png` (Screaming Brain Studios, CC0, from the

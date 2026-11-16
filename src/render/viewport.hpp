@@ -63,11 +63,17 @@ public:
     void look(Vector2 deltaPx);
     void fly(float forward, float right, float up, float dt, bool fast);
     Vector3 cameraPos() const { return pos_; }
+    float yaw() const { return yaw_; }
+    float pitch() const { return pitch_; }
     Camera3D camera() const;
     void pickRay(Vector2 localPx, Vec3& origin, Vec3& dir) const;
     // Where a world point appears in the 3D view (logical pixels); false if it is behind
     // the camera.
     bool worldToLocal3D(const Vec3& p, Vector2& out) const;
+    // World units covered by one logical pixel at `at` (2D: everywhere the same).
+    double worldPerPixel(const Vec3& at) const;
+    // Where a world point appears in this view (2D or 3D), logical pixels.
+    bool project(const Vec3& p, Vector2& out) const;
 
 private:
     void render2D(const Grid& grid, const Scene& scene);

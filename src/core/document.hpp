@@ -2,6 +2,7 @@
 // The map being edited: world properties, world brushes, other entities (preserved),
 // selection, and undo history. All edits go through Document::apply(Command).
 #include "core/brush.hpp"
+#include "core/world.hpp"
 #include <map>
 #include <optional>
 #include <set>
@@ -48,12 +49,31 @@ struct BrushChange {
     std::optional<Brush> after;
 };
 
+// One light before/after an edit (same rules as BrushChange).
+struct LightChange {
+    LightId id = 0;
+    std::optional<Light> before;
+    std::optional<Light> after;
+};
+
 struct Command {
     std::string name;
     std::vector<BrushChange> changes;
     std::set<BrushId> selectionBefore;
     std::set<BrushId> selectionAfter;
     std::vector<GroupChange> groupChanges;
+    std::vector<LightChange> lightChanges;
+    // Light selection around the command (unset = left as it is).
+    std::optional<std::set<LightId>> lightSelectionBefore, lightSelectionAfter;
+    std::optional<Environment> envBefore, envAfter; // set = the command changes the environment
+};
+
+// Everything besides brushes that a loaded map brings (milestone 8).
+struct WorldData {
+    std::vector<Light> lights;
+    Environment env;
+    std::vector<CameraBookmark> bookmarks;
+    std::optional<Vec3> figure; // scale figure position (editor-only)
 };
 
 class Document {
@@ -82,6 +102,23 @@ public:
 
     const std::set<BrushId>& selection() const { return selection_; }
     void setSelection(std::set<BrushId> s) { selection_ = std::move(s); }
+
+    // Lights (milestone 8). Selected separately from brushes; tools clear one when a
+    // plain click picks the other.
+    const std::vector<Light>& lights() const { return lights_; }
+    const Light* findLight(LightId id) const;
+    LightId newLightId() { return nextLightId_++; }
+    const std::set<LightId>& lightSelection() const { return lightSelection_; }
+    void setLightSelection(std::set<LightId> s) { lightSelection_ = std::move(s); }
+
+    // Environment (sky, ambient, fog): changed through commands (makeEnvironment).
+    const Environment& environment() const { return env_; }
+    // Camera bookmarks and the scale figure: editor-only, saved with the map, not undone
+    // (like visgroups).
+    const std::vector<CameraBookmark>& bookmarks() const { return bookmarks_; }
+    void setBookmarks(std::vector<CameraBookmark> b) { bookmarks_ = std::move(b); bump(); }
+    const std::optional<Vec3>& figure() const { return figure_; }
+    void setFigure(std::optional<Vec3> f) { figure_ = f; bump(); }
     AABB selectionBounds() const;
 
     // Applies a command and records it for undo. Clears redo.
@@ -101,12 +138,19 @@ public:
     // Replaces all content (used when loading). Clears history.
     // Brush `group` fields must refer to entries of `groups` (ids are kept).
     void reset(KeyValues world, std::vector<Brush> brushes, std::vector<RawEntity> others,
-               std::map<GroupId, Group> groups = {}, std::vector<Visgroup> visgroups = {});
+               std::map<GroupId, Group> groups = {}, std::vector<Visgroup> visgroups = {},
+               WorldData extra = {});
 
     // Helpers that build commands.
     Command makeAdd(std::vector<Brush> brushes, const std::string& name);
     Command makeDelete(const std::set<BrushId>& ids, const std::string& name);
     Command makeModify(const std::vector<Brush>& modified, const std::string& name);
+    // Lights: new ones get ids and become the light selection (brushes deselected).
+    Command makeAddLights(std::vector<Light> lights, const std::string& name);
+    Command makeModifyLights(const std::vector<Light>& modified, const std::string& name);
+    // Adds deleting these lights to any command (e.g. Delete removes brushes and lights).
+    void addLightDeletes(Command& c, const std::set<LightId>& ids) const;
+    Command makeEnvironment(const Environment& env, const std::string& name);
     // Mixed edit as one undo step (clip, carve, hollow). New brushes get ids. The
     // selection afterwards is `selectAfter` if given, else the old selection minus
     // deleted brushes plus the added ones.
@@ -117,6 +161,7 @@ public:
 private:
     void setBrush(BrushId id, const std::optional<Brush>& b);
     void setGroup(GroupId id, const std::optional<Group>& g);
+    void setLight(LightId id, const std::optional<Light>& l);
     // Adds group removals to `c` for groups that would have no brushes left.
     void pruneEmptyGroups(Command& c) const;
     void bump() { ++revision_; }
@@ -127,6 +172,12 @@ private:
     std::map<GroupId, Group> groups_;
     std::vector<Visgroup> visgroups_;
     GroupId nextGroupId_ = 1;
+    std::vector<Light> lights_;
+    std::set<LightId> lightSelection_;
+    LightId nextLightId_ = 1;
+    Environment env_;
+    std::vector<CameraBookmark> bookmarks_;
+    std::optional<Vec3> figure_;
     std::vector<Command> undo_, redo_;
     unsigned long long revision_ = 0, savedRevision_ = 0;
 };

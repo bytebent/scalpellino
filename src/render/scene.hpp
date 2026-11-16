@@ -3,6 +3,8 @@
 // with tool previews substituted), selection, and tool overlays.
 #include "core/document.hpp"
 #include "core/terrain.hpp"
+#include "core/world.hpp"
+#include <map>
 #include <optional>
 #include <set>
 #include <unordered_map>
@@ -56,6 +58,24 @@ struct Scene {
     };
     std::optional<BrushCursor> brushCursor;  // terrain tool: circle on the surface
     std::vector<std::vector<Vec3>> outlines; // highlighted polygons (terrain tool: picked faces)
+
+    // Lights (milestone 8): markers in every view; selected spot/sun lights get rotation
+    // rings (one per world axis; in a 2D view only the one around the view's depth axis).
+    struct SceneLight { Light light; bool selected = false; };
+    std::vector<SceneLight> lights;
+    std::optional<Light> pendingLight;   // light tool: where Return will create a light
+    int activeRing = -1;                 // ring being dragged (axis), drawn brighter
+    static constexpr double kRingPx = 48; // ring radius on screen (logical pixels)
+
+    // Environment preview (3D view only, each switched on in the View menu).
+    unsigned skyTexture = 0;             // panorama texture id (0 = no sky drawn)
+    std::optional<Vec3> figure;          // scale figure: feet position (72 units tall)
+    // Rough light preview (render/lighting.hpp). Null = normal shading.
+    const std::map<BrushId, std::vector<struct LitPoly>>* lighting = nullptr;
+    // Fog preview (3D view): colour 0..255, clear up to `fogStart`, full from `fogEnd`.
+    bool fog = false;
+    Vec3 fogColor;
+    double fogStart = 0, fogEnd = 1;
 };
 
 SceneBrush makeSceneBrush(const Brush& b);

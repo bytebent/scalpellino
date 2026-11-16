@@ -23,6 +23,9 @@ struct MenuState {
     int clipKeep = 0; // 0 both, 1 front, 2 back
     bool terrainTool = false, terrainSelected = false, canMakeTerrain = false, terrainPicking = false;
     int terrainMode = 0;
+    bool lightTool = false, lightPending = false, lightsSelected = false;
+    int lightKind = 0;
+    bool showSky = true, lightPreview = false, showFog = false, showFigure = false;
 };
 
 struct MenuActions {
@@ -51,6 +54,9 @@ struct MenuActions {
     int clipKeep = -1;
     bool toolTerrain = false, makeTerrain = false, terrainGrid = false, removeTerrain = false, heightmap = false, stitchTerrain = false;
     int terrainMode = -1; // SculptMode index; also switches to the terrain tool
+    bool toolLight = false, createLight = false, environment = false, bookmarks = false, figurePos = false;
+    int lightKind = -1;   // LightKind index; also switches to the light tool
+    bool toggleSky = false, toggleLightPreview = false, toggleFog = false, toggleFigure = false;
 };
 
 // Draws the menu bar and reports clicked items.

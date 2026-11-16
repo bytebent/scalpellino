@@ -2,6 +2,9 @@
 // Select tool: click to select (Cmd+click toggles), drag to move (snapped),
 // drag handles/edges to resize, Shift+drag to clone, Option+drag a corner to rotate
 // (15-degree steps; add Shift for free rotation). Delete removes, Esc deselects.
+// Lights: click a marker to select it, drag it (2D) to move, drag a ring to aim it
+// (see tools/light_edit.hpp).
+#include "tools/light_edit.hpp"
 #include "tools/tool.hpp"
 #include <optional>
 
@@ -23,6 +26,7 @@ private:
     void updateGhosts(const Document& doc);
 
     Mode mode_ = Mode::Idle;
+    LightEdit lights_;
     const Viewport* view_ = nullptr;
     BoxGrab grab_;
     double u0_ = 0, v0_ = 0;

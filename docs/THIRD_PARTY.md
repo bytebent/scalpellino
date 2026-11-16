@@ -15,7 +15,11 @@ All are fetched at build time at pinned versions (see `cmake/Deps.cmake`).
 |---|---|---|
 | `assets/textures/Tile_19.png`, `assets/textures/Bricks_24.png`, `assets/textures/Tile_13.png`, `assets/textures/Grass_20.png` | Screaming Brain Studios (provided by the project owner) | CC0 1.0 / public domain — see `assets/textures/LICENSE-ScreamingBrainStudios.txt` |
 
+| `assets/skies/Panorama_Sky_04.png`, `Panorama_Sky_15.png`, `Panorama_Sky_21.png` | Screaming Brain Studios (provided by the project owner) | CC0 1.0 / public domain — see `assets/skies/LICENSE-ScreamingBrainStudios.txt` |
+| `tests/ui/assets/skies/Cubemap_Sky_21.png` (test only, scaled down) | Screaming Brain Studios (provided by the project owner) | CC0 1.0 / public domain |
+
 `assets/textures/nodraw.png` is our own (CC0), text set in Roboto.
 
 Tile_19 and Bricks_24 were converted from 16-bit RGBA to 8-bit RGB PNG, and Tile_13 and Grass_20
-from RGBA to RGB (fully opaque, no visual change), to keep the app small.
+from RGBA to RGB (fully opaque, no visual change), to keep the app small. The skies are
+stored as 8-bit RGB PNG.

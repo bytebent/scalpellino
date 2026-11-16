@@ -80,13 +80,93 @@ void writeKeys(std::ostringstream& o, const KeyValues& kv) {
 
 } // namespace
 
+namespace {
+// Milestone 8 keys in worldspawn (other tools ignore "_scal_*").
+const char* const kWorldExtras[] = {"_scal_visgroups", "_scal_sky", "_scal_ambient", "_scal_fog", "_scal_cameras", "_scal_figure"};
+bool isWorldExtra(const std::string& k) {
+    for (const char* e : kWorldExtras) if (k == e) return true;
+    return false;
+}
+std::string vec(const Vec3& v) { return num(v.x) + " " + num(v.y) + " " + num(v.z); }
+std::string cleanName(std::string s) {
+    for (char& c : s) if (c == '|' || c == ';' || c == '"') c = '_';
+    return s;
+}
+
+// A light as a Hammer-style entity.
+KeyValues lightKeys(const Light& l) {
+    KeyValues kv;
+    kv.emplace_back("classname", l.kind == LightKind::Point ? "light" : l.kind == LightKind::Spot ? "light_spot" : "light_environment");
+    kv.emplace_back("origin", vec(l.pos));
+    kv.emplace_back("_light", vec(l.color) + " " + num(l.brightness));
+    if (l.hasDirection()) {
+        kv.emplace_back("angles", num(-l.pitch) + " " + num(l.yaw) + " 0"); // angles: positive pitch = down
+        kv.emplace_back("pitch", num(l.pitch));
+    }
+    if (l.kind == LightKind::Spot) {
+        kv.emplace_back("_inner_cone", num(l.inner));
+        kv.emplace_back("_cone", num(l.outer));
+    }
+    if (l.kind != LightKind::Sun) kv.emplace_back("_zero_percent_distance", num(l.range));
+    for (const auto& k : l.otherKeys) kv.push_back(k);
+    return kv;
+}
+
+bool readVec(const std::string& s, Vec3& v) {
+    return std::sscanf(s.c_str(), "%lf %lf %lf", &v.x, &v.y, &v.z) == 3;
+}
+
+// Light entity -> Light (false if it isn't one of ours to edit).
+bool lightFromKeys(const KeyValues& kv, Light& l) {
+    std::string cls;
+    for (const auto& [k, v] : kv) if (k == "classname") cls = v;
+    if (cls == "light") l.kind = LightKind::Point;
+    else if (cls == "light_spot") l.kind = LightKind::Spot;
+    else if (cls == "light_environment") l.kind = LightKind::Sun;
+    else return false;
+    bool havePitch = false;
+    for (const auto& [k, v] : kv) {
+        if (k == "origin") readVec(v, l.pos);
+        else if (k == "_light") {
+            double r = 255, g = 255, b = 255, br = 200;
+            const int n = std::sscanf(v.c_str(), "%lf %lf %lf %lf", &r, &g, &b, &br);
+            if (n >= 3) l.color = {r, g, b};
+            if (n >= 4) l.brightness = br;
+        } else if (k == "pitch") { l.pitch = std::atof(v.c_str()); havePitch = true; }
+        else if (k == "angles") {
+            Vec3 a;
+            if (readVec(v, a)) { if (!havePitch) l.pitch = -a.x; l.yaw = a.y; }
+        } else if (k == "_inner_cone") l.inner = std::atof(v.c_str());
+        else if (k == "_cone") l.outer = std::atof(v.c_str());
+        else if (k == "_zero_percent_distance") l.range = std::atof(v.c_str());
+        else if (k != "classname") l.otherKeys.emplace_back(k, v);
+    }
+    return true;
+}
+
+} // namespace
+
 std::string writeMap(const Document& doc) {
     std::ostringstream o;
     o << "// Game: Generic\n// Format: Valve\n// Written by Scalpellino\n";
     o << "// entity 0\n{\n";
     KeyValues world;
     for (const auto& kv : doc.worldKeys)
-        if (kv.first != "_scal_visgroups") world.push_back(kv);
+        if (!isWorldExtra(kv.first)) world.push_back(kv);
+    const Environment& env = doc.environment();
+    const Environment defaults;
+    if (!env.sky.empty()) world.emplace_back("_scal_sky", env.sky);
+    if (env.ambient != defaults.ambient) world.emplace_back("_scal_ambient", vec(env.ambient));
+    if (env.fogOn || !(env.fog == defaults.fog))
+        world.emplace_back("_scal_fog", std::string(env.fogOn ? "1 " : "0 ") + vec(env.fog.color) + " " + num(env.fog.start) + " " + num(env.fog.end));
+    if (!doc.bookmarks().empty()) {
+        // x y z yaw pitch name;...
+        std::string cams;
+        for (const CameraBookmark& c : doc.bookmarks())
+            cams += vec(c.pos) + " " + num(c.yaw) + " " + num(c.pitch) + " " + cleanName(c.name) + ";";
+        world.emplace_back("_scal_cameras", cams);
+    }
+    if (doc.figure()) world.emplace_back("_scal_figure", vec(*doc.figure()));
     if (!doc.visgroups().empty()) {
         // id|name|visible;...  ('|' and ';' can't appear in names)
         std::string vg;
@@ -119,6 +199,11 @@ std::string writeMap(const Document& doc) {
             o << "// brush " << j++ << '\n';
             writeBrush(o, b);
         }
+        o << "}\n";
+    }
+    for (const Light& l : doc.lights()) {
+        o << "// entity " << e++ << "\n{\n";
+        writeKeys(o, lightKeys(l));
         o << "}\n";
     }
     for (const RawEntity& ent : doc.otherEntities) {
@@ -393,6 +478,7 @@ MapReadResult readMap(const std::string& text, Document& doc) {
     std::vector<Brush> worldBrushes;
     std::vector<RawEntity> others;
     std::map<GroupId, Group> groups;
+    WorldData extra;
     GroupId nextGroup = 1;
     bool haveWorld = false;
     try {
@@ -423,6 +509,8 @@ MapReadResult readMap(const std::string& text, Document& doc) {
                     worldBrushes.push_back(std::move(b));
                 }
                 groups[g.id] = std::move(g);
+            } else if (Light l; brushes.empty() && lightFromKeys(keys, l)) {
+                extra.lights.push_back(l);
             } else {
                 others.push_back({std::move(keys), std::move(brushes)});
             }
@@ -449,7 +537,40 @@ MapReadResult readMap(const std::string& text, Document& doc) {
             world.erase(it);
             break;
         }
-    doc.reset(std::move(world), std::move(worldBrushes), std::move(others), std::move(groups), std::move(visgroups));
+    for (auto it = world.begin(); it != world.end();) {
+        const std::string& k = it->first;
+        const std::string& v = it->second;
+        if (k == "_scal_sky") extra.env.sky = v;
+        else if (k == "_scal_ambient") readVec(v, extra.env.ambient);
+        else if (k == "_scal_fog") {
+            int on = 0;
+            Fog f;
+            if (std::sscanf(v.c_str(), "%d %lf %lf %lf %lf %lf", &on, &f.color.x, &f.color.y, &f.color.z, &f.start, &f.end) == 6) {
+                extra.env.fogOn = on != 0;
+                extra.env.fog = f;
+            }
+        } else if (k == "_scal_cameras") {
+            std::istringstream in(v);
+            std::string entry;
+            while (std::getline(in, entry, ';')) {
+                CameraBookmark c;
+                int used = 0;
+                if (std::sscanf(entry.c_str(), "%lf %lf %lf %lf %lf %n", &c.pos.x, &c.pos.y, &c.pos.z, &c.yaw, &c.pitch, &used) >= 5) {
+                    c.name = entry.substr((size_t)used);
+                    extra.bookmarks.push_back(c);
+                }
+            }
+        } else if (k == "_scal_figure") {
+            Vec3 f;
+            if (readVec(v, f)) extra.figure = f;
+        } else {
+            ++it;
+            continue;
+        }
+        it = world.erase(it);
+    }
+    doc.reset(std::move(world), std::move(worldBrushes), std::move(others), std::move(groups), std::move(visgroups),
+              std::move(extra));
     r.ok = true;
     return r;
 }
