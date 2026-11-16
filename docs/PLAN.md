@@ -10,11 +10,9 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 
 ## Current status
 
-- **v0.1.0** released (milestones 0 + 1). **v0.1.1** (this step): Retina sharpness,
-  Roboto font, vanishing-line fix, full menus, Transform dialog. Released via
-  `docs/releases/v0.1.1.md`.
-- **Next: milestone 2 — Precision** (reordered by the user: before textures).
-  Plan below.
+- Released: v0.1.0 (M0+M1), v0.1.1 (Retina, font, menus, Transform dialog; user
+  confirmed it works), **v0.2.0 = milestone 2 Precision** (this step).
+- **Next: milestone 3 — Textures.** Plan below.
 
 ## How to work in this repo
 
@@ -57,32 +55,23 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 
 ## Open questions (parked)
 
+- **Vertex tool extras:** edge handles (drag an edge = both its corners), marquee
+  (drag-box) vertex selection, corner handles in the 3D view. Not in v0.2.0.
+- **Grid-friendly angles:** user asked for "rotate by exact dimensions"; delivered as typed
+  angles + Pythagorean angles. Note for the user: slopes like 1:2 can't keep rotated
+  corners on whole numbers (irrational sin/cos) — build such slopes with the vertex tool.
+
 - **Fly-mode up/down keys:** Q/E for now. User hasn't specified.
 - **File dialogs:** open/save use an in-app path field. Native macOS dialogs planned
   (milestone 8 or earlier if wanted).
 - **Multi-selection click:** a plain click (no drag) on a brush that is part of a
   multi-selection narrows the selection to that brush; dragging moves the group.
-- **Retina on a real Mac:** fixed in v0.1.1 but only verifiable by the user (CI and the
-  AI workspace have no Retina display). Ask the user to confirm sharpness.
 
-## Milestone 2 plan — Precision (inspired by Hammer++)
+## Milestone 2 — Precision (done, v0.2.0)
 
-User feedback: rotating by non-90 angles leaves vertices between grid points; Hammer
-was bad at this, Hammer++ fixed it. Goals:
-1. **Vertex tool** (Shift+V + Tools menu): select vertices/edges in 2D views, drag with
-   grid snapping; realtime preview; if the result is not convex/planar the brush turns
-   red and Return is refused. Brush rebuilt from vertices (convex hull → planes).
-2. **Snap vertices to grid** (Transform menu + shortcut): round every vertex of the
-   selection to the grid, rebuild; refuse (with message) if faces would bend.
-3. **Pivot point** for drag-rotation and the Transform dialog: selection centre,
-   world origin, a picked vertex, or a typed point; drawn as a marker in 2D views.
-4. **Grid-friendly angles**: in the Transform dialog and drag-rotation (modifier),
-   slopes 1:1, 1:2, 1:3, 2:3, 3:4 (45°, 26.57°, 18.43°, 33.69°, 36.87°) — for many
-   shapes these keep corners on whole numbers.
-5. **Microgrid + custom grid sizes**: 0.125 / 0.25 / 0.5 (off by default), and
-   View → Set grid size... (any value, e.g. 80).
-6. Tests: hull rebuild, invalid-shape detection, snap-to-grid, slope rotations landing on
-   integers, UI scripts with edge checks.
+Delivered: vertex tool, snap vertices to grid, pivot, grid-friendly (Pythagorean)
+rotation angles, microgrid + custom grid sizes. See log. Not done (parked, below):
+edge handles, marquee vertex selection, vertex handles in the 3D view.
 
 ## Milestone 3 plan — Textures
 
@@ -106,6 +95,38 @@ test script — never downloaded.
 ## Milestone 1 plan — Brushes (done)
 
 ## Log
+
+### 2026-11-16 — Milestone 2: Precision (v0.2.0)
+- `core/hull`: brush from vertices (brute-force convex hull, merges coplanar points into
+  one face, plane points = largest triangle, textures copied from the source face with
+  the most similar normal), `snapBrushToGrid` (refuses if faces would split or the brush
+  collapses), `brushOnGrid`.
+- **Validity rule** (important): every requested corner must end up on ≥2 hull faces.
+  On 0 = inside the solid, on 1 = flat in the middle of a face; both would silently drop
+  the corner, so the edit is refused. The first version only required "on a face plane";
+  the new UI test caught an invalid drag being applied. Core test added for that case.
+- **Vertex tool** (`tools/vertex_tool`, Shift+V, Tools menu, Tools panel): corner handles
+  in 2D views (selected red), stacked corners picked together, Cmd+click toggles, drag
+  with grid snapping, live rebuilt preview, invalid = magenta + status "INVALID SHAPE -
+  won't apply", refused on release. Move vertices dialog (Cmd+Shift+T): move by offset
+  or set a single corner's position.
+- **Snap vertices to grid** (Cmd+B, Transform menu).
+- **Pivot** (Transform → Pivot: selection centre / world origin / typed point) used by
+  Option-drag rotation and as the Transform dialog default; cyan marker in 2D views.
+- **Grid-friendly angles:** I first planned slopes (1:2 etc.) — wrong: their sin/cos are
+  irrational. Replaced with Pythagorean angles (3:4:5 = 36.87°, 5:12:13, 8:15:17,
+  7:24:25): corners stay on whole numbers when offsets from the pivot are multiples of the
+  hypotenuse. Dialog buttons + Transform → Drag rotation snapping option.
+- **Grid:** size is a double; microgrid 0.125/0.25/0.5 (View → Microgrid, off by default);
+  View → Set grid size... (any size, e.g. 80; custom sizes draw their own grid lines,
+  highlighted every 8 cells).
+- **Tests:** core **478 checks, 0 failed** (hull rebuild, wedge by merging, lifted corner
+  splits face, corner inside / flat-in-face refused, flat = no volume, texture carry-over,
+  snap after 30° rotation, coarse-grid collapse refused, Pythagorean rotation on grid 8
+  vs 1:2 off grid, microgrid / custom grid). UI scripts `m1_brushes`, `m2_precision`,
+  `v011_transform_menus`: **PASS at 1x and 2x**. Idle: **0 ticks / 10 s**.
+- Screenshots: `m2-01-vertex-moved`, `m2-02-vertex-invalid-preview`,
+  `m2-03-pythagorean-rotation`.
 
 ### 2026-11-16 — v0.1.1: Retina, font, vanishing lines, menus, Transform dialog
 User feedback on v0.1.0 (Intel iMac, Retina): app blurry; some brush/preview edges

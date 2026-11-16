@@ -31,6 +31,9 @@ MenuActions drawMenuBar(const MenuState& st) {
     if (ImGui::BeginMenu("Tools")) {
         if (ImGui::MenuItem("Select", "Shift+S", st.selectTool)) a.toolSelect = true;
         if (ImGui::MenuItem("Block", "Shift+B", st.blockTool)) a.toolBlock = true;
+        if (ImGui::MenuItem("Vertex", "Shift+V", st.vertexTool)) a.toolVertex = true;
+        ImGui::Separator();
+        if (ImGui::MenuItem("Move selected vertices...", "Cmd+Shift+T", false, st.vertexTool && st.verticesSelected)) a.vertexMove = true;
         ImGui::Separator();
         if (ImGui::MenuItem("Create block", "Return", false, st.blockPreview)) a.createBlock = true;
         if (ImGui::MenuItem("Cancel", "Esc", false, st.blockPreview)) a.cancel = true;
@@ -56,6 +59,19 @@ MenuActions drawMenuBar(const MenuState& st) {
             if (ImGui::MenuItem(label, nullptr, false, st.hasSelection)) a.flipAxis = ax;
         }
         ImGui::Separator();
+        if (ImGui::MenuItem("Snap vertices to grid", "Cmd+B", false, st.hasSelection)) a.snapToGrid = true;
+        ImGui::Separator();
+        if (ImGui::BeginMenu("Pivot")) {
+            if (ImGui::MenuItem("Selection centre", nullptr, st.pivotMode == 0)) a.pivotMode = 0;
+            if (ImGui::MenuItem("World origin", nullptr, st.pivotMode == 1)) a.pivotMode = 1;
+            if (ImGui::MenuItem("Point...", nullptr, st.pivotMode == 2)) a.pivotMode = 2;
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("Drag rotation snapping")) {
+            if (ImGui::MenuItem("15\xC2\xB0 steps", nullptr, !st.slopeAngles)) a.rotSnap = 0;
+            if (ImGui::MenuItem("Grid-friendly angles (3:4:5, 5:12:13...)", nullptr, st.slopeAngles)) a.rotSnap = 1;
+            ImGui::EndMenu();
+        }
         ImGui::TextDisabled("Drag: Option+corner handle rotates");
         ImGui::EndMenu();
     }
@@ -65,6 +81,8 @@ MenuActions drawMenuBar(const MenuState& st) {
         if (ImGui::MenuItem("Larger grid", "+"))  a.gridLarger = true;
         if (ImGui::MenuItem("Show grid", "Shift+R", st.gridVisible)) a.toggleGrid = true;
         if (ImGui::MenuItem("Snap to grid", "Shift+W", st.snapOn))  a.toggleSnap = true;
+        if (ImGui::MenuItem("Set grid size...")) a.setGridSize = true;
+        if (ImGui::MenuItem("Microgrid (sizes below 1)", nullptr, st.microgrid)) a.toggleMicrogrid = true;
         ImGui::Separator();
         if (ImGui::MenuItem("Center 2D views on selection", "Cmd+E", false, st.hasSelection)) a.centerViews = true;
         if (ImGui::MenuItem("Fly mode (3D view)", "Z", st.flying)) a.flyMode = true;
@@ -92,6 +110,11 @@ void drawControlsWindow(bool* open) {
             {"Clone", "Shift+drag the selection, or Cmd+D"},
             {"Rotate by dragging", "Option+drag a corner handle (15\xC2\xB0 steps, +Shift free)"},
             {"Exact move / rotate / scale", "Cmd+T (Transform menu)"},
+            {"Vertex tool", "Shift+V; click a corner, Cmd+click adds, drag moves"},
+            {"Move vertices exactly", "Cmd+Shift+T (vertex tool)"},
+            {"Snap vertices to grid", "Cmd+B"},
+            {"Pivot / rotation snapping", "Transform menu"},
+            {"Grid size / microgrid", "View menu"},
             {"Delete", "Delete or Backspace"},
             {"Undo / redo", "Cmd+Z / Cmd+Shift+Z"},
             {"New / open / save / save as", "Cmd+N / Cmd+O / Cmd+S / Cmd+Shift+S"},

@@ -18,7 +18,8 @@ endif()
 add_library(scal_core STATIC
   src/core/brush.cpp
   src/core/document.cpp
-  src/core/transform.cpp)
+  src/core/transform.cpp
+  src/core/hull.cpp)
 target_include_directories(scal_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 # File formats. Also graphics-free, so it is tested headless too.
@@ -46,6 +47,7 @@ if(SCAL_BUILD_APP)
     src/tools/tool.cpp
     src/tools/select_tool.cpp
     src/tools/block_tool.cpp
+    src/tools/vertex_tool.cpp
     src/ui/layout.cpp
   )
 

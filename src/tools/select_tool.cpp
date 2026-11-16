@@ -32,7 +32,7 @@ void SelectTool::press(ToolEnv& env, const Pointer& p) {
             eu[U] = 1;
             ev[V] = 1;
             rotAxis_ = cross(eu, ev); // counter-clockwise on screen = positive angle
-            rotCenter_ = selBox.center();
+            rotCenter_ = env.pivot ? *env.pivot : selBox.center();
             rotStart_ = std::atan2(p.v - rotCenter_[V], p.u - rotCenter_[U]);
             rotAngle_ = 0;
         } else if (g.resize()) {
@@ -97,7 +97,7 @@ void SelectTool::drag(ToolEnv& env, const Pointer& p) {
         double a = std::atan2(p.v - rotCenter_[V], p.u - rotCenter_[U]) - rotStart_;
         while (a > kPi) a -= 2 * kPi;
         while (a < -kPi) a += 2 * kPi;
-        if (!env.shift) a = std::round(a / kRotStep) * kRotStep;
+        if (!env.shift) a = env.slopeAngles ? snapToSlope(a) : std::round(a / kRotStep) * kRotStep;
         if (a != rotAngle_) {
             rotAngle_ = a;
             updateGhosts(env.doc);

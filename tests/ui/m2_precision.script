@@ -1,0 +1,66 @@
+# Milestone 2: vertex tool (valid + invalid moves, typed move), snap to grid,
+# Pythagorean rotation, microgrid. Top view centre = local (334,224), 2 units/px.
+tool block
+press 1 334 224
+drag 398 208
+release
+key Return
+expect size 128 32 64
+# -- off-grid after a 30 degree rotation, then snap to grid 1
+transform rotate z 30
+expect brushes 1
+grid 1
+snapgrid
+expect ongrid
+expect faces 6
+undo
+undo
+expect size 128 32 64
+grid 16
+# -- vertex tool: drag the corner at (128,32) (both stacked corners) to x=160
+tool vertex
+press 1 398 208
+release
+press 1 398 208
+drag 405 208
+drag 414 208
+release
+expect size 160 32 64
+expect faces 6
+expect edges
+shot m2-01-vertex-moved.png
+# -- invalid: drag that corner inside the brush -> magenta preview, not applied
+press 1 414 208
+drag 380 214
+drag 358 220
+shot m2-02-vertex-invalid-preview.png
+release
+expect size 160 32 64
+# -- typed move of the selected corners (+32 on X)
+vertexmove 32 0 0
+expect size 192 32 64
+expect edges
+# -- Pythagorean rotation (3:4:5 = 36.8699 deg) of an 80x40 box about the origin stays on grid 8
+tool select
+selectall
+key Delete
+grid 8
+tool block
+press 1 334 224
+drag 374 204
+release
+key Return
+expect size 80 40 64
+pivot origin
+transform rotate z 36.86989764584402 origin
+expect ongrid
+expect size 88 80 64
+expect edges
+shot m2-03-pythagorean-rotation.png
+# -- microgrid
+microgrid on
+grid 0.25
+expect ongrid
+microgrid off
+grid 16
+quit

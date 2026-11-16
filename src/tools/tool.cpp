@@ -4,6 +4,33 @@
 
 namespace scal {
 
+const std::vector<double>& slopeAnglesList() {
+    static const std::vector<double> list = [] {
+        std::vector<double> a;
+        const int pairs[][2] = {{0, 1}, {3, 4}, {4, 3}, {5, 12}, {12, 5}, {8, 15}, {15, 8}, {7, 24}, {24, 7}};
+        for (auto& pr : pairs)
+            for (int q = 0; q < 4; ++q) {
+                double ang = std::atan2((double)pr[0], (double)pr[1]) + q * 1.5707963267948966;
+                a.push_back(std::fmod(ang + 6.283185307179586, 6.283185307179586));
+            }
+        std::sort(a.begin(), a.end());
+        a.erase(std::unique(a.begin(), a.end(), [](double x, double y) { return std::fabs(x - y) < 1e-12; }), a.end());
+        return a;
+    }();
+    return list;
+}
+
+double snapToSlope(double r) {
+    const double twoPi = 6.283185307179586;
+    double x = std::fmod(r + 2 * twoPi, twoPi);
+    double best = 0, bd = 1e9;
+    for (double a : slopeAnglesList())
+        for (double c : {a, a - twoPi, a + twoPi})
+            if (std::fabs(c - x) < bd) { bd = std::fabs(c - x); best = c; }
+    // Return in the same turn as the input.
+    return r + (best - x);
+}
+
 BoxGrab grabBox(const Viewport& vp, const AABB& b, Vector2 p, float tol) {
     BoxGrab g;
     if (!b.valid()) return g;

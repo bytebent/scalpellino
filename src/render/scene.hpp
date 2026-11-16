@@ -22,6 +22,11 @@ struct Scene {
     std::optional<AABB> previewBox; // block tool: brush about to be created
     std::vector<SceneBrush> ghosts; // brushes being dragged (drawn on top, selected style)
     bool hideSelected = false;      // hide originals while their ghosts are dragged (move)
+    std::vector<SceneBrush> invalidGhosts; // vertex edits that are not valid solids (magenta)
+    bool invalid = false;
+    struct VertexHandle { Vec3 pos; bool selected; };
+    std::vector<VertexHandle> vertexHandles; // vertex tool corners
+    std::optional<Vec3> pivot;               // custom rotation pivot marker
 };
 
 SceneBrush makeSceneBrush(const Brush& b);

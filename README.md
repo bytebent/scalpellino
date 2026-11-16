@@ -26,7 +26,7 @@ Everything is also in the menus (File, Edit, Tools, Transform, View, Help), and
 
 | Action | Keys |
 |---|---|
-| Select tool / Block tool | **Shift+S** / **Shift+B** |
+| Select / Block / Vertex tool | **Shift+S** / **Shift+B** / **Shift+V** |
 | Draw a block | Block tool: drag in a 2D view, adjust handles in any 2D view, **Return** creates, **Esc** cancels |
 | Select | click a brush (2D or 3D); **Cmd+click** adds/removes; **Cmd+A** all; **Esc** none |
 | Move / resize | drag a selection / drag its handles or edges (snaps to the grid) |
@@ -34,6 +34,12 @@ Everything is also in the menus (File, Edit, Tools, Transform, View, Help), and
 | Rotate by dragging | **Option+drag** a corner handle (15° steps, add **Shift** for free rotation) |
 | Exact move / rotate / scale | **Cmd+T** — type values, pick axis and pivot |
 | Rotate 90° / flip | Transform menu |
+| Vertex tool | **Shift+V**: click a corner (stacked corners move together), **Cmd+click** adds, drag moves (snapped); impossible shapes turn magenta and aren't applied |
+| Move vertices exactly | **Cmd+Shift+T** (vertex tool): move by an offset, or set a corner's position |
+| Snap vertices to grid | **Cmd+B** (Transform menu) |
+| Pivot for rotate/scale | Transform → Pivot (selection centre, world origin, typed point) |
+| Grid-friendly rotation | Transform → Drag rotation snapping → 3:4:5-style angles (corners stay on whole numbers) |
+| Grid size / microgrid | View → Set grid size... (any size, e.g. 80) / Microgrid (0.125–0.5) |
 | Delete | **Delete** or **Backspace** |
 | Undo / redo | **Cmd+Z** / **Cmd+Shift+Z** |
 | New / open / save / save as | **Cmd+N** / **Cmd+O** / **Cmd+S** / **Cmd+Shift+S** |

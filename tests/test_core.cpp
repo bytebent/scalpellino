@@ -3,6 +3,7 @@
 #include "core/document.hpp"
 #include "core/grid.hpp"
 #include "core/transform.hpp"
+#include "core/hull.hpp"
 #include "io/map_format.hpp"
 #include <cmath>
 #include <cstdio>
@@ -31,6 +32,22 @@ static void testGrid() {
     CHECK(g.size == Grid::kMin);
     for (int i = 0; i < 20; ++i) g.doubleUp();
     CHECK(g.size == Grid::kMax);
+    // Microgrid: off by default, allows 0.125 when on; turning it off resets to 1.
+    Grid m;
+    for (int i = 0; i < 20; ++i) m.halve();
+    CHECK(m.size == 1);
+    m.setMicrogrid(true);
+    for (int i = 0; i < 20; ++i) m.halve();
+    CHECK(m.size == 0.125);
+    CHECK(m.snapValue(0.3) == 0.25);
+    m.setMicrogrid(false);
+    CHECK(m.size == 1);
+    // Custom sizes (e.g. 80) double/halve from there and snap to multiples.
+    m.setSize(80);
+    CHECK(m.snapValue(130) == 160 && m.snapValue(100) == 80);
+    m.halve(); CHECK(m.size == 40);
+    m.doubleUp(); m.doubleUp(); m.doubleUp(); CHECK(m.size == 320);
+    m.doubleUp(); CHECK(m.size == 320); // 640 > max
     Grid s;
     CHECK(s.snapValue(7.0) == 0.0);
     CHECK(s.snapValue(9.0) == 16.0);
@@ -203,6 +220,94 @@ static void testTransform() {
     CHECK(out.empty() && !err.empty());
 }
 
+static void testHull() {
+    const Brush cube = makeBox(box({0, 0, 0}, {64, 64, 64}), "a");
+    auto verts = brushVertices(cube);
+    CHECK(verts.size() == 8);
+
+    // Rebuilding from its own corners gives the same solid.
+    HullResult r = brushFromVertices(verts, cube);
+    CHECK(r.ok);
+    CHECK(r.brush.faces.size() == 6);
+    CHECK(nearV(r.brush.bounds().min, {0, 0, 0}) && nearV(r.brush.bounds().max, {64, 64, 64}));
+    CHECK(r.brush.id == cube.id);
+
+    // Merge two top corners onto the other two -> wedge (5 faces).
+    std::vector<Vec3> wedge;
+    for (Vec3 v : verts) { if (v.z == 64 && v.x == 64) v.x = 0; wedge.push_back(v); }
+    r = brushFromVertices(wedge, cube);
+    CHECK(r.ok);
+    CHECK(r.brush.faces.size() == 5);
+
+    // Lift one top corner: top face can't stay flat -> split into two (7 faces), still valid.
+    std::vector<Vec3> lifted;
+    for (Vec3 v : verts) { if (v.z == 64 && v.x == 64 && v.y == 64) v.z = 80; lifted.push_back(v); }
+    r = brushFromVertices(lifted, cube);
+    CHECK(r.ok);
+    CHECK(r.brush.faces.size() == 7);
+
+    // Push a corner into the middle: it would vanish inside -> refused.
+    std::vector<Vec3> dent;
+    for (Vec3 v : verts) { if (v.z == 64 && v.x == 64 && v.y == 64) v = {32, 32, 32}; dent.push_back(v); }
+    r = brushFromVertices(dent, cube);
+    CHECK(!r.ok);
+    CHECK(!r.error.empty());
+
+    // Pull a corner into the middle of the bottom face's plane: it would lie flat inside
+    // that face and vanish -> refused (this got through before; found by the UI test).
+    std::vector<Vec3> sunk;
+    for (Vec3 v : verts) { if (v.z == 0 && v.x == 64 && v.y == 64) v = {24, 16, 0}; sunk.push_back(v); }
+    r = brushFromVertices(sunk, cube);
+    CHECK(!r.ok);
+
+    // Flatten everything onto z=0 -> no volume.
+    std::vector<Vec3> flat;
+    for (Vec3 v : verts) { v.z = 0; flat.push_back(v); }
+    CHECK(!brushFromVertices(flat, cube).ok);
+
+    // Textures carry over by facing direction.
+    Brush tex = cube;
+    for (Face& f : tex.faces) f.texture = f.plane().n.z > 0.5 ? "top" : "side";
+    r = brushFromVertices(lifted, tex);
+    int tops = 0;
+    for (const Face& f : r.brush.faces) if (f.texture == "top") ++tops;
+    CHECK(tops == 2); // both halves of the split top keep the top texture
+}
+
+static void testSnapToGrid() {
+    const double pi = 3.14159265358979323846;
+    Brush b = makeBox(box({0, 0, 0}, {128, 32, 64}), "a");
+    b.rotate({64, 16, 32}, {0, 0, 1}, pi / 6, true); // 30 degrees: corners off grid
+    CHECK(!brushOnGrid(b, 1));
+    HullResult r = snapBrushToGrid(b, 1);
+    CHECK(r.ok);
+    CHECK(brushOnGrid(r.brush, 1));
+    CHECK(r.brush.valid());
+    CHECK(r.brush.faces.size() == 6);
+
+    // Integer box is already on grid 16; snapping changes nothing.
+    Brush ib = makeBox(box({0, 0, 0}, {64, 64, 64}), "a");
+    CHECK(brushOnGrid(ib, 16));
+    r = snapBrushToGrid(ib, 16);
+    CHECK(r.ok && nearV(r.brush.bounds().max, {64, 64, 64}));
+
+    // Pythagorean angle 3:4:5 (cos 4/5, sin 3/5): an 80 x 40 box rotated about the
+    // origin lands exactly on whole numbers (and here on grid 8); a 1:2 slope does not.
+    Brush pb = makeBox(box({0, 0, 0}, {80, 40, 64}), "a");
+    Brush py = pb;
+    py.rotate({0, 0, 0}, {0, 0, 1}, std::atan2(3.0, 4.0), true);
+    CHECK(brushOnGrid(py, 8));
+    CHECK(nearV(py.bounds().min, {-24, 0, 0}, 1e-9));
+    CHECK(nearV(py.bounds().max, {64, 80, 64}, 1e-9));
+    Brush sl = pb;
+    sl.rotate({0, 0, 0}, {0, 0, 1}, std::atan2(1.0, 2.0), true);
+    CHECK(!brushOnGrid(sl, 1));
+
+    // Snapping a thin brush to a coarse grid collapses it -> refused.
+    Brush thin = makeBox(box({0, 0, 0}, {64, 64, 4}), "a");
+    CHECK(!snapBrushToGrid(thin, 64).ok);
+}
+
 static void testRay() {
     Brush b = makeBox(box({0, 0, 0}, {64, 64, 64}), "a");
     CHECK(near(rayHit(b, {-100, 32, 32}, {1, 0, 0}), 100));
@@ -330,6 +435,8 @@ int main() {
     testRemap();
     testRotate();
     testTransform();
+    testHull();
+    testSnapToGrid();
     testRay();
     testUndo();
     testDirty();

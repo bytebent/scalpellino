@@ -25,7 +25,17 @@ struct ToolEnv {
     bool cmd = false;                            // Cmd on macOS, Ctrl elsewhere
     bool shift = false;
     bool alt = false;                            // Option on macOS
+    const Vec3* pivot = nullptr;                 // custom rotation pivot (null = box centre)
+    bool slopeAngles = false;                    // drag rotation snaps to grid-friendly slopes
 };
+
+// Grid-friendly rotation angles (radians, 0..2pi): Pythagorean angles, whose sine and
+// cosine are exact fractions (3:4:5 -> 36.87 deg, 5:12:13, 8:15:17, 7:24:25), plus
+// multiples of 90. Rotating by them keeps corners on whole numbers when the brush's
+// offsets from the pivot are multiples of the hypotenuse (5, 13, 17 or 25).
+// (Slopes like 1:2 do NOT: their sine/cosine involve square roots.)
+const std::vector<double>& slopeAnglesList();
+double snapToSlope(double radians);
 
 class Tool {
 public:

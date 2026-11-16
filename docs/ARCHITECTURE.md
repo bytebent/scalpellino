@@ -111,7 +111,7 @@ Transform, View, Help), with dialogs for typed values (e.g. Transform: exact mov
 rotate / scale with pivot). Help → Controls lists all shortcuts.
 
 ### Tools
-Select, Block (box, wedge, cylinder, pyramid), Clip, Vertex, Carve (CSG subtract),
+Select, Block (box, wedge, cylinder, pyramid), Clip, Vertex (done in M2), Carve (CSG subtract),
 **Curve**, Texture apply / face edit, Light, Camera bookmark.
 
 ### Curve tool
@@ -224,7 +224,7 @@ docs/         this file, roadmap
 |---|-----------|-----------|
 | 0 | Skeleton | Window with 4 viewports + grids, fly camera, near-zero idle CPU, CI builds `.app` for Intel + Apple Silicon |
 | 1 | Brushes | Block tool, select/move/resize/rotate, grid snapping, undo/redo, save/load `.map` (+ v0.1.1: Retina, menus, Transform dialog) |
-| 2 | Precision | Vertex tool (realtime, invalid shapes red), snap vertices to grid, pivot point, grid-friendly rotation angles, microgrid + custom grid sizes (inspired by Hammer++) |
+| 2 | Precision | Vertex tool (realtime, invalid shapes highlighted), snap vertices to grid, pivot point, grid-friendly (Pythagorean) rotation angles, microgrid + custom grid sizes (inspired by Hammer++) |
 | 3 | Textures | Texture folder loading, browser, apply, face edit, texture lock |
 | 4 | Shaping | Clip (2- and 3-point), carve (CSG) |
 | 5 | Curve tool | Arch, carve arch, ring, curved wall, spiral stairs; regenerable + bake |

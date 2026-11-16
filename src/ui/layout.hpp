@@ -11,6 +11,9 @@ struct MenuState {
     bool hasSelection = false;
     bool selectTool = true, blockTool = false, blockPreview = false;
     bool flying = false, controlsOpen = false;
+    bool vertexTool = false, verticesSelected = false;
+    int pivotMode = 0;
+    bool slopeAngles = false, microgrid = false;
 };
 
 struct MenuActions {
@@ -23,6 +26,10 @@ struct MenuActions {
     bool resetLayout = false, centerViews = false, flyMode = false;
     bool gridSmaller = false, gridLarger = false, toggleGrid = false, toggleSnap = false;
     bool controls = false;
+    bool toolVertex = false, vertexMove = false, snapToGrid = false;
+    int pivotMode = -1;          // 0 centre, 1 origin, 2 custom (opens dialog)
+    int rotSnap = -1;            // 0 = 15 degree steps, 1 = grid-friendly slopes
+    bool toggleMicrogrid = false, setGridSize = false;
 };
 
 // Draws the menu bar and reports clicked items.

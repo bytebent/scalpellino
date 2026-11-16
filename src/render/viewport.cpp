@@ -17,6 +17,8 @@ const Color kBrush2D   {205, 205, 205, 255};
 const Color kSelected  {255,  64,  64, 255};
 const Color kPreview   {255, 220,  80, 255};
 const Color kHandle    {255, 255, 255, 255};
+const Color kInvalid   {255,  60, 220, 255};
+const Color kPivot     { 80, 230, 255, 255};
 
 const Color kBg3D      { 22,  22,  26, 255};
 const Color kGround    { 48,  48,  56, 255};
@@ -158,9 +160,16 @@ void Viewport::render2D(const Grid& grid, const Scene& scene) {
         };
 
         if (grid.visible) {
-            if (grid.size < 64) drawLines(grid.size, kGridMinor, 64.0);
-            drawLines(64.0,   kGrid64,   1024.0);
-            drawLines(1024.0, kGrid1024, 0.0);
+            if (std::fmod(64.0, grid.size) == 0.0) {
+                // Power-of-two style grid: minor lines + highlighted 64 / 1024 lines.
+                if (grid.size < 64) drawLines(grid.size, kGridMinor, 64.0);
+                drawLines(64.0,   kGrid64,   1024.0);
+                drawLines(1024.0, kGrid1024, 0.0);
+            } else {
+                // Custom size (e.g. 80): its own lines, highlighted every 8 cells.
+                drawLines(grid.size, kGridMinor, grid.size * 8);
+                drawLines(grid.size * 8, kGrid64, 0.0);
+            }
         }
         if (uMin <= 0 && uMax >= 0) vline(sx(0), top, bottom, thin, kAxis);
         if (vMin <= 0 && vMax >= 0) hline(sy(0), left, right, thin, kAxis);
@@ -189,6 +198,29 @@ void Viewport::render2D(const Grid& grid, const Scene& scene) {
         for (const SceneBrush& b : scene.brushes)
             if (scene.selected.count(b.id)) drawBrush(b, kSelected);
     for (const SceneBrush& g : scene.ghosts) drawBrush(g, kSelected);
+    for (const SceneBrush& g : scene.invalidGhosts) drawBrush(g, kInvalid);
+
+    // ---- vertex tool corners: white, selected red (drawn on top)
+    {
+        const float hs = (float)(2.5 * P), pad = (float)P;
+        for (int pass = 0; pass < 2; ++pass)
+            for (const auto& h : scene.vertexHandles) {
+                if (h.selected != (pass == 1)) continue;
+                const Vector2 c = phys(h.pos[U], h.pos[V]);
+                DrawRectangleRec({std::floor(c.x - hs - pad), std::floor(c.y - hs - pad), 2 * (hs + pad) + 1, 2 * (hs + pad) + 1}, BLACK);
+                DrawRectangleRec({std::floor(c.x - hs), std::floor(c.y - hs), 2 * hs + 1, 2 * hs + 1},
+                                 h.selected ? kSelected : kHandle);
+            }
+    }
+
+    // ---- custom rotation pivot: cyan circle with a cross
+    if (scene.pivot) {
+        const Vector2 c = phys((*scene.pivot)[U], (*scene.pivot)[V]);
+        const float r = (float)(6 * P);
+        DrawRing(c, r - thick, r, 0, 360, 32, kPivot);
+        hline(c.y, c.x - r - 3 * P, c.x + r + 3 * P, thick, kPivot);
+        vline(c.x, c.y - r - 3 * P, c.y + r + 3 * P, thick, kPivot);
+    }
 
     auto drawBox = [&](const AABB& bx, Color c) {
         const Vector2 a = phys(bx.min[U], bx.max[V]), b = phys(bx.max[U], bx.min[V]);
@@ -305,6 +337,7 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
         drawSolid(b, sel ? selTint : brushColor(b.id));
     }
     for (const SceneBrush& g : scene.ghosts) drawSolid(g, selTint);
+    for (const SceneBrush& g : scene.invalidGhosts) drawSolid(g, kInvalid);
 
     // Selection outlines on top (visible through other brushes, like Hammer).
     rlDrawRenderBatchActive();
@@ -313,6 +346,7 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
         for (const SceneBrush& b : scene.brushes)
             if (scene.selected.count(b.id)) drawEdges(b, kSelected);
     for (const SceneBrush& g : scene.ghosts) drawEdges(g, kSelected);
+    for (const SceneBrush& g : scene.invalidGhosts) drawEdges(g, kInvalid);
     if (scene.previewBox) {
         const AABB& pb = *scene.previewBox;
         const Vec3 c = pb.center(), s = pb.size();

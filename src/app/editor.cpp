@@ -1,5 +1,6 @@
 #include "app/editor.hpp"
 #include "io/map_format.hpp"
+#include "core/hull.hpp"
 #include "ui/layout.hpp"
 
 #include "imgui.h"
@@ -81,6 +82,9 @@ ToolEnv Editor::env() {
     e.cmd = cmd_;
     e.shift = shift_;
     e.alt = alt_;
+    static Vec3 pivotStore;
+    if (pivotMode_ != 0) { pivotStore = pivotPoint(); e.pivot = &pivotStore; }
+    e.slopeAngles = slopeAngles_;
     return e;
 }
 
@@ -129,6 +133,11 @@ bool Editor::frame(float dt) {
     st.blockPreview = st.blockTool && blockTool_.hasPreview();
     st.flying = flying_;
     st.controlsOpen = controlsOpen_;
+    st.vertexTool = tool_ == &vertexTool_;
+    st.verticesSelected = vertexTool_.selectedCount() > 0;
+    st.pivotMode = pivotMode_;
+    st.slopeAngles = slopeAngles_;
+    st.microgrid = grid_.microgrid;
     const MenuActions m = drawMenuBar(st);
     const std::string status = statusText();
     drawStatusBar(status.c_str());
@@ -159,6 +168,18 @@ bool Editor::frame(float dt) {
     if (m.flyMode && !flying_) { flying_ = true; DisableCursor(); skipLookDelta_ = true; }
     else if (m.flyMode && flying_) { flying_ = false; EnableCursor(); }
     if (m.controls) controlsOpen_ = !controlsOpen_;
+    if (m.toolVertex) setTool(&vertexTool_);
+    if (m.vertexMove) { precisionError_.clear(); askVertexMove_ = true; }
+    if (m.snapToGrid) snapSelectionToGrid();
+    if (m.pivotMode == 0 || m.pivotMode == 1) pivotMode_ = m.pivotMode;
+    if (m.pivotMode == 2) {
+        const Vec3 c = pivotMode_ == 2 ? customPivot_ : doc_.selectionBounds().valid() ? doc_.selectionBounds().center() : Vec3{};
+        pivotBuf_[0] = c.x; pivotBuf_[1] = c.y; pivotBuf_[2] = c.z;
+        askPivot_ = true;
+    }
+    if (m.rotSnap >= 0) slopeAngles_ = m.rotSnap == 1;
+    if (m.toggleMicrogrid) grid_.setMicrogrid(!grid_.microgrid);
+    if (m.setGridSize) { gridSizeBuf_ = grid_.size; precisionError_.clear(); askGridSize_ = true; }
     if (m.newMap) guardUnsaved(Pending::New);
     if (m.open) guardUnsaved(Pending::Open);
     if (m.save) save();
@@ -170,6 +191,7 @@ bool Editor::frame(float dt) {
     drawViews();
     drawDialogs();
     drawTransformDialog();
+    drawPrecisionDialogs();
     drawControlsWindow(&controlsOpen_);
     closeDialogs_ = false;
 
@@ -197,7 +219,11 @@ void Editor::handleKeyboard() {
         if (IsKeyPressed(KEY_Z)) { if (shift_) redo(); else undo(); }
         if (IsKeyPressed(KEY_A)) selectAll();
         if (IsKeyPressed(KEY_D)) duplicate();
-        if (IsKeyPressed(KEY_T)) openTransformDialog();
+        if (IsKeyPressed(KEY_T)) {
+            if (shift_) { if (tool_ == &vertexTool_ && vertexTool_.selectedCount()) { precisionError_.clear(); askVertexMove_ = true; } }
+            else openTransformDialog();
+        }
+        if (IsKeyPressed(KEY_B)) snapSelectionToGrid();
         if (IsKeyPressed(KEY_E)) centerViews();
         if (IsKeyPressed(KEY_S)) { if (shift_) { std::snprintf(pathBuf_, sizeof pathBuf_, "%s", path_.empty() ? defaultMapPath().c_str() : path_.c_str()); askSaveAs_ = true; } else save(); }
         if (IsKeyPressed(KEY_O)) guardUnsaved(Pending::Open);
@@ -211,6 +237,7 @@ void Editor::handleKeyboard() {
     if (shift_ && IsKeyPressed(KEY_W)) grid_.snap = !grid_.snap;
     if (shift_ && IsKeyPressed(KEY_S)) setTool(&selectTool_);
     if (shift_ && IsKeyPressed(KEY_B)) setTool(&blockTool_);
+    if (shift_ && IsKeyPressed(KEY_V)) setTool(&vertexTool_);
 
     for (int k : {KEY_ENTER, KEY_KP_ENTER, KEY_ESCAPE, KEY_DELETE, KEY_BACKSPACE})
         if (IsKeyPressed(k)) onKey(k);
@@ -221,6 +248,7 @@ Scene Editor::buildScene() {
     s.brushes = cache_.get(doc_);
     s.selected = doc_.selection();
     tool_->decorate(doc_, s);
+    if (pivotMode_ != 0) s.pivot = pivotPoint();
     return s;
 }
 
@@ -352,6 +380,7 @@ void Editor::drawToolsPanel() {
         };
         toolButton(&selectTool_, "Shift+S");
         toolButton(&blockTool_, "Shift+B");
+        toolButton(&vertexTool_, "Shift+V");
     }
     ImGui::End();
 }
@@ -437,7 +466,7 @@ std::string Editor::statusText() const {
         sel = buf;
     }
 
-    std::snprintf(buf, sizeof buf, "Grid %d  Snap %s  |  %s  |  %s  |  %s  |  %s   [%llu]",
+    std::snprintf(buf, sizeof buf, "Grid %g  Snap %s  |  %s  |  %s  |  %s  |  %s   [%llu]",
                   grid_.size, grid_.snap ? "on" : "off", tool_->name(), tool_->hint(),
                   sel.c_str(), where.c_str(), redraws_);
     return buf;
@@ -479,7 +508,7 @@ void Editor::duplicate() {
     if (doc_.selection().empty()) return;
     tool_->cancel();
     std::vector<Brush> copies;
-    const Vec3 offset{(double)grid_.size, (double)grid_.size, 0};
+    const Vec3 offset{grid_.size, grid_.size, 0};
     for (BrushId id : doc_.selection())
         if (const Brush* b = doc_.find(id)) {
             Brush c = *b;
@@ -538,6 +567,8 @@ void Editor::centerViews() {
 void Editor::openTransformDialog() {
     if (doc_.selection().empty()) return;
     tfError_.clear();
+    tfPivot_ = pivotMode_;
+    if (pivotMode_ == 2) { tfCustom_[0] = customPivot_.x; tfCustom_[1] = customPivot_.y; tfCustom_[2] = customPivot_.z; }
     askTransform_ = true;
 }
 
@@ -556,12 +587,23 @@ void Editor::drawTransformDialog() {
     } else if (tfMode_ == 1) {
         static const char* axes[] = {"X", "Y", "Z"};
         ImGui::Combo("Axis", &tfAxis_, axes, 3);
-        ImGui::InputDouble("Degrees", &tfDegrees_, 0, 0, "%g");
+        ImGui::InputDouble("Degrees", &tfDegrees_, 0, 0, "%.6g");
         ImGui::TextDisabled("positive = counter-clockwise, looking down the axis");
         for (double d : {15.0, 22.5, 30.0, 45.0, 90.0, -90.0}) {
             char b[16];
             std::snprintf(b, sizeof b, "%g", d);
             if (ImGui::SmallButton(b)) tfDegrees_ = d;
+            ImGui::SameLine();
+        }
+        ImGui::NewLine();
+        ImGui::TextDisabled("grid-friendly angles: corners stay on whole numbers when sizes");
+        ImGui::TextDisabled("(from the pivot) are multiples of 5, 13, 17 or 25:");
+        const struct { const char* label; double rise, run; } slopes[] = {
+            {"3:4:5", 3, 4}, {"4:3:5", 4, 3}, {"5:12:13", 5, 12}, {"12:5:13", 12, 5},
+            {"8:15:17", 8, 15}, {"15:8:17", 15, 8}, {"7:24:25", 7, 24}, {"24:7:25", 24, 7}};
+        for (const auto& sl : slopes) {
+            if (ImGui::SmallButton(sl.label)) tfDegrees_ = std::atan2(sl.rise, sl.run) * 180.0 / 3.14159265358979323846;
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%.4f\xC2\xB0", std::atan2(sl.rise, sl.run) * 180.0 / 3.14159265358979323846);
             ImGui::SameLine();
         }
         ImGui::NewLine();
@@ -601,6 +643,107 @@ void Editor::drawTransformDialog() {
         ImGui::CloseCurrentPopup();
     }
     ImGui::EndPopup();
+}
+
+Vec3 Editor::pivotPoint() const {
+    if (pivotMode_ == 1) return {};
+    if (pivotMode_ == 2) return customPivot_;
+    const AABB b = doc_.selectionBounds();
+    return b.valid() ? b.center() : Vec3{};
+}
+
+void Editor::snapSelectionToGrid() {
+    if (doc_.selection().empty()) return;
+    tool_->cancel();
+    std::vector<Brush> out;
+    for (BrushId id : doc_.selection()) {
+        const Brush* b = doc_.find(id);
+        if (!b) continue;
+        if (brushOnGrid(*b, grid_.size)) continue;
+        HullResult r = snapBrushToGrid(*b, grid_.size);
+        if (!r.ok) {
+            char buf[64];
+            std::snprintf(buf, sizeof buf, "%g", grid_.size);
+            errorText_ = "Snap to grid (" + std::string(buf) + "): " + r.error;
+            return;
+        }
+        out.push_back(std::move(r.brush));
+    }
+    if (!out.empty()) doc_.apply(doc_.makeModify(out, "Snap to grid"));
+}
+
+void Editor::drawPrecisionDialogs() {
+    const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    if (askGridSize_)   { ImGui::OpenPopup("Grid size"); askGridSize_ = false; }
+    if (askPivot_)      { ImGui::OpenPopup("Pivot point"); askPivot_ = false; }
+    if (askVertexMove_) { ImGui::OpenPopup("Move vertices"); askVertexMove_ = false; }
+    auto buttons = [&](bool& apply, bool& cancel) {
+        apply = ImGui::Button("Apply (Return)") || ImGui::IsKeyPressed(ImGuiKey_Enter, false) ||
+                ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false);
+        ImGui::SameLine();
+        cancel = ImGui::Button("Cancel (Esc)") || ImGui::IsKeyPressed(ImGuiKey_Escape, false) || closeDialogs_;
+    };
+    bool apply = false, cancel = false;
+
+    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    if (ImGui::BeginPopupModal("Grid size", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::SetNextItemWidth(160);
+        if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+        ImGui::InputDouble("units", &gridSizeBuf_, 0, 0, "%g");
+        ImGui::TextDisabled("any size, e.g. 80; below 1 turns on the microgrid");
+        for (double g : {0.125, 0.25, 0.5, 1.0, 8.0, 16.0, 32.0, 64.0}) {
+            char b[16]; std::snprintf(b, sizeof b, "%g", g);
+            if (ImGui::SmallButton(b)) gridSizeBuf_ = g;
+            ImGui::SameLine();
+        }
+        ImGui::NewLine();
+        buttons(apply, cancel);
+        if (apply && gridSizeBuf_ > 0) { grid_.setSize(gridSizeBuf_); ImGui::CloseCurrentPopup(); }
+        else if (cancel) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+
+    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    if (ImGui::BeginPopupModal("Pivot point", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::SetNextItemWidth(260);
+        ImGui::InputScalarN("X Y Z", ImGuiDataType_Double, pivotBuf_, 3, nullptr, nullptr, "%g");
+        ImGui::TextDisabled("rotations and scaling (drag and Transform dialog) use this point");
+        buttons(apply, cancel);
+        if (apply) {
+            customPivot_ = {pivotBuf_[0], pivotBuf_[1], pivotBuf_[2]};
+            pivotMode_ = 2;
+            ImGui::CloseCurrentPopup();
+        } else if (cancel) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+
+    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    if (ImGui::BeginPopupModal("Move vertices", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        Vec3 single;
+        const bool one = vertexTool_.singlePosition(single);
+        if (ImGui::IsWindowAppearing()) {
+            vmoveMode_ = 0;
+            vmove_[0] = vmove_[1] = vmove_[2] = 0;
+        }
+        ImGui::Text("%zu corner(s) selected", vertexTool_.selectedCount());
+        ImGui::RadioButton("Move by", &vmoveMode_, 0);
+        if (one) {
+            ImGui::SameLine();
+            if (ImGui::RadioButton("Set position", &vmoveMode_, 1)) { vmove_[0] = single.x; vmove_[1] = single.y; vmove_[2] = single.z; }
+        } else if (vmoveMode_ == 1) vmoveMode_ = 0;
+        ImGui::SetNextItemWidth(260);
+        ImGui::InputScalarN("X Y Z", ImGuiDataType_Double, vmove_, 3, nullptr, nullptr, "%g");
+        if (!precisionError_.empty()) ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", precisionError_.c_str());
+        buttons(apply, cancel);
+        if (apply) {
+            Vec3 d{vmove_[0], vmove_[1], vmove_[2]};
+            if (vmoveMode_ == 1 && one) d = d - single;
+            std::string err;
+            if (vertexTool_.moveSelected(doc_, d, err)) ImGui::CloseCurrentPopup();
+            else precisionError_ = "Not applied: " + err;
+        } else if (cancel) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
 }
 
 void Editor::newMap() {
@@ -675,6 +818,8 @@ void Editor::runPending() {
 //   grid <n>                save <path> | open <path>
 //   transform move x y z | transform rotate x|y|z <deg> [origin] | transform scale sx sy sz
 //   rotate90 x|y|z <+1|-1>  flip x|y|z  duplicate  dialog transform|controls  closedialogs
+//   tool vertex   vertexmove dx dy dz   snapgrid   microgrid on|off   rotsnap slopes|15
+//   pivot center|origin|<x y z>   expect ongrid   expect faces <n>
 //   shot <file.png>         quit
 //   expect brushes|selected <n>  |  expect size <x> <y> <z>  (selection bounds, +-0.5)
 //   expect edges   (every brush/preview edge in the 2D views is visible on screen)
@@ -776,7 +921,7 @@ void Editor::stepScript() {
     static int dragView = -1;
     if (cmd == "tool") {
         std::string t; in >> t;
-        setTool(t == "block" ? (Tool*)&blockTool_ : (Tool*)&selectTool_);
+        setTool(t == "block" ? (Tool*)&blockTool_ : t == "vertex" ? (Tool*)&vertexTool_ : (Tool*)&selectTool_);
     } else if (cmd == "press") {
         int v; float x, y; in >> v >> x >> y;
         std::string mod;
@@ -813,11 +958,34 @@ void Editor::stepScript() {
     } else if (cmd == "flip") { std::string ax; in >> ax; flip(ax == "x" ? 0 : ax == "y" ? 1 : 2);
     } else if (cmd == "duplicate") { duplicate();
     } else if (cmd == "closedialogs") { closeDialogs_ = true;
+    } else if (cmd == "snapgrid") { snapSelectionToGrid();
+    } else if (cmd == "microgrid") { std::string on; in >> on; grid_.setMicrogrid(on == "on");
+    } else if (cmd == "rotsnap") { std::string m; in >> m; slopeAngles_ = m == "slopes";
+    } else if (cmd == "pivot") {
+        std::string m; in >> m;
+        if (m == "center") pivotMode_ = 0;
+        else if (m == "origin") pivotMode_ = 1;
+        else { customPivot_.x = std::atof(m.c_str()); in >> customPivot_.y >> customPivot_.z; pivotMode_ = 2; }
+    } else if (cmd == "vertexmove") {
+        Vec3 d; in >> d.x >> d.y >> d.z;
+        std::string err;
+        if (!vertexTool_.moveSelected(doc_, d, err)) std::fprintf(stderr, "script: vertexmove refused: %s\n", err.c_str());
+    } else if (cmd == "expect" && in.str().find(" ongrid") != std::string::npos) {
+        for (BrushId id : doc_.selection())
+            if (const Brush* b = doc_.find(id); b && !brushOnGrid(*b, grid_.size)) {
+                std::fprintf(stderr, "script FAIL (command %d): brush %u not on grid %g\n", scriptLine_, id, grid_.size);
+                ++scriptFailures_;
+            }
+    } else if (cmd == "expect" && in.str().find(" faces ") != std::string::npos) {
+        std::string w; size_t n = 0; in >> w >> n;
+        size_t got = 0;
+        for (BrushId id : doc_.selection()) if (const Brush* b = doc_.find(id)) got += b->faces.size();
+        if (got != n) { std::fprintf(stderr, "script FAIL (command %d): expected %zu faces, got %zu\n", scriptLine_, n, got); ++scriptFailures_; }
     } else if (cmd == "dialog") { std::string d; in >> d; if (d == "transform") openTransformDialog(); if (d == "controls") controlsOpen_ = true;
     } else if (cmd == "undo") { undo();
     } else if (cmd == "redo") { redo();
     } else if (cmd == "selectall") { selectAll();
-    } else if (cmd == "grid") { int g; in >> g; grid_.size = g;
+    } else if (cmd == "grid") { double g; in >> g; grid_.setSize(g);
     } else if (cmd == "save") { std::string p; in >> p; saveMap(p);
     } else if (cmd == "open") { std::string p; in >> p; openMap(p);
     } else if (cmd == "shot") { in >> shotRequest_;

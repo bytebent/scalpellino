@@ -10,6 +10,7 @@
 #include "render/viewport.hpp"
 #include "tools/block_tool.hpp"
 #include "tools/select_tool.hpp"
+#include "tools/vertex_tool.hpp"
 #include <deque>
 #include <memory>
 #include <string>
@@ -75,6 +76,9 @@ private:
     void centerViews();
     void openTransformDialog();
     void drawTransformDialog();
+    void snapSelectionToGrid();
+    Vec3 pivotPoint() const;          // current pivot for rotate/scale
+    void drawPrecisionDialogs();      // grid size, pivot point, vertex move
     void newMap();
     void openMap(const std::string& path);
     bool saveMap(const std::string& path);
@@ -99,6 +103,7 @@ private:
 
     SelectTool selectTool_;
     BlockTool blockTool_;
+    VertexTool vertexTool_;
     Tool* tool_ = &selectTool_;
 
     int capture_ = -1;          // view that owns the current left-button drag
@@ -133,6 +138,17 @@ private:
     double tfCustom_[3] = {0, 0, 0};
     bool tfTexLock_ = true;
     std::string tfError_;
+
+    // Precision options (milestone 2)
+    int pivotMode_ = 0;              // 0 selection centre, 1 world origin, 2 custom point
+    Vec3 customPivot_;
+    bool slopeAngles_ = false;       // drag rotation snaps to grid-friendly slopes
+    bool askGridSize_ = false, askPivot_ = false, askVertexMove_ = false;
+    double gridSizeBuf_ = 16;
+    double pivotBuf_[3] = {0, 0, 0};
+    double vmove_[3] = {0, 0, 0};
+    int vmoveMode_ = 0;              // 0 move by, 1 set position (single corner)
+    std::string precisionError_;
 
     bool exit_ = false;
     unsigned long long redraws_ = 0;
