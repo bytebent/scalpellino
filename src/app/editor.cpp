@@ -56,6 +56,7 @@ Editor::Editor(const EditorOptions& opt) : opt_(opt) {
     views_[1] = std::make_unique<Viewport>(ViewKind::Top);
     views_[2] = std::make_unique<Viewport>(ViewKind::Front);
     views_[3] = std::make_unique<Viewport>(ViewKind::Side);
+    if (const char* vs = std::getenv("SCAL_VIEW_SCALE")) viewScale_ = (float)std::atof(vs); // testing only
     lastBox_.min = {0, 0, 0};
     lastBox_.max = {64, 64, 64};
     if (!opt_.openPath.empty()) openMap(opt_.openPath);
@@ -207,10 +208,18 @@ void Editor::drawViews() {
         const ImGuiWindowFlags wf = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse |
                                     ImGuiWindowFlags_NoCollapse;
         if (ImGui::Begin(v.title(), nullptr, wf)) {
-            const ImVec2 avail = ImGui::GetContentRegionAvail();
-            const ImVec2 origin = ImGui::GetCursorScreenPos();
+            // Place the view on whole physical pixels so its texture maps 1:1 to the
+            // screen. (Fractional placement made the sampler skip rows/columns, which
+            // is what made 1-pixel lines vanish at some positions.)
+            const float fb = io.DisplayFramebufferScale.x > 0 ? io.DisplayFramebufferScale.x : 1.0f;
+            ImVec2 origin = ImGui::GetCursorScreenPos();
+            const ImVec2 avail0 = ImGui::GetContentRegionAvail();
+            const ImVec2 snapped(std::ceil(origin.x * fb) / fb, std::ceil(origin.y * fb) / fb);
+            const ImVec2 avail(avail0.x - (snapped.x - origin.x), avail0.y - (snapped.y - origin.y));
+            origin = snapped;
+            ImGui::SetCursorScreenPos(origin);
             viewOrigin_[i] = {origin.x, origin.y};
-            v.resize((int)avail.x, (int)avail.y);
+            v.resize((int)std::floor(avail.x), (int)std::floor(avail.y), viewScale_ > 0 ? viewScale_ : fb);
 
             // Invisible button over the canvas: owns mouse clicks so ImGui never drags windows.
             ImGui::InvisibleButton("##canvas", ImVec2((float)v.width(), (float)v.height()),
@@ -236,11 +245,15 @@ void Editor::drawViews() {
                     onPress(i, local);
             }
 
-            v.render(grid_, buildScene());
+            const Scene scene = buildScene();
+            v.render(grid_, scene);
             ImGui::SetCursorScreenPos(origin);
-            rlImGuiImageRenderTexture(&v.target());
-            ImGui::GetWindowDrawList()->AddText(ImVec2(origin.x + 6, origin.y + 4),
-                                                IM_COL32(200, 200, 200, 255), v.label());
+            const RenderTexture2D& rt = v.target();
+            ImGui::Image(ImTextureID(rt.texture.id), ImVec2((float)v.width(), (float)v.height()),
+                         ImVec2(0, 1), ImVec2(1, 0)); // render textures are stored upside down
+            ImDrawList* dl = ImGui::GetWindowDrawList();
+            dl->AddText(ImVec2(origin.x + 6, origin.y + 4), IM_COL32(200, 200, 200, 255), v.label());
+            if (v.is2D() && scene.handleBox) drawSizeLabels(v, *scene.handleBox, origin);
         }
         ImGui::End();
     }
@@ -278,6 +291,21 @@ void Editor::drawViews() {
         const float u = (float)IsKeyDown(KEY_E) - (float)IsKeyDown(KEY_Q);
         v3.fly(f, r, u, dt, shift_);
     }
+}
+
+void Editor::drawSizeLabels(const Viewport& v, const AABB& box, ImVec2 origin) {
+    const int U = v.axU(), V = v.axV();
+    const Vector2 a = v.worldToLocal2D(box.min[U], box.max[V]); // top-left
+    const Vector2 b = v.worldToLocal2D(box.max[U], box.min[V]); // bottom-right
+    char buf[32];
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const ImU32 col = IM_COL32(255, 200, 200, 255);
+    std::snprintf(buf, sizeof buf, "%g", box.max[U] - box.min[U]);
+    const ImVec2 su = ImGui::CalcTextSize(buf);
+    dl->AddText(ImVec2(origin.x + (a.x + b.x) * 0.5f - su.x * 0.5f, origin.y + a.y - su.y - 6), col, buf);
+    std::snprintf(buf, sizeof buf, "%g", box.max[V] - box.min[V]);
+    const ImVec2 sv = ImGui::CalcTextSize(buf);
+    dl->AddText(ImVec2(origin.x + b.x + 9, origin.y + (a.y + b.y) * 0.5f - sv.y * 0.5f), col, buf);
 }
 
 void Editor::drawToolsPanel() {
@@ -482,6 +510,7 @@ void Editor::runPending() {
 //   grid <n>                save <path> | open <path>
 //   shot <file.png>         quit
 //   expect brushes|selected <n>  |  expect size <x> <y> <z>  (selection bounds, +-0.5)
+//   expect edges   (every brush/preview edge in the 2D views is visible on screen)
 //   A failed expect prints FAIL and makes the exit code 1.
 
 void Editor::loadScript(const std::string& path) {
@@ -496,6 +525,67 @@ void Editor::loadScript(const std::string& path) {
         script_.push_back(line);
     }
     if (script_.empty()) script_.push_back("quit");
+}
+
+void Editor::checkScreenEdges() {
+    edgeCheck_ = false;
+    // Normally checks the real screen (what the user sees). With a forced view scale
+    // (SCAL_VIEW_SCALE, used to exercise Retina rendering on a 1x test display) the
+    // screen shows the views squeezed, so each view's own image is checked instead.
+    const bool viewImages = viewScale_ > 0;
+    Image screen{};
+    float fb = 1.0f;
+    if (!viewImages) {
+        screen = LoadImageFromScreen(); // physical pixels, top-left origin
+        fb = screen.width / (float)GetScreenWidth();
+    }
+    const Scene scene = buildScene();
+    int checked = 0, missing = 0;
+    for (int i = 1; i < 4; ++i) {
+        const Viewport& v = *views_[i];
+        Image img = viewImages ? LoadImageFromTexture(v.target().texture) : screen;
+        if (viewImages) ImageFlipVertical(&img); // render textures are stored upside down
+        const float s = viewImages ? v.scale() : fb;
+        const float ox = viewImages ? 0.0f : viewOrigin_[i].x, oy = viewImages ? 0.0f : viewOrigin_[i].y;
+        auto bright = [&](int x, int y) {
+            if (x < 0 || y < 0 || x >= img.width || y >= img.height) return false;
+            const Color c = GetImageColor(img, x, y);
+            return c.r > 200 || (c.r + c.g + c.b) > 400; // brush/selection/preview, never grid
+        };
+        const int U = v.axU(), V = v.axV();
+        auto checkSeg = [&](const Vec3& a, const Vec3& b) {
+            const Vector2 la = v.worldToLocal2D(a[U], a[V]), lb = v.worldToLocal2D(b[U], b[V]);
+            for (float t : {0.3f, 0.7f}) {
+                const float lx = la.x + (lb.x - la.x) * t, ly = la.y + (lb.y - la.y) * t;
+                if (lx < 4 || ly < 4 || lx > v.width() - 4 || ly > v.height() - 4) continue;
+                const int px = (int)((ox + lx) * s), py = (int)((oy + ly) * s);
+                bool ok = false;
+                for (int dy = -2; dy <= 2 && !ok; ++dy)
+                    for (int dx = -2; dx <= 2 && !ok; ++dx) ok = bright(px + dx, py + dy);
+                ++checked;
+                if (!ok) {
+                    ++missing;
+                    std::fprintf(stderr, "edge missing: %s view at local %.1f,%.1f\n", v.label(), lx, ly);
+                }
+            }
+        };
+        for (const SceneBrush& b : scene.brushes)
+            for (const Polygon& p : b.polys)
+                for (size_t k = 0; k < p.verts.size(); ++k) checkSeg(p.verts[k], p.verts[(k + 1) % p.verts.size()]);
+        if (scene.previewBox) {
+            const AABB& bx = *scene.previewBox;
+            Vec3 c[4];
+            for (int k = 0; k < 4; ++k) c[k] = bx.min;
+            c[1][U] = bx.max[U]; c[2][U] = bx.max[U]; c[2][V] = bx.max[V]; c[3][V] = bx.max[V];
+            for (int k = 0; k < 4; ++k) checkSeg(c[k], c[(k + 1) % 4]);
+        }
+        if (viewImages) UnloadImage(img);
+    }
+    if (!viewImages) UnloadImage(screen);
+    if (missing > 0 || checked == 0) {
+        std::fprintf(stderr, "script FAIL: %d of %d edge samples not visible\n", missing, checked);
+        ++scriptFailures_;
+    }
 }
 
 std::string Editor::takeScreenshotRequest() {
@@ -555,6 +645,8 @@ void Editor::stepScript() {
                          scriptLine_, x, y, z, s.x, s.y, s.z);
             ++scriptFailures_;
         }
+    } else if (cmd == "expect" && in.str().find(" edges") != std::string::npos) {
+        edgeCheck_ = true;
     } else if (cmd == "expect") {
         std::string what; size_t n = 0; in >> what >> n;
         const size_t got = what == "selected" ? doc_.selection().size() : doc_.brushes().size();

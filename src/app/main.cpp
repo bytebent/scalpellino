@@ -7,6 +7,7 @@
 #include "raylib.h"
 #include "imgui.h"
 #include "rlImGui.h"
+#include "rlgl.h"
 
 #include "app/editor.hpp"
 #include "app/settings.hpp"
@@ -17,8 +18,18 @@
 
 using namespace scal;
 
+extern const unsigned char scal_font_roboto[];
+extern const unsigned int scal_font_roboto_size;
+
 namespace {
 constexpr int kSettleFrames = 2;
+
+// UI font: Roboto, embedded. ImGui rasterizes it at the display's real resolution.
+void loadFonts() {
+    ImFontConfig cfg;
+    cfg.FontDataOwnedByAtlas = false;
+    ImGui::GetIO().Fonts->AddFontFromMemoryTTF((void*)scal_font_roboto, (int)scal_font_roboto_size, 15.0f, &cfg);
+}
 
 EditorOptions parseArgs(int argc, char** argv) {
     EditorOptions o;
@@ -35,7 +46,8 @@ int main(int argc, char** argv) {
     const EditorOptions opt = parseArgs(argc, argv);
 
     SetTraceLogLevel(LOG_WARNING);
-    SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_VSYNC_HINT);
+    // HIGHDPI: draw at the real Retina resolution instead of being upscaled by macOS.
+    SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_VSYNC_HINT | FLAG_WINDOW_HIGHDPI);
     InitWindow(1440, 900, "Scalpellino");
     if (!IsWindowReady()) {
         std::fprintf(stderr, "Scalpellino: could not open an OpenGL window.\n");
@@ -47,6 +59,7 @@ int main(int argc, char** argv) {
         SetTargetFPS(hz > 0 ? hz : 60);
     }
 
+    rlImGuiSetLoadFontsCallback(loadFonts);
     rlImGuiSetup(true);
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
@@ -70,6 +83,10 @@ int main(int argc, char** argv) {
             rlImGuiBegin();
             const bool busy = editor.frame(GetFrameTime());
             rlImGuiEnd();
+            if (editor.wantsScreenCheck()) {
+                rlDrawRenderBatchActive(); // flush so the back buffer holds the full frame
+                editor.checkScreenEdges();
+            }
 
             if (busy || settle > 0) {
                 DisableEventWaiting();

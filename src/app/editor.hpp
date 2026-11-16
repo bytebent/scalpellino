@@ -2,6 +2,7 @@
 // The editor: owns the document, viewports and tools, and runs one UI frame at a time.
 // Real input and scripted input (for automated tests/screenshots) go through the same
 // onPress/onDrag/onRelease/onKey paths.
+#include "imgui.h"
 #include "core/document.hpp"
 #include "core/grid.hpp"
 #include "render/scene.hpp"
@@ -34,6 +35,10 @@ public:
     bool shouldExit() const { return exit_; }
     int exitCode() const { return scriptFailures_ > 0 ? 1 : 0; }
     std::string takeScreenshotRequest(); // non-empty: caller saves a screenshot now
+    // Script `expect edges`: after the frame is drawn (before present), the caller asks
+    // whether to verify on-screen pixels, then calls checkScreenEdges().
+    bool wantsScreenCheck() const { return edgeCheck_; }
+    void checkScreenEdges();
 
 private:
     // ---- input (shared by real and scripted input)
@@ -49,6 +54,7 @@ private:
     void handleKeyboard();
     void drawViews();
     void drawToolsPanel();
+    void drawSizeLabels(const Viewport& v, const AABB& box, ImVec2 origin);
     void drawDialogs();
     Scene buildScene();
     void updateTitle();
@@ -78,6 +84,7 @@ private:
     AABB lastBox_;
     std::unique_ptr<Viewport> views_[4];
     Vector2 viewOrigin_[4]{};
+    float viewScale_ = 0; // >0 overrides the display scale (SCAL_VIEW_SCALE, tests only)
     bool viewHovered_[4]{};
 
     SelectTool selectTool_;
@@ -110,6 +117,7 @@ private:
     std::deque<std::string> script_;
     int scriptLine_ = 0;
     int scriptFailures_ = 0;
+    bool edgeCheck_ = false;
     int warmup_ = 3;
     std::string shotRequest_;
     int screenshotFrames_ = 6;

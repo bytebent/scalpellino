@@ -7,6 +7,7 @@ drag 300 200
 drag 463 87
 release
 shot m1-01-block-preview.png
+expect edges
 expect brushes 0
 key Return
 expect brushes 1
@@ -17,6 +18,7 @@ release
 key Return
 expect brushes 2
 shot m1-02-two-blocks.png
+expect edges
 tool select
 # move the pillar right by 176 units
 press 1 343 207
@@ -30,6 +32,7 @@ drag 343 120
 drag 343 87
 release
 shot m1-04-resized-pillar.png
+expect edges
 undo
 shot m1-05-undo-resize.png
 redo
@@ -49,6 +52,7 @@ drag 358 208
 release
 expect brushes 3
 shot m1-07-cloned.png
+expect edges
 key Delete
 expect brushes 2
 # block tool: Esc cancels the preview, so Return afterwards creates nothing
@@ -84,6 +88,7 @@ drag 334 40
 release
 expect size 724.08 724.08 64
 shot m1-09-rotated-45.png
+expect edges
 undo
 expect size 512 512 64
 quit

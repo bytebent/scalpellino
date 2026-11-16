@@ -2,7 +2,6 @@
 #include "rlgl.h"
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
 
 namespace scal {
 
@@ -18,7 +17,6 @@ const Color kBrush2D   {205, 205, 205, 255};
 const Color kSelected  {255,  64,  64, 255};
 const Color kPreview   {255, 220,  80, 255};
 const Color kHandle    {255, 255, 255, 255};
-const Color kLabel     {255, 200, 200, 255};
 
 const Color kBg3D      { 22,  22,  26, 255};
 const Color kGround    { 48,  48,  56, 255};
@@ -28,12 +26,20 @@ constexpr double kMinZoom = 0.02;  // px per unit
 constexpr double kMaxZoom = 32.0;
 constexpr double kMinLinePx = 4.0; // hide grid lines closer than this
 
-// Grid lines are drawn as 1px rectangles: exact and identical on every driver.
-inline void vline(double x, float y0, float y1, Color c) {
-    DrawRectangle((int)std::floor(x), (int)std::floor(y0), 1, (int)std::ceil(y1 - y0), c);
+// All 2D lines are drawn as filled rectangles/quads in physical pixels: exact and
+// identical on every driver (GL line rasterization drops or shifts lines on some).
+inline void vline(double x, double y0, double y1, int t, Color c) {
+    if (y1 < y0) std::swap(y0, y1);
+    DrawRectangle((int)std::floor(x), (int)std::floor(y0), t, std::max(1, (int)std::lround(y1 - y0) + 1), c);
 }
-inline void hline(double y, float x0, float x1, Color c) {
-    DrawRectangle((int)std::floor(x0), (int)std::floor(y), (int)std::ceil(x1 - x0), 1, c);
+inline void hline(double y, double x0, double x1, int t, Color c) {
+    if (x1 < x0) std::swap(x0, x1);
+    DrawRectangle((int)std::floor(x0), (int)std::floor(y), std::max(1, (int)std::lround(x1 - x0) + 1), t, c);
+}
+inline void segment(Vector2 a, Vector2 b, int t, Color c) {
+    if (std::fabs(a.x - b.x) < 0.5f) vline(a.x, a.y, b.y, t, c);
+    else if (std::fabs(a.y - b.y) < 0.5f) hline(a.y, a.x, b.x, t, c);
+    else DrawLineEx(a, b, (float)t, c);
 }
 
 Vector3 toRl(const Vec3& v) { return {(float)v.x, (float)v.y, (float)v.z}; }
@@ -91,14 +97,17 @@ int Viewport::axD() const {
 const char* Viewport::axisU() const { static const char* n[] = {"X", "Y", "Z"}; return n[axU()]; }
 const char* Viewport::axisV() const { static const char* n[] = {"X", "Y", "Z"}; return n[axV()]; }
 
-void Viewport::resize(int w, int h) {
+void Viewport::resize(int w, int h, float scale) {
     w = std::max(w, 1);
     h = std::max(h, 1);
-    if (w == w_ && h == h_ && rt_.id) return;
+    if (scale <= 0) scale = 1;
+    if (w == w_ && h == h_ && scale == scale_ && rt_.id) return;
     if (rt_.id) UnloadRenderTexture(rt_);
-    rt_ = LoadRenderTexture(w, h);
+    rt_ = LoadRenderTexture((int)std::lround(w * scale), (int)std::lround(h * scale));
+    SetTextureFilter(rt_.texture, TEXTURE_FILTER_POINT);
     w_ = w;
     h_ = h;
+    scale_ = scale;
 }
 
 void Viewport::render(const Grid& grid, const Scene& scene) {
@@ -117,9 +126,14 @@ Vector2 Viewport::worldToLocal2D(double u, double v) const {
 void Viewport::render2D(const Grid& grid, const Scene& scene) {
     ClearBackground(kBg2D);
 
+    // Physical-pixel mapping (the texture is w_*scale_ x h_*scale_).
+    const double P = scale_;
     const double hw = w_ * 0.5, hh = h_ * 0.5;
-    auto sx = [&](double u) { return hw + (u - panU_) * zoom_; };
-    auto sy = [&](double v) { return hh - (v - panV_) * zoom_; };
+    auto sx = [&](double u) { return (hw + (u - panU_) * zoom_) * P; };
+    auto sy = [&](double v) { return (hh - (v - panV_) * zoom_) * P; };
+    auto phys = [&](double u, double v) { return Vector2{(float)sx(u), (float)sy(v)}; };
+    const int thin = 1;                                   // grid: one physical pixel
+    const int thick = std::max(1, (int)std::lround(P));   // geometry: one logical pixel
 
     // Visible world range, clamped to the world bounds.
     const double uMin = std::max(panU_ - hw / zoom_, -kWorldHalf);
@@ -128,18 +142,18 @@ void Viewport::render2D(const Grid& grid, const Scene& scene) {
     const double vMax = std::min(panV_ + hh / zoom_,  kWorldHalf);
 
     if (uMin < uMax && vMin < vMax) {
-        const float top = (float)sy(vMax), bottom = (float)sy(vMin);
-        const float left = (float)sx(uMin), right = (float)sx(uMax);
+        const double top = sy(vMax), bottom = sy(vMin);
+        const double left = sx(uMin), right = sx(uMax);
 
         auto drawLines = [&](double step, Color c, double skipMultiple) {
             if (step * zoom_ < kMinLinePx) return;
             for (double u = std::ceil(uMin / step) * step; u <= uMax; u += step) {
                 if (skipMultiple > 0 && std::fmod(std::fabs(u), skipMultiple) == 0.0) continue;
-                vline(sx(u), top, bottom, c);
+                vline(sx(u), top, bottom, thin, c);
             }
             for (double v = std::ceil(vMin / step) * step; v <= vMax; v += step) {
                 if (skipMultiple > 0 && std::fmod(std::fabs(v), skipMultiple) == 0.0) continue;
-                hline(sy(v), left, right, c);
+                hline(sy(v), left, right, thin, c);
             }
         };
 
@@ -148,12 +162,14 @@ void Viewport::render2D(const Grid& grid, const Scene& scene) {
             drawLines(64.0,   kGrid64,   1024.0);
             drawLines(1024.0, kGrid1024, 0.0);
         }
-        if (uMin <= 0 && uMax >= 0) vline(sx(0), top, bottom, kAxis);
-        if (vMin <= 0 && vMax >= 0) hline(sy(0), left, right, kAxis);
+        if (uMin <= 0 && uMax >= 0) vline(sx(0), top, bottom, thin, kAxis);
+        if (vMin <= 0 && vMax >= 0) hline(sy(0), left, right, thin, kAxis);
     }
-    DrawRectangleLinesEx({(float)sx(-kWorldHalf), (float)sy(kWorldHalf),
-                          (float)(2 * kWorldHalf * zoom_), (float)(2 * kWorldHalf * zoom_)},
-                         1.0f, kBorder);
+    {   // world border
+        const Vector2 a = phys(-kWorldHalf, kWorldHalf), b = phys(kWorldHalf, -kWorldHalf);
+        hline(a.y, a.x, b.x, thin, kBorder); hline(b.y, a.x, b.x, thin, kBorder);
+        vline(a.x, a.y, b.y, thin, kBorder); vline(b.x, a.y, b.y, thin, kBorder);
+    }
 
     // ---- brushes: edges of every face polygon, projected.
     const int U = axU(), V = axV();
@@ -163,7 +179,7 @@ void Viewport::render2D(const Grid& grid, const Scene& scene) {
             for (size_t i = 0; i < n; ++i) {
                 const Vec3& a = p.verts[i];
                 const Vec3& e = p.verts[(i + 1) % n];
-                DrawLineV(worldToLocal2D(a[U], a[V]), worldToLocal2D(e[U], e[V]), c);
+                segment(phys(a[U], a[V]), phys(e[U], e[V]), thick, c);
             }
         }
     };
@@ -174,23 +190,23 @@ void Viewport::render2D(const Grid& grid, const Scene& scene) {
             if (scene.selected.count(b.id)) drawBrush(b, kSelected);
     for (const SceneBrush& g : scene.ghosts) drawBrush(g, kSelected);
 
-    // ---- block tool preview
-    if (scene.previewBox) {
-        const AABB& pb = *scene.previewBox;
-        const Vector2 a = worldToLocal2D(pb.min[U], pb.max[V]);
-        const Vector2 b = worldToLocal2D(pb.max[U], pb.min[V]);
-        DrawRectangleLinesEx({a.x, a.y, b.x - a.x, b.y - a.y}, 1.0f, kPreview);
-    }
+    auto drawBox = [&](const AABB& bx, Color c) {
+        const Vector2 a = phys(bx.min[U], bx.max[V]), b = phys(bx.max[U], bx.min[V]);
+        hline(a.y, a.x, b.x, thick, c); hline(b.y, a.x, b.x, thick, c);
+        vline(a.x, a.y, b.y, thick, c); vline(b.x, a.y, b.y, thick, c);
+    };
+    if (scene.previewBox) drawBox(*scene.previewBox, kPreview);
 
-    // ---- handles + size labels
+    // ---- handles (size labels are drawn by the UI layer, in the UI font)
     if (scene.handleBox) {
         const AABB& hb = *scene.handleBox;
-        const Vector2 a = worldToLocal2D(hb.min[U], hb.max[V]); // top-left
-        const Vector2 b = worldToLocal2D(hb.max[U], hb.min[V]); // bottom-right
+        const Vector2 a = phys(hb.min[U], hb.max[V]); // top-left
+        const Vector2 b = phys(hb.max[U], hb.min[V]); // bottom-right
         const float mx = (a.x + b.x) * 0.5f, my = (a.y + b.y) * 0.5f;
-        const float hs = 3.0f;
+        const float hs = (float)(3.0 * P);
+        const float pad = (float)P;
         // Middle handles only when there is room for them (small boxes stay readable).
-        const bool midU = (b.x - a.x) > 40.0f, midV = (b.y - a.y) > 40.0f;
+        const bool midU = (b.x - a.x) > 40.0f * P, midV = (b.y - a.y) > 40.0f * P;
         Vector2 pts[8];
         int n = 0;
         pts[n++] = {a.x, a.y}; pts[n++] = {b.x, a.y}; pts[n++] = {a.x, b.y}; pts[n++] = {b.x, b.y};
@@ -198,14 +214,9 @@ void Viewport::render2D(const Grid& grid, const Scene& scene) {
         if (midV) { pts[n++] = {a.x, my}; pts[n++] = {b.x, my}; }
         for (int i = 0; i < n; ++i) {
             const Vector2 p = pts[i];
-            DrawRectangle((int)(p.x - hs - 1), (int)(p.y - hs - 1), (int)(hs * 2 + 3), (int)(hs * 2 + 3), BLACK);
-            DrawRectangle((int)(p.x - hs), (int)(p.y - hs), (int)(hs * 2 + 1), (int)(hs * 2 + 1), kHandle);
+            DrawRectangleRec({std::floor(p.x - hs - pad), std::floor(p.y - hs - pad), 2 * (hs + pad) + 1, 2 * (hs + pad) + 1}, BLACK);
+            DrawRectangleRec({std::floor(p.x - hs), std::floor(p.y - hs), 2 * hs + 1, 2 * hs + 1}, kHandle);
         }
-        char buf[32];
-        std::snprintf(buf, sizeof buf, "%g", hb.max[U] - hb.min[U]);
-        DrawText(buf, (int)(mx - MeasureText(buf, 10) / 2), (int)(a.y - 16), 10, kLabel);
-        std::snprintf(buf, sizeof buf, "%g", hb.max[V] - hb.min[V]);
-        DrawText(buf, (int)(b.x + 8), (int)(my - 5), 10, kLabel);
     }
 }
 

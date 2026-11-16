@@ -29,8 +29,11 @@ public:
     int axV() const;
     int axD() const;
 
-    // Keeps the render texture matching the on-screen size.
-    void resize(int w, int h);
+    // Keeps the render texture matching the on-screen size. w/h are in logical (point)
+    // units; `scale` is the display's pixels per point (2 on Retina). The texture is
+    // w*scale x h*scale so drawing is 1:1 with real screen pixels.
+    void resize(int w, int h, float scale);
+    float scale() const { return scale_; }
     const RenderTexture2D& target() const { return rt_; }
     int width()  const { return w_; }
     int height() const { return h_; }
@@ -58,7 +61,8 @@ private:
 
     ViewKind kind_;
     RenderTexture2D rt_{};
-    int w_ = 0, h_ = 0;
+    int w_ = 0, h_ = 0;      // logical size
+    float scale_ = 1.0f;     // physical pixels per logical pixel
 
     // 2D: world point at the view center, and pixels per world unit.
     double panU_ = 0.0, panV_ = 0.0;

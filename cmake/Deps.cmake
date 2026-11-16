@@ -36,3 +36,10 @@ target_link_libraries(scal_imgui PUBLIC raylib)
 if(APPLE)
   target_compile_definitions(scal_imgui PRIVATE GL_SILENCE_DEPRECATION)
 endif()
+
+# UI font: Roboto Medium (Apache License 2.0), shipped with Dear ImGui. Embedded into the
+# app so it needs no files at runtime. See docs/THIRD_PARTY.md.
+include(${CMAKE_CURRENT_LIST_DIR}/EmbedFile.cmake)
+embed_file(${imgui_SOURCE_DIR}/misc/fonts/Roboto-Medium.ttf
+           ${CMAKE_BINARY_DIR}/generated/font_roboto.cpp scal_font_roboto)
+add_library(scal_assets STATIC ${CMAKE_BINARY_DIR}/generated/font_roboto.cpp)

@@ -62,7 +62,7 @@ if(SCAL_BUILD_APP)
   endif()
 
   target_include_directories(Scalpellino PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-  target_link_libraries(Scalpellino PRIVATE scal_core scal_io scal_imgui raylib)
+  target_link_libraries(Scalpellino PRIVATE scal_core scal_io scal_imgui scal_assets raylib)
 endif()
 
 # Warnings for our own code only (not third-party).
