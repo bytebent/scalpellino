@@ -20,6 +20,7 @@ const Color kPreview   {255, 220,  80, 255};
 const Color kHandle    {255, 255, 255, 255};
 const Color kInvalid   {255,  60, 220, 255};
 const Color kPivot     { 80, 230, 255, 255};
+const Color kTerrainPoint{120, 190, 255, 255};
 
 const Color kBg3D      { 22,  22,  26, 255};
 const Color kGround    { 48,  48,  56, 255};
@@ -222,17 +223,24 @@ void Viewport::render2D(const Grid& grid, const Scene& scene) {
             segment(phys(a[U], a[V]), phys(e[U], e[V]), thick, kPreview);
         }
     }
+    for (const auto& o : scene.outlines)
+        for (size_t i = 0; i < o.size(); ++i) {
+            const Vec3 &a = o[i], &e = o[(i + 1) % o.size()];
+            segment(phys(a[U], a[V]), phys(e[U], e[V]), thick + 1, kPreview);
+        }
 
-    // ---- vertex tool corners: white, selected red (drawn on top)
+    // ---- vertex tool corners: white, selected red (drawn on top); terrain points
+    //      smaller and blue under them
     {
-        const float hs = (float)(2.5 * P), pad = (float)P;
-        for (int pass = 0; pass < 2; ++pass)
+        const float pad = (float)P;
+        for (int pass = 0; pass < 4; ++pass)
             for (const auto& h : scene.vertexHandles) {
-                if (h.selected != (pass == 1)) continue;
+                if (h.selected != (pass >= 2) || h.terrain != (pass % 2 == 0)) continue;
+                const float hs = (float)((h.terrain ? 1.5 : 2.5) * P);
                 const Vector2 c = phys(h.pos[U], h.pos[V]);
                 DrawRectangleRec({std::floor(c.x - hs - pad), std::floor(c.y - hs - pad), 2 * (hs + pad) + 1, 2 * (hs + pad) + 1}, BLACK);
                 DrawRectangleRec({std::floor(c.x - hs), std::floor(c.y - hs), 2 * hs + 1, 2 * hs + 1},
-                                 h.selected ? kSelected : kHandle);
+                                 h.selected ? kSelected : h.terrain ? kTerrainPoint : kHandle);
             }
     }
 
@@ -339,6 +347,14 @@ void Viewport::pickRay(Vector2 local, Vec3& origin, Vec3& dir) const {
     dir = normalize(Vec3{r.direction.x, r.direction.y, r.direction.z});
 }
 
+bool Viewport::worldToLocal3D(const Vec3& p, Vector2& out) const {
+    const Vector3 f = forwardFrom(yaw_, pitch_);
+    const Vec3 rel{p.x - pos_.x, p.y - pos_.y, p.z - pos_.z};
+    if (rel.x * f.x + rel.y * f.y + rel.z * f.z < 1.0) return false;
+    out = GetWorldToScreenEx({(float)p.x, (float)p.y, (float)p.z}, camera(), w_, h_);
+    return true;
+}
+
 void Viewport::render3D(const Grid& grid, const Scene& scene) {
     ClearBackground(kBg3D);
     rlSetClipPlanes(2.0, 32768.0);
@@ -357,14 +373,14 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
     DrawLine3D({0, 0, 0}, {0, 0, 256}, {80, 120, 230, 255});
 
     // ---- brushes: textured (default) or flat-shaded per brush colour
-    // Terrain cells: smooth per-corner shading; the second texture is drawn over the
-    // first with the painted blend as transparency (same points, so it sits exactly on it).
+    // Terrain cells: smooth per-corner shading; each painted texture is drawn over the
+    // ones below it with its blend as transparency (same points, so it sits exactly on it).
     auto drawTerrain = [&](const SceneBrush& b, Color tint, bool textured) {
         if (!b.terrain) return;
         const Face& f = b.faces[b.terrain->face];
-        for (int pass = 0; pass < 2; ++pass) {
-            std::string texName = pass == 0 ? f.texture : b.texture2;
-            if (pass == 1 && (!textured || b.texture2.empty())) break;
+        const int passes = textured ? 1 + (int)b.layers.size() : 1;
+        for (int pass = 0; pass < passes; ++pass) {
+            const std::string& texName = pass == 0 ? f.texture : b.layers[pass - 1].texture;
             unsigned texId = 0;
             TexSize ts{1, 1};
             if (textured) {
@@ -375,8 +391,8 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
             const size_t cells = b.polys.size() - b.terrainFirst;
             for (size_t c = 0; c < cells; ++c) {
                 const Polygon& p = b.polys[b.terrainFirst + c];
-                const float* al = &b.cellAlpha[4 * c];
-                if (pass == 1 && al[0] <= 0 && al[1] <= 0 && al[2] <= 0 && al[3] <= 0) continue;
+                const float* al = pass == 0 ? nullptr : &b.layers[pass - 1].cellAlpha[4 * c];
+                if (pass > 0 && al[0] <= 0 && al[1] <= 0 && al[2] <= 0 && al[3] <= 0) continue;
                 rlCheckRenderBatchLimit(6);
                 if (texId) rlSetTexture(texId);
                 rlBegin(RL_TRIANGLES);
@@ -477,6 +493,8 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
             if (scene.selectedFaces.count({b.id, p.face}))
                 for (size_t i = 0; i < p.verts.size(); ++i)
                     DrawLine3D(toRl(p.verts[i]), toRl(p.verts[(i + 1) % p.verts.size()]), {255, 230, 80, 255});
+    for (const auto& o : scene.outlines)
+        for (size_t i = 0; i < o.size(); ++i) DrawLine3D(toRl(o[i]), toRl(o[(i + 1) % o.size()]), kPreview);
     if (scene.previewBox) {
         const AABB& pb = *scene.previewBox;
         const Vec3 c = pb.center(), s = pb.size();
@@ -492,6 +510,21 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
     rlEnableDepthTest();
 
     EndMode3D();
+
+    // Vertex tool: terrain points as small squares (the only handles picked in 3D).
+    const float P = scale_;
+    for (int pass = 0; pass < 2; ++pass)
+        for (const auto& h : scene.vertexHandles) {
+            if (!h.terrain || h.selected != (pass == 1)) continue;
+            Vector2 c;
+            if (!worldToLocal3D(h.pos, c)) continue;
+            c.x *= P;
+            c.y *= P;
+            const float hs = (h.selected ? 2.0f : 1.5f) * P;
+            DrawRectangleRec({std::floor(c.x - hs - P), std::floor(c.y - hs - P), 2 * (hs + P) + 1, 2 * (hs + P) + 1}, BLACK);
+            DrawRectangleRec({std::floor(c.x - hs), std::floor(c.y - hs), 2 * hs + 1, 2 * hs + 1},
+                             h.selected ? kSelected : kTerrainPoint);
+        }
 }
 
 void Viewport::resetToOrigin() {

@@ -1,0 +1,119 @@
+# v0.7.1: terrain on any face (picked, not just the top), triangles, terrain points with
+# the vertex tool, three and more painted textures.
+texturedir assets/textures
+# -- two floor patches, a wall, and a box clipped diagonally into two triangular prisms
+block 0 0 -64 512 512 0
+block 0 512 -64 512 1024 0
+block 600 0 0 664 512 256
+block 700 0 -64 956 256 0
+tool clip
+clipkeep both
+clippoints 700 0 0  956 256 0  700 0 -64
+key Return
+expect brushes 5
+tool select
+key Esc
+# -- Terrain > Make terrain: click the floors and triangles in the top view (their top
+#    faces) and the wall in the front view (its face toward +X)
+terrain pick
+wpress 1 256 256
+release
+wpress 1 256 768 shift
+release
+wpress 1 870 85 shift
+release
+wpress 1 785 170 shift
+release
+wpress 2 256 128 shift
+release
+camera -250 -350 520 40 -32
+shot m7-05-make-terrain-picked-faces.png
+terrain make 8
+expect terrains 5
+expect selected 5
+# -- the vertex tool shows terrain points: pick a row of floor 1 in the front view and
+#    raise it (stacked points come together, like corners)
+tool vertex
+wpress 1 100 100
+release
+expect selected 1
+wpress 2 128 0
+expect terrainpoints 9
+wdrag 128 32
+release
+expect terrainheight 256 128 32
+expect terrainheight 256 160 16
+expect terrainheight 256 256 0
+undo
+expect terrainheight 256 128 0
+redo
+expect terrainheight 256 128 32
+# -- a point on the seam, picked and dragged in the 3D view: floor 2 follows
+camera 256 112 300 90 -36.87
+press3d 0 0
+expect terrainpoints 1
+drag3d 0 -60
+release
+expect terrainheight 256 512 112
+expect terrainheight 256 520 98
+# -- typed height (Cmd+Shift+T): set it to exactly 40
+vertexheight 40
+expect terrainheight 256 512 40
+expect terrainheight 256 576 0
+camera -200 -260 300 55 -30
+shot m7-06-vertex-tool-terrain-points.png
+# -- moving the wall's top corners keeps its terrain (its face stays flat)
+key Esc
+tool select
+key Esc
+tool vertex
+wpress 2 300 128
+release
+wpress 2 512 256
+wdrag 512 320
+release
+expect terrains 5
+# -- paint three textures on floor 1, plus a 4th, from the top view
+tool terrain
+terrainset mode paint
+terrainset radius 110
+terrainset strength 100
+terrainset falloff hard
+texture grass
+wpress 1 110 110
+wdrag 150 110
+release
+texture sand
+wpress 1 380 110
+wdrag 400 120
+release
+texture rock
+wpress 1 130 390
+wdrag 150 400
+release
+texture Tile_19
+wpress 1 400 400
+release
+expect paintlayers 4
+# painting the face's own texture (Bricks_24) uncovers it; a texture with nothing left
+# is dropped
+texture Bricks_24
+terrainset radius 200
+terrainset strength 100
+terrainset falloff hard
+wpress 1 400 400
+release
+expect paintlayers 3
+undo
+expect paintlayers 4
+tool select
+key Esc
+camera 256 -330 520 90 -50
+shot m7-07-four-painted-textures.png
+# -- save + open keeps it all
+save v071-test.map
+open v071-test.map
+expect terrains 5
+expect paintlayers 4
+expect terrainheight 256 512 40
+quit

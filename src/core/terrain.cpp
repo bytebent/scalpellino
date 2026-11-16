@@ -63,11 +63,6 @@ struct Shared {
         for (const Ref& r : members[g]) s += bs[r.brush].terrain->heights[r.idx];
         return s / members[g].size();
     }
-    double alpha(const std::vector<Brush>& bs, int g) const {
-        double s = 0;
-        for (const Ref& r : members[g]) s += bs[r.brush].terrain->alpha[r.idx];
-        return s / members[g].size();
-    }
     // Shared points next to g (grid neighbours in every patch that has g).
     std::vector<int> neighbours(int g) const {
         std::set<int> out;
@@ -140,10 +135,16 @@ std::optional<std::array<Vec3, 4>> faceQuad(const Brush& b, int face, const Vec3
     if (face < 0 || face >= (int)b.faces.size()) return std::nullopt;
     for (const Polygon& p : b.polygons()) {
         if (p.face != face) continue;
-        if (p.verts.size() != 4) return std::nullopt;
+        const int m = (int)p.verts.size();
+        if (m != 3 && m != 4) return std::nullopt;
         int k = 0;
-        for (int m = 1; m < 4; ++m)
-            if (length(p.verts[m] - start) < length(p.verts[k] - start)) k = m;
+        for (int c = 1; c < m; ++c)
+            if (length(p.verts[c] - start) < length(p.verts[k] - start)) k = c;
+        if (m == 3) {
+            // Triangle: the grid's far corner is the middle of the edge opposite the start.
+            const Vec3 &c1 = p.verts[(k + 1) % 3], &c3 = p.verts[(k + 2) % 3];
+            return std::array<Vec3, 4>{p.verts[k], c1, (c1 + c3) * 0.5, c3};
+        }
         return std::array<Vec3, 4>{p.verts[k], p.verts[(k + 1) % 4], p.verts[(k + 2) % 4], p.verts[(k + 3) % 4]};
     }
     return std::nullopt;
@@ -154,7 +155,9 @@ std::optional<TerrainGrid> terrainGrid(const Brush& b) {
     const Terrain& t = *b.terrain;
     if (t.power < kMinTerrainPower || t.power > kMaxTerrainPower) return std::nullopt;
     const int n = t.size();
-    if ((int)t.heights.size() != n * n || (int)t.alpha.size() != n * n) return std::nullopt;
+    if ((int)t.heights.size() != n * n) return std::nullopt;
+    for (const TerrainLayer& l : t.layers)
+        if ((int)l.alpha.size() != n * n) return std::nullopt;
     const auto q = faceQuad(b, t.face, t.start);
     if (!q) return std::nullopt;
     TerrainGrid g;
@@ -164,7 +167,6 @@ std::optional<TerrainGrid> terrainGrid(const Brush& b) {
     g.corners = *q;
     g.base.resize((size_t)n * n);
     g.pos.resize((size_t)n * n);
-    g.alpha = t.alpha;
     const Vec3 &c0 = (*q)[0], &c1 = (*q)[1], &c2 = (*q)[2], &c3 = (*q)[3];
     for (int j = 0; j < n; ++j)
         for (int i = 0; i < n; ++i) {
@@ -183,10 +185,70 @@ int topQuadFace(const Brush& b) {
     int best = -1;
     double bestZ = -2;
     for (const Polygon& p : b.polygons()) {
-        if (p.verts.size() != 4) continue;
+        if (p.verts.size() != 3 && p.verts.size() != 4) continue;
         if (p.normal.z > bestZ + 1e-9) { bestZ = p.normal.z; best = p.face; }
     }
     return best;
+}
+
+int faceFacing(const Brush& b, const Vec3& dir) {
+    int best = -1;
+    double bestD = 0.05;
+    for (const Polygon& p : b.polygons()) {
+        const double d = dot(p.normal, dir);
+        if (d > bestD + 1e-9) { bestD = d; best = p.face; }
+    }
+    return best;
+}
+
+int terrainLayer(const Terrain& t, const std::string& texture) {
+    for (size_t i = 0; i < t.layers.size(); ++i)
+        if (t.layers[i].texture == texture) return (int)i;
+    return -1;
+}
+
+bool pruneTerrainLayers(Terrain& t) {
+    const size_t before = t.layers.size();
+    t.layers.erase(std::remove_if(t.layers.begin(), t.layers.end(),
+                                  [](const TerrainLayer& l) {
+                                      for (double a : l.alpha) if (a > 1e-6) return false;
+                                      return true;
+                                  }),
+                   t.layers.end());
+    return t.layers.size() != before;
+}
+
+bool carryTerrain(const Brush& old, Brush& rebuilt, const std::function<Vec3(const Vec3&)>& moved) {
+    rebuilt.terrain.reset();
+    if (!old.terrain) return false;
+    const Terrain& t = *old.terrain;
+    std::vector<Vec3> want;
+    Vec3 startCorner;
+    {
+        const auto g = terrainGrid(old);
+        if (!g) return false;
+        startCorner = moved(g->corners[0]);
+        for (const Polygon& p : old.polygons())
+            if (p.face == t.face) for (const Vec3& v : p.verts) want.push_back(moved(v));
+    }
+    for (const Polygon& p : rebuilt.polygons()) {
+        if (p.verts.size() != want.size()) continue;
+        bool all = true;
+        for (const Vec3& w : want) {
+            bool found = false;
+            for (const Vec3& v : p.verts) found = found || length(v - w) < 1e-4;
+            all = all && found;
+        }
+        if (!all) continue;
+        Terrain nt = t;
+        nt.face = p.face;
+        nt.start = startCorner;
+        rebuilt.terrain = std::move(nt);
+        if (terrainValid(rebuilt)) return true;
+        rebuilt.terrain.reset();
+        return false;
+    }
+    return false;
 }
 
 std::string makeTerrain(Brush& b, int face, int power) {
@@ -201,41 +263,60 @@ std::string makeTerrain(Brush& b, int face, int power) {
         nt.power = power;
         const int n = nt.size();
         nt.heights.assign((size_t)n * n, 0);
-        nt.alpha.assign((size_t)n * n, 0);
+        for (TerrainLayer& l : nt.layers) l.alpha.assign((size_t)n * n, 0);
         for (int j = 0; j < n; ++j)
             for (int i = 0; i < n; ++i) {
                 const double s = (double)i / (n - 1), u = (double)j / (n - 1);
                 nt.heights[(size_t)j * n + i] = sampleGrid(t.heights, on, s, u);
-                nt.alpha[(size_t)j * n + i] = sampleGrid(t.alpha, on, s, u);
+                for (size_t l = 0; l < nt.layers.size(); ++l)
+                    nt.layers[l].alpha[(size_t)j * n + i] = sampleGrid(t.layers[l].alpha, on, s, u);
             }
         t = std::move(nt);
         return "";
     }
     // New terrain: start at the lowest corner (x, then y, then z) so it's predictable.
     const auto q = faceQuad(b, face, Vec3{});
-    if (!q) return "the face needs exactly 4 corners to become terrain";
-    Vec3 start = (*q)[0];
-    for (const Vec3& c : *q)
-        if (std::tie(c.x, c.y, c.z) < std::tie(start.x, start.y, start.z)) start = c;
+    if (!q) return "the face needs 3 or 4 corners to become terrain";
+    std::vector<Vec3> corners;
+    for (const Polygon& p : b.polygons())
+        if (p.face == face) corners = p.verts;
+    Vec3 start = corners[0];
+    if (corners.size() == 3) {
+        // Triangle: start opposite the longest edge, so that edge is the one split in two
+        // halves. Two triangles sharing their long edge (a box cut along a diagonal) then
+        // lay out the same points along it.
+        double best = -1;
+        for (int k = 0; k < 3; ++k) {
+            const Vec3& c = corners[k];
+            const double len = length(corners[(k + 1) % 3] - corners[(k + 2) % 3]);
+            if (len > best + 1e-6 || (std::fabs(len - best) <= 1e-6 && std::tie(c.x, c.y, c.z) < std::tie(start.x, start.y, start.z))) {
+                best = std::max(best, len);
+                start = c;
+            }
+        }
+    } else {
+        for (const Vec3& c : corners)
+            if (std::tie(c.x, c.y, c.z) < std::tie(start.x, start.y, start.z)) start = c;
+    }
     Terrain t;
     t.face = face;
     t.power = power;
     t.start = start;
     const int n = t.size();
     t.heights.assign((size_t)n * n, 0);
-    t.alpha.assign((size_t)n * n, 0);
     b.terrain = std::move(t);
     return "";
 }
 
 void transposeTerrain(Terrain& t) {
     const int n = t.size();
-    if ((int)t.heights.size() != n * n || (int)t.alpha.size() != n * n) return;
-    for (int j = 0; j < n; ++j)
-        for (int i = j + 1; i < n; ++i) {
-            std::swap(t.heights[(size_t)j * n + i], t.heights[(size_t)i * n + j]);
-            std::swap(t.alpha[(size_t)j * n + i], t.alpha[(size_t)i * n + j]);
-        }
+    auto transpose = [n](std::vector<double>& v) {
+        if ((int)v.size() != n * n) return;
+        for (int j = 0; j < n; ++j)
+            for (int i = j + 1; i < n; ++i) std::swap(v[(size_t)j * n + i], v[(size_t)i * n + j]);
+    };
+    transpose(t.heights);
+    for (TerrainLayer& l : t.layers) transpose(l.alpha);
 }
 
 double falloffWeight(Falloff f, double d, double r) {
@@ -249,10 +330,70 @@ double falloffWeight(Falloff f, double d, double r) {
     return 0;
 }
 
-bool sculpt(std::vector<Brush>& brushes, const SculptDab& dab) {
+namespace {
+// Paint / erase: point by point (shared points sit at the same spot, so they get the
+// same weight and stay equal).
+bool paint(std::vector<Brush>& brushes, const SculptDab& dab, bool* full) {
+    const double k = std::clamp(dab.strength, 0.0, 1.0);
+    bool changed = false;
+    for (Brush& b : brushes) {
+        const auto g = terrainGrid(b);
+        if (!g) continue;
+        std::vector<double> w(g->base.size(), 0);
+        bool any = false;
+        for (size_t p = 0; p < w.size(); ++p) {
+            const Vec3 v = g->base[p] - dab.center;
+            const double along = dot(v, g->normal);
+            // Surfaces farther than the radius from the dab (e.g. a wall next to the
+            // floor) are left alone.
+            if (std::fabs(along + b.terrain->heights[p]) > dab.radius) continue;
+            w[p] = falloffWeight(dab.falloff, std::sqrt(std::max(0.0, dot(v, v) - along * along)), dab.radius) * k;
+            any = any || w[p] > 0;
+        }
+        if (!any) continue;
+        Terrain& t = *b.terrain;
+        // Each point's paint is a share per texture (the face's own texture has what's
+        // left). Painting a texture moves its share toward 1 and every other share down
+        // by the same factor; painting the face's own texture (or erasing) fades them all.
+        int target = -1;
+        if (dab.mode == SculptMode::Paint && !dab.texture.empty() && dab.texture != b.faces[t.face].texture) {
+            target = terrainLayer(t, dab.texture);
+            if (target < 0) {
+                if ((int)t.layers.size() >= kMaxTerrainLayers) {
+                    pruneTerrainLayers(t);
+                    if ((int)t.layers.size() >= kMaxTerrainLayers) { if (full) *full = true; continue; }
+                }
+                t.layers.push_back({dab.texture, std::vector<double>(t.heights.size(), 0)});
+                target = (int)t.layers.size() - 1;
+                changed = true;
+            }
+        }
+        for (size_t p = 0; p < w.size(); ++p) {
+            if (w[p] <= 0) continue;
+            for (int l = 0; l < (int)t.layers.size(); ++l) {
+                if (l == target) continue;
+                double& a = t.layers[l].alpha[p];
+                const double na = a - w[p] * a;
+                if (std::fabs(na - a) > 1e-12) { a = na; changed = true; }
+            }
+            if (target >= 0) {
+                double& a = t.layers[target].alpha[p];
+                const double na = std::min(1.0, a + w[p] * (1 - a));
+                if (std::fabs(na - a) > 1e-12) { a = na; changed = true; }
+            }
+        }
+        for (TerrainLayer& l : t.layers)
+            for (double& a : l.alpha) if (a < 1e-6) a = 0; // fully faded: really gone
+    }
+    return changed;
+}
+} // namespace
+
+bool sculpt(std::vector<Brush>& brushes, const SculptDab& dab, bool* full) {
+    if (dab.mode == SculptMode::Paint || dab.mode == SculptMode::Erase) return paint(brushes, dab, full);
     Shared sh(brushes);
     const int G = (int)sh.members.size();
-    std::vector<double> newH(G), newA(G);
+    std::vector<double> newH(G);
     std::vector<char> touched(G, 0);
     const double k = std::clamp(dab.strength, 0.0, 1.0);
     for (int g = 0; g < G; ++g) {
@@ -261,9 +402,10 @@ bool sculpt(std::vector<Brush>& brushes, const SculptDab& dab) {
         const double d = std::sqrt(std::max(0.0, dot(v, v) - along * along));
         const double w = falloffWeight(dab.falloff, d, dab.radius);
         if (w <= 0) continue;
+        const double h = sh.height(brushes, g);
+        if (std::fabs(along + h) > dab.radius) continue; // another surface, out of reach
         touched[g] = 1;
-        const double h = sh.height(brushes, g), a = sh.alpha(brushes, g);
-        double nh = h, na = a;
+        double nh = h;
         switch (dab.mode) {
             case SculptMode::Raise: nh = h + w * dab.amount; break;
             case SculptMode::Lower: nh = h - w * dab.amount; break;
@@ -282,27 +424,37 @@ bool sculpt(std::vector<Brush>& brushes, const SculptDab& dab) {
                 nh = h + w * k * (target - h);
                 break;
             }
-            case SculptMode::Paint: na = a + w * k * (1 - a); break;
-            case SculptMode::Erase: na = a - w * k * a; break;
+            default: break;
         }
         newH[g] = nh;
-        newA[g] = std::clamp(na, 0.0, 1.0);
     }
     bool changed = false;
-    std::set<size_t> painted;
     for (int g = 0; g < G; ++g) {
         if (!touched[g]) continue;
         for (const Shared::Ref& r : sh.members[g]) {
             Terrain& t = *brushes[r.brush].terrain;
-            if (std::fabs(t.heights[r.idx] - newH[g]) > 1e-12 || std::fabs(t.alpha[r.idx] - newA[g]) > 1e-12) changed = true;
+            if (std::fabs(t.heights[r.idx] - newH[g]) > 1e-12) changed = true;
             t.heights[r.idx] = newH[g];
-            t.alpha[r.idx] = newA[g];
-            if (dab.mode == SculptMode::Paint) painted.insert(r.brush);
         }
     }
-    if (!dab.texture.empty())
-        for (size_t b : painted)
-            if (brushes[b].terrain->texture2 != dab.texture) { brushes[b].terrain->texture2 = dab.texture; changed = true; }
+    return changed;
+}
+
+bool moveTerrainPoints(std::vector<Brush>& brushes, const std::vector<TerrainPoint>& pts, double amount, bool absolute) {
+    Shared sh(brushes);
+    std::set<int> groups;
+    for (const TerrainPoint& p : pts)
+        if (p.brush < brushes.size() && p.idx >= 0 && p.idx < (int)sh.groupOf[p.brush].size())
+            groups.insert(sh.groupOf[p.brush][p.idx]);
+    bool changed = false;
+    for (int g : groups) {
+        const double h = absolute ? amount : sh.height(brushes, g) + amount;
+        for (const Shared::Ref& r : sh.members[g]) {
+            double& v = brushes[r.brush].terrain->heights[r.idx];
+            if (std::fabs(v - h) > 1e-12) changed = true;
+            v = h;
+        }
+    }
     return changed;
 }
 
@@ -311,14 +463,28 @@ int stitchTerrain(std::vector<Brush>& brushes) {
     int count = 0;
     for (int g = 0; g < (int)sh.members.size(); ++g) {
         if (sh.members[g].size() < 2) continue;
-        const double h = sh.height(brushes, g), a = sh.alpha(brushes, g);
         bool diff = false;
+        const double h = sh.height(brushes, g);
         for (const Shared::Ref& r : sh.members[g]) {
-            Terrain& t = *brushes[r.brush].terrain;
-            if (std::fabs(t.heights[r.idx] - h) > 1e-9 || std::fabs(t.alpha[r.idx] - a) > 1e-9) diff = true;
-            t.heights[r.idx] = h;
-            t.alpha[r.idx] = a;
+            double& v = brushes[r.brush].terrain->heights[r.idx];
+            if (std::fabs(v - h) > 1e-9) diff = true;
+            v = h;
         }
+        // Paint: per texture, averaged over the patches that have that texture.
+        std::map<std::string, std::pair<double, int>> paint;
+        for (const Shared::Ref& r : sh.members[g])
+            for (const TerrainLayer& l : brushes[r.brush].terrain->layers) {
+                auto& e = paint[l.texture];
+                e.first += l.alpha[r.idx];
+                ++e.second;
+            }
+        for (const Shared::Ref& r : sh.members[g])
+            for (TerrainLayer& l : brushes[r.brush].terrain->layers) {
+                const auto& e = paint[l.texture];
+                const double a = e.first / e.second;
+                if (std::fabs(l.alpha[r.idx] - a) > 1e-9) diff = true;
+                l.alpha[r.idx] = a;
+            }
         if (diff) ++count;
     }
     return count;

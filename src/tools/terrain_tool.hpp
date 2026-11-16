@@ -4,9 +4,15 @@
 // ground). Each drag is one undo step; Esc during a drag cancels it. The circle shows
 // the radius. Mode, radius, amount, strength and falloff are typed in the Properties
 // panel (no mouse wheel). Paint blends in the current texture.
+//
+// Making terrain (Terrain > Make terrain): the tool picks faces instead. Click any face
+// of any brush in the 3D view (Shift+click adds or removes), or click a brush in a 2D
+// view to pick its face toward you. Return makes the picked faces terrain (the editor
+// does that, with the grid size from the Properties panel); Esc stops picking.
 #include "core/terrain.hpp"
 #include "tools/tool.hpp"
 #include <optional>
+#include <set>
 
 namespace scal {
 
@@ -23,6 +29,12 @@ public:
     void cancel() override;
     bool stroking() const { return stroking_; }
 
+    // Face picking for "make terrain".
+    bool picking() const { return picking_; }
+    void startPicking() { cancel(); picking_ = true; picked_.clear(); message_.clear(); }
+    void stopPicking() { picking_ = false; picked_.clear(); }
+    std::vector<FaceRef> pickedFaces(const Document& doc) const;
+
     // Options (Properties panel, Terrain menu, script `terrainset`).
     SculptMode mode = SculptMode::Raise;
     Falloff falloff = Falloff::Soft;
@@ -37,6 +49,10 @@ private:
     void dab(const Vec3& at);
     // Cursor at `at`, its circle laid onto the terrain surface below it.
     void setCursor(const ToolEnv& env, const Vec3& at, const Vec3& n);
+
+    bool picking_ = false;
+    std::set<FaceRef> picked_;
+    void pickPress(ToolEnv& env, const Pointer& p);
 
     bool stroking_ = false;
     bool changed_ = false;

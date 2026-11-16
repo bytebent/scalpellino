@@ -1,4 +1,5 @@
 #include "render/scene.hpp"
+#include <algorithm>
 
 namespace scal {
 
@@ -25,6 +26,7 @@ SceneBrush makeSceneBrush(const Brush& b) {
                 if (dot(nn, g->normal) < 0) nn = -nn;
                 vn[(size_t)j * n + i] = length(nn) > 1e-12 ? normalize(nn) : g->normal;
             }
+        for (const TerrainLayer& l : b.terrain->layers) s.layers.push_back({l.texture, {}});
         for (int j = 0; j + 1 < n; ++j)
             for (int i = 0; i + 1 < n; ++i) {
                 const int idx[4] = {j * n + i, j * n + i + 1, (j + 1) * n + i + 1, (j + 1) * n + i};
@@ -32,7 +34,17 @@ SceneBrush makeSceneBrush(const Brush& b) {
                 p.face = g->face;
                 for (int k : idx) {
                     p.verts.push_back(g->pos[k]);
-                    s.cellAlpha.push_back((float)g->alpha[k]);
+                    // Shares -> transparency for drawing each layer over the ones below:
+                    // layer l covers w_l / (what's shown up to and including l).
+                    double above = 0;
+                    std::vector<float> over(s.layers.size());
+                    for (size_t l = s.layers.size(); l-- > 0;) {
+                        const double w = b.terrain->layers[l].alpha[k];
+                        const double upTo = 1 - above;
+                        over[l] = upTo > 1e-9 ? (float)std::clamp(w / upTo, 0.0, 1.0) : 0.0f;
+                        above += w;
+                    }
+                    for (size_t l = 0; l < s.layers.size(); ++l) s.layers[l].cellAlpha.push_back(over[l]);
                     s.cellNormals.push_back(vn[k]);
                 }
                 Vec3 cn = cross(p.verts[2] - p.verts[0], p.verts[3] - p.verts[1]);
@@ -40,7 +52,6 @@ SceneBrush makeSceneBrush(const Brush& b) {
                 p.normal = length(cn) > 1e-12 ? normalize(cn) : g->normal;
                 s.polys.push_back(std::move(p));
             }
-        s.texture2 = b.terrain->texture2;
         s.terrain = std::move(g);
     }
     for (const Polygon& p : s.polys)

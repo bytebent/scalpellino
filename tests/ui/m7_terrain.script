@@ -1,9 +1,14 @@
-# Milestone 7: terrain. Make two neighbouring patches, sculpt across their seam in the
+# Milestone 7: terrain. Make two neighbouring patches (picked in the top view), sculpt across their seam in the
 # top view (one undo step per drag), smooth, flatten, noise, paint in the 3D view,
 # change the grid size, heightmap import, save + open, remove.
 block 0 0 -64 512 512 0
 block 512 0 -64 1024 512 0
-selectall
+# Terrain > Make terrain, then click each brush in the top view (its top face)
+terrain pick
+wpress 1 256 256
+release
+wpress 1 768 256 shift
+release
 terrain make 16
 expect terrains 2
 expect terrainheight 256 256 0

@@ -127,7 +127,8 @@ private:
     void drawVisgroupsPanel();
 
     // Terrain (milestone 7)
-    void makeTerrainNow(int power);   // selected brushes' top faces, or picked faces
+    void startMakeTerrain();          // terrain tool picks faces (or dialog for Texture tool picks)
+    void makeTerrainNow(int power);   // picked faces, or the selected terrain's grid size
     void removeTerrain();
     void stitchAllTerrain();
     bool importHeightmap(const std::string& path, double low, double high); // false + terrainError_

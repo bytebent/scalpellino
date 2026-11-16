@@ -127,6 +127,10 @@ void Editor::onRelease(int view, Vector2 local, bool real) {
 }
 
 void Editor::onKey(int key) {
+    if (tool_ == &terrainTool_ && terrainTool_.picking() && (key == KEY_ENTER || key == KEY_KP_ENTER)) {
+        makeTerrainNow(terrainPower_);
+        return;
+    }
     if (tool_ == &curveTool_ && (key == KEY_ENTER || key == KEY_KP_ENTER) && curveTool_.hasShape()) {
         commitCurve();
         return;
@@ -177,7 +181,8 @@ bool Editor::frame(float dt) {
     st.terrainTool = tool_ == &terrainTool_;
     st.terrainMode = (int)terrainTool_.mode;
     st.terrainSelected = selectionHasTerrain();
-    st.canMakeTerrain = !doc_.selection().empty() || (tool_ == &textureTool_ && !textureTool_.faces(doc_).empty());
+    st.canMakeTerrain = true;
+    st.terrainPicking = tool_ == &terrainTool_ && terrainTool_.picking();
     st.groupSelected = selectedGroup() != 0;
     st.facesPicked = tool_ == &textureTool_ && textureTool_.faces(doc_).size() > 1;
     st.canApplyTexture = !doc_.selection().empty() || (tool_ == &textureTool_ && !textureTool_.faces(doc_).empty());
@@ -243,8 +248,9 @@ bool Editor::frame(float dt) {
     if (m.showAll) showAll();
     if (m.toolCurve) setTool(&curveTool_);
     if (m.toolTerrain) setTool(&terrainTool_);
-    if (m.terrainMode >= 0) { terrainTool_.mode = (SculptMode)m.terrainMode; setTool(&terrainTool_); }
-    if (m.makeTerrain) {
+    if (m.terrainMode >= 0) { terrainTool_.mode = (SculptMode)m.terrainMode; setTool(&terrainTool_); terrainTool_.stopPicking(); }
+    if (m.makeTerrain) startMakeTerrain();
+    if (m.terrainGrid) {
         terrainError_.clear();
         for (BrushId id : doc_.selection())
             if (const Brush* b = doc_.find(id)) if (b->terrain) terrainPower_ = b->terrain->power;
@@ -627,6 +633,7 @@ void Editor::updateTitle() {
 void Editor::setTool(Tool* t) {
     if (t == tool_) return;
     tool_->cancel();
+    if (tool_ == &terrainTool_) terrainTool_.stopPicking();
     capture_ = -1;
     tool_ = t;
 }
@@ -803,6 +810,12 @@ void Editor::snapSelectionToGrid() {
         if (!b) continue;
         if (brushOnGrid(*b, grid_.size)) continue;
         HullResult r = snapBrushToGrid(*b, grid_.size);
+        if (r.ok && b->terrain) {
+            const double g = grid_.size;
+            carryTerrain(*b, r.brush, [g](const Vec3& v) {
+                return Vec3{std::round(v.x / g) * g, std::round(v.y / g) * g, std::round(v.z / g) * g};
+            });
+        }
         if (!r.ok) {
             char buf[64];
             std::snprintf(buf, sizeof buf, "%g", grid_.size);
@@ -866,6 +879,28 @@ void Editor::drawPrecisionDialogs() {
         if (ImGui::IsWindowAppearing()) {
             vmoveMode_ = 0;
             vmove_[0] = vmove_[1] = vmove_[2] = 0;
+        }
+        if (vertexTool_.terrainPointCount() > 0) {
+            // Terrain points move along the terrain's normal only.
+            double h = 0;
+            const bool sameH = vertexTool_.singleHeight(doc_, h);
+            ImGui::Text("%zu terrain point(s) selected", vertexTool_.terrainPointCount());
+            ImGui::RadioButton("Raise by", &vmoveMode_, 0);
+            ImGui::SameLine();
+            if (ImGui::RadioButton("Set height", &vmoveMode_, 1)) vmove_[0] = sameH ? h : 0;
+            ImGui::SetNextItemWidth(160);
+            if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+            ImGui::InputDouble("units", &vmove_[0], 0, 0, "%g");
+            ImGui::TextDisabled("heights are measured from the face, along its normal");
+            if (!precisionError_.empty()) ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", precisionError_.c_str());
+            buttons(apply, cancel);
+            if (apply) {
+                std::string err;
+                if (vertexTool_.moveTerrainSelected(doc_, vmove_[0], vmoveMode_ == 1, err)) ImGui::CloseCurrentPopup();
+                else precisionError_ = "Not applied: " + err;
+            } else if (cancel) ImGui::CloseCurrentPopup();
+            ImGui::EndPopup();
+            return;
         }
         ImGui::Text("%zu corner(s) selected", vertexTool_.selectedCount());
         ImGui::RadioButton("Move by", &vmoveMode_, 0);
@@ -1643,43 +1678,63 @@ void Editor::applyTerrainEdit(std::vector<Brush> edited, const char* name) {
         const Brush* old = doc_.find(b.id);
         if (!old) continue;
         const bool had = old->terrain.has_value(), has = b.terrain.has_value();
-        if (had != has || (has && (old->terrain->heights != b.terrain->heights || old->terrain->alpha != b.terrain->alpha ||
-                                   old->terrain->face != b.terrain->face || old->terrain->power != b.terrain->power ||
-                                   old->terrain->texture2 != b.terrain->texture2)))
+        if (had != has || (has && *old->terrain != *b.terrain))
             out.push_back(b);
     }
     if (!out.empty()) doc_.apply(doc_.makeModify(out, name));
 }
 
+void Editor::startMakeTerrain() {
+    terrainError_.clear();
+    // Faces already picked with the Texture tool: straight to the grid size dialog.
+    if (tool_ == &textureTool_ && !textureTool_.faces(doc_).empty()) { askMakeTerrain_ = true; return; }
+    setTool(&terrainTool_);
+    terrainTool_.startPicking();
+}
+
 void Editor::makeTerrainNow(int power) {
     terrainError_.clear();
     std::vector<std::pair<BrushId, int>> targets; // brush, face
-    if (tool_ == &textureTool_ && !textureTool_.faces(doc_).empty()) {
-        for (const FaceRef& f : textureTool_.faces(doc_)) {
+    auto addFaces = [&](const std::vector<FaceRef>& faces) {
+        for (const FaceRef& f : faces) {
             for (const auto& t : targets)
-                if (t.first == f.first) { terrainError_ = "pick only one face per brush (a brush has one terrain face)"; return; }
+                if (t.first == f.first) { terrainError_ = "pick only one face per brush (a brush has one terrain face)"; return false; }
             targets.push_back(f);
         }
+        return true;
+    };
+    const bool picking = tool_ == &terrainTool_ && terrainTool_.picking();
+    if (picking) {
+        if (!addFaces(terrainTool_.pickedFaces(doc_))) return;
+    } else if (tool_ == &textureTool_ && !textureTool_.faces(doc_).empty()) {
+        if (!addFaces(textureTool_.faces(doc_))) return;
     } else {
-        for (BrushId id : doc_.selection()) {
-            const Brush* b = doc_.find(id);
-            if (!b) continue;
-            targets.push_back({id, b->terrain && terrainValid(*b) ? b->terrain->face : topQuadFace(*b)});
-        }
+        // No faces picked: change the grid size of the selected terrain.
+        for (BrushId id : doc_.selection())
+            if (const Brush* b = doc_.find(id))
+                if (b->terrain && terrainValid(*b)) targets.push_back({id, b->terrain->face});
     }
-    if (targets.empty()) { terrainError_ = "select brushes first (or pick faces with the Texture tool)"; return; }
+    if (targets.empty()) {
+        terrainError_ = picking ? "click the faces to turn into terrain first"
+                                : "no faces picked: use Terrain > Make terrain and click faces (or select terrain to change its grid size)";
+        return;
+    }
     std::vector<Brush> edited;
     int failed = 0;
     std::string why;
     for (const auto& [id, face] : targets) {
         Brush b = *doc_.find(id);
-        const std::string err = face < 0 ? "no face with 4 corners" : makeTerrain(b, face, power);
+        const std::string err = makeTerrain(b, face, power);
         if (!err.empty()) { ++failed; why = err; continue; }
         edited.push_back(std::move(b));
     }
     if (edited.empty()) { terrainError_ = why; return; }
+    std::set<BrushId> made;
+    for (const Brush& b : edited) made.insert(b.id);
     applyTerrainEdit(std::move(edited), "Make terrain");
-    if (failed) terrainError_ = std::to_string(failed) + " brush(es) skipped: " + why;
+    doc_.setSelection(made);
+    if (picking) terrainTool_.stopPicking();
+    if (failed) terrainError_ = std::to_string(failed) + " face(s) skipped: " + why;
 }
 
 void Editor::removeTerrain() {
@@ -1714,6 +1769,27 @@ bool Editor::importHeightmap(const std::string& path, double low, double high) {
 
 void Editor::drawTerrainPanel() {
     TerrainTool& t = terrainTool_;
+    if (t.picking()) {
+        ImGui::TextUnformatted("Make terrain");
+        ImGui::TextWrapped("Click faces in the 3D view (Shift+click adds or removes), or click brushes in a 2D view to pick "
+                           "their face toward you. Any face with 3 or 4 corners; one per brush.");
+        const size_t n = t.pickedFaces(doc_).size();
+        ImGui::Text("%zu face(s) picked", n);
+        ImGui::TextUnformatted("Cells per side:");
+        for (int pw = kMinTerrainPower; pw <= kMaxTerrainPower; ++pw) {
+            char b[8]; std::snprintf(b, sizeof b, "%d", 1 << pw);
+            ImGui::SameLine();
+            if (ImGui::RadioButton(b, terrainPower_ == pw)) terrainPower_ = pw;
+        }
+        ImGui::TextDisabled("a face that is already terrain gets the new size");
+        ImGui::BeginDisabled(n == 0);
+        if (ImGui::Button("Make terrain (Return)")) makeTerrainNow(terrainPower_);
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        if (ImGui::Button("Stop (Esc)")) t.stopPicking();
+        if (!terrainError_.empty()) ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", terrainError_.c_str());
+        return;
+    }
     ImGui::TextUnformatted("Terrain tool");
     static const char* modes[] = {"Raise", "Lower", "Smooth", "Flatten", "Noise", "Paint texture", "Erase paint"};
     int mode = (int)t.mode;
@@ -1739,19 +1815,35 @@ void Editor::drawTerrainPanel() {
     ImGui::TextDisabled("radius");
     if (t.mode == SculptMode::Paint) ImGui::Text("paints: %s", currentTexture_.c_str());
     ImGui::TextDisabled(t.mode == SculptMode::Flatten ? "levels to the height where a stroke starts" : "one drag = one undo step");
+    // Painted textures of the selected terrain (bottom first).
+    for (BrushId id : doc_.selection()) {
+        const Brush* b = doc_.find(id);
+        if (!b || !b->terrain || !terrainValid(*b)) continue;
+        std::string list = b->faces[b->terrain->face].texture + " (face)";
+        for (const TerrainLayer& l : b->terrain->layers) list += ", " + l.texture;
+        ImGui::TextWrapped("Textures on the selected patch: %s", list.c_str());
+        ImGui::TextDisabled("up to %d painted ones; paint the face's texture to uncover it", kMaxTerrainLayers);
+        break;
+    }
+    if (!terrainError_.empty()) ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", terrainError_.c_str());
     ImGui::Separator();
-    ImGui::BeginDisabled(doc_.selection().empty());
-    if (ImGui::Button("Make terrain...")) { terrainError_.clear(); askMakeTerrain_ = true; }
-    ImGui::EndDisabled();
+    if (ImGui::Button("Make terrain...")) startMakeTerrain();
     ImGui::SameLine();
     ImGui::BeginDisabled(!selectionHasTerrain());
+    if (ImGui::Button("Grid size...")) {
+        terrainError_.clear();
+        for (BrushId id : doc_.selection())
+            if (const Brush* b = doc_.find(id)) if (b->terrain) terrainPower_ = b->terrain->power;
+        askMakeTerrain_ = true;
+    }
+    ImGui::SameLine();
     if (ImGui::Button("Heightmap...")) { terrainError_.clear(); askHeightmap_ = true; }
     ImGui::EndDisabled();
 }
 
 void Editor::drawTerrainDialogs() {
     const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
-    if (askMakeTerrain_) { ImGui::OpenPopup("Make terrain"); askMakeTerrain_ = false; }
+    if (askMakeTerrain_) { ImGui::OpenPopup("Terrain grid size"); askMakeTerrain_ = false; }
     if (askHeightmap_) { ImGui::OpenPopup("Import heightmap"); askHeightmap_ = false; }
     auto buttons = [&](bool& apply, bool& cancel) {
         apply = ImGui::Button("Apply (Return)") || ImGui::IsKeyPressed(ImGuiKey_Enter, false) ||
@@ -1762,10 +1854,10 @@ void Editor::drawTerrainDialogs() {
     bool apply = false, cancel = false;
 
     ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    if (ImGui::BeginPopupModal("Make terrain", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::TextUnformatted("Turn the top face of each selected brush into terrain");
-        ImGui::TextDisabled("(with the Texture tool: the picked faces). Brushes that are");
-        ImGui::TextDisabled("already terrain get the new grid size and keep their shape.");
+    if (ImGui::BeginPopupModal("Terrain grid size", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextUnformatted("Grid size of the selected terrain");
+        ImGui::TextDisabled("(with the Texture tool: makes the picked faces terrain).");
+        ImGui::TextDisabled("Terrain keeps its shape and paint at the new size.");
         ImGui::TextUnformatted("Cells per side:");
         for (int pw = kMinTerrainPower; pw <= kMaxTerrainPower; ++pw) {
             char b[8]; std::snprintf(b, sizeof b, "%d", 1 << pw);
@@ -2023,7 +2115,7 @@ void Editor::runPending() {
 //   view <1|2|3> <u> <v> [zoom]   (centre a 2D view; zoom = pixels per unit)
 //   layout classic|default   (classic = no right-hand panels; older scripts use it)
 //   wpress <view> <u> <v> [mods] / wdrag <u> <v>   (2D input in world coordinates)
-//   press3d <dx> <dy> [mods]   (3D view click relative to its centre)
+//   press3d <dx> <dy> [mods]   (3D view click relative to its centre)   drag3d <dx> <dy>
 //   tool texture   texturedir <path>   texture <name>   applytexture   applynodraw   wraparound
 //   rendermode flat|textured
 //   texscale <s>   facefit   facerotate <deg>   facealign world|face
@@ -2036,7 +2128,11 @@ void Editor::runPending() {
 //   (keys as stored in the .map: segments, thickness, box, depth, sweep, flat_top...)
 //   editcurve   bakecurve   expect groups <n>
 //   blockshape box|wedge|cylinder|cone|pyramid|sphere [sides]
-//   tool terrain   terrain make <cells> | remove | stitch | heightmap <path> <low> <high>
+//   tool terrain   terrain pick | make <cells> | remove | stitch | heightmap <path> <low> <high>
+//                  (pick = Terrain > Make terrain: clicks then pick faces; make uses the picked
+//                   faces, else changes the grid size of the selected terrain)
+//   vertexraise <d> | vertexheight <h>   (selected terrain points, vertex tool)
+//   expect terrainpoints <n>   expect paintlayers <n>
 //   terrainset mode <raise|lower|smooth|flatten|noise|paint|erase> | radius|amount|strength <n>
 //              | falloff soft|linear|hard      whover <view> <u> <v> (hover, no button)
 //   camera <x> <y> <z> <yaw> <pitch>   (3D view camera, degrees)
@@ -2215,6 +2311,10 @@ void Editor::stepScript() {
         while (in >> mod) { if (mod == "shift") shift_ = true; if (mod == "cmd") cmd_ = true; if (mod == "alt") alt_ = true; }
         dragView = 0;
         onPress(0, {views_[0]->width() * 0.5f + dx, views_[0]->height() * 0.5f + dy}, false);
+    } else if (cmd == "drag3d") {
+        // drag3d <dx> <dy>: drag in the 3D view, relative to its centre (after press3d)
+        float dx = 0, dy = 0; in >> dx >> dy;
+        if (dragView == 0) onDrag(0, {views_[0]->width() * 0.5f + dx, views_[0]->height() * 0.5f + dy});
     } else if (cmd == "texturedir") { std::string d; std::getline(in >> std::ws, d); textures_.addUserFolder(d);
     } else if (cmd == "texture") { in >> currentTexture_;
     } else if (cmd == "applytexture") { applyCurrentTexture();
@@ -2258,9 +2358,10 @@ void Editor::stepScript() {
         for (const Brush& b : doc_.brushes()) got += doc_.visible(b);
         if (got != n) { std::fprintf(stderr, "script FAIL (command %d): expected %zu visible brushes, got %zu\n", scriptLine_, n, got); ++scriptFailures_; }
     } else if (cmd == "terrain") {
-        // terrain make <cells per side> | remove | stitch | heightmap <path> <low> <high>
+        // terrain pick | make <cells per side> | remove | stitch | heightmap <path> <low> <high>
         std::string op; in >> op;
-        if (op == "make") {
+        if (op == "pick") startMakeTerrain();
+        else if (op == "make") {
             int cells = 8; in >> cells;
             int pw = 0; while ((1 << pw) < cells) ++pw;
             makeTerrainNow(pw);
@@ -2391,6 +2492,25 @@ void Editor::stepScript() {
         if (m == "center") pivotMode_ = 0;
         else if (m == "origin") pivotMode_ = 1;
         else { customPivot_.x = std::atof(m.c_str()); in >> customPivot_.y >> customPivot_.z; pivotMode_ = 2; }
+    } else if (cmd == "vertexraise" || cmd == "vertexheight") {
+        double a = 0; in >> a;
+        std::string err;
+        if (!vertexTool_.moveTerrainSelected(doc_, a, cmd == "vertexheight", err)) {
+            std::fprintf(stderr, "script FAIL (command %d): %s\n", scriptLine_, err.c_str());
+            ++scriptFailures_;
+        }
+    } else if (cmd == "expect" && in.str().find(" terrainpoints ") != std::string::npos) {
+        std::string w; size_t n = 0; in >> w >> n;
+        if (vertexTool_.terrainPointCount() != n) {
+            std::fprintf(stderr, "script FAIL (command %d): expected %zu terrain points selected, got %zu\n", scriptLine_, n, vertexTool_.terrainPointCount());
+            ++scriptFailures_;
+        }
+    } else if (cmd == "expect" && in.str().find(" paintlayers ") != std::string::npos) {
+        // expect paintlayers <n>: painted textures, counted over every terrain patch
+        std::string w; size_t n = 0; in >> w >> n;
+        size_t have = 0;
+        for (const Brush& b : doc_.brushes()) if (b.terrain) have += b.terrain->layers.size();
+        if (have != n) { std::fprintf(stderr, "script FAIL (command %d): expected %zu painted textures, got %zu\n", scriptLine_, n, have); ++scriptFailures_; }
     } else if (cmd == "vertexmove") {
         Vec3 d; in >> d.x >> d.y >> d.z;
         std::string err;

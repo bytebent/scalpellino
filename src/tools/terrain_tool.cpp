@@ -1,7 +1,51 @@
 #include "tools/terrain_tool.hpp"
+#include "tools/texture_tool.hpp"
 #include <cmath>
 
 namespace scal {
+
+std::vector<FaceRef> TerrainTool::pickedFaces(const Document& doc) const {
+    std::vector<FaceRef> out;
+    for (const FaceRef& f : picked_)
+        if (const Brush* b = doc.find(f.first))
+            if (f.second >= 0 && f.second < (int)b->faces.size()) out.push_back(f);
+    return out;
+}
+
+void TerrainTool::pickPress(ToolEnv& env, const Pointer& p) {
+    const Document& doc = env.doc;
+    FaceRef hit{0, -1};
+    if (p.view->is2D()) {
+        // The face of the clicked brush that looks toward you.
+        if (const Brush* b = doc.find(pick2D(env.sceneBrushes, *p.view, p.local))) {
+            Vec3 eu, ev;
+            eu[p.view->axU()] = 1;
+            ev[p.view->axV()] = 1;
+            hit = {b->id, faceFacing(*b, cross(eu, ev))};
+        }
+    } else {
+        hit = pickFace3D(doc, *p.view, p.local);
+    }
+    if (hit.second < 0) {
+        if (!env.shift) picked_.clear();
+        message_ = "click a face (3D view) or a brush (2D view)";
+        return;
+    }
+    const Brush* b = doc.find(hit.first);
+    size_t corners = 0;
+    for (const Polygon& pl : b->polygons()) if (pl.face == hit.second) corners = pl.verts.size();
+    if (corners != 3 && corners != 4) {
+        message_ = "that face has " + std::to_string(corners) + " corners: terrain needs 3 or 4 (clip it into smaller pieces)";
+        return;
+    }
+    message_.clear();
+    if (env.shift && picked_.erase(hit)) return;
+    if (!env.shift) picked_.clear();
+    // One terrain face per brush: a new pick on the same brush replaces the old one.
+    for (auto it = picked_.begin(); it != picked_.end();)
+        it = it->first == hit.first ? picked_.erase(it) : std::next(it);
+    picked_.insert(hit);
+}
 
 bool TerrainTool::hit(const ToolEnv& env, const Pointer& p, Vec3& point, Vec3& normal) const {
     if (!p.view) return false;
@@ -73,17 +117,20 @@ void TerrainTool::dab(const Vec3& at) {
     d.flattenTarget = flatten_;
     d.seed = seed_;
     if (mode == SculptMode::Paint) d.texture = paintTexture;
-    if (sculpt(work_, d)) { changed_ = true; ++rev_; }
+    bool full = false;
+    if (sculpt(work_, d, &full)) { changed_ = true; ++rev_; }
+    if (full) message_ = "a patch already has 8 textures: erase one before painting a new one";
     lastDab_ = at;
 }
 
 void TerrainTool::press(ToolEnv& env, const Pointer& p) {
+    if (picking_) { pickPress(env, p); return; }
     message_.clear();
     Vec3 at, n;
     if (!hit(env, p, at, n)) {
         bool any = false;
         for (const SceneBrush& b : env.sceneBrushes) if (b.terrain) any = true;
-        message_ = any ? "click on a terrain surface" : "no terrain yet: select brushes, then Terrain > Make terrain";
+        message_ = any ? "click on a terrain surface" : "no terrain yet: Terrain > Make terrain, then click faces";
         return;
     }
     work_.clear();
@@ -111,12 +158,11 @@ void TerrainTool::release(ToolEnv& env, const Pointer&) {
     stroking_ = false;
     if (changed_) {
         std::vector<Brush> out;
-        for (const Brush& b : work_) {
+        for (Brush& b : work_) {
             const Brush* old = env.doc.find(b.id);
             if (!old || !old->terrain) continue;
-            if (old->terrain->heights != b.terrain->heights || old->terrain->alpha != b.terrain->alpha ||
-                old->terrain->texture2 != b.terrain->texture2)
-                out.push_back(b);
+            pruneTerrainLayers(*b.terrain); // textures erased everywhere are dropped
+            if (*old->terrain != *b.terrain) out.push_back(b);
         }
         if (!out.empty())
             env.doc.apply(env.doc.makeModify(out, std::string("Terrain: ") + sculptModeName(mode)));
@@ -127,6 +173,7 @@ void TerrainTool::release(ToolEnv& env, const Pointer&) {
 
 void TerrainTool::hover(ToolEnv& env, const Pointer& p) {
     if (stroking_) return;
+    if (picking_) { cursor_.reset(); return; }
     Vec3 at, n;
     if (hit(env, p, at, n)) setCursor(env, at, n);
     else cursor_.reset();
@@ -136,6 +183,11 @@ bool TerrainTool::key(ToolEnv&, int key) {
     if (key == KEY_ESCAPE && stroking_) {
         cancel();
         message_ = "stroke cancelled";
+        return true;
+    }
+    if (key == KEY_ESCAPE && picking_) {
+        stopPicking();
+        message_.clear();
         return true;
     }
     return false;
@@ -148,7 +200,16 @@ void TerrainTool::cancel() {
     cursor_.reset();
 }
 
-void TerrainTool::decorate(const Document&, Scene& scene) const {
+void TerrainTool::decorate(const Document& doc, Scene& scene) const {
+    if (picking_) {
+        for (const FaceRef& f : pickedFaces(doc)) {
+            scene.selectedFaces.insert(f);
+            if (const Brush* b = doc.find(f.first))
+                for (const Polygon& p : b->polygons())
+                    if (p.face == f.second) scene.outlines.push_back(p.verts);
+        }
+        return;
+    }
     if (cursor_) scene.brushCursor = *cursor_;
     if (stroking_ && changed_) {
         if (drawnRev_ != rev_) {
@@ -162,6 +223,9 @@ void TerrainTool::decorate(const Document&, Scene& scene) const {
 
 const char* TerrainTool::hint() const {
     if (!message_.empty()) return message_.c_str();
+    if (picking_)
+        return picked_.empty() ? "make terrain: click a face in 3D (Shift+click adds), or a brush in 2D (its face toward you); Esc stops"
+                               : "Return: make the picked faces terrain (grid size in Properties)   Shift+click: add/remove   Esc: stop";
     if (stroking_) return "drag to keep going; release to finish (one undo step), Esc cancels";
     switch (mode) {
         case SculptMode::Raise: return "drag over terrain to raise it (radius and amount in Properties)";

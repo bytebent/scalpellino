@@ -34,17 +34,31 @@ struct Polygon {
 };
 
 // Terrain (milestone 7): one face of the brush becomes a grid of (2^power)+1 points per
-// side, each lifted along the face normal by `heights`; `alpha` blends from the face's
-// texture (0) to `texture2` (1). The brush itself stays an ordinary convex brush; only
-// that face is drawn as the terrain surface. Functions are in core/terrain.hpp.
+// side, each lifted along the face normal by `heights`. Painted textures are layers over
+// the face's own texture, bottom first; each has a blend value (0..1) per grid point.
+// The brush itself stays an ordinary convex brush; only that face is drawn as the
+// terrain surface. Functions are in core/terrain.hpp.
+// Paint is a share per point: each layer's alpha is how much of that texture shows
+// there (0..1); the layers' shares add up to at most 1 and the face's texture has the rest.
+struct TerrainLayer {
+    std::string texture;
+    std::vector<double> alpha;   // same layout as heights, 0..1 (share of this texture)
+    bool operator==(const TerrainLayer& o) const { return texture == o.texture && alpha == o.alpha; }
+    bool operator!=(const TerrainLayer& o) const { return !(*this == o); }
+};
+
 struct Terrain {
-    int face = -1;               // index into Brush::faces (that face must have 4 corners)
+    int face = -1;               // index into Brush::faces (that face must have 3 or 4 corners)
     int power = 3;               // 2^power cells per side
     Vec3 start;                  // grid starts at the face corner nearest this point
     std::vector<double> heights; // size()*size(), row-major: [j * size() + i]
-    std::vector<double> alpha;   // same layout, 0..1
-    std::string texture2;        // blend texture ("" = none yet)
+    std::vector<TerrainLayer> layers; // painted textures, bottom first
     int size() const { return (1 << power) + 1; }
+    bool operator==(const Terrain& o) const {
+        return face == o.face && power == o.power && heights == o.heights && layers == o.layers &&
+               length(start - o.start) < 1e-9;
+    }
+    bool operator!=(const Terrain& o) const { return !(*this == o); }
 };
 
 struct Brush {

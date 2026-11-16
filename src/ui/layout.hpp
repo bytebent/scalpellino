@@ -21,7 +21,7 @@ struct MenuState {
     bool clipTool = false, clipPlane = false;
     bool curveTool = false, groupSelected = false;
     int clipKeep = 0; // 0 both, 1 front, 2 back
-    bool terrainTool = false, terrainSelected = false, canMakeTerrain = false;
+    bool terrainTool = false, terrainSelected = false, canMakeTerrain = false, terrainPicking = false;
     int terrainMode = 0;
 };
 
@@ -49,7 +49,7 @@ struct MenuActions {
     bool hideSelected = false, hideUnselected = false, showAll = false;
     bool findOverlaps = false, viewsToOrigin = false;
     int clipKeep = -1;
-    bool toolTerrain = false, makeTerrain = false, removeTerrain = false, heightmap = false, stitchTerrain = false;
+    bool toolTerrain = false, makeTerrain = false, terrainGrid = false, removeTerrain = false, heightmap = false, stitchTerrain = false;
     int terrainMode = -1; // SculptMode index; also switches to the terrain tool
 };
 

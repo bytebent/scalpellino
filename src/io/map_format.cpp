@@ -1,5 +1,6 @@
 #include "io/map_format.hpp"
 #include "core/terrain.hpp"
+#include <algorithm>
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
@@ -40,23 +41,27 @@ void writeBrush(std::ostringstream& o, const Brush& b) {
         o << '\n';
     }
     if (b.terrain) {
-        // Terrain: a header, then one line of heights per grid row ("th") and, if any
-        // blending was painted, one line of blend values per row ("ta").
+        // Terrain: a header, then one line of heights per grid row ("th"); then for each
+        // painted texture (bottom first) a "tl <texture>" line and one line of blend
+        // values per row ("ta").
         const Terrain& t = *b.terrain;
         const int n = t.size();
         o << "//@ terrain face=" << t.face << " power=" << t.power << " start=" << num(t.start.x) << ','
-          << num(t.start.y) << ',' << num(t.start.z);
-        if (!t.texture2.empty()) o << " tex2=" << t.texture2;
-        o << '\n';
-        bool painted = false;
-        for (double a : t.alpha) if (a != 0) painted = true;
-        for (int pass = 0; pass < (painted ? 2 : 1); ++pass) {
-            const std::vector<double>& v = pass == 0 ? t.heights : t.alpha;
+          << num(t.start.y) << ',' << num(t.start.z) << '\n';
+        auto rows = [&](const char* tag, const std::vector<double>& v) {
             for (int j = 0; j < n && (int)v.size() == n * n; ++j) {
-                o << (pass == 0 ? "//@ th" : "//@ ta");
+                o << "//@ " << tag;
                 for (int i = 0; i < n; ++i) o << ' ' << num(v[(size_t)j * n + i]);
                 o << '\n';
             }
+        };
+        rows("th", t.heights);
+        for (const TerrainLayer& l : t.layers) {
+            bool painted = false;
+            for (double a : l.alpha) if (a != 0) painted = true;
+            if (!painted || l.texture.empty()) continue;
+            o << "//@ tl " << l.texture << '\n';
+            rows("ta", l.alpha);
         }
     }
     for (const Face& f : b.faces) {
@@ -275,26 +280,40 @@ public:
             fail(t, "unexpected '" + t.text + "' in brush (patches are not supported)");
         }
         if (b.terrain) {
-            // Blend rows are left out when nothing was painted.
             Terrain& tr = *b.terrain;
             const size_t nn = (size_t)tr.size() * tr.size();
             if (tr.power < kMinTerrainPower || tr.power > kMaxTerrainPower || tr.heights.size() != nn)
                 fail(lex_.peek(), "terrain data is incomplete");
-            if (tr.alpha.empty()) tr.alpha.assign(nn, 0);
-            if (tr.alpha.size() != nn) fail(lex_.peek(), "terrain blend data is incomplete");
+            // Files from v0.7.0 had "tex2=" and blend rows with no "tl" line; a blend
+            // without a texture name can't be shown, so it is dropped.
+            tr.layers.erase(std::remove_if(tr.layers.begin(), tr.layers.end(),
+                                           [](const TerrainLayer& l) { return l.texture.empty(); }),
+                            tr.layers.end());
+            for (const TerrainLayer& l : tr.layers)
+                if (l.alpha.size() != nn) fail(lex_.peek(), "terrain blend data is incomplete");
+            if ((int)tr.layers.size() > kMaxTerrainLayers) tr.layers.resize(kMaxTerrainLayers);
         }
         return b;
     }
 
     // "//@ visgroup=3 hidden=1" -> brush fields. "//@ terrain ...", "//@ th ...",
-    // "//@ ta ..." -> terrain (header, height row, blend row).
+    // "//@ tl <texture>", "//@ ta ..." -> terrain (header, height row, painted texture,
+    // its blend row).
     static void meta(const std::string& text, Brush& b) {
         std::istringstream in(text);
         std::string first;
         in >> first;
+        if (first == "tl") {
+            if (!b.terrain) return;
+            std::string name;
+            in >> name;
+            b.terrain->layers.push_back({name, {}});
+            return;
+        }
         if (first == "th" || first == "ta") {
             if (!b.terrain) return;
-            std::vector<double>& v = first == "th" ? b.terrain->heights : b.terrain->alpha;
+            if (first == "ta" && b.terrain->layers.empty()) b.terrain->layers.push_back({}); // old file, no tex2
+            std::vector<double>& v = first == "th" ? b.terrain->heights : b.terrain->layers.back().alpha;
             std::string w;
             while (in >> w) v.push_back(std::strtod(w.c_str(), nullptr));
             return;
@@ -308,7 +327,7 @@ public:
                 const std::string k = kv.substr(0, eq), v = kv.substr(eq + 1);
                 if (k == "face") t.face = std::atoi(v.c_str());
                 else if (k == "power") t.power = std::atoi(v.c_str());
-                else if (k == "tex2") t.texture2 = v;
+                else if (k == "tex2") t.layers.push_back({v, {}}); // v0.7.0 files
                 else if (k == "start") {
                     double x = 0, y = 0, z = 0;
                     if (std::sscanf(v.c_str(), "%lf,%lf,%lf", &x, &y, &z) == 3) t.start = {x, y, z};

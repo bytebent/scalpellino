@@ -124,7 +124,8 @@ MenuActions drawMenuBar(const MenuState& st) {
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("Terrain")) {
-        if (ImGui::MenuItem("Make terrain / grid size...", nullptr, false, st.canMakeTerrain)) a.makeTerrain = true;
+        if (ImGui::MenuItem("Make terrain (pick faces)...", nullptr, st.terrainPicking)) a.makeTerrain = true;
+        if (ImGui::MenuItem("Terrain grid size...", nullptr, false, st.terrainSelected)) a.terrainGrid = true;
         if (ImGui::MenuItem("Remove terrain", nullptr, false, st.terrainSelected)) a.removeTerrain = true;
         ImGui::Separator();
         if (ImGui::MenuItem("Terrain tool", "Shift+G", st.terrainTool)) a.toolTerrain = true;
@@ -134,8 +135,8 @@ MenuActions drawMenuBar(const MenuState& st) {
         ImGui::Separator();
         if (ImGui::MenuItem("Import heightmap...", nullptr, false, st.terrainSelected)) a.heightmap = true;
         if (ImGui::MenuItem("Stitch neighbouring edges")) a.stitchTerrain = true;
-        ImGui::TextDisabled("Make terrain: top face of selected brushes,");
-        ImGui::TextDisabled("or the faces picked with the Texture tool");
+        ImGui::TextDisabled("Make terrain: click any faces (3 or 4 corners),");
+        ImGui::TextDisabled("then Return. Vertex tool: move terrain points.");
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("View")) {
@@ -196,8 +197,10 @@ void drawControlsWindow(bool* open) {
             {"Hollow", "Cmd+Shift+H: turn brushes into walls of a typed thickness"},
             {"Curve tool", "Shift+C: pick a shape in Properties, drag a box (wall: start to end); Return creates"},
             {"Edit / bake a curve", "Tools menu (select the generated shape first)"},
-            {"Make terrain", "Terrain menu: top face of selected brushes (or faces picked with the Texture tool)"},
+            {"Make terrain", "Terrain menu > Make terrain: click faces in 3D (Shift+click adds) or brushes in 2D (face toward you); Return makes them terrain, Esc stops"},
+            {"Terrain points", "Vertex tool on a selected terrain: click a point (Cmd+click adds), drag in the 3D view or a side view; Cmd+Shift+T types a height"},
             {"Terrain tool", "Shift+G: drag over terrain (3D, or a 2D view facing it); mode, radius, amount in Properties; Esc cancels a stroke"},
+            {"Paint textures", "Terrain tool, Paint mode: paints the current texture (up to 8 per patch); painting the face's own texture uncovers it"},
             {"Heightmap / stitch / remove", "Terrain menu"},
             {"Delete", "Delete or Backspace"},
             {"Undo / redo", "Cmd+Z / Cmd+Shift+Z"},

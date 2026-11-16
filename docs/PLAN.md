@@ -15,8 +15,11 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 - **v0.6.0 = milestone 6 Workflow + shapes**. Reported to the user.
 - **v0.6.1 = fixes** the user reported for v0.6.0: rounded domes overlapped themselves;
   spheres lagged when resized. Also fixed the spiral stairs column. See log.
-- **v0.7.0 = milestone 7 Terrain** (this step). Report to the user, then wait for the
-  go-ahead on milestone 8.
+- **v0.7.0 = milestone 7 Terrain**. Reported to the user.
+- **v0.7.1 = terrain fixes** the user asked for after v0.7.0 (this step): make terrain
+  from any picked face (and triangles), the vertex tool edits terrain point by point,
+  up to 8 textures per patch. Report to the user, then wait for the go-ahead on
+  milestone 8.
 - **Next: milestone 8 — World**: lights, sky picker (a setting, not a sealed box), fog,
   camera bookmarks, 72-unit scale figure.
 
@@ -68,13 +71,17 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 - **Terrain, decided without asking (confirm with the user):**
   - A sculpt stroke is applied when the mouse is released. It's an edit, like moving,
     not a creation, so the Return rule doesn't apply. Esc during a drag cancels it.
-  - One blend texture per patch: painting with a new texture replaces that patch's
-    second texture.
-  - Clip, carve, hollow and vertex editing turn a terrain brush back into a plain brush.
+  - Clip, carve and hollow turn a terrain brush back into a plain brush. Vertex editing
+    and snap to grid keep the terrain while its face stays one face (v0.7.1).
   - In 2D views the full grid is drawn. In 3D, a selected terrain shows only its outline.
-- **Terrain extras, later:** more than 2 textures per patch; sculpting limited to the
-  selection; a "set height" mode; edges between different grid sizes (now they only
-  match where grid points meet).
+  - v0.7.1: Make terrain = pick faces (Return makes, Esc stops); selecting brushes no
+    longer takes their top face. Max 8 textures per patch (face + 7 painted). Painting
+    is by shares (order doesn't matter). In 2D, brush corners win over terrain points
+    on the same spot; terrain points are the only handles picked in the 3D view.
+- **Terrain extras, later:** faces with more than 4 corners (e.g. a cylinder's cap: clip
+  it for now); marquee (box) selection of terrain points; sculpting limited to the
+  selection; edges between different grid sizes or where a triangle's split edge meets
+  a quad's plain edge (they only match where grid points meet).
 
 - **Texture browser, later:** tags, folders/collections, favourites, recently used,
   sorting by size, previews of how a texture tiles (user: "eventually a lot of
@@ -159,6 +166,53 @@ terminal-style render log like Hammer's compile window + log file), 10 Y2K shade
 ## Milestone 1 plan — Brushes (done)
 
 ## Log
+
+### 2026-11-16 — v0.7.1: terrain on any face, terrain points, more textures
+User feedback on v0.7.0: Make terrain took a block's top face (wanted: any face); the
+vertex tool should work on terrain, point by point; more than two textures (at least 3).
+- **Core** (`core/terrain`, `core/brush.hpp`):
+  - `Terrain::layers` (texture + share per point) replaces `texture2` / `alpha`.
+    `kMaxTerrainLayers = 7`. Paint/erase work point by point on shares: painting a
+    texture raises its share and lowers the others by the same factor (order doesn't
+    matter, so stitched points stay equal); painting the face's own texture uncovers it.
+    `terrainLayer`, `pruneTerrainLayers`; `sculpt(…, bool* full)` reports a full patch.
+  - 3-cornered faces: `faceQuad` lays a triangle out as a quad with its far corner in the
+    middle of the edge opposite the start. New triangle terrain starts opposite its
+    longest edge (two triangles sharing it match).
+  - `moveTerrainPoints` (raise / set, through shared points), `carryTerrain` (keeps a
+    terrain through corner edits when its face survives), `faceFacing` (2D face pick).
+  - **Bug found and fixed:** a dab reached any terrain whose flat distance (in its own
+    plane) was within the radius, so a stroke on a floor also raised/painted a wall next
+    to it. Now points must also be within the radius along their normal.
+- **File:** `//@ tl <texture>` before each layer's `//@ ta` rows; `tex2=` and bare `ta`
+  rows from v0.7.0 still load.
+- **Drawing:** one pass per layer; shares converted to "over" transparencies in
+  `makeSceneBrush`. `Scene::outlines` (picked faces, yellow, all views). Terrain points
+  drawn as small blue handles in 2D and 3D (`Viewport::worldToLocal3D`).
+- **Terrain tool:** face-picking state (`startPicking`, `pickedFaces`); hover/strokes off
+  while picking. Properties panel: picking panel (count, cells per side, Make / Stop),
+  and the list of textures on the selected patch.
+- **Vertex tool:** terrain points of selected terrain (stacked in 2D on terrain facing the
+  same way, single in 3D),
+  Cmd+click add/remove, drag along the normal (2D side views, or the 3D view by the
+  normal's screen direction), snapped; live preview through `Scene::replaced`. Corner
+  moves and snap to grid keep the terrain (`carryTerrain`). Move vertices dialog has
+  "raise by / set height" for terrain points.
+- **Editor/menus:** Terrain → Make terrain (pick faces)…, Terrain grid size…; Help →
+  Controls and README updated.
+- **Script:** `terrain pick`, `drag3d`, `vertexraise`, `vertexheight`,
+  `expect terrainpoints`, `expect paintlayers`. `m7_terrain` now picks faces in the top
+  view. New `v071_terrain` (wall face from the front view, two triangles from a diagonal
+  clip, raising a row in the front view, a seam point in 3D, typed height, wall corner
+  move keeps terrain, four textures, uncovering, save/open). Test textures
+  `tests/ui/assets/textures/{grass,sand,rock}.png` (generated, ours).
+- **Tests:** core **3454 checks, 0 failed** (new: layered paint and order, full patch,
+  v0.7.0 file layout, triangle grid inside the triangle + mirror, point moves across a
+  seam, corner edits keep / drop terrain, strokes don't reach a nearby wall, triangle
+  seams on both diagonals). UI: all 12 scripts pass at 1× and 2×. Idle with a terrain
+  map open: 0 CPU ticks over 10 s.
+- **Screenshots:** `m7-05-make-terrain-picked-faces.png`,
+  `m7-06-vertex-tool-terrain-points.png`, `m7-07-four-painted-textures.png`.
 
 ### 2026-11-16 — Milestone 7: Terrain (v0.7.0)
 - **Core** (`core/terrain.{hpp,cpp}`, data in `Brush::terrain`):

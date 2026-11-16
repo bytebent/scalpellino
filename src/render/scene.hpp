@@ -16,12 +16,13 @@ struct SceneBrush {
     std::vector<Face> faces; // texture data for each polygon's face index
     AABB bounds;
     // Terrain: the terrain face's polygon is replaced by one 4-point polygon per grid
-    // cell, polys[terrainFirst ...]; per corner of each cell a blend value and a smooth
-    // normal (4 per cell, same order as the cell's verts).
+    // cell, polys[terrainFirst ...]; per corner of each cell a smooth normal (4 per cell,
+    // same order as the cell's verts). Each painted texture (bottom first) has a blend
+    // value per cell corner, laid out the same way.
     std::optional<TerrainGrid> terrain;
     size_t terrainFirst = 0;
-    std::string texture2;
-    std::vector<float> cellAlpha;
+    struct Layer { std::string texture; std::vector<float> cellAlpha; };
+    std::vector<Layer> layers;
     std::vector<Vec3> cellNormals;
 };
 
@@ -37,8 +38,9 @@ struct Scene {
     bool hideSelected = false;      // hide originals while their ghosts are dragged (move)
     std::vector<SceneBrush> invalidGhosts; // vertex edits that are not valid solids (magenta)
     bool invalid = false;
-    struct VertexHandle { Vec3 pos; bool selected; };
-    std::vector<VertexHandle> vertexHandles; // vertex tool corners
+    struct VertexHandle { Vec3 pos; bool selected; bool terrain = false; };
+    std::vector<VertexHandle> vertexHandles; // vertex tool corners (terrain: grid points,
+                                             // drawn smaller, also in the 3D view)
     std::optional<Vec3> pivot;               // custom rotation pivot marker
     TextureLibrary* textures = nullptr;      // set -> textured 3D view
     std::set<FaceRef> selectedFaces;         // texture tool selection (highlighted in 3D)
@@ -53,6 +55,7 @@ struct Scene {
         std::vector<Vec3> ring; // optional: the circle laid onto the surface (3D view)
     };
     std::optional<BrushCursor> brushCursor;  // terrain tool: circle on the surface
+    std::vector<std::vector<Vec3>> outlines; // highlighted polygons (terrain tool: picked faces)
 };
 
 SceneBrush makeSceneBrush(const Brush& b);

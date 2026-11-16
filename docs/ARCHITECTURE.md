@@ -150,32 +150,52 @@ follows the move; other hand edits are replaced when regenerating (bake first to
 **Carve arch** cuts a rectangular hole and refills the corners above the curve with arch
 slices (clean pieces instead of Hammer-style carve shards).
 
-### Terrain (milestone 7, done)
+### Terrain (milestone 7, done; reworked in v0.7.1)
 Like Hammer's displacements, with fewer rules.
-- **Data:** a terrain is one 4-cornered face of an ordinary brush (`Brush::terrain`).
-  The face becomes a grid of 2^power cells per side (2 to 32). Each grid point has a
-  height along the face normal and a blend value (0 = the face's texture, 1 = the
-  terrain's second texture). The grid starts at the face corner nearest a stored start
-  point, which follows moves, rotations and mirrors.
-- **Making:** Terrain → Make terrain turns the top face of each selected brush (or the
-  faces picked with the Texture tool) into terrain. Running it again changes the grid
-  size and resamples the shape and paint.
+- **Data:** a terrain is one face of an ordinary brush (`Brush::terrain`), with 3 or 4
+  corners. The face becomes a grid of 2^power cells per side (2 to 32). Each grid point
+  has a height along the face normal. The grid starts at the face corner nearest a
+  stored start point, which follows moves, rotations and mirrors. A triangle is laid out
+  like a quad whose far corner is the middle of the edge opposite the start (so the grid
+  covers it exactly and mirroring still just transposes the grid); a new triangle
+  terrain starts opposite its longest edge, so two triangles sharing that edge match.
+- **Paint:** up to 7 painted textures per patch (`Terrain::layers`), on top of the
+  face's own texture. Each layer has a share per grid point (0..1); the shares add up to
+  at most 1 and the face's texture shows the rest. Painting a texture moves its share up
+  and every other share down by the same factor, so the result doesn't depend on the
+  order textures were painted. Drawing converts shares to "over" transparencies, one
+  pass per layer. Layers with no paint left are dropped after a stroke.
+- **Making:** Terrain → Make terrain switches the terrain tool to picking faces: any face
+  in the 3D view (Shift+click adds or removes), or in a 2D view the face of the clicked
+  brush that looks toward the viewer. One face per brush. Grid size in Properties,
+  Return makes them, Esc stops. Faces picked with the Texture tool also work. Terrain →
+  Terrain grid size changes the selected terrain's grid (shape and paint resampled).
 - **Editing** is one terrain tool (Shift+G) with modes: raise, lower, smooth, flatten (to
   the stroke's start height), noise, paint, erase paint. Radius, amount or strength, and
   falloff are typed in the Properties panel. A circle on the surface shows the radius.
   Strokes work in the 3D view or in a 2D view facing the terrain. Dabs land every fifth
-  of the radius, so speed doesn't matter. One drag is one undo step.
+  of the radius, so speed doesn't matter. One drag is one undo step. A dab reaches points
+  within the radius across the face (flat distance) and only surfaces within the radius
+  of the dab along their normal, so a wall beside a floor is left alone.
+- **Point by point:** the vertex tool shows the grid points of selected terrain (small
+  handles, also in the 3D view, the only handles picked there). Dragging moves them along
+  the normal, snapped to the grid; in 2D only views that see the normal side-on change
+  anything. Typed: raise by / set height (Cmd+Shift+T). Brush corners win over terrain
+  points on the same spot in 2D.
 - **Stitching:** grid points of different patches at the same spot (same flat position,
   same normal) are treated as one point by every operation. Neighbours never crack. Edges
   only match where the grid points meet, so patches sharing an edge need the same grid
-  size along it. "Stitch neighbouring edges" repairs edges that drifted apart.
+  size along it. "Stitch neighbouring edges" repairs edges that drifted apart (paint is
+  averaged per texture over the patches that have it).
 - **Heightmap import:** a grey image (black = low, white = high, both typed) is laid over
   the selected terrain as seen along its normal.
 - **Brush edits:** move, rotate, mirror and scale keep the terrain, and heights scale
-  along the normal. Clip, carve, hollow, vertex editing and snap to grid rebuild the
-  brush, so it becomes a plain brush again (undo restores it).
-- **Files:** `//@ terrain face=… power=… start=x,y,z tex2=…` plus one `//@ th` line of
-  heights per grid row, and `//@ ta` lines of blend values when something was painted.
+  along the normal. Vertex editing and snap to grid keep it if the terrain face is still
+  one face with the same (moved) corners; otherwise it becomes a plain brush. Clip,
+  carve and hollow always give plain brushes (undo restores the terrain).
+- **Files:** `//@ terrain face=… power=… start=x,y,z` plus one `//@ th` line of heights
+  per grid row; then for each painted texture `//@ tl <texture>` and its `//@ ta` lines
+  of shares. v0.7.0 files (`tex2=` in the header, `ta` lines without `tl`) still load.
   Other tools see the plain brush.
 - **Renders/export (later):** the terrain surface is the visible geometry. The brush's
   other faces count as hidden, as with Hammer displacements.
@@ -280,7 +300,7 @@ docs/         this file, roadmap
 | 4 | Shaping: clip (2/3-point), carve, hollow | done (v0.4.0) |
 | 5 | Curve tool: arch, ring, curved wall, spiral stairs, arched opening; groups | done (v0.5.0) |
 | 6 | Workflow + shapes: hide/show + visgroups, overlap finder, views to origin, block primitives (wedge, cylinder, cone, pyramid, sphere), more curves (dome, helix ramp, straight stairs, stairs column) | done (v0.6.0) |
-| 7 | Terrain: grid patches from faces, sculpt (raise/lower/smooth/flatten/noise; typed radius/strength), 2-texture blend painting, auto-stitched neighbours, heightmap import; stored in our `.map` | done (v0.7.0) |
+| 7 | Terrain: grid patches from any picked face (3 or 4 corners), sculpt (raise/lower/smooth/flatten/noise; typed radius/strength), point-by-point editing with the vertex tool, painting up to 8 textures per patch, auto-stitched neighbours, heightmap import; stored in our `.map` | done (v0.7.0, v0.7.1) |
 | 8 | World: lights, sky picker (a setting, not a sealed box), fog, camera bookmarks, scale figure | |
 | 9 | Renderer: PNG renders, only what the camera sees (frustum, back faces, nodraw, optional outside-only), terminal-style render log window (+ log file) | |
 | 10 | Y2K look: shaders (low-res, fog, chrome, bloom, dithering) | |

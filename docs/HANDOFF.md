@@ -12,12 +12,12 @@ Read in this order:
 
 ## Where things stand
 
-- Released: v0.1.0 … **v0.7.0** (milestone 7, Terrain). CI is green and the release is
-  published with the Intel build.
+- Released: v0.1.0 … v0.7.0 (milestone 7, Terrain), then **v0.7.1** (terrain fixes the
+  user asked for: any face, vertex tool on terrain, up to 8 textures).
 - **Next: milestone 8 — World**: lights (point, spot, sun), a sky picker (a *setting*,
   not a sealed skybox), fog, camera bookmarks, a 72-unit human scale figure.
-  Wait for the user's go-ahead before starting it. They had just received the v0.7.0
-  report when this file was written.
+  Wait for the user's go-ahead before starting it. They had just received the v0.7.1
+  report when this file was last updated.
 - After that: M9 renderer (PNG renders of only what the camera sees, plus a Hammer-style
   scrolling render log window and a log file), M10 Y2K shaders, M11 export (.glb, Godot).
 
@@ -60,8 +60,9 @@ Read in this order:
 - nodraw faces are shown in the editor and skipped by renders and exports.
 - Apple Silicon builds only on demand (the `apple-silicon` workflow), never in normal CI.
 - Terrain choices are listed under "Open questions (parked)" in PLAN.md and still need
-  the user's confirmation. For example, a stroke commits on mouse release, and there is
-  one blend texture per patch.
+  the user's confirmation. For example, a stroke commits on mouse release.
+- Make terrain is by picking faces (user: "select any face of a shape"), never by
+  guessing a face from a selected brush.
 
 ## Workspace quirks (AI cloud workspace)
 

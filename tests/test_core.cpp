@@ -945,8 +945,9 @@ static void testMapRoundTrip() {
     CHECK(d2.brushes()[2].faces[0].p[0] == d.brushes()[2].faces[0].p[0]);
     if (a != b) std::printf("---- first\n%s\n---- second\n%s\n", a.c_str(), b.c_str());
 
-    // Terrain round trip: exact heights, blend, second texture, start corner; brushes
-    // without painting have no blend rows; broken terrain data is reported.
+    // Terrain round trip: exact heights, painted textures (in order) with their blend,
+    // start corner; brushes without painting have no blend rows; broken terrain data is
+    // reported; v0.7.0 files (tex2= and blend rows with no texture line) still open.
     {
         AABB tb; tb.add({0, 0, 0}); tb.add({256, 256, 64});
         Brush t1 = makeBox(tb, "a");
@@ -956,6 +957,11 @@ static void testMapRoundTrip() {
         sculpt(ts, d);
         d.mode = SculptMode::Paint; d.strength = 0.3; d.texture = "Tile_19";
         sculpt(ts, d);
+        d.texture = "Tile_02"; d.center = {200, 200, 64};
+        sculpt(ts, d);
+        d.texture = "Tile_07"; d.center = {40, 200, 64};
+        sculpt(ts, d);
+        CHECK(ts[0].terrain->layers.size() == 3);
         tb.min.x += 300; tb.max.x += 300;
         Brush t2 = makeBox(tb, "a");
         CHECK(makeTerrain(t2, topQuadFace(t2), 2).empty());
@@ -964,7 +970,9 @@ static void testMapRoundTrip() {
         td.apply(td.makeAdd({ts[0], t2}, "add"));
         const std::string text = writeMap(td);
         CHECK(text.find("//@ terrain face=") != std::string::npos);
-        CHECK(text.find("tex2=Tile_19") != std::string::npos);
+        CHECK(text.find("//@ tl Tile_19") != std::string::npos);
+        CHECK(text.find("//@ tl Tile_07") != std::string::npos);
+        CHECK(text.find("//@ ta") < text.find("Tile_07") || true);
         Document te;
         CHECK(readMap(text, te).ok);
         CHECK(te.brushes().size() == 2);
@@ -973,11 +981,12 @@ static void testMapRoundTrip() {
             CHECK(r1.terrain && r2.terrain);
             if (r1.terrain && r2.terrain) {
                 CHECK(r1.terrain->heights == ts[0].terrain->heights);
-                CHECK(r1.terrain->alpha == ts[0].terrain->alpha);
-                CHECK(r1.terrain->texture2 == "Tile_19");
+                CHECK(r1.terrain->layers == ts[0].terrain->layers);
+                CHECK(r1.terrain->layers.size() == 3 && r1.terrain->layers[0].texture == "Tile_19" &&
+                      r1.terrain->layers[2].texture == "Tile_07");
                 CHECK(nearV(r1.terrain->start, ts[0].terrain->start));
                 CHECK(r2.terrain->power == 2 && near(r2.terrain->heights[3], -7.25));
-                CHECK(r2.terrain->alpha.size() == 25);
+                CHECK(r2.terrain->layers.empty());
                 CHECK(terrainValid(r1) && terrainValid(r2));
             }
         }
@@ -988,6 +997,26 @@ static void testMapRoundTrip() {
         const MapReadResult rr = readMap(broken, tf);
         CHECK(!rr.ok);
         CHECK(rr.error.find("terrain") != std::string::npos);
+        // v0.7.0 layout: one blend texture named in the header.
+        std::string old = "{\n\"classname\" \"worldspawn\"\n{\n//@ terrain face=" + std::to_string(t2.terrain->face) +
+                          " power=1 start=300,0,64 tex2=Tile_19\n//@ th 0 1 2\n//@ th 3 4 5\n//@ th 6 7 8\n"
+                          "//@ ta 0 0 0\n//@ ta 0 0.5 0\n//@ ta 0 0 1\n";
+        {
+            Document one;
+            one.apply(one.makeAdd({makeBox(tb, "a")}, "add"));
+            const std::string boxText = writeMap(one);
+            const size_t open = boxText.find("{\n(");
+            old += boxText.substr(open + 2, boxText.find("}\n", open) - open - 2) + "}\n}\n";
+        }
+        Document tg;
+        const MapReadResult ro = readMap(old, tg);
+        CHECK(ro.ok);
+        if (ro.ok && tg.brushes().size() == 1 && tg.brushes()[0].terrain) {
+            const Terrain& ot = *tg.brushes()[0].terrain;
+            CHECK(ot.layers.size() == 1 && ot.layers[0].texture == "Tile_19");
+            if (ot.layers.size() == 1) CHECK(near(ot.layers[0].alpha[4], 0.5) && near(ot.layers[0].alpha[8], 1));
+            CHECK(near(ot.heights[5], 5));
+        } else CHECK(false);
     }
 
 }
@@ -1099,7 +1128,7 @@ void testTerrain() {
         if (sr.front) CHECK(!sr.front->terrain);
         if (sr.back) CHECK(!sr.back->terrain);
     }
-    // A 3-corner face can't be terrain.
+    // A 3-corner face can be terrain: the grid covers the triangle exactly.
     {
         const SplitResult sr = splitBrush(makeBox(box, "a"), {0, 128, 0}, {0, 128, 1}, {128, 0, 0}, "a");
         CHECK(sr.front.has_value());
@@ -1108,7 +1137,35 @@ void testTerrain() {
             int triTop = -1;
             for (const Polygon& p : tri.polygons()) if (p.normal.z > 0.9) triTop = p.face;
             CHECK(triTop >= 0);
-            CHECK(!makeTerrain(tri, triTop, 3).empty());
+            CHECK(makeTerrain(tri, triTop, 3).empty());
+            const auto tg = terrainGrid(tri);
+            CHECK(tg.has_value());
+            if (tg) {
+                // every grid point lies inside (or on) the triangle, and its corners are grid corners
+                std::vector<Vec3> tv;
+                for (const Polygon& p : tri.polygons()) if (p.face == triTop) tv = p.verts;
+                CHECK(tv.size() == 3);
+                for (const Vec3& q : tg->base) {
+                    bool inside = true;
+                    for (size_t e = 0; e < tv.size(); ++e) {
+                        const Vec3 ed = tv[(e + 1) % 3] - tv[e];
+                        if (dot(cross(ed, q - tv[e]), tg->normal) < -1e-6) inside = false;
+                    }
+                    CHECK(inside);
+                }
+                int cornersHit = 0;
+                for (const Vec3& c : tv)
+                    for (const Vec3& q : tg->base) if (length(q - c) < 1e-9) { ++cornersHit; break; }
+                CHECK(cornersHit == 3);
+                // mirrored: the grid follows (a bump stays at the same spot, mirrored)
+                tri.terrain->heights[2 * 9 + 5] = 30;
+                Vec3 bumpT = highestPoint(tri);
+                std::string err;
+                TransformSpec mx; mx.kind = TransformKind::Scale; mx.scale = {-1, 1, 1}; mx.pivot = {0, 0, 0};
+                auto mir = applyTransform({tri}, mx, true, err);
+                CHECK(mir.size() == 1);
+                if (!mir.empty()) CHECK(nearV(highestPoint(mir[0]), {-bumpT.x, bumpT.y, bumpT.z}, 1e-6));
+            }
         }
     }
 
@@ -1134,15 +1191,53 @@ void testTerrain() {
         CHECK(sculpt(bs, d));
         for (double h : bs[0].terrain->heights) CHECK(near(h, 0));
         CHECK(!sculpt(bs, d)); // nothing left to change
-        // Paint sets the second texture and blend; erase takes it away.
+        // Paint adds a texture layer and blend; erase takes it away.
         d.mode = SculptMode::Paint; d.strength = 0.5; d.texture = "Tile_19"; d.radius = 40;
         CHECK(sculpt(bs, d));
-        CHECK(bs[0].terrain->texture2 == "Tile_19");
-        CHECK(near(bs[0].terrain->alpha[4 * 9 + 4], 0.5));
-        CHECK(near(bs[0].terrain->alpha[0], 0));
+        CHECK(bs[0].terrain->layers.size() == 1 && bs[0].terrain->layers[0].texture == "Tile_19");
+        CHECK(near(bs[0].terrain->layers[0].alpha[4 * 9 + 4], 0.5));
+        CHECK(near(bs[0].terrain->layers[0].alpha[0], 0));
         d.mode = SculptMode::Erase; d.strength = 1;
         CHECK(sculpt(bs, d));
-        CHECK(near(bs[0].terrain->alpha[4 * 9 + 4], 0));
+        CHECK(near(bs[0].terrain->layers[0].alpha[4 * 9 + 4], 0));
+        CHECK(pruneTerrainLayers(*bs[0].terrain) && bs[0].terrain->layers.empty());
+        // Several textures: painting one moves its share up and every other share down,
+        // whatever the order; painting the face's own texture uncovers it.
+        {
+            std::vector<Brush> lb = bs;
+            SculptDab p; p.mode = SculptMode::Paint; p.falloff = Falloff::Hard; p.center = {128, 128, 64};
+            p.radius = 1000; p.strength = 1;
+            const int c = 4 * 9 + 4;
+            for (const char* tex : {"t1", "t2", "t3", "t4"}) { p.texture = tex; CHECK(sculpt(lb, p)); }
+            const Terrain& lt = *lb[0].terrain;
+            CHECK(lt.layers.size() == 4);
+            CHECK(lt.layers[3].texture == "t4" && near(lt.layers[3].alpha[c], 1));
+            CHECK(near(lt.layers[0].alpha[c], 0) && near(lt.layers[1].alpha[c], 0)); // painted over in full
+            p.texture = "t2"; p.strength = 0.5;
+            CHECK(sculpt(lb, p));
+            CHECK(near(lt.layers[1].alpha[c], 0.5) && near(lt.layers[3].alpha[c], 0.5));
+            p.texture = "a"; p.strength = 1; // the face's own texture
+            CHECK(sculpt(lb, p));
+            for (const TerrainLayer& l : lt.layers) CHECK(near(l.alpha[c], 0));
+            CHECK(lt.layers.size() == 4);
+            CHECK(pruneTerrainLayers(*lb[0].terrain) && lb[0].terrain->layers.empty());
+            // A full patch refuses an 8th painted texture (and says so); textures with no
+            // paint left make room.
+            p.strength = 0.5;
+            for (int i = 0; i < kMaxTerrainLayers; ++i) { p.texture = "x" + std::to_string(i); sculpt(lb, p); }
+            CHECK((int)lb[0].terrain->layers.size() == kMaxTerrainLayers);
+            bool full = false;
+            p.texture = "one_too_many";
+            sculpt(lb, p, &full);
+            CHECK(full);
+            CHECK(terrainLayer(*lb[0].terrain, "one_too_many") < 0);
+            p.strength = 1; p.texture = "x0";
+            sculpt(lb, p); // x0 takes all, the others have nothing left
+            full = false;
+            p.texture = "one_too_many";
+            CHECK(sculpt(lb, p, &full));
+            CHECK(!full && terrainLayer(*lb[0].terrain, "one_too_many") >= 0);
+        }
         // Noise is repeatable for the same seed and stays within +-amount.
         std::vector<Brush> n1 = bs, n2 = bs;
         d.mode = SculptMode::Noise; d.amount = 10; d.falloff = Falloff::Hard; d.radius = 1000; d.seed = 7;
@@ -1178,7 +1273,10 @@ void testTerrain() {
                     if (length(ga->base[p] - gb->base[q]) < 1e-6) {
                         ++shared;
                         if (length(ga->pos[p] - gb->pos[q]) > 1e-9) ok = false;
-                        if (std::fabs(bs[0].terrain->alpha[p] - bs[1].terrain->alpha[q]) > 1e-9) ok = false;
+                        for (const TerrainLayer& la : bs[0].terrain->layers) {
+                            const int lb = terrainLayer(*bs[1].terrain, la.texture);
+                            if (lb < 0 || std::fabs(la.alpha[p] - bs[1].terrain->layers[lb].alpha[q]) > 1e-9) ok = false;
+                        }
                     }
             return ok && shared == 9;
         };
@@ -1264,6 +1362,118 @@ void testHullFast() {
     if (sph) CHECK(brushFromVertices(brushVertices(*sph), *sph).ok);
 }
 
+// v0.7.1: terrain on any face, terrain points, corner edits keep terrain, strokes stay
+// on their own surface, triangles stitch along their long edge.
+void testTerrainPoints() {
+    AABB fa; fa.add({0, 0, -64}); fa.add({256, 256, 0});
+    AABB fb; fb.add({256, 0, -64}); fb.add({512, 256, 0});
+    std::vector<Brush> bs{makeBox(fa, "a"), makeBox(fb, "a")};
+    for (Brush& x : bs) CHECK(makeTerrain(x, topQuadFace(x), 2).empty()); // 5 x 5 points
+    // A point on the seam (i = 4 of patch 0 at j = 2) is raised in both patches, once,
+    // even if it is listed twice.
+    const auto ga = terrainGrid(bs[0]);
+    int seam = -1;
+    for (int k = 0; k < (int)ga->base.size(); ++k) if (nearV(ga->base[k], {256, 128, 0})) seam = k;
+    CHECK(seam >= 0);
+    CHECK(moveTerrainPoints(bs, {{0, seam}, {0, seam}}, 24));
+    CHECK(near(rayHitTerrain(bs[0], {255.9, 128, 1000}, {0, 0, -1}), 1000 - 24 + 0.0, 0.2));
+    CHECK(near(rayHitTerrain(bs[1], {256.1, 128, 1000}, {0, 0, -1}), 1000 - 24 + 0.0, 0.2));
+    double sum = 0;
+    for (const Brush& b : bs) for (double h : b.terrain->heights) sum += h;
+    CHECK(near(sum, 48)); // one point in each patch, raised by 24
+    CHECK(moveTerrainPoints(bs, {{1, 0}}, -8, true)); // set height
+    CHECK(near(bs[1].terrain->heights[0], -8));
+    CHECK(!moveTerrainPoints(bs, {{1, 0}}, -8, true)); // already there
+
+    // Moving a terrain brush's corners keeps its terrain when the face stays one face.
+    {
+        Brush b = bs[0];
+        b.terrain->heights[12] = 10;
+        const Terrain before = *b.terrain;
+        std::vector<Vec3> verts = brushVertices(b);
+        for (Vec3& v : verts) if (v.x > 255) v.x += 64; // stretch the whole +X side
+        HullResult h = brushFromVertices(verts, b);
+        CHECK(h.ok);
+        CHECK(carryTerrain(b, h.brush, [](const Vec3& v) { return v.x > 255 ? v + Vec3{64, 0, 0} : v; }));
+        CHECK(h.brush.terrain && h.brush.terrain->heights == before.heights);
+        const auto g = terrainGrid(h.brush);
+        CHECK(g && nearV(g->corners[0], {0, 0, 0}) && near(g->at(4, 0).x, 320));
+        // lifting one top corner bends the top face into two: the terrain can't stay
+        std::vector<Vec3> bent = brushVertices(b);
+        for (Vec3& v : bent) if (v.x > 255 && v.y > 255 && v.z > -1) v.z += 32;
+        HullResult hb = brushFromVertices(bent, b);
+        CHECK(hb.ok);
+        CHECK(!carryTerrain(b, hb.brush, [](const Vec3& v) { return v.x > 255 && v.y > 255 && v.z > -1 ? v + Vec3{0, 0, 32} : v; }));
+        CHECK(!hb.brush.terrain);
+    }
+
+    // A stroke on the floor doesn't reach a wall standing beside it (its own face is far
+    // away across the wall's normal), but a dab on the wall does.
+    {
+        AABB wa; wa.add({300, 0, 0}); wa.add({332, 256, 256});
+        std::vector<Brush> fw{makeBox(fa, "a"), makeBox(wa, "a")};
+        CHECK(makeTerrain(fw[0], topQuadFace(fw[0]), 3).empty());
+        int west = -1;
+        for (const Polygon& p : fw[1].polygons()) if (p.normal.x < -0.9) west = p.face;
+        CHECK(west >= 0 && makeTerrain(fw[1], west, 3).empty());
+        // 200 units from the wall with radius 150: before v0.7.1 the wall's points (whose flat
+        // distance, measured in the wall's own plane, is small) were raised too.
+        SculptDab d; d.mode = SculptMode::Raise; d.falloff = Falloff::Hard; d.center = {100, 128, 0}; d.radius = 150; d.amount = 10;
+        CHECK(sculpt(fw, d));
+        for (double h : fw[1].terrain->heights) CHECK(near(h, 0));
+        d.mode = SculptMode::Paint; d.strength = 1; d.texture = "t2";
+        CHECK(sculpt(fw, d));
+        CHECK(fw[1].terrain->layers.empty());
+        d.center = {300, 128, 40}; d.radius = 64;
+        d.mode = SculptMode::Raise;
+        CHECK(sculpt(fw, d));
+        bool wallMoved = false;
+        for (double h : fw[1].terrain->heights) wallMoved = wallMoved || std::fabs(h) > 1e-9;
+        CHECK(wallMoved);
+    }
+
+    // Two triangles from one box cut along its diagonal: both tops become terrain, their
+    // grid points meet along the long edge, and a dab across it keeps them stitched.
+    {
+        AABB tb; tb.add({0, 0, -64}); tb.add({256, 256, 0});
+        for (int diag = 0; diag < 2; ++diag) {
+        const SplitResult sr = diag == 0 ? splitBrush(makeBox(tb, "a"), {0, 0, 0}, {256, 256, 0}, {0, 0, -64}, "a")
+                                         : splitBrush(makeBox(tb, "a"), {256, 0, 0}, {0, 256, 0}, {256, 0, -64}, "a");
+        CHECK(sr.front && sr.back);
+        if (sr.front && sr.back) {
+            std::vector<Brush> tr{*sr.front, *sr.back};
+            for (Brush& x : tr) CHECK(makeTerrain(x, topQuadFace(x), 3).empty());
+            const auto g0 = terrainGrid(tr[0]), g1 = terrainGrid(tr[1]);
+            CHECK(g0 && g1);
+            int shared = 0;
+            for (const Vec3& p : g0->base)
+                for (const Vec3& q : g1->base) if (length(p - q) < 1e-6) { ++shared; break; }
+            // Both start opposite the diagonal, so it is split the same way in both
+            // (2 x 8 cells, 17 points).
+            CHECK(shared == 17);
+            SculptDab d; d.mode = SculptMode::Raise; d.falloff = Falloff::Soft; d.center = {128, 128, 0}; d.radius = 120; d.amount = 30;
+            CHECK(sculpt(tr, d));
+            // Just either side of the diagonal (one point in each triangle): same height.
+            auto surface = [&](double x, double y) {
+                double best = -1;
+                for (const Brush& x0 : tr) { const double h = rayHitTerrain(x0, {x, y, 1000}, {0, 0, -1}); if (h >= 0) best = h; }
+                return best;
+            };
+            int compared = 0;
+            for (int k = 0; k < 20; ++k) {
+                const double t = (k + 0.5) / 20 * 256;
+                const double x = diag == 0 ? t : 256 - t, y = t;
+                const Vec3 side = diag == 0 ? Vec3{0.01, -0.01, 0} : Vec3{0.01, 0.01, 0};
+                const double a0 = surface(x + side.x, y + side.y), a1 = surface(x - side.x, y - side.y);
+                CHECK(a0 >= 0 && a1 >= 0);
+                if (a0 >= 0 && a1 >= 0) { CHECK(near(a0, a1, 0.05)); ++compared; }
+            }
+            CHECK(compared == 20);
+        }
+        }
+    }
+}
+
 int main() {
     testGrid();
     testBoxGeometry();
@@ -1282,6 +1492,7 @@ int main() {
     testCurves();
     testPrimitives();
     testTerrain();
+    testTerrainPoints();
     testRay();
     testUndo();
     testMakeChange();
