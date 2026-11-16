@@ -2,6 +2,7 @@
 
 Read `docs/ARCHITECTURE.md` before changing anything. It is the agreed design.
 Then read `docs/PLAN.md`: current status, how to build, open questions, log.
+New session? Also read `docs/HANDOFF.md` (user preferences, past mistakes, workspace quirks).
 
 ## Keeping records (required)
 - Update `docs/PLAN.md` after every step: status, test results, next steps, parked questions.
