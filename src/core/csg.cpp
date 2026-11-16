@@ -103,6 +103,42 @@ std::vector<Brush> carveBrush(const Brush& b, const Brush& cutter) {
     return pieces;
 }
 
+namespace {
+bool intersection(const Brush& a, const Brush& b, Brush& out) {
+    out.faces = a.faces;
+    out.faces.insert(out.faces.end(), b.faces.begin(), b.faces.end());
+    removeUnusedFaces(out);
+    return solid(out);
+}
+} // namespace
+
+double overlapVolume(const Brush& a, const Brush& b) {
+    const AABB ab = a.bounds(), bb = b.bounds();
+    for (int k = 0; k < 3; ++k)
+        if (ab.max[k] <= bb.min[k] + kSliver || bb.max[k] <= ab.min[k] + kSliver) return 0;
+    Brush i;
+    return intersection(a, b, i) ? brushVolume(i) : 0;
+}
+
+std::vector<Overlap> findOverlaps(const std::vector<Brush>& brushes, double minVolume) {
+    std::vector<AABB> boxes;
+    boxes.reserve(brushes.size());
+    for (const Brush& b : brushes) boxes.push_back(b.bounds());
+    std::vector<Overlap> out;
+    for (size_t i = 0; i < brushes.size(); ++i)
+        for (size_t j = i + 1; j < brushes.size(); ++j) {
+            bool apart = false;
+            for (int k = 0; k < 3 && !apart; ++k)
+                apart = boxes[i].max[k] <= boxes[j].min[k] + kSliver || boxes[j].max[k] <= boxes[i].min[k] + kSliver;
+            if (apart) continue;
+            Brush x;
+            if (!intersection(brushes[i], brushes[j], x)) continue;
+            const double v = brushVolume(x);
+            if (v > minVolume) out.push_back({brushes[i].id, brushes[j].id, v, x.bounds()});
+        }
+    return out;
+}
+
 std::vector<Brush> hollowBrush(const Brush& b, double t, std::string& error) {
     error.clear();
     if (t <= 0) { error = "wall thickness must be positive"; return {}; }

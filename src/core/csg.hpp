@@ -32,6 +32,18 @@ SplitResult splitBrush(const Brush& b, const Vec3& a, const Vec3& bpt, const Vec
 // returns {b} unchanged if they don't overlap, and {} if `b` is entirely inside.
 std::vector<Brush> carveBrush(const Brush& b, const Brush& cutter);
 
+// Volume shared by two brushes (0 if they only touch or are apart). The overlap of
+// two convex brushes is the brush bounded by both sets of planes.
+double overlapVolume(const Brush& a, const Brush& b);
+
+struct Overlap {
+    BrushId a = 0, b = 0;
+    double volume = 0;
+    AABB region; // bounds of the shared part
+};
+// All pairs of brushes that cut into each other by more than `minVolume`.
+std::vector<Overlap> findOverlaps(const std::vector<Brush>& brushes, double minVolume = 0.01);
+
 // Turns `b` into walls of the given thickness around a hollow inside (Hammer "hollow").
 // Fails (empty + error) if the brush is too thin for that thickness.
 std::vector<Brush> hollowBrush(const Brush& b, double thickness, std::string& error);

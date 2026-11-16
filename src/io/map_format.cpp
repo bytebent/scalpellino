@@ -31,6 +31,13 @@ std::string quoted(const std::string& s) {
 
 void writeBrush(std::ostringstream& o, const Brush& b) {
     o << "{\n";
+    // Our extra per-brush data, as a comment line other tools skip.
+    if (b.visgroup || b.hidden) {
+        o << "//@";
+        if (b.visgroup) o << " visgroup=" << b.visgroup;
+        if (b.hidden) o << " hidden=1";
+        o << '\n';
+    }
     for (const Face& f : b.faces) {
         for (const Vec3& p : f.p) o << "( " << num(p.x) << ' ' << num(p.y) << ' ' << num(p.z) << " ) ";
         o << f.texture
@@ -51,7 +58,20 @@ std::string writeMap(const Document& doc) {
     std::ostringstream o;
     o << "// Game: Generic\n// Format: Valve\n// Written by Scalpellino\n";
     o << "// entity 0\n{\n";
-    writeKeys(o, doc.worldKeys);
+    KeyValues world;
+    for (const auto& kv : doc.worldKeys)
+        if (kv.first != "_scal_visgroups") world.push_back(kv);
+    if (!doc.visgroups().empty()) {
+        // id|name|visible;...  ('|' and ';' can't appear in names)
+        std::string vg;
+        for (const Visgroup& v : doc.visgroups()) {
+            std::string name = v.name;
+            for (char& c : name) if (c == '|' || c == ';' || c == '"') c = '_';
+            vg += std::to_string(v.id) + "|" + name + "|" + (v.visible ? "1" : "0") + ";";
+        }
+        world.emplace_back("_scal_visgroups", vg);
+    }
+    writeKeys(o, world);
     int i = 0;
     for (const Brush& b : doc.brushes()) {
         if (b.group) continue; // written with its group below
@@ -93,7 +113,7 @@ std::string writeMap(const Document& doc) {
 namespace {
 
 struct Token {
-    enum Kind { End, Punct, Str, Word } kind = End;
+    enum Kind { End, Punct, Str, Word, Meta } kind = End; // Meta = "//@ ..." line
     std::string text;
     int line = 0;
 };
@@ -108,6 +128,12 @@ public:
         t.line = line_;
         if (i_ >= s_.size()) return t;
         const char c = s_[i_];
+        if (c == '/' && s_.compare(i_, 3, "//@") == 0) {
+            t.kind = Token::Meta;
+            i_ += 3;
+            while (i_ < s_.size() && s_[i_] != '\n') t.text += s_[i_++];
+            return t;
+        }
         if (c == '{' || c == '}' || c == '(' || c == ')' || c == '[' || c == ']') {
             t.kind = Token::Punct;
             t.text = c;
@@ -144,7 +170,7 @@ private:
             const char c = s_[i_];
             if (c == '\n') { ++line_; ++i_; }
             else if (std::isspace((unsigned char)c)) ++i_;
-            else if (c == '/' && i_ + 1 < s_.size() && s_[i_ + 1] == '/') {
+            else if (c == '/' && i_ + 1 < s_.size() && s_[i_ + 1] == '/' && s_.compare(i_, 3, "//@") != 0) {
                 while (i_ < s_.size() && s_[i_] != '\n') ++i_;
             } else break;
         }
@@ -224,18 +250,34 @@ public:
             Token t = lex_.peek();
             if (t.kind == Token::Punct && t.text == "}") { lex_.next(); break; }
             if (t.kind == Token::Punct && t.text == "(") { b.faces.push_back(face()); continue; }
+            if (t.kind == Token::Meta) { meta(lex_.next().text, b); continue; }
             fail(t, "unexpected '" + t.text + "' in brush (patches are not supported)");
         }
         return b;
     }
 
+    // "//@ visgroup=3 hidden=1" -> brush fields.
+    static void meta(const std::string& text, Brush& b) {
+        std::istringstream in(text);
+        std::string kv;
+        while (in >> kv) {
+            const size_t eq = kv.find('=');
+            if (eq == std::string::npos) continue;
+            const std::string k = kv.substr(0, eq), v = kv.substr(eq + 1);
+            if (k == "visgroup") b.visgroup = (std::uint32_t)std::strtoul(v.c_str(), nullptr, 10);
+            else if (k == "hidden") b.hidden = v == "1";
+        }
+    }
+
     // Returns false at end of input.
     bool entity(KeyValues& keys, std::vector<Brush>& brushes) {
         Token t = lex_.next();
+        while (t.kind == Token::Meta) t = lex_.next();
         if (t.kind == Token::End) return false;
         if (t.kind != Token::Punct || t.text != "{") fail(t, "expected '{' to start an entity");
         while (true) {
             Token k = lex_.next();
+            if (k.kind == Token::Meta) continue; // entity-level metadata: none yet
             if (k.kind == Token::Punct && k.text == "}") break;
             if (k.kind == Token::Str) {
                 Token v = lex_.next();
@@ -311,7 +353,24 @@ MapReadResult readMap(const std::string& text, Document& doc) {
         return r;
     }
     if (!haveWorld) world = {{"classname", "worldspawn"}, {"mapversion", "220"}};
-    doc.reset(std::move(world), std::move(worldBrushes), std::move(others), std::move(groups));
+    std::vector<Visgroup> visgroups;
+    for (auto it = world.begin(); it != world.end(); ++it)
+        if (it->first == "_scal_visgroups") {
+            std::istringstream in(it->second);
+            std::string entry;
+            while (std::getline(in, entry, ';')) {
+                const size_t a = entry.find('|'), b = entry.rfind('|');
+                if (a == std::string::npos || b == a) continue;
+                Visgroup v;
+                v.id = (std::uint32_t)std::strtoul(entry.substr(0, a).c_str(), nullptr, 10);
+                v.name = entry.substr(a + 1, b - a - 1);
+                v.visible = entry.substr(b + 1) != "0";
+                if (v.id) visgroups.push_back(v);
+            }
+            world.erase(it);
+            break;
+        }
+    doc.reset(std::move(world), std::move(worldBrushes), std::move(others), std::move(groups), std::move(visgroups));
     r.ok = true;
     return r;
 }

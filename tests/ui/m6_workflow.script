@@ -1,0 +1,85 @@
+# Milestone 6: block primitives, overlap finder, hide/show + visgroups, new curve shapes,
+# views back to the origin.
+# -- primitives: cylinder (top view = upright), wedge (front view), sphere, cone
+blockshape cylinder 16
+wpress 1 0 0
+wdrag 64 64
+wdrag 128 128
+release
+expect edges
+shot m6-01-cylinder-preview.png
+key Return
+expect brushes 1
+expect faces 18
+blockshape wedge
+wpress 2 200 0
+wdrag 328 128
+release
+key Return
+expect brushes 2
+expect selected 1
+expect faces 5
+blockshape sphere 16
+wpress 1 -300 0
+wdrag -172 128
+release
+key Return
+expect brushes 3
+blockshape cone 12
+wpress 1 64 64
+wdrag 192 192
+release
+key Return
+expect brushes 4
+# -- the cone cuts into the cylinder: found, selected, camera jumps there
+findoverlaps
+expect overlaps 1
+expect selected 2
+expect edges
+shot m6-02-overlap-found.png
+# -- hide / show all / visgroups
+hide
+expect visible 2
+expect selected 0
+showall
+expect visible 4
+selectall
+visgroup new Everything here
+visgroup hide Everything here
+expect visible 0
+selectall
+expect selected 0
+visgroup show Everything here
+expect visible 4
+hide
+showall
+expect visible 4
+save m6-test.map
+open m6-test.map
+expect brushes 4
+# -- new curve shapes: dome, helix ramp, straight stairs
+curveshape dome
+curveset segments 12
+curveset rings 3
+wpress 1 400 -200
+wdrag 528 -72
+release
+key Return
+expect brushes 40
+curveshape helix_ramp
+wpress 1 -400 -400
+wdrag -144 -144
+release
+key Return
+expect brushes 56
+curveshape straight_stairs
+curveset steps 6
+wpress 2 -400 0
+wdrag -208 96
+release
+key Return
+expect brushes 62
+expect groups 3
+toorigin
+shot m6-03-new-shapes.png
+quit

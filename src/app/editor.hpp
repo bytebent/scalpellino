@@ -6,6 +6,7 @@
 #include "core/document.hpp"
 #include "core/grid.hpp"
 #include "core/transform.hpp"
+#include "core/csg.hpp"
 #include "render/scene.hpp"
 #include "render/viewport.hpp"
 #include "tools/block_tool.hpp"
@@ -115,6 +116,25 @@ private:
     GroupId selectedGroup() const; // the single generated group the selection is, or 0
     void drawCurvePanel();
     void drawBlockPanel();
+
+    // Visibility (milestone 6)
+    void hideSelected();
+    void hideUnselected();
+    void showAll();
+    void setVisgroupVisible(std::uint32_t id, bool visible);
+    void dropInvisibleFromSelection();
+    void drawVisgroupsPanel();
+
+    // Overlap finder + navigation
+    void findOverlapsNow();
+    void focusOverlap(int index);
+    void focusRegion(const AABB& region);
+    void allViewsToOrigin();
+    void drawOverlapsWindow();
+    std::vector<Overlap> overlaps_;
+    int overlapIndex_ = -1;
+    bool overlapsOpen_ = false;
+    char newVisgroupName_[64] = "";
     enum class Pending { None, New, Open, OpenPath, Quit };
     void guardUnsaved(Pending action); // runs action now or asks first
     void runPending();

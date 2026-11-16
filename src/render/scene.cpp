@@ -16,7 +16,8 @@ const std::vector<SceneBrush>& SceneCache::get(const Document& doc) {
     if (doc.revision() != revision_) {
         brushes_.clear();
         brushes_.reserve(doc.brushes().size());
-        for (const Brush& b : doc.brushes()) brushes_.push_back(makeSceneBrush(b));
+        for (const Brush& b : doc.brushes())
+            if (doc.visible(b)) brushes_.push_back(makeSceneBrush(b)); // hidden: not drawn, not pickable
         revision_ = doc.revision();
     }
     return brushes_;

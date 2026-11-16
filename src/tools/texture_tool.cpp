@@ -9,6 +9,7 @@ FaceRef pickFace3D(const Document& doc, const Viewport& vp, Vector2 local) {
     FaceRef best{0, -1};
     double bestT = 1e300;
     for (const Brush& b : doc.brushes()) {
+        if (!doc.visible(b)) continue;
         double t = 0;
         const int f = rayHitFace(b, o, d, &t);
         if (f >= 0 && t < bestT) { bestT = t; best = {b.id, f}; }

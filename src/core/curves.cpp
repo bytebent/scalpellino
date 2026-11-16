@@ -385,6 +385,11 @@ bool curveFromKeys(const KeyValues& kv, CurveParams& p) {
         else if (k == "control") std::sscanf(s, "%lf %lf", &p.cu, &p.cv);
         else if (k == "stairs") { int cw = 0; std::sscanf(s, "%lf %lf %lf %d %d", &p.innerRadius, &p.turnDeg, &p.rise, &p.steps, &cw); p.clockwise = cw != 0; }
         else if (k == "round") p.roundToWhole = v == "1";
+        // Single-value aliases (handy for scripts; the .map uses the combined "stairs").
+        else if (k == "steps") p.steps = std::atoi(s);
+        else if (k == "rise") p.rise = std::strtod(s, nullptr);
+        else if (k == "turn") p.turnDeg = std::strtod(s, nullptr);
+        else if (k == "inner_radius") p.innerRadius = std::strtod(s, nullptr);
         else if (k == "column") p.column = v == "1";
         else if (k == "rings") p.rings = std::atoi(s);
         else if (k == "solid") p.solid = v == "1";

@@ -11,6 +11,7 @@
 #include "io/map_format.hpp"
 #include <cmath>
 #include <cstdio>
+#include <sstream>
 #include <string>
 
 using namespace scal;
@@ -467,6 +468,30 @@ static void testCsg() {
     CHECK(carveBrush(block, makeBox(box({500, 0, 0}, {564, 64, 64}), "b")).size() == 1);
     CHECK(carveBrush(makeBox(box({40, 40, 0}, {80, 80, 64}), "a"), tunnel).empty());
 
+    // Overlaps: cutting into each other counts, touching doesn't.
+    {
+        Brush o1 = makeBox(box({0, 0, 0}, {64, 64, 64}), "a"); o1.id = 1;
+        Brush o2 = makeBox(box({48, 16, 0}, {112, 32, 64}), "a"); o2.id = 2;   // 16 x 16 x 64 overlap
+        Brush o3 = makeBox(box({64, 64, 0}, {128, 128, 64}), "a"); o3.id = 3;  // touches o1 at an edge
+        Brush o4 = makeBox(box({0, 64, 0}, {64, 128, 64}), "a"); o4.id = 4;    // touches o1 on a face
+        CHECK(near(overlapVolume(o1, o2), 16.0 * 16 * 64, 1e-6));
+        CHECK(overlapVolume(o1, o3) == 0 && overlapVolume(o1, o4) == 0);
+        const auto ov = findOverlaps({o1, o2, o3, o4});
+        CHECK(ov.size() == 1);
+        if (!ov.empty()) {
+            CHECK(ov[0].a == 1 && ov[0].b == 2);
+            CHECK(nearV(ov[0].region.min, {48, 16, 0}) && nearV(ov[0].region.max, {64, 32, 64}));
+        }
+        // A generated ring's slices share faces but don't overlap.
+        CurveParams g;
+        g.shape = CurveShape::Ring;
+        g.axU = 0; g.axV = 1; g.axD = 2;
+        g.u0 = -64; g.u1 = 64; g.v0 = -64; g.v1 = 64; g.d0 = 0; g.d1 = 32; g.segments = 12;
+        CurveResult rr = generateCurve(g);
+        for (size_t k = 0; k < rr.brushes.size(); ++k) rr.brushes[k].id = (BrushId)(k + 1);
+        CHECK(findOverlaps(rr.brushes).empty());
+    }
+
     // Hollow: a 256 cube with 16-unit walls.
     std::string err;
     const Brush room = makeBox(box({0, 0, 0}, {256, 256, 256}), "wall");
@@ -659,6 +684,7 @@ static void testCurves() {
     CHECK(back.thickness == 7.25 && back.steps == 12 && back.axD == 2 && back.u0 == -128);
     CHECK(back.column && back.rings == 6 && back.flip && back.solid);
     CHECK(!curveFromKeys({{"shape", "teapot"}}, back));
+    CHECK(curveFromKeys({{"shape", "straight_stairs"}, {"steps", "6"}, {"rise", "12.5"}}, back) && back.steps == 6 && back.rise == 12.5);
 }
 
 static void testPrimitives() {
@@ -816,6 +842,38 @@ static void testGroups() {
     CHECK(s.u0 == 20 && s.v1 == 158 && s.d0 == 100);
 }
 
+static void testVisibility() {
+    Document d;
+    d.apply(d.makeAdd({makeBox(box({0, 0, 0}, {64, 64, 64}), "a"), makeBox(box({100, 0, 0}, {164, 64, 64}), "a"),
+                       makeBox(box({200, 0, 0}, {264, 64, 64}), "a")}, "Create"));
+    const BrushId a = d.brushes()[0].id, b = d.brushes()[1].id, c = d.brushes()[2].id;
+    // Hide one brush (undoable), put another in a hidden visgroup.
+    Brush ha = *d.find(a); ha.hidden = true;
+    Brush vb = *d.find(b); vb.visgroup = 7;
+    d.apply(d.makeModify({ha, vb}, "Hide"));
+    d.setVisgroups({{7, "Roof | top; floor", false}, {9, "Area B", true}});
+    CHECK(!d.visible(a) && !d.visible(b) && d.visible(c));
+    // Save + load keeps it all; names lose only the characters the format can't hold.
+    const std::string text = writeMap(d);
+    CHECK(text.find("//@ hidden=1") != std::string::npos && text.find("//@ visgroup=7") != std::string::npos);
+    Document e;
+    CHECK(readMap(text, e).ok);
+    CHECK(e.visgroups().size() == 2 && e.visgroups()[0].name == "Roof _ top_ floor" && !e.visgroups()[0].visible);
+    CHECK(e.brushes()[0].hidden && e.brushes()[1].visgroup == 7 && !e.visible(e.brushes()[1].id));
+    CHECK(e.visible(e.brushes()[2].id));
+    // Saving again is identical (stable format).
+    CHECK(writeMap(e) == text);
+    // Other tools: the metadata is only comments, the brushes parse as normal.
+    std::string stripped;
+    std::istringstream in(text);
+    for (std::string line; std::getline(in, line);) if (line.rfind("//@", 0) != 0) stripped += line + "\n";
+    Document f;
+    CHECK(readMap(stripped, f).ok && f.brushes().size() == 3 && f.visible(f.brushes()[0].id));
+    // Undo un-hides.
+    CHECK(d.undo());
+    CHECK(d.visible(a));
+}
+
 static void testDirty() {
     Document d;
     CHECK(!d.dirty());
@@ -912,6 +970,7 @@ int main() {
     testUndo();
     testMakeChange();
     testGroups();
+    testVisibility();
     testDirty();
     testMapRoundTrip();
     testMapQuakeFormat();

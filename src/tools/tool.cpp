@@ -133,6 +133,7 @@ BrushId pick3D(const Document& doc, const Viewport& vp, Vector2 local) {
     BrushId best = 0;
     double bestT = 1e300;
     for (const Brush& b : doc.brushes()) {
+        if (!doc.visible(b)) continue;
         const double t = rayHit(b, o, d);
         if (t >= 0 && t < bestT) { bestT = t; best = b.id; }
     }

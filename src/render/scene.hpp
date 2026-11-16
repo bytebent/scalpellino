@@ -40,7 +40,7 @@ struct Scene {
 
 SceneBrush makeSceneBrush(const Brush& b);
 
-// Keeps brush polygons, rebuilt only when the document changes.
+// Keeps polygons of the VISIBLE brushes, rebuilt only when the document changes.
 class SceneCache {
 public:
     const std::vector<SceneBrush>& get(const Document& doc);

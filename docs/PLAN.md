@@ -12,8 +12,8 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 
 - Released: v0.1.0 … v0.4.0, **v0.5.0 = milestone 5 Curve tool** + texture wrapping +
   CI trimmed to Intel/Linux (this step). User asked to report only at v0.5.0.
-- **Now: milestone 6 — Workflow + shapes** (roadmap reordered with the user, see
-  ARCHITECTURE §15). Report to the user at v0.6.0.
+- **v0.6.0 = milestone 6 Workflow + shapes** (this step). Reported to the user.
+- **Next: milestone 7 — Terrain** (stored in our extended `.map`). Plan below.
 
 ## How to work in this repo
 
@@ -106,21 +106,25 @@ fields, handles in all 2D views (incl. depth), Return/Esc. Not done (parked): ed
 curved-wall depth by dragging in other views (typed only), centre column option for
 stairs, more shapes (dome, cone, torus, helix ramp).
 
-## Milestone 6 plan — Workflow + shapes
+## Milestone 6 — Workflow + shapes (done, v0.6.0)
 
-User wishes (2026-11-16 evening): more shapes; hide shapes' outlines in 2D views when
-there are too many, plus "show all"; a tool that finds interpenetrating brushes and moves
-the camera to them; a click to put all views back on the origin.
-1. Block tool primitives (one convex brush each): box, wedge, cylinder, cone, pyramid,
-   sphere; sides field; Properties panel when the Block tool is active.
-2. Curve shapes: dome (hemisphere shell), helix ramp, straight stairs, spiral stairs
-   centre column option.
-3. Hide selected / hide unselected / show all (undoable) + visgroups (named, toggle
-   visible, panel). Hidden brushes: not drawn, not pickable, skipped by select all.
-   Saved in our extended `.map` (worldspawn `_scal_visgroups`, `//@` brush metadata).
-4. Find overlapping brushes: list of pairs (touching doesn't count), Next/Prev, selects
-   the pair and moves the 3D camera + centres 2D views on it.
-5. Views to origin: button in each view corner + View menu (Cmd+0).
+Delivered: block primitives, dome / helix ramp / straight stairs / stairs column,
+hide/show + visgroups (saved), overlap finder with camera jumps, views to origin.
+
+## Milestone 7 plan — Terrain (draft)
+
+User: "a terrain tool like Hammer's, maybe better"; keep it in our own `.map`; export
+decided at the end.
+1. Data: a terrain patch = a brush face turned into an N x N grid (power, e.g. 8/16/32)
+   of height offsets along the face normal + per-vertex blend alpha (2 textures). Stored
+   in the `.map` as an entity (`classname` `scal_terrain`) or `//@` metadata on the brush.
+2. Rendering: triangulated grid in 2D/3D views; textured with blend in the 3D view.
+3. Sculpt tool: raise / lower / smooth / flatten / noise; radius, strength, falloff as
+   typed fields + on-screen circle (no mouse wheel); works across patch borders.
+4. Paint tool: blend between the face texture and a second texture.
+5. Neighbouring patches stay stitched (shared edge heights averaged / locked).
+6. Heightmap import (PNG -> heights). Undo for strokes (one command per stroke).
+7. Tests: grid maths, stitching, smoothing, round trip; UI scripts.
 
 ## Later milestones (agreed order)
 
@@ -132,6 +136,35 @@ terminal-style render log like Hammer's compile window + log file), 10 Y2K shade
 ## Milestone 1 plan — Brushes (done)
 
 ## Log
+
+### 2026-11-16 — Milestone 6: Workflow + shapes (v0.6.0)
+- `core/primitives`: box, wedge (triangle in the drawing view), cylinder, cone, pyramid,
+  sphere — each ONE convex brush (hull of points), optional whole-unit rounding. Block
+  tool Properties panel (shape, sides), real shape preview.
+- `core/curves`: dome (lat/long shell pieces), helix ramp (shared edge corners between
+  segments), straight stairs (solid or slabs, flip), spiral stairs centre column. Single-
+  value key aliases (steps, rise, turn, inner_radius) after a script silently ignored
+  `curveset steps`. Upright shapes (stairs, ramp, dome) only in the top view.
+- Visibility: `Brush::hidden`, `Brush::visgroup`, `Document::visgroups`/`visible()`.
+  Scene cache contains visible brushes only (so hidden = not drawn and not pickable);
+  3D picking skips hidden; Select all skips hidden. Hide (H) / hide others (Shift+H) /
+  show all (Cmd+U, also shows all visgroups). Visgroups tab next to Textures (toggle,
+  rename, select, add selection, delete, new from selection). `.map`: worldspawn
+  `_scal_visgroups` = `id|name|visible;...`, per-brush `//@ visgroup=N hidden=1` comment
+  lines (lexer emits Meta tokens for `//@`; other tools skip them as comments). Editor
+  Open passes visgroups through (remembered the v0.5.0 lesson).
+- `core/csg`: `overlapVolume`, `findOverlaps` (intersection = both plane sets; touching
+  doesn't count). Overlaps window (Cmd+Shift+O; list, Prev/Next) selects the pair,
+  centres + zooms 2D views and moves the 3D camera (`Viewport::lookAt`).
+- Views to origin: `Viewport::resetToOrigin`, corner "origin" button per view, View menu
+  + Cmd+0.
+- ImGui error found: restoring the cursor after the corner button "extends window
+  boundaries" -> add a Dummy item. All UI runs now checked for `imgui-error` = 0.
+- **Tests:** core **1026 checks, 0 failed** (primitive bounds + exact volumes, rounding,
+  dome/helix/straight/column, visibility + .map round trip + metadata stripped for other
+  tools, overlaps incl. touching / ring slices). UI `m6_workflow` + all older scripts:
+  **PASS at 1x and 2x**. Idle: **0 ticks / 10 s**.
+- Screenshots: `m6-01-cylinder-preview`, `m6-02-overlap-found`, `m6-03-new-shapes`.
 
 ### 2026-11-16 — Milestone 5: Curve tool (v0.5.0)
 - `core/curves`: generators for arch (flat top + legs), ring / pipe / cylinder (sweep),

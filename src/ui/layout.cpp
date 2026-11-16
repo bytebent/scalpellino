@@ -52,6 +52,7 @@ MenuActions drawMenuBar(const MenuState& st) {
         if (ImGui::MenuItem("Bake curve into plain brushes", nullptr, false, st.groupSelected)) a.bakeCurve = true;
         ImGui::Separator();
         if (ImGui::MenuItem("Carve with selection", "Cmd+Shift+C", false, st.hasSelection)) a.carve = true;
+        if (ImGui::MenuItem("Find overlapping brushes", "Cmd+Shift+O")) a.findOverlaps = true;
         if (ImGui::MenuItem("Hollow...", "Cmd+Shift+H", false, st.hasSelection)) a.hollow = true;
         ImGui::Separator();
         if (ImGui::MenuItem("Move selected vertices...", "Cmd+Shift+T", false, st.vertexTool && st.verticesSelected)) a.vertexMove = true;
@@ -130,7 +131,13 @@ MenuActions drawMenuBar(const MenuState& st) {
         if (ImGui::MenuItem("Set grid size...")) a.setGridSize = true;
         if (ImGui::MenuItem("Microgrid (sizes below 1)", nullptr, st.microgrid)) a.toggleMicrogrid = true;
         ImGui::Separator();
+        if (ImGui::MenuItem("Hide selected", "H", false, st.hasSelection)) a.hideSelected = true;
+        if (ImGui::MenuItem("Hide unselected", "Shift+H", false, st.hasSelection)) a.hideUnselected = true;
+        if (ImGui::MenuItem("Show all", "Cmd+U")) a.showAll = true;
+        ImGui::TextDisabled("Visgroups: the tab next to Textures");
+        ImGui::Separator();
         if (ImGui::MenuItem("Center 2D views on selection", "Cmd+E", false, st.hasSelection)) a.centerViews = true;
+        if (ImGui::MenuItem("All views to origin", "Cmd+0")) a.viewsToOrigin = true;
         if (ImGui::MenuItem("Fly mode (3D view)", "Z", st.flying)) a.flyMode = true;
         if (ImGui::MenuItem("3D view: textured", nullptr, st.textured3D)) a.textured3D = 1;
         if (ImGui::MenuItem("3D view: flat colours", nullptr, !st.textured3D)) a.textured3D = 0;
@@ -182,6 +189,11 @@ void drawControlsWindow(bool* open) {
             {"Pan 2D view", "middle mouse, or Space + left mouse"},
             {"Zoom 2D view", "mouse wheel"},
             {"Center 2D views on selection", "Cmd+E"},
+            {"Hide selected / unselected", "H / Shift+H"},
+            {"Show everything again", "Cmd+U (also un-hides all visgroups)"},
+            {"Visgroups", "tab next to Textures: named groups you can show / hide"},
+            {"Find overlapping brushes", "Cmd+Shift+O; Next / Prev jump the camera to each"},
+            {"Back to the origin", "Cmd+0 (all views), or the 'origin' button in a view's corner"},
             {"Smaller / larger grid", "\xC3\xA8 / + (the two keys right of P)"},
             {"Show grid / snap", "Shift+R / Shift+W"},
             {"This window", "F1"},
@@ -216,10 +228,10 @@ void drawStatusBar(const char* text) {
 
 void dockspace(bool forceReset, const char* tools, const char* topLeft, const char* topRight,
                const char* bottomLeft, const char* bottomRight, const char* rightTop,
-               const char* rightBottom, bool withPanels) {
+               const char* rightBottom, bool withPanels, const char* rightTopTab) {
     const ImGuiViewport* vp = ImGui::GetMainViewport();
     // Bump the version suffix whenever the default layout changes.
-    const ImGuiID id = ImGui::GetID("MainDockspace.v3");
+    const ImGuiID id = ImGui::GetID("MainDockspace.v4");
 
     if (forceReset || ImGui::DockBuilderGetNode(id) == nullptr) {
         ImGui::DockBuilderRemoveNode(id);
@@ -245,6 +257,7 @@ void dockspace(bool forceReset, const char* tools, const char* topLeft, const ch
         ImGui::DockBuilderDockWindow(tools, toolsNode);
         if (withPanels) {
             ImGui::DockBuilderDockWindow(rightTop, panelTop);
+            if (rightTopTab) ImGui::DockBuilderDockWindow(rightTopTab, panelTop); // second tab
             ImGui::DockBuilderDockWindow(rightBottom, panelBottom);
         }
         ImGui::DockBuilderDockWindow(topLeft, tl);

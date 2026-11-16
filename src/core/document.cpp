@@ -10,6 +10,20 @@ const Brush* Document::find(BrushId id) const {
     return nullptr;
 }
 
+std::uint32_t Document::newVisgroupId() const {
+    std::uint32_t id = 1;
+    for (const Visgroup& v : visgroups_) id = std::max(id, v.id + 1);
+    return id;
+}
+
+bool Document::visible(const Brush& b) const {
+    if (b.hidden) return false;
+    if (b.visgroup)
+        for (const Visgroup& v : visgroups_)
+            if (v.id == b.visgroup) return v.visible;
+    return true;
+}
+
 const Group* Document::group(GroupId id) const {
     auto it = groups_.find(id);
     return it == groups_.end() ? nullptr : &it->second;
@@ -118,8 +132,9 @@ const std::string& Document::undoName() const {
 }
 
 void Document::reset(KeyValues world, std::vector<Brush> brushes, std::vector<RawEntity> others,
-                     std::map<GroupId, Group> groups) {
+                     std::map<GroupId, Group> groups, std::vector<Visgroup> visgroups) {
     worldKeys = std::move(world);
+    visgroups_ = std::move(visgroups);
     otherEntities = std::move(others);
     groups_ = std::move(groups);
     nextGroupId_ = 1;

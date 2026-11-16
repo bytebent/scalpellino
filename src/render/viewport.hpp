@@ -44,6 +44,11 @@ public:
     void pan2D(Vector2 deltaPx);
     void center2D(double u, double v) { panU_ = u; panV_ = v; }
     void setZoom2D(double pxPerUnit) { zoom_ = pxPerUnit; }
+    // Back to the start: 2D views centred on the origin at the default zoom; the 3D
+    // camera at its default spot looking at the origin.
+    void resetToOrigin();
+    // 3D: keep the viewing direction, move back from `target` by `distance`.
+    void lookAt(const Vec3& target, double distance);
     void zoom2D(float wheel, Vector2 localPx);
     void screenToWorld2D(Vector2 localPx, double& u, double& v) const;
     Vector2 worldToLocal2D(double u, double v) const;

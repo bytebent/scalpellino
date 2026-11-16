@@ -44,6 +44,8 @@ struct MenuActions {
     bool addTextureFolder = false, rescanTextures = false;
     bool toolClip = false, clipApply = false, clipPoints = false, carve = false, hollow = false;
     bool toolCurve = false, editCurve = false, bakeCurve = false;
+    bool hideSelected = false, hideUnselected = false, showAll = false;
+    bool findOverlaps = false, viewsToOrigin = false;
     int clipKeep = -1;
 };
 
@@ -57,7 +59,7 @@ void drawStatusBar(const char* text);
 // on first run or when reset. Window names must match the windows' titles.
 void dockspace(bool forceReset, const char* tools, const char* topLeft, const char* topRight,
                const char* bottomLeft, const char* bottomRight, const char* rightTop,
-               const char* rightBottom, bool withPanels = true);
+               const char* rightBottom, bool withPanels = true, const char* rightTopTab = nullptr);
 
 // Help -> Controls: every shortcut in one place.
 void drawControlsWindow(bool* open);

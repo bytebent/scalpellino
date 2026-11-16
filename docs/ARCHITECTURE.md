@@ -110,8 +110,13 @@ Every shortcut and gesture is also available from the menu bar (File, Edit, Tool
 Transform, View, Help), with dialogs for typed values (e.g. Transform: exact move /
 rotate / scale with pivot). Help → Controls lists all shortcuts.
 
+### Visibility
+Hide selected (H) / hide others (Shift+H) / show all (Cmd+U); visgroups (named, toggle
+visible). Hidden brushes are not drawn, not pickable and skipped by Select all. Hiding is
+undoable; visgroup visibility isn't (as in Hammer). Saved in the map.
+
 ### Tools
-Select, Block (box, wedge, cylinder, pyramid), Clip, Vertex (done in M2), Carve (CSG subtract),
+Select, Block (box, wedge, cylinder, cone, pyramid, sphere — each one convex brush), Clip, Vertex (done in M2), Carve (CSG subtract),
 **Curve**, Texture apply / face edit, Light, Camera bookmark.
 
 ### Curve tool
@@ -244,7 +249,7 @@ docs/         this file, roadmap
 | 3 | Textures: library, browser, texture tool, face panel, nodraw, wrap | done (v0.3.x, v0.5.0) |
 | 4 | Shaping: clip (2/3-point), carve, hollow | done (v0.4.0) |
 | 5 | Curve tool: arch, ring, curved wall, spiral stairs, arched opening; groups | done (v0.5.0) |
-| 6 | Workflow + shapes: hide/show + visgroups, overlap finder, views to origin, block primitives (wedge, cylinder, cone, pyramid, sphere), more curves (dome, helix ramp, straight stairs, stairs column) | in progress |
+| 6 | Workflow + shapes: hide/show + visgroups, overlap finder, views to origin, block primitives (wedge, cylinder, cone, pyramid, sphere), more curves (dome, helix ramp, straight stairs, stairs column) | done (v0.6.0) |
 | 7 | Terrain: grid patches from faces, sculpt (raise/lower/smooth/flatten/noise; typed radius/strength), 2-texture blend painting, auto-stitched neighbours, heightmap import; stored in our `.map` | |
 | 8 | World: lights, sky picker (a setting, not a sealed box), fog, camera bookmarks, scale figure | |
 | 9 | Renderer: PNG renders, only what the camera sees (frustum, back faces, nodraw, optional outside-only), terminal-style render log window (+ log file) | |

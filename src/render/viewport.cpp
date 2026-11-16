@@ -410,6 +410,19 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
     EndMode3D();
 }
 
+void Viewport::resetToOrigin() {
+    panU_ = panV_ = 0;
+    zoom_ = 0.5;
+    pos_ = {-384.0f, -384.0f, 256.0f};
+    yaw_ = 45.0f;
+    pitch_ = -25.0f;
+}
+
+void Viewport::lookAt(const Vec3& t, double dist) {
+    const Vector3 f = forwardFrom(yaw_, pitch_);
+    pos_ = {(float)(t.x - f.x * dist), (float)(t.y - f.y * dist), (float)(t.z - f.z * dist)};
+}
+
 void Viewport::look(Vector2 d) {
     yaw_   -= d.x * 0.15f;
     pitch_ -= d.y * 0.15f;

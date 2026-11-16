@@ -33,6 +33,14 @@ struct GroupChange {
     std::optional<Group> after;
 };
 
+// Named visibility group (Hammer "visgroup"). Toggling `visible` hides/shows its
+// brushes in every view. Not part of undo (like Hammer), but saved with the map.
+struct Visgroup {
+    std::uint32_t id = 0;
+    std::string name;
+    bool visible = true;
+};
+
 // One brush before/after an edit. Missing `before` = created; missing `after` = deleted.
 struct BrushChange {
     BrushId id = 0;
@@ -65,6 +73,13 @@ public:
     // Adds every member of any group touched by `ids` (groups select as a whole).
     std::set<BrushId> expandToGroups(const std::set<BrushId>& ids) const;
 
+    // Visibility.
+    const std::vector<Visgroup>& visgroups() const { return visgroups_; }
+    void setVisgroups(std::vector<Visgroup> v) { visgroups_ = std::move(v); bump(); }
+    std::uint32_t newVisgroupId() const;
+    bool visible(const Brush& b) const;
+    bool visible(BrushId id) const { const Brush* b = find(id); return b && visible(*b); }
+
     const std::set<BrushId>& selection() const { return selection_; }
     void setSelection(std::set<BrushId> s) { selection_ = std::move(s); }
     AABB selectionBounds() const;
@@ -86,7 +101,7 @@ public:
     // Replaces all content (used when loading). Clears history.
     // Brush `group` fields must refer to entries of `groups` (ids are kept).
     void reset(KeyValues world, std::vector<Brush> brushes, std::vector<RawEntity> others,
-               std::map<GroupId, Group> groups = {});
+               std::map<GroupId, Group> groups = {}, std::vector<Visgroup> visgroups = {});
 
     // Helpers that build commands.
     Command makeAdd(std::vector<Brush> brushes, const std::string& name);
@@ -110,6 +125,7 @@ private:
     std::set<BrushId> selection_;
     BrushId nextId_ = 1;
     std::map<GroupId, Group> groups_;
+    std::vector<Visgroup> visgroups_;
     GroupId nextGroupId_ = 1;
     std::vector<Command> undo_, redo_;
     unsigned long long revision_ = 0, savedRevision_ = 0;

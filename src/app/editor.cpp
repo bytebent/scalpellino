@@ -181,7 +181,8 @@ bool Editor::frame(float dt) {
     const std::string status = statusText();
     drawStatusBar(status.c_str());
     dockspace(resetLayout_, "Tools###tools", views_[0]->title(), views_[1]->title(),
-              views_[2]->title(), views_[3]->title(), "Textures###textures", "Face###face", showPanels_);
+              views_[2]->title(), views_[3]->title(), "Textures###textures", "Face###face", showPanels_,
+              "Visgroups###visgroups");
     resetLayout_ = false;
 
     if (m.quit) requestQuit();
@@ -231,6 +232,11 @@ bool Editor::frame(float dt) {
         shapingError_.clear();
         askClipPoints_ = true;
     }
+    if (m.findOverlaps) findOverlapsNow();
+    if (m.viewsToOrigin) allViewsToOrigin();
+    if (m.hideSelected) hideSelected();
+    if (m.hideUnselected) hideUnselected();
+    if (m.showAll) showAll();
     if (m.toolCurve) setTool(&curveTool_);
     if (m.editCurve) editCurve();
     if (m.bakeCurve) bakeCurves();
@@ -258,13 +264,14 @@ bool Editor::frame(float dt) {
     if (!ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId) && !io.WantTextInput) handleKeyboard();
 
     drawToolsPanel();
-    if (showPanels_) { drawTextureBrowser(); drawFacePanel(); }
+    if (showPanels_) { drawTextureBrowser(); drawVisgroupsPanel(); drawFacePanel(); }
     drawViews();
     drawDialogs();
     drawTransformDialog();
     drawPrecisionDialogs();
     drawShapingDialogs();
     drawControlsWindow(&controlsOpen_);
+    drawOverlapsWindow();
     closeDialogs_ = false;
 
     // Remember the last brush size for new blocks' depth.
@@ -300,8 +307,11 @@ void Editor::handleKeyboard() {
         if (shift_ && IsKeyPressed(KEY_C)) carveWithSelection();
         if (shift_ && IsKeyPressed(KEY_H) && !doc_.selection().empty()) { shapingError_.clear(); askHollow_ = true; }
         if (IsKeyPressed(KEY_E)) centerViews();
+        if (IsKeyPressed(KEY_U)) showAll();
+        if (IsKeyPressed(KEY_ZERO)) allViewsToOrigin();
+        if (shift_ && IsKeyPressed(KEY_O)) { findOverlapsNow(); return; }
         if (IsKeyPressed(KEY_S)) { if (shift_) requestSaveAs(); else save(); }
-        if (IsKeyPressed(KEY_O)) guardUnsaved(Pending::Open);
+        if (IsKeyPressed(KEY_O) && !shift_) guardUnsaved(Pending::Open);
         if (IsKeyPressed(KEY_N)) guardUnsaved(Pending::New);
         return;
     }
@@ -315,6 +325,7 @@ void Editor::handleKeyboard() {
     if (shift_ && IsKeyPressed(KEY_V)) setTool(&vertexTool_);
     if (shift_ && IsKeyPressed(KEY_A)) setTool(&textureTool_);
     if (shift_ && IsKeyPressed(KEY_C)) setTool(&curveTool_);
+    if (IsKeyPressed(KEY_H)) { if (shift_) hideUnselected(); else hideSelected(); }
     if (shift_ && IsKeyPressed(KEY_X)) { if (tool_ == &clipTool_) clipTool_.cycleKeep(); else setTool(&clipTool_); }
     if (shift_ && IsKeyPressed(KEY_T)) applyCurrentTexture();
 
@@ -363,6 +374,7 @@ void Editor::drawViews() {
             v.resize((int)std::floor(avail.x), (int)std::floor(avail.y), viewScale_ > 0 ? viewScale_ : fb);
 
             // Invisible button over the canvas: owns mouse clicks so ImGui never drags windows.
+            ImGui::SetNextItemAllowOverlap(); // the 'origin' button sits on top of the canvas
             ImGui::InvisibleButton("##canvas", ImVec2((float)v.width(), (float)v.height()),
                                    ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight |
                                    ImGuiButtonFlags_MouseButtonMiddle);
@@ -394,6 +406,16 @@ void Editor::drawViews() {
                          ImVec2(0, 1), ImVec2(1, 0)); // render textures are stored upside down
             ImDrawList* dl = ImGui::GetWindowDrawList();
             dl->AddText(ImVec2(origin.x + 6, origin.y + 4), IM_COL32(200, 200, 200, 255), v.label());
+            {   // Corner button: this view back to the origin.
+                const ImVec2 keep = ImGui::GetCursorScreenPos();
+                ImGui::SetCursorScreenPos(ImVec2(origin.x + v.width() - 52, origin.y + 3));
+                ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4, 1));
+                if (ImGui::SmallButton("origin")) v.resetToOrigin();
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Back to the origin (Cmd+0: all views)");
+                ImGui::PopStyleVar();
+                ImGui::SetCursorScreenPos(keep);
+                ImGui::Dummy(ImVec2(0, 0)); // ImGui needs an item after moving the cursor back
+            }
             if (v.is2D() && scene.handleBox) drawSizeLabels(v, *scene.handleBox, origin);
             if (v.is2D() && scene.clipPoints.size() == 3)
                 for (int k = 0; k < 3; ++k) {
@@ -585,7 +607,8 @@ void Editor::redo() { tool_->cancel(); capture_ = -1; doc_.redo(); }
 
 void Editor::selectAll() {
     std::set<BrushId> all;
-    for (const Brush& b : doc_.brushes()) all.insert(b.id);
+    for (const Brush& b : doc_.brushes())
+        if (doc_.visible(b)) all.insert(b.id); // hidden brushes aren't selectable
     doc_.setSelection(all);
 }
 
@@ -942,6 +965,199 @@ void Editor::drawShapingDialogs() {
         } else if (cancel) ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }
+}
+
+// ------------------------------------------------------------------ overlaps + navigation
+
+void Editor::allViewsToOrigin() {
+    for (auto& v : views_) v->resetToOrigin();
+}
+
+void Editor::focusRegion(const AABB& region) {
+    const Vec3 c = region.center(), s = region.size();
+    const double size = std::max({s.x, s.y, s.z, 16.0});
+    for (int i = 1; i < 4; ++i) {
+        Viewport& v = *views_[i];
+        v.center2D(c[v.axU()], c[v.axV()]);
+        const double fit = std::min(v.width(), v.height()) / (size * 4.0);
+        v.setZoom2D(std::clamp(fit, 0.05, 8.0));
+    }
+    views_[0]->lookAt(c, size * 3.0 + 96.0);
+}
+
+void Editor::findOverlapsNow() {
+    std::vector<Brush> visible;
+    for (const Brush& b : doc_.brushes()) if (doc_.visible(b)) visible.push_back(b);
+    overlaps_ = findOverlaps(visible);
+    overlapsOpen_ = true;
+    overlapIndex_ = -1;
+    if (!overlaps_.empty()) focusOverlap(0);
+}
+
+void Editor::focusOverlap(int i) {
+    if (overlaps_.empty()) return;
+    const int n = (int)overlaps_.size();
+    overlapIndex_ = ((i % n) + n) % n;
+    const Overlap& o = overlaps_[(size_t)overlapIndex_];
+    std::set<BrushId> sel;
+    if (doc_.find(o.a)) sel.insert(o.a);
+    if (doc_.find(o.b)) sel.insert(o.b);
+    tool_->cancel();
+    doc_.setSelection(sel);
+    focusRegion(o.region);
+}
+
+void Editor::drawOverlapsWindow() {
+    if (!overlapsOpen_) return;
+    ImGui::SetNextWindowSize(ImVec2(380, 300), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Overlapping brushes", &overlapsOpen_)) {
+        if (ImGui::Button("Search again")) findOverlapsNow();
+        ImGui::SameLine();
+        if (overlaps_.empty()) {
+            ImGui::TextUnformatted("No brushes cut into each other.");
+        } else {
+            if (ImGui::Button("< Prev")) focusOverlap(overlapIndex_ - 1);
+            ImGui::SameLine();
+            if (ImGui::Button("Next >")) focusOverlap(overlapIndex_ + 1);
+            ImGui::SameLine();
+            ImGui::Text("%d / %zu", overlapIndex_ + 1, overlaps_.size());
+            ImGui::TextDisabled("Touching faces don't count. Click a row to jump there.");
+            if (ImGui::BeginChild("##ov")) {
+                for (size_t i = 0; i < overlaps_.size(); ++i) {
+                    const Overlap& o = overlaps_[i];
+                    char row[128];
+                    std::snprintf(row, sizeof row, "brush %u  x  brush %u    shared %.0f units\xC2\xB3", o.a, o.b, o.volume);
+                    if (ImGui::Selectable(row, (int)i == overlapIndex_)) focusOverlap((int)i);
+                }
+            }
+            ImGui::EndChild();
+        }
+    }
+    ImGui::End();
+}
+
+// ------------------------------------------------------------------ visibility
+
+void Editor::dropInvisibleFromSelection() {
+    std::set<BrushId> sel;
+    for (BrushId id : doc_.selection())
+        if (doc_.visible(id)) sel.insert(id);
+    if (sel.size() != doc_.selection().size()) doc_.setSelection(sel);
+}
+
+void Editor::hideSelected() {
+    if (doc_.selection().empty()) return;
+    tool_->cancel();
+    std::vector<Brush> out;
+    for (BrushId id : doc_.selection())
+        if (const Brush* b = doc_.find(id)) { Brush c = *b; c.hidden = true; out.push_back(std::move(c)); }
+    Command c = doc_.makeModify(out, "Hide");
+    c.selectionAfter.clear();
+    doc_.apply(std::move(c));
+}
+
+void Editor::hideUnselected() {
+    if (doc_.selection().empty()) return;
+    tool_->cancel();
+    std::vector<Brush> out;
+    for (const Brush& b : doc_.brushes())
+        if (!doc_.selection().count(b.id) && doc_.visible(b)) { Brush c = b; c.hidden = true; out.push_back(std::move(c)); }
+    if (!out.empty()) doc_.apply(doc_.makeModify(out, "Hide unselected"));
+}
+
+void Editor::showAll() {
+    std::vector<Brush> out;
+    for (const Brush& b : doc_.brushes())
+        if (b.hidden) { Brush c = b; c.hidden = false; out.push_back(std::move(c)); }
+    if (!out.empty()) doc_.apply(doc_.makeModify(out, "Show all"));
+    std::vector<Visgroup> vg = doc_.visgroups();
+    bool changed = false;
+    for (Visgroup& v : vg) if (!v.visible) { v.visible = true; changed = true; }
+    if (changed) doc_.setVisgroups(vg);
+}
+
+void Editor::setVisgroupVisible(std::uint32_t id, bool visible) {
+    std::vector<Visgroup> vg = doc_.visgroups();
+    for (Visgroup& v : vg) if (v.id == id) v.visible = visible;
+    doc_.setVisgroups(vg);
+    dropInvisibleFromSelection();
+}
+
+void Editor::drawVisgroupsPanel() {
+    if (ImGui::Begin("Visgroups###visgroups", nullptr, ImGuiWindowFlags_NoCollapse)) {
+        size_t hidden = 0;
+        for (const Brush& b : doc_.brushes()) hidden += b.hidden;
+        if (ImGui::Button("Hide selected (H)")) hideSelected();
+        ImGui::SameLine();
+        if (ImGui::Button("Hide others (Shift+H)")) hideUnselected();
+        if (ImGui::Button("Show all (Cmd+U)")) showAll();
+        ImGui::SameLine();
+        ImGui::TextDisabled("%zu hidden", hidden);
+        ImGui::Separator();
+        ImGui::TextUnformatted("Visgroups");
+        std::vector<Visgroup> vg = doc_.visgroups();
+        int removeIdx = -1;
+        bool changed = false;
+        for (size_t i = 0; i < vg.size(); ++i) {
+            Visgroup& v = vg[i];
+            ImGui::PushID((int)v.id);
+            size_t count = 0;
+            for (const Brush& b : doc_.brushes()) count += b.visgroup == v.id;
+            if (ImGui::Checkbox("##vis", &v.visible)) { setVisgroupVisible(v.id, v.visible); vg = doc_.visgroups(); ImGui::PopID(); break; }
+            ImGui::SameLine();
+            char name[64];
+            std::snprintf(name, sizeof name, "%s", v.name.c_str());
+            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 150);
+            if (ImGui::InputText("##name", name, sizeof name, ImGuiInputTextFlags_EnterReturnsTrue)) { v.name = name; changed = true; }
+            ImGui::SameLine();
+            ImGui::TextDisabled("%zu", count);
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Select")) {
+                std::set<BrushId> sel;
+                for (const Brush& b : doc_.brushes()) if (b.visgroup == v.id && doc_.visible(b)) sel.insert(b.id);
+                doc_.setSelection(sel);
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Select its visible brushes");
+            ImGui::SameLine();
+            if (ImGui::SmallButton("+")) {
+                std::vector<Brush> out;
+                for (BrushId id : doc_.selection()) if (const Brush* b = doc_.find(id)) { Brush c = *b; c.visgroup = v.id; out.push_back(c); }
+                if (!out.empty()) doc_.apply(doc_.makeModify(out, "Add to visgroup"));
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Add the selection to this visgroup");
+            ImGui::SameLine();
+            if (ImGui::SmallButton("x")) removeIdx = (int)i;
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Delete the visgroup (its brushes stay, ungrouped)");
+            ImGui::PopID();
+        }
+        if (removeIdx >= 0) {
+            const std::uint32_t id = vg[(size_t)removeIdx].id;
+            std::vector<Brush> out;
+            for (const Brush& b : doc_.brushes()) if (b.visgroup == id) { Brush c = b; c.visgroup = 0; out.push_back(c); }
+            if (!out.empty()) doc_.apply(doc_.makeModify(out, "Remove visgroup"));
+            vg.erase(vg.begin() + removeIdx);
+            changed = true;
+        }
+        if (changed) doc_.setVisgroups(vg);
+        if (vg.empty()) ImGui::TextDisabled("none yet");
+        ImGui::Separator();
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 140);
+        ImGui::InputTextWithHint("##newvg", "name", newVisgroupName_, sizeof newVisgroupName_);
+        ImGui::SameLine();
+        ImGui::BeginDisabled(doc_.selection().empty() || !newVisgroupName_[0]);
+        if (ImGui::Button("New from selection")) {
+            std::vector<Visgroup> all = doc_.visgroups();
+            const std::uint32_t id = doc_.newVisgroupId();
+            all.push_back({id, newVisgroupName_, true});
+            doc_.setVisgroups(all);
+            std::vector<Brush> out;
+            for (BrushId bid : doc_.selection()) if (const Brush* b = doc_.find(bid)) { Brush c = *b; c.visgroup = id; out.push_back(c); }
+            doc_.apply(doc_.makeModify(out, "New visgroup"));
+            newVisgroupName_[0] = 0;
+        }
+        ImGui::EndDisabled();
+    }
+    ImGui::End();
 }
 
 // ------------------------------------------------------------------ curves
@@ -1474,7 +1690,7 @@ void Editor::openMap(const std::string& path) {
         return;
     }
     tool_->cancel();
-    doc_.reset(loaded.worldKeys, loaded.brushes(), loaded.otherEntities, loaded.groups());
+    doc_.reset(loaded.worldKeys, loaded.brushes(), loaded.otherEntities, loaded.groups(), loaded.visgroups());
     path_ = path;
     if (r.skippedBrushes > 0)
         errorText_ = "Opened, but skipped " + std::to_string(r.skippedBrushes) + " invalid brush(es).";
@@ -1596,6 +1812,8 @@ void Editor::runPending() {
 //   (keys as stored in the .map: segments, thickness, box, depth, sweep, flat_top...)
 //   editcurve   bakecurve   expect groups <n>
 //   blockshape box|wedge|cylinder|cone|pyramid|sphere [sides]
+//   hide   hideunselected   showall   visgroup new|show|hide <name>   expect visible <n>
+//   findoverlaps   nextoverlap   expect overlaps <n>   toorigin
 //   block x0 y0 z0 x1 y1 z1 (test setup)   expect bounds minx miny minz maxx maxy maxz
 //   shot <file.png>         quit
 //   expect brushes|selected <n>  |  expect size <x> <y> <z>  (selection bounds, +-0.5)
@@ -1782,6 +2000,34 @@ void Editor::stepScript() {
         std::string k; in >> k;
         clipTool_.keep = k == "front" ? ClipTool::Keep::Front : k == "back" ? ClipTool::Keep::Back : ClipTool::Keep::Both;
     } else if (cmd == "carve") { carveWithSelection();
+    } else if (cmd == "findoverlaps") { findOverlapsNow();
+    } else if (cmd == "nextoverlap") { focusOverlap(overlapIndex_ + 1);
+    } else if (cmd == "toorigin") { allViewsToOrigin();
+    } else if (cmd == "expect" && in.str().find(" overlaps ") != std::string::npos) {
+        std::string w; size_t n = 0; in >> w >> n;
+        if (overlaps_.size() != n) { std::fprintf(stderr, "script FAIL (command %d): expected %zu overlaps, got %zu\n", scriptLine_, n, overlaps_.size()); ++scriptFailures_; }
+    } else if (cmd == "hide") { hideSelected();
+    } else if (cmd == "hideunselected") { hideUnselected();
+    } else if (cmd == "showall") { showAll();
+    } else if (cmd == "visgroup") {
+        // visgroup new <name> | visgroup show <name> | visgroup hide <name>
+        std::string op, name; in >> op; std::getline(in >> std::ws, name);
+        if (op == "new") {
+            std::vector<Visgroup> all = doc_.visgroups();
+            const std::uint32_t id = doc_.newVisgroupId();
+            all.push_back({id, name, true});
+            doc_.setVisgroups(all);
+            std::vector<Brush> out;
+            for (BrushId bid : doc_.selection()) if (const Brush* b = doc_.find(bid)) { Brush c = *b; c.visgroup = id; out.push_back(c); }
+            if (!out.empty()) doc_.apply(doc_.makeModify(out, "New visgroup"));
+        } else {
+            for (const Visgroup& v : doc_.visgroups()) if (v.name == name) setVisgroupVisible(v.id, op == "show");
+        }
+    } else if (cmd == "expect" && in.str().find(" visible ") != std::string::npos) {
+        std::string w; size_t n = 0; in >> w >> n;
+        size_t got = 0;
+        for (const Brush& b : doc_.brushes()) got += doc_.visible(b);
+        if (got != n) { std::fprintf(stderr, "script FAIL (command %d): expected %zu visible brushes, got %zu\n", scriptLine_, n, got); ++scriptFailures_; }
     } else if (cmd == "blockshape") {
         std::string n; in >> n;
         for (Primitive k : {Primitive::Box, Primitive::Wedge, Primitive::Cylinder, Primitive::Cone, Primitive::Pyramid, Primitive::Sphere}) {

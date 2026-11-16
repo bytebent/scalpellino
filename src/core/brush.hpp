@@ -35,6 +35,8 @@ struct Polygon {
 struct Brush {
     BrushId id = 0;
     std::uint32_t group = 0; // generated group (curve tool) this brush belongs to; 0 = none
+    std::uint32_t visgroup = 0; // named visibility group; 0 = none
+    bool hidden = false;        // hidden with "Hide selected" (until "Show all")
     std::vector<Face> faces;
 
     // Computes face polygons. Faces that clip away completely produce no polygon.
