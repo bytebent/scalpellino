@@ -118,7 +118,18 @@ bool Editor::frame(float dt) {
     stepScript();
 
     // ---- chrome
-    const MenuActions m = drawMenuBar(grid_.visible, grid_.snap, doc_.canUndo(), doc_.canRedo());
+    MenuState st;
+    st.gridVisible = grid_.visible;
+    st.snapOn = grid_.snap;
+    st.canUndo = doc_.canUndo();
+    st.canRedo = doc_.canRedo();
+    st.hasSelection = !doc_.selection().empty();
+    st.selectTool = tool_ == &selectTool_;
+    st.blockTool = tool_ == &blockTool_;
+    st.blockPreview = st.blockTool && blockTool_.hasPreview();
+    st.flying = flying_;
+    st.controlsOpen = controlsOpen_;
+    const MenuActions m = drawMenuBar(st);
     const std::string status = statusText();
     drawStatusBar(status.c_str());
     dockspace(resetLayout_, "Tools###tools", views_[0]->title(), views_[1]->title(),
@@ -134,6 +145,20 @@ bool Editor::frame(float dt) {
     if (m.undo) undo();
     if (m.redo) redo();
     if (m.selectAll) selectAll();
+    if (m.selectNone) selectNone();
+    if (m.duplicate) duplicate();
+    if (m.del) deleteSelection();
+    if (m.toolSelect) setTool(&selectTool_);
+    if (m.toolBlock) setTool(&blockTool_);
+    if (m.createBlock) onKey(KEY_ENTER);
+    if (m.cancel) onKey(KEY_ESCAPE);
+    if (m.transform) openTransformDialog();
+    if (m.rotate90Axis >= 0) rotate90(m.rotate90Axis, m.rotate90Sign);
+    if (m.flipAxis >= 0) flip(m.flipAxis);
+    if (m.centerViews) centerViews();
+    if (m.flyMode && !flying_) { flying_ = true; DisableCursor(); skipLookDelta_ = true; }
+    else if (m.flyMode && flying_) { flying_ = false; EnableCursor(); }
+    if (m.controls) controlsOpen_ = !controlsOpen_;
     if (m.newMap) guardUnsaved(Pending::New);
     if (m.open) guardUnsaved(Pending::Open);
     if (m.save) save();
@@ -144,6 +169,9 @@ bool Editor::frame(float dt) {
     drawToolsPanel();
     drawViews();
     drawDialogs();
+    drawTransformDialog();
+    drawControlsWindow(&controlsOpen_);
+    closeDialogs_ = false;
 
     // Remember the last brush size for new blocks' depth.
     if (!doc_.selection().empty()) {
@@ -168,11 +196,15 @@ void Editor::handleKeyboard() {
     if (cmd_) {
         if (IsKeyPressed(KEY_Z)) { if (shift_) redo(); else undo(); }
         if (IsKeyPressed(KEY_A)) selectAll();
+        if (IsKeyPressed(KEY_D)) duplicate();
+        if (IsKeyPressed(KEY_T)) openTransformDialog();
+        if (IsKeyPressed(KEY_E)) centerViews();
         if (IsKeyPressed(KEY_S)) { if (shift_) { std::snprintf(pathBuf_, sizeof pathBuf_, "%s", path_.empty() ? defaultMapPath().c_str() : path_.c_str()); askSaveAs_ = true; } else save(); }
         if (IsKeyPressed(KEY_O)) guardUnsaved(Pending::Open);
         if (IsKeyPressed(KEY_N)) guardUnsaved(Pending::New);
         return;
     }
+    if (IsKeyPressed(KEY_F1)) controlsOpen_ = !controlsOpen_;
     if (IsKeyPressed(kKeyGridSmaller)) grid_.halve();
     if (IsKeyPressed(kKeyGridLarger)) grid_.doubleUp();
     if (shift_ && IsKeyPressed(KEY_R)) grid_.visible = !grid_.visible;
@@ -438,6 +470,139 @@ void Editor::selectAll() {
     doc_.setSelection(all);
 }
 
+void Editor::selectNone() {
+    tool_->cancel();
+    doc_.setSelection({});
+}
+
+void Editor::duplicate() {
+    if (doc_.selection().empty()) return;
+    tool_->cancel();
+    std::vector<Brush> copies;
+    const Vec3 offset{(double)grid_.size, (double)grid_.size, 0};
+    for (BrushId id : doc_.selection())
+        if (const Brush* b = doc_.find(id)) {
+            Brush c = *b;
+            c.id = 0;
+            c.translate(offset, true);
+            copies.push_back(std::move(c));
+        }
+    doc_.apply(doc_.makeAdd(std::move(copies), "Duplicate"));
+}
+
+void Editor::deleteSelection() {
+    if (doc_.selection().empty()) return;
+    tool_->cancel();
+    doc_.apply(doc_.makeDelete(doc_.selection(), "Delete"));
+}
+
+bool Editor::applyTransform(const TransformSpec& t, const char* name) {
+    std::vector<Brush> sel;
+    for (BrushId id : doc_.selection())
+        if (const Brush* b = doc_.find(id)) sel.push_back(*b);
+    if (sel.empty()) return false;
+    std::string err;
+    std::vector<Brush> out = scal::applyTransform(sel, t, tfTexLock_, err);
+    if (out.empty()) {
+        tfError_ = err;
+        return false;
+    }
+    tool_->cancel();
+    doc_.apply(doc_.makeModify(out, name));
+    return true;
+}
+
+void Editor::rotate90(int axis, int sign) {
+    TransformSpec t;
+    t.kind = TransformKind::Rotate;
+    t.axis = axis;
+    t.degrees = 90.0 * sign;
+    t.pivot = doc_.selectionBounds().center();
+    if (!applyTransform(t, "Rotate 90")) errorText_ = "Could not rotate: " + tfError_;
+}
+
+void Editor::flip(int axis) {
+    TransformSpec t;
+    t.kind = TransformKind::Scale;
+    t.scale[axis] = -1;
+    t.pivot = doc_.selectionBounds().center();
+    if (!applyTransform(t, "Flip")) errorText_ = "Could not flip: " + tfError_;
+}
+
+void Editor::centerViews() {
+    if (doc_.selection().empty()) return;
+    const Vec3 c = doc_.selectionBounds().center();
+    for (int i = 1; i < 4; ++i) views_[i]->center2D(c[views_[i]->axU()], c[views_[i]->axV()]);
+}
+
+void Editor::openTransformDialog() {
+    if (doc_.selection().empty()) return;
+    tfError_.clear();
+    askTransform_ = true;
+}
+
+void Editor::drawTransformDialog() {
+    if (askTransform_) { ImGui::OpenPopup("Transform"); askTransform_ = false; }
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    if (!ImGui::BeginPopupModal("Transform", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
+
+    ImGui::RadioButton("Move", &tfMode_, 0); ImGui::SameLine();
+    ImGui::RadioButton("Rotate", &tfMode_, 1); ImGui::SameLine();
+    ImGui::RadioButton("Scale", &tfMode_, 2);
+    ImGui::Separator();
+    ImGui::PushItemWidth(260);
+    if (tfMode_ == 0) {
+        ImGui::InputScalarN("Offset X Y Z", ImGuiDataType_Double, tfMove_, 3, nullptr, nullptr, "%g");
+    } else if (tfMode_ == 1) {
+        static const char* axes[] = {"X", "Y", "Z"};
+        ImGui::Combo("Axis", &tfAxis_, axes, 3);
+        ImGui::InputDouble("Degrees", &tfDegrees_, 0, 0, "%g");
+        ImGui::TextDisabled("positive = counter-clockwise, looking down the axis");
+        for (double d : {15.0, 22.5, 30.0, 45.0, 90.0, -90.0}) {
+            char b[16];
+            std::snprintf(b, sizeof b, "%g", d);
+            if (ImGui::SmallButton(b)) tfDegrees_ = d;
+            ImGui::SameLine();
+        }
+        ImGui::NewLine();
+    } else {
+        ImGui::InputScalarN("Factor X Y Z", ImGuiDataType_Double, tfScale_, 3, nullptr, nullptr, "%g");
+        ImGui::TextDisabled("1 = unchanged, 2 = double, -1 = mirror");
+    }
+    if (tfMode_ != 0) {
+        ImGui::Separator();
+        ImGui::TextUnformatted("Pivot");
+        ImGui::RadioButton("Selection centre", &tfPivot_, 0); ImGui::SameLine();
+        ImGui::RadioButton("World origin", &tfPivot_, 1); ImGui::SameLine();
+        ImGui::RadioButton("Point", &tfPivot_, 2);
+        if (tfPivot_ == 2) ImGui::InputScalarN("Point X Y Z", ImGuiDataType_Double, tfCustom_, 3, nullptr, nullptr, "%g");
+    }
+    ImGui::PopItemWidth();
+    ImGui::Separator();
+    ImGui::Checkbox("Texture lock", &tfTexLock_);
+    if (!tfError_.empty()) ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", tfError_.c_str());
+
+    const bool apply = ImGui::Button("Apply (Return)") || ImGui::IsKeyPressed(ImGuiKey_Enter, false) ||
+                       ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false);
+    ImGui::SameLine();
+    const bool cancel = ImGui::Button("Cancel (Esc)") || ImGui::IsKeyPressed(ImGuiKey_Escape, false) || closeDialogs_;
+    if (apply) {
+        TransformSpec t;
+        t.kind = tfMode_ == 0 ? TransformKind::Move : tfMode_ == 1 ? TransformKind::Rotate : TransformKind::Scale;
+        t.move = {tfMove_[0], tfMove_[1], tfMove_[2]};
+        t.axis = tfAxis_;
+        t.degrees = tfDegrees_;
+        t.scale = {tfScale_[0], tfScale_[1], tfScale_[2]};
+        t.pivot = tfPivot_ == 0 ? doc_.selectionBounds().center()
+                : tfPivot_ == 1 ? Vec3{} : Vec3{tfCustom_[0], tfCustom_[1], tfCustom_[2]};
+        static const char* names[] = {"Move", "Rotate", "Scale"};
+        if (applyTransform(t, names[tfMode_])) ImGui::CloseCurrentPopup();
+    } else if (cancel) {
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndPopup();
+}
+
 void Editor::newMap() {
     tool_->cancel();
     doc_.reset({{"classname", "worldspawn"}, {"mapversion", "220"}}, {}, {});
@@ -508,6 +673,8 @@ void Editor::runPending() {
 //   drag <x> <y>            release
 //   key Return|Esc|Delete   undo | redo | selectall
 //   grid <n>                save <path> | open <path>
+//   transform move x y z | transform rotate x|y|z <deg> [origin] | transform scale sx sy sz
+//   rotate90 x|y|z <+1|-1>  flip x|y|z  duplicate  dialog transform|controls  closedialogs
 //   shot <file.png>         quit
 //   expect brushes|selected <n>  |  expect size <x> <y> <z>  (selection bounds, +-0.5)
 //   expect edges   (every brush/preview edge in the 2D views is visible on screen)
@@ -630,6 +797,23 @@ void Editor::stepScript() {
     } else if (cmd == "key") {
         std::string k; in >> k;
         if (int code = keyFromName(k)) onKey(code);
+    } else if (cmd == "transform") {
+        // transform move x y z | rotate <x|y|z> <deg> [origin] | scale sx sy sz
+        std::string kind; in >> kind;
+        TransformSpec t;
+        t.pivot = doc_.selectionBounds().center();
+        if (kind == "move") { t.kind = TransformKind::Move; in >> t.move.x >> t.move.y >> t.move.z; }
+        else if (kind == "rotate") {
+            std::string ax, piv; t.kind = TransformKind::Rotate; in >> ax >> t.degrees >> piv;
+            t.axis = ax == "x" ? 0 : ax == "y" ? 1 : 2;
+            if (piv == "origin") t.pivot = {};
+        } else { t.kind = TransformKind::Scale; in >> t.scale.x >> t.scale.y >> t.scale.z; }
+        if (!applyTransform(t, "Transform")) std::fprintf(stderr, "script: transform failed: %s\n", tfError_.c_str());
+    } else if (cmd == "rotate90") { std::string ax; int sg = 1; in >> ax >> sg; rotate90(ax == "x" ? 0 : ax == "y" ? 1 : 2, sg);
+    } else if (cmd == "flip") { std::string ax; in >> ax; flip(ax == "x" ? 0 : ax == "y" ? 1 : 2);
+    } else if (cmd == "duplicate") { duplicate();
+    } else if (cmd == "closedialogs") { closeDialogs_ = true;
+    } else if (cmd == "dialog") { std::string d; in >> d; if (d == "transform") openTransformDialog(); if (d == "controls") controlsOpen_ = true;
     } else if (cmd == "undo") { undo();
     } else if (cmd == "redo") { redo();
     } else if (cmd == "selectall") { selectAll();

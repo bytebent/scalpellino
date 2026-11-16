@@ -2,6 +2,7 @@
 #include "core/brush.hpp"
 #include "core/document.hpp"
 #include "core/grid.hpp"
+#include "core/transform.hpp"
 #include "io/map_format.hpp"
 #include <cmath>
 #include <cstdio>
@@ -150,6 +151,58 @@ static void testRotate() {
     CHECK(nearV(r.bounds().max, {64, 64, 64}, 1e-6));
 }
 
+static void testTransform() {
+    std::string err;
+    std::vector<Brush> in{makeBox(box({0, 0, 0}, {128, 32, 64}), "a")};
+    TransformSpec t;
+
+    t.kind = TransformKind::Move;
+    t.move = {16, -8, 4};
+    auto out = applyTransform(in, t, true, err);
+    CHECK(err.empty() && out.size() == 1);
+    CHECK(nearV(out[0].bounds().min, {16, -8, 4}));
+
+    t = TransformSpec{};
+    t.kind = TransformKind::Rotate;
+    t.axis = 2;
+    t.degrees = 90;
+    t.pivot = {0, 0, 0};
+    out = applyTransform(in, t, true, err);
+    CHECK(err.empty());
+    CHECK(nearV(out[0].bounds().min, {-32, 0, 0}, 1e-9));
+    CHECK(nearV(out[0].bounds().max, {0, 128, 64}, 1e-9));
+
+    t.degrees = 30; // exact typed angle around the box centre
+    t.pivot = {64, 16, 32};
+    out = applyTransform(in, t, true, err);
+    CHECK(err.empty() && out[0].valid());
+    const double c = std::cos(3.14159265358979323846 / 6), s = std::sin(3.14159265358979323846 / 6);
+    CHECK(near(out[0].bounds().size().x, 128 * c + 32 * s, 1e-6));
+
+    t = TransformSpec{};
+    t.kind = TransformKind::Scale;
+    t.scale = {2, 1, 0.5};
+    t.pivot = {0, 0, 0};
+    out = applyTransform(in, t, true, err);
+    CHECK(err.empty());
+    CHECK(nearV(out[0].bounds().max, {256, 32, 32}));
+
+    t.scale = {-1, 1, 1}; // flip X around x = 64
+    t.pivot = {64, 0, 0};
+    out = applyTransform(in, t, true, err);
+    CHECK(err.empty() && out[0].valid());
+    CHECK(nearV(out[0].bounds().min, {0, 0, 0}) && nearV(out[0].bounds().max, {128, 32, 64}));
+    // Mirrored faces still point outward.
+    const auto mpolys = out[0].polygons();
+    for (const Polygon& p : mpolys)
+        for (const Polygon& q : mpolys)
+            for (const Vec3& v : q.verts) CHECK(out[0].faces[p.face].plane().distance(v) <= 1e-9);
+
+    t.scale = {0, 1, 1};
+    out = applyTransform(in, t, true, err);
+    CHECK(out.empty() && !err.empty());
+}
+
 static void testRay() {
     Brush b = makeBox(box({0, 0, 0}, {64, 64, 64}), "a");
     CHECK(near(rayHit(b, {-100, 32, 32}, {1, 0, 0}), 100));
@@ -276,6 +329,7 @@ int main() {
     testTranslateTextureLock();
     testRemap();
     testRotate();
+    testTransform();
     testRay();
     testUndo();
     testDirty();

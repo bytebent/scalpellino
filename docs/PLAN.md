@@ -10,13 +10,11 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 
 ## Current status
 
-- **Milestone 0:** done.
-- **Milestone 1 (brushes):** done — block tool, select/move/resize/rotate/clone/delete,
-  grid snapping, undo/redo, save/open Valve 220 `.map`, unsaved-changes prompt.
-  Core tests + scripted UI tests pass locally; CI runs both.
-- **Waiting on user:** hands-on check of the Intel build (look, feel, idle fans, Retina
-  sharpness). Nothing is blocked by it.
-- **Next:** milestone 2 (textures) — see plan below.
+- **v0.1.0** released (milestones 0 + 1). **v0.1.1** (this step): Retina sharpness,
+  Roboto font, vanishing-line fix, full menus, Transform dialog. Released via
+  `docs/releases/v0.1.1.md`.
+- **Next: milestone 2 — Precision** (reordered by the user: before textures).
+  Plan below.
 
 ## How to work in this repo
 
@@ -59,17 +57,34 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 
 ## Open questions (parked)
 
-- **Retina/HiDPI:** renders at logical resolution (may look soft on Retina). Needs the
-  user's eyes on a real Mac.
 - **Fly-mode up/down keys:** Q/E for now. User hasn't specified.
-- **File dialogs:** open/save use an in-app path field. Native macOS dialogs (e.g. via
-  osascript or a small Cocoa helper) planned; confirm user wants native ones.
-- **Rotate gesture:** Option+drag on a corner handle (15° steps, Shift = free). Chosen
-  to keep handles visible and avoid Hammer's click-cycling. Confirm it feels right.
+- **File dialogs:** open/save use an in-app path field. Native macOS dialogs planned
+  (milestone 8 or earlier if wanted).
 - **Multi-selection click:** a plain click (no drag) on a brush that is part of a
   multi-selection narrows the selection to that brush; dragging moves the group.
+- **Retina on a real Mac:** fixed in v0.1.1 but only verifiable by the user (CI and the
+  AI workspace have no Retina display). Ask the user to confirm sharpness.
 
-## Milestone 2 plan — Textures
+## Milestone 2 plan — Precision (inspired by Hammer++)
+
+User feedback: rotating by non-90 angles leaves vertices between grid points; Hammer
+was bad at this, Hammer++ fixed it. Goals:
+1. **Vertex tool** (Shift+V + Tools menu): select vertices/edges in 2D views, drag with
+   grid snapping; realtime preview; if the result is not convex/planar the brush turns
+   red and Return is refused. Brush rebuilt from vertices (convex hull → planes).
+2. **Snap vertices to grid** (Transform menu + shortcut): round every vertex of the
+   selection to the grid, rebuild; refuse (with message) if faces would bend.
+3. **Pivot point** for drag-rotation and the Transform dialog: selection centre,
+   world origin, a picked vertex, or a typed point; drawn as a marker in 2D views.
+4. **Grid-friendly angles**: in the Transform dialog and drag-rotation (modifier),
+   slopes 1:1, 1:2, 1:3, 2:3, 3:4 (45°, 26.57°, 18.43°, 33.69°, 36.87°) — for many
+   shapes these keep corners on whole numbers.
+5. **Microgrid + custom grid sizes**: 0.125 / 0.25 / 0.5 (off by default), and
+   View → Set grid size... (any value, e.g. 80).
+6. Tests: hull rebuild, invalid-shape detection, snap-to-grid, slope rotations landing on
+   integers, UI scripts with edge checks.
+
+## Milestone 3 plan — Textures
 
 Needs (not blocking): a folder of the user's own textures to test with. Until then, use
 procedurally generated test textures (checker, bricks, noise) created at runtime or by a
@@ -91,6 +106,41 @@ test script — never downloaded.
 ## Milestone 1 plan — Brushes (done)
 
 ## Log
+
+### 2026-11-16 — v0.1.1: Retina, font, vanishing lines, menus, Transform dialog
+User feedback on v0.1.0 (Intel iMac, Retina): app blurry; some brush/preview edges
+vanish at certain positions; pixel font disliked; wants menus for everything incl. a
+rotate-by-amount dialog; off-grid vertices after rotation (→ milestone 2).
+- **Retina:** `FLAG_WINDOW_HIGHDPI`; viewports render into textures sized
+  logical × display scale; ImGui fonts rasterized at framebuffer scale.
+- **Font:** Roboto Medium (Apache-2.0, from Dear ImGui's misc/fonts) embedded at build
+  time (`cmake/EmbedFile.cmake`). Size labels moved from raylib's pixel font into the UI
+  layer. `docs/THIRD_PARTY.md` added.
+- **Vanishing lines — cause:** views were pasted at fractional screen positions, so the
+  sampler skipped texture rows/columns and 1-px lines disappeared. **Fix:** views are
+  placed on whole physical pixels with 1:1 texture size; all 2D lines are drawn as
+  pixel-exact rectangles/quads (no GL lines).
+- **New test `expect edges`:** reads back the real screen and verifies every brush /
+  preview edge in all 2D views has visible pixels. With `SCAL_VIEW_SCALE=2` (forced
+  Retina rendering on a 1x test display) it checks each view's own 2x image instead.
+  It reproduced the dropped-row effect when screen and view scales mismatched.
+- **Menus:** File, Edit (undo/redo, duplicate, delete, select all/none), Tools (select,
+  block, create block, cancel), Transform (Move/Rotate/Scale dialog Cmd+T, rotate 90°
+  about X/Y/Z, flip X/Y/Z), View (grid, snap, center views Cmd+E, fly mode, reset
+  layout), Help (Controls window, F1).
+- **Transform dialog:** exact move offset; rotate by typed degrees about X/Y/Z with
+  quick buttons; scale factors (negative = mirror); pivot = selection centre / world
+  origin / typed point; texture lock toggle; invalid results refused with a message.
+  Core: `core/transform` (tested).
+- **Tests:** core **444 checks, 0 failed** (incl. transform move/rotate 90 & 30 /
+  scale / mirror / zero-scale rejection). UI scripts `m1_brushes` and
+  `v011_transform_menus` **PASS at 1x and forced 2x**. Idle: **0 ticks / 10 s**.
+- Bug found in my own test code: range-for over a member of a temporary (dangling) →
+  segfault; fixed.
+- Screenshots: `m1-10-rotated-30-exact`, `m1-11-duplicated`, `m1-12-transform-dialog`,
+  `m1-13-controls-window`, `m1-14-roboto-font-block-preview`.
+- Roadmap reordered (ARCHITECTURE §15): M2 Precision, M3 Textures, M4 Shaping (clip incl.
+  3-point), M5 Curves, M6 Look, M7 Export, M8 Extras.
 
 ### 2026-11-16 — GitHub Releases
 - CI `release` job (after Mac + Linux jobs pass): every push to `main` replaces the

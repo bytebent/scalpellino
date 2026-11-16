@@ -105,6 +105,11 @@ cameras; the 3D view never snaps back to the origin.
 - No WAD-disconnected / mixed-contents / ghost-brush style errors.
 - No compile step inside the editor.
 
+### Menus
+Every shortcut and gesture is also available from the menu bar (File, Edit, Tools,
+Transform, View, Help), with dialogs for typed values (e.g. Transform: exact move /
+rotate / scale with pivot). Help → Controls lists all shortcuts.
+
 ### Tools
 Select, Block (box, wedge, cylinder, pyramid), Clip, Vertex, Carve (CSG subtract),
 **Curve**, Texture apply / face edit, Light, Camera bookmark.
@@ -218,10 +223,11 @@ docs/         this file, roadmap
 | # | Milestone | Done when |
 |---|-----------|-----------|
 | 0 | Skeleton | Window with 4 viewports + grids, fly camera, near-zero idle CPU, CI builds `.app` for Intel + Apple Silicon |
-| 1 | Brushes | Block tool, select/move/resize/rotate, grid snapping, undo/redo, save/load `.map` |
-| 2 | Textures | Texture folder loading, browser, apply, face edit, texture lock |
-| 3 | Shaping | Clip, vertex edit, carve (CSG) |
-| 4 | Curve tool | Arch, carve arch, ring, curved wall, spiral stairs; regenerable + bake |
-| 5 | Look | Lights, environment, camera bookmarks, scale figure, Y2K preview, PNG render |
-| 6 | Export | `.glb`, Godot scene package, baked-look `.glb`; verified in Godot via func_godot and glTF import |
-| 7 | Extras | `.wad` textures, Lua generators, baked lighting |
+| 1 | Brushes | Block tool, select/move/resize/rotate, grid snapping, undo/redo, save/load `.map` (+ v0.1.1: Retina, menus, Transform dialog) |
+| 2 | Precision | Vertex tool (realtime, invalid shapes red), snap vertices to grid, pivot point, grid-friendly rotation angles, microgrid + custom grid sizes (inspired by Hammer++) |
+| 3 | Textures | Texture folder loading, browser, apply, face edit, texture lock |
+| 4 | Shaping | Clip (2- and 3-point), carve (CSG) |
+| 5 | Curve tool | Arch, carve arch, ring, curved wall, spiral stairs; regenerable + bake |
+| 6 | Look | Lights, environment, camera bookmarks, scale figure, Y2K preview, PNG render |
+| 7 | Export | `.glb`, Godot scene package, baked-look `.glb`; verified in Godot via func_godot and glTF import |
+| 8 | Extras | `.wad` textures, Lua generators, baked lighting, native file dialogs |

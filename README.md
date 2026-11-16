@@ -21,17 +21,23 @@ isn't signed with an Apple developer certificate). Or in Terminal:
 
 ## Controls (so far)
 
+Everything is also in the menus (File, Edit, Tools, Transform, View, Help), and
+**Help → Controls** (F1) lists every shortcut.
+
 | Action | Keys |
 |---|---|
-| Select tool / Block tool | **Shift+S** / **Shift+B** (or the Tools panel) |
+| Select tool / Block tool | **Shift+S** / **Shift+B** |
 | Draw a block | Block tool: drag in a 2D view, adjust handles in any 2D view, **Return** creates, **Esc** cancels |
-| Select | click a brush (2D or 3D); **Cmd+click** adds/removes; click empty space deselects; **Cmd+A** all |
+| Select | click a brush (2D or 3D); **Cmd+click** adds/removes; **Cmd+A** all; **Esc** none |
 | Move / resize | drag a selection / drag its handles or edges (snaps to the grid) |
-| Clone | **Shift+drag** a selection |
-| Rotate | **Option+drag** a corner handle (15° steps, add **Shift** for free rotation) |
+| Clone | **Shift+drag** a selection, or **Cmd+D** (Duplicate) |
+| Rotate by dragging | **Option+drag** a corner handle (15° steps, add **Shift** for free rotation) |
+| Exact move / rotate / scale | **Cmd+T** — type values, pick axis and pivot |
+| Rotate 90° / flip | Transform menu |
 | Delete | **Delete** or **Backspace** |
 | Undo / redo | **Cmd+Z** / **Cmd+Shift+Z** |
 | New / open / save / save as | **Cmd+N** / **Cmd+O** / **Cmd+S** / **Cmd+Shift+S** |
+| Center 2D views on selection | **Cmd+E** |
 | Fly mode in 3D view (toggle) | **Z** while hovering the 3D view; **Esc** also exits |
 | Move while flying | **W A S D**, **Q/E** down/up, hold **Shift** for fast |
 | Look around without fly mode | hold **right mouse** in the 3D view (+ WASD) |

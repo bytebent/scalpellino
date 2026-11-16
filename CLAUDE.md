@@ -23,6 +23,10 @@ Then read `docs/PLAN.md`: current status, how to build, open questions, log.
   key positions for WASD and grid keys.
 - Creation actions (brushes, curve tool) commit on Return, cancel on Esc. Not on mouse release.
 - No mouse-wheel parameter adjustment in tools; use typed fields and viewport handles.
+- Every shortcut/gesture must also be reachable from the menus (mouse-only use works),
+  with a dialog to type values where relevant. Keep Help → Controls and README in sync.
+- No pixel fonts. UI font is Roboto (embedded).
+- Never commit screenshots the user sends; only our own.
 - Idle must cost ~zero CPU: redraw only on change.
 
 ## Engineering

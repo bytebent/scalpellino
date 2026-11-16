@@ -42,6 +42,7 @@ public:
 
     // --- 2D navigation and mapping
     void pan2D(Vector2 deltaPx);
+    void center2D(double u, double v) { panU_ = u; panV_ = v; }
     void zoom2D(float wheel, Vector2 localPx);
     void screenToWorld2D(Vector2 localPx, double& u, double& v) const;
     Vector2 worldToLocal2D(double u, double v) const;

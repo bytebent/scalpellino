@@ -17,6 +17,7 @@ public:
     const char* hint() const override;
     void cancel() override;
 
+    bool hasPreview() const { return box_.has_value(); }
     std::string texture = "default";
 
 private:

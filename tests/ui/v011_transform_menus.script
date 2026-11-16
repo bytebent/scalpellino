@@ -1,0 +1,34 @@
+# v0.1.1: exact transforms, rotate 90, flip, duplicate, dialogs, crisp lines.
+# Top view centre = local (334,224), 2 world units per pixel.
+tool block
+press 1 334 224
+drag 398 208
+release
+key Return
+expect brushes 1
+expect size 128 32 64
+# exact rotation by a typed angle (30 degrees around Z, selection centre)
+transform rotate z 30
+expect size 126.85 91.71 64
+expect edges
+shot m1-10-rotated-30-exact.png
+undo
+expect size 128 32 64
+rotate90 z 1
+expect size 32 128 64
+flip x
+expect size 32 128 64
+transform scale 2 1 0.5
+expect size 64 128 32
+transform move 64 0 0
+duplicate
+expect brushes 2
+expect selected 1
+expect edges
+shot m1-11-duplicated.png
+dialog transform
+shot m1-12-transform-dialog.png
+closedialogs
+dialog controls
+shot m1-13-controls-window.png
+quit

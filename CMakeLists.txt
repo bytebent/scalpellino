@@ -17,7 +17,8 @@ endif()
 # Pure C++: no raylib, no ImGui. Must stay that way (see CLAUDE.md).
 add_library(scal_core STATIC
   src/core/brush.cpp
-  src/core/document.cpp)
+  src/core/document.cpp
+  src/core/transform.cpp)
 target_include_directories(scal_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 # File formats. Also graphics-free, so it is tested headless too.

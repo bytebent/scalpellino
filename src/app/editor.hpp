@@ -5,6 +5,7 @@
 #include "imgui.h"
 #include "core/document.hpp"
 #include "core/grid.hpp"
+#include "core/transform.hpp"
 #include "render/scene.hpp"
 #include "render/viewport.hpp"
 #include "tools/block_tool.hpp"
@@ -65,6 +66,15 @@ private:
     void undo();
     void redo();
     void selectAll();
+    void selectNone();
+    void duplicate();
+    void deleteSelection();
+    bool applyTransform(const TransformSpec& t, const char* name); // false + errorText_ on failure
+    void rotate90(int axis, int sign);
+    void flip(int axis);
+    void centerViews();
+    void openTransformDialog();
+    void drawTransformDialog();
     void newMap();
     void openMap(const std::string& path);
     bool saveMap(const std::string& path);
@@ -109,6 +119,20 @@ private:
     bool askSaveAs_ = false, askOpen_ = false, askUnsaved_ = false;
     std::string errorText_;
     char pathBuf_[1024] = "";
+    bool controlsOpen_ = false;
+    bool closeDialogs_ = false; // script: close any open modal this frame
+
+    // Transform dialog (values are remembered between uses)
+    bool askTransform_ = false;
+    int tfMode_ = 1;               // 0 move, 1 rotate, 2 scale
+    double tfMove_[3] = {0, 0, 0};
+    int tfAxis_ = 2;
+    double tfDegrees_ = 15;
+    double tfScale_[3] = {1, 1, 1};
+    int tfPivot_ = 0;              // 0 selection centre, 1 world origin, 2 custom
+    double tfCustom_[3] = {0, 0, 0};
+    bool tfTexLock_ = true;
+    std::string tfError_;
 
     bool exit_ = false;
     unsigned long long redraws_ = 0;
