@@ -1,6 +1,8 @@
 #include "app/editor.hpp"
 #include "io/map_format.hpp"
 #include "core/hull.hpp"
+#include "core/texture.hpp"
+#include "app/settings.hpp"
 #include "ui/layout.hpp"
 
 #include "imgui.h"
@@ -13,6 +15,8 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <algorithm>
+#include <cctype>
 
 namespace scal {
 
@@ -58,6 +62,17 @@ Editor::Editor(const EditorOptions& opt) : opt_(opt) {
     views_[2] = std::make_unique<Viewport>(ViewKind::Front);
     views_[3] = std::make_unique<Viewport>(ViewKind::Side);
     if (const char* vs = std::getenv("SCAL_VIEW_SCALE")) viewScale_ = (float)std::atof(vs); // testing only
+    {   // Built-in textures ship inside the app (macOS: Contents/Resources/textures).
+        const std::string appDir = GetApplicationDirectory();
+#if defined(__APPLE__)
+        const std::string builtin = appDir + "../Resources/textures";
+#else
+        const std::string builtin = appDir + "textures";
+#endif
+        if (!opt_.automated()) loadTextureFolders();
+        textures_.setBuiltinFolder(builtin);
+        if (!textures_.exists(currentTexture_) && !textures_.names().empty()) currentTexture_ = textures_.names()[0];
+    }
     lastBox_.min = {0, 0, 0};
     lastBox_.max = {64, 64, 64};
     if (!opt_.openPath.empty()) openMap(opt_.openPath);
@@ -85,6 +100,8 @@ ToolEnv Editor::env() {
     static Vec3 pivotStore;
     if (pivotMode_ != 0) { pivotStore = pivotPoint(); e.pivot = &pivotStore; }
     e.slopeAngles = slopeAngles_;
+    e.textureLock = tfTexLock_;
+    e.currentTexture = &currentTexture_;
     return e;
 }
 
@@ -138,11 +155,17 @@ bool Editor::frame(float dt) {
     st.pivotMode = pivotMode_;
     st.slopeAngles = slopeAngles_;
     st.microgrid = grid_.microgrid;
+    st.textureTool = tool_ == &textureTool_;
+    st.textureLock = tfTexLock_;
+    st.smoothTextures = textures_.smooth();
+    st.textured3D = textured3D_;
+    st.defaultScale = defaultScale_;
+    st.canApplyTexture = !doc_.selection().empty() || (tool_ == &textureTool_ && !textureTool_.faces(doc_).empty());
     const MenuActions m = drawMenuBar(st);
     const std::string status = statusText();
     drawStatusBar(status.c_str());
     dockspace(resetLayout_, "Tools###tools", views_[0]->title(), views_[1]->title(),
-              views_[2]->title(), views_[3]->title());
+              views_[2]->title(), views_[3]->title(), "Textures###textures", "Face###face", showPanels_);
     resetLayout_ = false;
 
     if (m.quit) requestQuit();
@@ -180,6 +203,16 @@ bool Editor::frame(float dt) {
     if (m.rotSnap >= 0) slopeAngles_ = m.rotSnap == 1;
     if (m.toggleMicrogrid) grid_.setMicrogrid(!grid_.microgrid);
     if (m.setGridSize) { gridSizeBuf_ = grid_.size; precisionError_.clear(); askGridSize_ = true; }
+    if (m.applyTexture) applyCurrentTexture();
+    if (m.toolTexture) setTool(&textureTool_);
+    if (m.toggleTextureLock) tfTexLock_ = !tfTexLock_;
+    if (m.defaultScale > 0) defaultScale_ = m.defaultScale;
+    if (m.smoothTextures >= 0) textures_.setSmooth(m.smoothTextures == 1);
+    if (m.textured3D >= 0) textured3D_ = m.textured3D == 1;
+    if (m.addTextureFolder) { folderBuf_[0] = 0; askTexFolder_ = true; }
+    if (m.rescanTextures) textures_.rescan();
+    blockTool_.texture = currentTexture_;
+    blockTool_.textureScale = defaultScale_;
     if (m.newMap) guardUnsaved(Pending::New);
     if (m.open) guardUnsaved(Pending::Open);
     if (m.save) save();
@@ -188,6 +221,7 @@ bool Editor::frame(float dt) {
     if (!ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId) && !io.WantTextInput) handleKeyboard();
 
     drawToolsPanel();
+    if (showPanels_) { drawTextureBrowser(); drawFacePanel(); }
     drawViews();
     drawDialogs();
     drawTransformDialog();
@@ -238,6 +272,8 @@ void Editor::handleKeyboard() {
     if (shift_ && IsKeyPressed(KEY_S)) setTool(&selectTool_);
     if (shift_ && IsKeyPressed(KEY_B)) setTool(&blockTool_);
     if (shift_ && IsKeyPressed(KEY_V)) setTool(&vertexTool_);
+    if (shift_ && IsKeyPressed(KEY_A)) setTool(&textureTool_);
+    if (shift_ && IsKeyPressed(KEY_T)) applyCurrentTexture();
 
     for (int k : {KEY_ENTER, KEY_KP_ENTER, KEY_ESCAPE, KEY_DELETE, KEY_BACKSPACE})
         if (IsKeyPressed(k)) onKey(k);
@@ -246,9 +282,11 @@ void Editor::handleKeyboard() {
 Scene Editor::buildScene() {
     Scene s;
     s.brushes = cache_.get(doc_);
-    s.selected = doc_.selection();
+    // The texture tool works on faces; brush selection tint would compete with it.
+    if (tool_ != &textureTool_) s.selected = doc_.selection();
     tool_->decorate(doc_, s);
     if (pivotMode_ != 0) s.pivot = pivotPoint();
+    if (textured3D_) s.textures = &textures_;
     return s;
 }
 
@@ -381,6 +419,7 @@ void Editor::drawToolsPanel() {
         toolButton(&selectTool_, "Shift+S");
         toolButton(&blockTool_, "Shift+B");
         toolButton(&vertexTool_, "Shift+V");
+        toolButton(&textureTool_, "Shift+A");
     }
     ImGui::End();
 }
@@ -442,7 +481,7 @@ void Editor::drawDialogs() {
 }
 
 std::string Editor::statusText() const {
-    char buf[512];
+    char buf[768];
     std::string where;
     if (flying_ || rmbLook_) {
         const Vector3 p = views_[0]->cameraPos();
@@ -466,8 +505,8 @@ std::string Editor::statusText() const {
         sel = buf;
     }
 
-    std::snprintf(buf, sizeof buf, "Grid %g  Snap %s  |  %s  |  %s  |  %s  |  %s   [%llu]",
-                  grid_.size, grid_.snap ? "on" : "off", tool_->name(), tool_->hint(),
+    std::snprintf(buf, sizeof buf, "Grid %g  Snap %s  Tex %s  |  %s  |  %s  |  %s  |  %s   [%llu]",
+                  grid_.size, grid_.snap ? "on" : "off", currentTexture_.c_str(), tool_->name(), tool_->hint(),
                   sel.c_str(), where.c_str(), redraws_);
     return buf;
 }
@@ -621,7 +660,7 @@ void Editor::drawTransformDialog() {
     }
     ImGui::PopItemWidth();
     ImGui::Separator();
-    ImGui::Checkbox("Texture lock", &tfTexLock_);
+    ImGui::Checkbox("Texture lock (also Texture menu)", &tfTexLock_);
     if (!tfError_.empty()) ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", tfError_.c_str());
 
     const bool apply = ImGui::Button("Apply (Return)") || ImGui::IsKeyPressed(ImGuiKey_Enter, false) ||
@@ -746,6 +785,221 @@ void Editor::drawPrecisionDialogs() {
     }
 }
 
+// ------------------------------------------------------------------ textures
+
+void Editor::loadTextureFolders() {
+    const std::string dir = settingsDir();
+    if (dir.empty()) return;
+    std::ifstream f(dir + "/texture_folders.txt");
+    std::string line;
+    while (std::getline(f, line))
+        if (!line.empty()) textures_.addUserFolder(line);
+}
+
+void Editor::saveTextureFolders() const {
+    if (opt_.automated()) return; // tests never touch user settings
+    const std::string dir = settingsDir();
+    if (dir.empty()) return;
+    std::ofstream f(dir + "/texture_folders.txt");
+    for (const std::string& d : textures_.userFolders()) f << d << '\n';
+}
+
+template <class Fn> void Editor::editFaces(const char* name, Fn fn) {
+    const std::vector<FaceRef> faces = textureTool_.faces(doc_);
+    if (faces.empty()) return;
+    std::vector<Brush> out;
+    for (const FaceRef& fr : faces) {
+        auto it = std::find_if(out.begin(), out.end(), [&](const Brush& b) { return b.id == fr.first; });
+        if (it == out.end()) {
+            out.push_back(*doc_.find(fr.first));
+            it = out.end() - 1;
+        }
+        Face& f = it->faces[fr.second];
+        Polygon poly;
+        for (const Polygon& p : it->polygons()) if (p.face == fr.second) { poly = p; break; }
+        const Vec3 n = f.plane().n;
+        fn(f, poly, textures_.size(f.texture), n);
+    }
+    doc_.apply(doc_.makeModify(out, name));
+}
+
+void Editor::applyCurrentTexture() {
+    if (tool_ == &textureTool_ && !textureTool_.faces(doc_).empty()) {
+        const std::string tex = currentTexture_;
+        editFaces("Apply texture", [&](Face& f, const Polygon&, TexSize, const Vec3&) { f.texture = tex; });
+        return;
+    }
+    if (doc_.selection().empty()) return;
+    std::vector<Brush> out;
+    for (BrushId id : doc_.selection())
+        if (const Brush* b = doc_.find(id)) {
+            Brush c = *b;
+            for (Face& f : c.faces) f.texture = currentTexture_;
+            out.push_back(std::move(c));
+        }
+    doc_.apply(doc_.makeModify(out, "Apply texture"));
+}
+
+void Editor::drawTextureBrowser() {
+    if (ImGui::Begin("Textures###textures", nullptr, ImGuiWindowFlags_NoCollapse)) {
+        // Current texture with a small preview.
+        const Texture2D& cur = textures_.get(currentTexture_);
+        ImGui::Image(ImTextureID(cur.id), ImVec2(40, 40));
+        ImGui::SameLine();
+        ImGui::BeginGroup();
+        ImGui::TextUnformatted(currentTexture_.c_str());
+        ImGui::TextDisabled("%d x %d", cur.width, cur.height);
+        ImGui::EndGroup();
+        if (ImGui::Button("Apply to selection (Shift+T)")) applyCurrentTexture();
+
+        ImGui::SetNextItemWidth(-1);
+        ImGui::InputTextWithHint("##search", "search by name", texSearch_, sizeof texSearch_);
+        std::string needle = texSearch_;
+        std::transform(needle.begin(), needle.end(), needle.begin(), [](unsigned char c) { return (char)std::tolower(c); });
+
+        const float footer = ImGui::GetFrameHeightWithSpacing() * 1.4f;
+        if (ImGui::BeginChild("##grid", ImVec2(0, -footer), ImGuiChildFlags_None)) {
+            const float cell = 76.0f;
+            const float avail = ImGui::GetContentRegionAvail().x;
+            const int cols = std::max(1, (int)(avail / (cell + ImGui::GetStyle().ItemSpacing.x)));
+            int col = 0, shown = 0;
+            for (const std::string& name : textures_.names()) {
+                std::string low = name;
+                std::transform(low.begin(), low.end(), low.begin(), [](unsigned char c) { return (char)std::tolower(c); });
+                if (!needle.empty() && low.find(needle) == std::string::npos) continue;
+                ++shown;
+                if (col > 0) ImGui::SameLine();
+                ImGui::BeginGroup();
+                ImGui::PushID(name.c_str());
+                const Texture2D& t = textures_.get(name);
+                const bool selected = name == currentTexture_;
+                if (selected) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+                if (ImGui::ImageButton("##t", ImTextureID(t.id), ImVec2(cell - 8, cell - 8))) currentTexture_ = name;
+                if (selected) ImGui::PopStyleColor();
+                if (ImGui::IsItemHovered())
+                {
+                    bool user = false;
+                    for (const std::string& d : textures_.userFolders()) user = user || d == textures_.folderOf(name);
+                    ImGui::SetTooltip("%s\n%d x %d\n%s", name.c_str(), t.width, t.height, user ? "your folder" : "built-in");
+                }
+                std::string label = name;
+                while (label.size() > 3 && ImGui::CalcTextSize(label.c_str()).x > cell) label = label.substr(0, label.size() - 4) + "..";
+                ImGui::TextUnformatted(label.c_str());
+                ImGui::PopID();
+                ImGui::EndGroup();
+                if (++col >= cols) col = 0;
+            }
+            if (shown == 0) ImGui::TextDisabled(textures_.names().empty() ? "No textures. Texture -> Add texture folder..." : "No texture matches.");
+        }
+        ImGui::EndChild();
+        if (ImGui::Button("Add folder...")) { folderBuf_[0] = 0; askTexFolder_ = true; }
+        ImGui::SameLine();
+        if (ImGui::Button("Rescan")) textures_.rescan();
+        ImGui::SameLine();
+        ImGui::TextDisabled("%zu textures", textures_.names().size());
+    }
+    ImGui::End();
+
+    // Add-folder dialog + folder list.
+    if (askTexFolder_) { ImGui::OpenPopup("Texture folders"); askTexFolder_ = false; }
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    if (ImGui::BeginPopupModal("Texture folders", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextUnformatted("Your texture folders (PNG, TGA, JPG, BMP; subfolders included):");
+        int remove = -1;
+        for (size_t i = 0; i < textures_.userFolders().size(); ++i) {
+            ImGui::PushID((int)i);
+            if (ImGui::SmallButton("Remove")) remove = (int)i;
+            ImGui::SameLine();
+            ImGui::TextUnformatted(textures_.userFolders()[i].c_str());
+            ImGui::PopID();
+        }
+        if (remove >= 0) { textures_.removeUserFolder((size_t)remove); saveTextureFolders(); }
+        if (textures_.userFolders().empty()) ImGui::TextDisabled("(none yet - the built-in textures are always there)");
+        ImGui::Separator();
+        ImGui::SetNextItemWidth(520);
+        if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+        const bool enter = ImGui::InputTextWithHint("##folder", "folder path to add", folderBuf_, sizeof folderBuf_,
+                                                    ImGuiInputTextFlags_EnterReturnsTrue);
+        if ((ImGui::Button("Add") || enter) && folderBuf_[0]) {
+            textures_.addUserFolder(folderBuf_);
+            saveTextureFolders();
+            folderBuf_[0] = 0;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Close") || ImGui::IsKeyPressed(ImGuiKey_Escape, false) || closeDialogs_) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+}
+
+void Editor::drawFacePanel() {
+    if (ImGui::Begin("Face###face", nullptr, ImGuiWindowFlags_NoCollapse)) {
+        const std::vector<FaceRef> faces = textureTool_.faces(doc_);
+        if (tool_ != &textureTool_) {
+            ImGui::TextWrapped("Pick faces with the Texture tool (Shift+A) to adjust how textures sit on them.");
+        } else if (faces.empty()) {
+            ImGui::TextWrapped("Click faces in the 3D view. Cmd+click adds, Shift+click takes the whole brush, Option+click picks up a face's texture.");
+        } else {
+            const Face& f = doc_.find(faces[0].first)->faces[faces[0].second];
+            ImGui::Text("%zu face(s)   %s", faces.size(), f.texture.c_str());
+            ImGui::PushItemWidth(90);
+            double su = f.u.offset, sv = f.v.offset;
+            ImGui::TextUnformatted("Shift"); ImGui::SameLine(70);
+            ImGui::InputDouble("##su", &su, 0, 0, "%g");
+            if (ImGui::IsItemDeactivatedAfterEdit()) editFaces("Texture shift", [&](Face& x, const Polygon&, TexSize, const Vec3&) { x.u.offset = su; });
+            ImGui::SameLine();
+            ImGui::InputDouble("##sv", &sv, 0, 0, "%g");
+            if (ImGui::IsItemDeactivatedAfterEdit()) editFaces("Texture shift", [&](Face& x, const Polygon&, TexSize, const Vec3&) { x.v.offset = sv; });
+            double cu = f.scaleU, cv = f.scaleV;
+            ImGui::TextUnformatted("Scale"); ImGui::SameLine(70);
+            ImGui::InputDouble("##cu", &cu, 0, 0, "%g");
+            if (ImGui::IsItemDeactivatedAfterEdit() && cu != 0) editFaces("Texture scale", [&](Face& x, const Polygon&, TexSize, const Vec3&) { x.scaleU = cu; });
+            ImGui::SameLine();
+            ImGui::InputDouble("##cv", &cv, 0, 0, "%g");
+            if (ImGui::IsItemDeactivatedAfterEdit() && cv != 0) editFaces("Texture scale", [&](Face& x, const Polygon&, TexSize, const Vec3&) { x.scaleV = cv; });
+            double rot = f.rotation;
+            ImGui::TextUnformatted("Rotation"); ImGui::SameLine(70);
+            ImGui::InputDouble("##rot", &rot, 0, 0, "%g");
+            if (ImGui::IsItemDeactivatedAfterEdit()) {
+                const double delta = rot - f.rotation;
+                editFaces("Texture rotation", [&](Face& x, const Polygon&, TexSize, const Vec3& n) { rotateTexture(x, n, delta); });
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("-90")) editFaces("Texture rotation", [&](Face& x, const Polygon&, TexSize, const Vec3& n) { rotateTexture(x, n, -90); });
+            ImGui::SameLine();
+            if (ImGui::SmallButton("+90")) editFaces("Texture rotation", [&](Face& x, const Polygon&, TexSize, const Vec3& n) { rotateTexture(x, n, 90); });
+            ImGui::PopItemWidth();
+            ImGui::Separator();
+            if (ImGui::Button("Fit")) editFaces("Fit texture", [&](Face& x, const Polygon& p, TexSize ts, const Vec3&) { fitTexture(x, p, ts, fitTimes_[0], fitTimes_[1]); });
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(90);
+            ImGui::InputInt2("times", fitTimes_);
+            fitTimes_[0] = std::max(1, fitTimes_[0]);
+            fitTimes_[1] = std::max(1, fitTimes_[1]);
+            ImGui::TextUnformatted("Justify");
+            ImGui::SameLine();
+            const struct { const char* l; Justify j; } js[] = {{"L", Justify::Left}, {"R", Justify::Right}, {"T", Justify::Top},
+                                                              {"B", Justify::Bottom}, {"C", Justify::Center}};
+            for (const auto& j : js) {
+                if (ImGui::SmallButton(j.l)) editFaces("Justify texture", [&](Face& x, const Polygon& p, TexSize ts, const Vec3&) { justifyTexture(x, p, ts, j.j); });
+                ImGui::SameLine();
+            }
+            ImGui::NewLine();
+            ImGui::TextUnformatted("Align");
+            ImGui::SameLine();
+            if (ImGui::SmallButton("World")) editFaces("Align texture", [&](Face& x, const Polygon&, TexSize, const Vec3& n) { alignTextureToWorld(x, n); });
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Face")) editFaces("Align texture", [&](Face& x, const Polygon&, TexSize, const Vec3& n) { alignTextureToFace(x, n); });
+            ImGui::Separator();
+            if (ImGui::Button("Apply current texture")) applyCurrentTexture();
+            ImGui::SameLine();
+            if (ImGui::Button("Use this texture")) currentTexture_ = f.texture;
+        }
+        ImGui::Checkbox("Texture lock", &tfTexLock_);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Textures stay put on surfaces when brushes move, rotate or scale");
+    }
+    ImGui::End();
+}
+
 void Editor::newMap() {
     tool_->cancel();
     doc_.reset({{"classname", "worldspawn"}, {"mapversion", "220"}}, {}, {});
@@ -821,6 +1075,13 @@ void Editor::runPending() {
 //   tool vertex   vertexmove dx dy dz   snapgrid   microgrid on|off   rotsnap slopes|15
 //   pivot center|origin|<x y z>   expect ongrid   expect faces <n>
 //   view <1|2|3> <u> <v> [zoom]   (centre a 2D view; zoom = pixels per unit)
+//   layout classic|default   (classic = no right-hand panels; older scripts use it)
+//   wpress <view> <u> <v> [mods] / wdrag <u> <v>   (2D input in world coordinates)
+//   press3d <dx> <dy> [mods]   (3D view click relative to its centre)
+//   tool texture   texturedir <path>   texture <name>   applytexture   rendermode flat|textured
+//   texscale <s>   facefit   facerotate <deg>   facealign world|face
+//   facejustify left|right|top|bottom|center
+//   expect texture <name>   expect pickedfaces <n>   expect current <name>
 //   shot <file.png>         quit
 //   expect brushes|selected <n>  |  expect size <x> <y> <z>  (selection bounds, +-0.5)
 //   expect edges   (every brush/preview edge in the 2D views is visible on screen)
@@ -922,7 +1183,8 @@ void Editor::stepScript() {
     static int dragView = -1;
     if (cmd == "tool") {
         std::string t; in >> t;
-        setTool(t == "block" ? (Tool*)&blockTool_ : t == "vertex" ? (Tool*)&vertexTool_ : (Tool*)&selectTool_);
+        setTool(t == "block" ? (Tool*)&blockTool_ : t == "vertex" ? (Tool*)&vertexTool_
+              : t == "texture" ? (Tool*)&textureTool_ : (Tool*)&selectTool_);
     } else if (cmd == "press") {
         int v; float x, y; in >> v >> x >> y;
         std::string mod;
@@ -959,7 +1221,65 @@ void Editor::stepScript() {
     } else if (cmd == "flip") { std::string ax; in >> ax; flip(ax == "x" ? 0 : ax == "y" ? 1 : 2);
     } else if (cmd == "duplicate") { duplicate();
     } else if (cmd == "closedialogs") { closeDialogs_ = true;
+    } else if (cmd == "printviews") {
+        for (int i = 0; i < 4; ++i)
+            std::fprintf(stderr, "view %d origin %.1f,%.1f size %dx%d\n", i, viewOrigin_[i].x, viewOrigin_[i].y, views_[i]->width(), views_[i]->height());
     } else if (cmd == "snapgrid") { snapSelectionToGrid();
+    } else if (cmd == "layout") {
+        std::string l; in >> l;
+        showPanels_ = l != "classic";
+        resetLayout_ = true;
+        warmup_ = 3; // let the docking settle before the next command
+    } else if (cmd == "wpress" || cmd == "wdrag") {
+        // World-coordinate input for 2D views: wpress <view> <u> <v> [mods] / wdrag <u> <v>
+        static int wview = 1;
+        double u = 0, v = 0;
+        if (cmd == "wpress") in >> wview;
+        in >> u >> v;
+        const Vector2 local = views_[wview]->worldToLocal2D(u, v);
+        if (cmd == "wpress") {
+            std::string mod;
+            cmd_ = shift_ = alt_ = false;
+            while (in >> mod) { if (mod == "shift") shift_ = true; if (mod == "cmd") cmd_ = true; if (mod == "alt") alt_ = true; }
+            dragView = wview;
+            onPress(wview, local, false);
+        } else if (dragView >= 0) onDrag(dragView, local);
+    } else if (cmd == "press3d") {
+        // press3d <dx> <dy> [mods]: click relative to the 3D view's centre
+        float dx = 0, dy = 0; in >> dx >> dy;
+        std::string mod;
+        cmd_ = shift_ = alt_ = false;
+        while (in >> mod) { if (mod == "shift") shift_ = true; if (mod == "cmd") cmd_ = true; if (mod == "alt") alt_ = true; }
+        dragView = 0;
+        onPress(0, {views_[0]->width() * 0.5f + dx, views_[0]->height() * 0.5f + dy}, false);
+    } else if (cmd == "texturedir") { std::string d; std::getline(in >> std::ws, d); textures_.addUserFolder(d);
+    } else if (cmd == "texture") { in >> currentTexture_;
+    } else if (cmd == "applytexture") { applyCurrentTexture();
+    } else if (cmd == "rendermode") { std::string m; in >> m; textured3D_ = m != "flat";
+    } else if (cmd == "texscale") { in >> defaultScale_;
+    } else if (cmd == "facefit") { editFaces("Fit texture", [&](Face& x, const Polygon& p, TexSize ts, const Vec3&) { fitTexture(x, p, ts); });
+    } else if (cmd == "facerotate") { double d = 0; in >> d; editFaces("Texture rotation", [&](Face& x, const Polygon&, TexSize, const Vec3& n) { rotateTexture(x, n, d); });
+    } else if (cmd == "facealign") { std::string m; in >> m; editFaces("Align texture", [&](Face& x, const Polygon&, TexSize, const Vec3& n) { if (m == "face") alignTextureToFace(x, n); else alignTextureToWorld(x, n); });
+    } else if (cmd == "facejustify") {
+        std::string m; in >> m;
+        const Justify j = m == "left" ? Justify::Left : m == "right" ? Justify::Right : m == "top" ? Justify::Top : m == "bottom" ? Justify::Bottom : Justify::Center;
+        editFaces("Justify texture", [&](Face& x, const Polygon& p, TexSize ts, const Vec3&) { justifyTexture(x, p, ts, j); });
+    } else if (cmd == "expect" && in.str().find(" texture ") != std::string::npos) {
+        std::string w, name; in >> w >> name;
+        int bad = 0, n = 0;
+        if (tool_ == &textureTool_) {
+            for (const FaceRef& fr : textureTool_.faces(doc_)) { ++n; if (doc_.find(fr.first)->faces[fr.second].texture != name) ++bad; }
+        } else {
+            for (BrushId id : doc_.selection()) if (const Brush* b = doc_.find(id)) for (const Face& f : b->faces) { ++n; if (f.texture != name) ++bad; }
+        }
+        if (bad || n == 0) { std::fprintf(stderr, "script FAIL (command %d): %d of %d faces are not '%s'\n", scriptLine_, bad, n, name.c_str()); ++scriptFailures_; }
+    } else if (cmd == "expect" && in.str().find(" pickedfaces ") != std::string::npos) {
+        std::string w; size_t n = 0; in >> w >> n;
+        const size_t got = textureTool_.faces(doc_).size();
+        if (got != n) { std::fprintf(stderr, "script FAIL (command %d): expected %zu picked faces, got %zu\n", scriptLine_, n, got); ++scriptFailures_; }
+    } else if (cmd == "expect" && in.str().find(" current ") != std::string::npos) {
+        std::string w, name; in >> w >> name;
+        if (currentTexture_ != name) { std::fprintf(stderr, "script FAIL (command %d): current texture is '%s', expected '%s'\n", scriptLine_, currentTexture_.c_str(), name.c_str()); ++scriptFailures_; }
     } else if (cmd == "view") {
         // view <1|2|3> <u> <v> [zoom]  (centre a 2D view on world u,v)
         int vi; double u, v, z = 0; in >> vi >> u >> v >> z;

@@ -28,6 +28,9 @@ jobs:
       - name: Core tests
         run: ctest --test-dir build --output-on-failure
 
+      - name: Check bundled textures
+        run: test -f build/Scalpellino.app/Contents/Resources/textures/Bricks_24.png && test -f build/Scalpellino.app/Contents/Resources/textures/Tile_19.png
+
       - name: Package app
         run: |
           codesign --force --deep --sign - build/Scalpellino.app

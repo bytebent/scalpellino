@@ -11,6 +11,8 @@
 #include "tools/block_tool.hpp"
 #include "tools/select_tool.hpp"
 #include "tools/vertex_tool.hpp"
+#include "tools/texture_tool.hpp"
+#include "render/texture_library.hpp"
 #include <deque>
 #include <memory>
 #include <string>
@@ -79,6 +81,15 @@ private:
     void snapSelectionToGrid();
     Vec3 pivotPoint() const;          // current pivot for rotate/scale
     void drawPrecisionDialogs();      // grid size, pivot point, vertex move
+
+    // Textures (milestone 3)
+    void drawTextureBrowser();
+    void drawFacePanel();
+    void applyCurrentTexture();
+    // Applies fn to every picked face (texture tool) as one undoable command.
+    template <class Fn> void editFaces(const char* name, Fn fn);
+    void loadTextureFolders();
+    void saveTextureFolders() const;
     void newMap();
     void openMap(const std::string& path);
     bool saveMap(const std::string& path);
@@ -104,6 +115,7 @@ private:
     SelectTool selectTool_;
     BlockTool blockTool_;
     VertexTool vertexTool_;
+    TextureTool textureTool_;
     Tool* tool_ = &selectTool_;
 
     int capture_ = -1;          // view that owns the current left-button drag
@@ -149,6 +161,16 @@ private:
     double vmove_[3] = {0, 0, 0};
     int vmoveMode_ = 0;              // 0 move by, 1 set position (single corner)
     std::string precisionError_;
+
+    TextureLibrary textures_;
+    std::string currentTexture_ = "Bricks_24";
+    double defaultScale_ = 0.25;     // Source-style default; good for 512px textures
+    bool textured3D_ = true;
+    bool showPanels_ = true;         // right-hand Textures/Face panels ("layout classic" hides)
+    char texSearch_[128] = "";
+    bool askTexFolder_ = false;
+    char folderBuf_[1024] = "";
+    int fitTimes_[2] = {1, 1};
 
     bool exit_ = false;
     unsigned long long redraws_ = 0;

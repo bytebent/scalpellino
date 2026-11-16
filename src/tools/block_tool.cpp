@@ -57,6 +57,7 @@ bool BlockTool::key(ToolEnv& env, int key) {
     if ((key == KEY_ENTER || key == KEY_KP_ENTER) && box_ && mode_ == Mode::Idle) {
         Document& doc = env.doc;
         Brush b = makeBox(*box_, texture);
+        for (Face& f : b.faces) f.scaleU = f.scaleV = textureScale;
         if (b.valid()) {
             doc.apply(doc.makeAdd({b}, "Create block"));
             env.lastBox = *box_;

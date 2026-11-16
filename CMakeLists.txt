@@ -19,7 +19,8 @@ add_library(scal_core STATIC
   src/core/brush.cpp
   src/core/document.cpp
   src/core/transform.cpp
-  src/core/hull.cpp)
+  src/core/hull.cpp
+  src/core/texture.cpp)
 target_include_directories(scal_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 # File formats. Also graphics-free, so it is tested headless too.
@@ -43,16 +44,23 @@ if(SCAL_BUILD_APP)
     src/app/editor.cpp
     src/app/settings.cpp
     src/render/scene.cpp
+    src/render/texture_library.cpp
     src/render/viewport.cpp
     src/tools/tool.cpp
     src/tools/select_tool.cpp
     src/tools/block_tool.cpp
     src/tools/vertex_tool.cpp
+    src/tools/texture_tool.cpp
     src/ui/layout.cpp
   )
 
+  # Built-in textures shipped with the app.
+  file(GLOB SCAL_BUILTIN_TEXTURES ${CMAKE_CURRENT_SOURCE_DIR}/assets/textures/*.png
+                                  ${CMAKE_CURRENT_SOURCE_DIR}/assets/textures/*.txt)
+
   if(APPLE)
-    add_executable(Scalpellino MACOSX_BUNDLE ${SCAL_APP_SOURCES})
+    set_source_files_properties(${SCAL_BUILTIN_TEXTURES} PROPERTIES MACOSX_PACKAGE_LOCATION Resources/textures)
+    add_executable(Scalpellino MACOSX_BUNDLE ${SCAL_APP_SOURCES} ${SCAL_BUILTIN_TEXTURES})
     set_target_properties(Scalpellino PROPERTIES
       MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/cmake/Info.plist.in
       MACOSX_BUNDLE_BUNDLE_NAME "Scalpellino"
@@ -62,6 +70,9 @@ if(SCAL_BUILD_APP)
     target_compile_definitions(Scalpellino PRIVATE GL_SILENCE_DEPRECATION)
   else()
     add_executable(Scalpellino ${SCAL_APP_SOURCES})
+    add_custom_command(TARGET Scalpellino POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:Scalpellino>/textures
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SCAL_BUILTIN_TEXTURES} $<TARGET_FILE_DIR:Scalpellino>/textures)
   endif()
 
   target_include_directories(Scalpellino PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)

@@ -1,6 +1,7 @@
 #include "ui/layout.hpp"
 #include "imgui_internal.h" // DockBuilder, BeginViewportSideBar
 #include <cstdio>
+#include <initializer_list>
 
 namespace scal {
 
@@ -32,6 +33,7 @@ MenuActions drawMenuBar(const MenuState& st) {
         if (ImGui::MenuItem("Select", "Shift+S", st.selectTool)) a.toolSelect = true;
         if (ImGui::MenuItem("Block", "Shift+B", st.blockTool)) a.toolBlock = true;
         if (ImGui::MenuItem("Vertex", "Shift+V", st.vertexTool)) a.toolVertex = true;
+        if (ImGui::MenuItem("Texture", "Shift+A", st.textureTool)) a.toolTexture = true;
         ImGui::Separator();
         if (ImGui::MenuItem("Move selected vertices...", "Cmd+Shift+T", false, st.vertexTool && st.verticesSelected)) a.vertexMove = true;
         ImGui::Separator();
@@ -75,6 +77,29 @@ MenuActions drawMenuBar(const MenuState& st) {
         ImGui::TextDisabled("Drag: Option+corner handle rotates");
         ImGui::EndMenu();
     }
+    if (ImGui::BeginMenu("Texture")) {
+        if (ImGui::MenuItem("Apply current texture", "Shift+T", false, st.canApplyTexture)) a.applyTexture = true;
+        if (ImGui::MenuItem("Texture tool (pick faces)", "Shift+A", st.textureTool)) a.toolTexture = true;
+        ImGui::Separator();
+        if (ImGui::MenuItem("Texture lock", nullptr, st.textureLock)) a.toggleTextureLock = true;
+        if (ImGui::BeginMenu("Default scale for new brushes")) {
+            for (double sc : {0.125, 0.25, 0.5, 1.0, 2.0}) {
+                char b[16];
+                std::snprintf(b, sizeof b, "%g", sc);
+                if (ImGui::MenuItem(b, nullptr, st.defaultScale == sc)) a.defaultScale = sc;
+            }
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("Filtering")) {
+            if (ImGui::MenuItem("Crisp pixels", nullptr, !st.smoothTextures)) a.smoothTextures = 0;
+            if (ImGui::MenuItem("Smooth", nullptr, st.smoothTextures)) a.smoothTextures = 1;
+            ImGui::EndMenu();
+        }
+        ImGui::Separator();
+        if (ImGui::MenuItem("Add texture folder...")) a.addTextureFolder = true;
+        if (ImGui::MenuItem("Rescan texture folders")) a.rescanTextures = true;
+        ImGui::EndMenu();
+    }
     if (ImGui::BeginMenu("View")) {
         // Shortcut labels are for an Italian keyboard (the two keys right of P).
         if (ImGui::MenuItem("Smaller grid", "\xC3\xA8")) a.gridSmaller = true;
@@ -86,6 +111,8 @@ MenuActions drawMenuBar(const MenuState& st) {
         ImGui::Separator();
         if (ImGui::MenuItem("Center 2D views on selection", "Cmd+E", false, st.hasSelection)) a.centerViews = true;
         if (ImGui::MenuItem("Fly mode (3D view)", "Z", st.flying)) a.flyMode = true;
+        if (ImGui::MenuItem("3D view: textured", nullptr, st.textured3D)) a.textured3D = 1;
+        if (ImGui::MenuItem("3D view: flat colours", nullptr, !st.textured3D)) a.textured3D = 0;
         ImGui::Separator();
         if (ImGui::MenuItem("Reset layout")) a.resetLayout = true;
         ImGui::EndMenu();
@@ -115,6 +142,9 @@ void drawControlsWindow(bool* open) {
             {"Snap vertices to grid", "Cmd+B"},
             {"Pivot / rotation snapping", "Transform menu"},
             {"Grid size / microgrid", "View menu"},
+            {"Texture tool (pick faces)", "Shift+A; 3D: click, Cmd+click, Shift+click brush, Option+click picks texture"},
+            {"Apply current texture", "Shift+T (selected brushes, or picked faces)"},
+            {"Textures / Face panels", "right side: search by name, click to choose; adjust picked faces"},
             {"Delete", "Delete or Backspace"},
             {"Undo / redo", "Cmd+Z / Cmd+Shift+Z"},
             {"New / open / save / save as", "Cmd+N / Cmd+O / Cmd+S / Cmd+Shift+S"},
@@ -157,10 +187,11 @@ void drawStatusBar(const char* text) {
 }
 
 void dockspace(bool forceReset, const char* tools, const char* topLeft, const char* topRight,
-               const char* bottomLeft, const char* bottomRight) {
+               const char* bottomLeft, const char* bottomRight, const char* rightTop,
+               const char* rightBottom, bool withPanels) {
     const ImGuiViewport* vp = ImGui::GetMainViewport();
     // Bump the version suffix whenever the default layout changes.
-    const ImGuiID id = ImGui::GetID("MainDockspace.v2");
+    const ImGuiID id = ImGui::GetID("MainDockspace.v3");
 
     if (forceReset || ImGui::DockBuilderGetNode(id) == nullptr) {
         ImGui::DockBuilderRemoveNode(id);
@@ -168,8 +199,15 @@ void dockspace(bool forceReset, const char* tools, const char* topLeft, const ch
         ImGui::DockBuilderSetNodePos(id, vp->WorkPos);
         ImGui::DockBuilderSetNodeSize(id, vp->WorkSize);
 
-        ImGuiID toolsNode = 0, rest = 0;
-        ImGui::DockBuilderSplitNode(id, ImGuiDir_Left, 0.07f, &toolsNode, &rest);
+        ImGuiID toolsNode = 0, rest0 = 0, rest = 0, panel = 0;
+        ImGui::DockBuilderSplitNode(id, ImGuiDir_Left, 0.07f, &toolsNode, &rest0);
+        ImGuiID panelTop = 0, panelBottom = 0;
+        if (withPanels) {
+            ImGui::DockBuilderSplitNode(rest0, ImGuiDir_Right, 0.22f, &panel, &rest);
+            ImGui::DockBuilderSplitNode(panel, ImGuiDir_Up, 0.62f, &panelTop, &panelBottom);
+        } else {
+            rest = rest0; // "classic" layout (used by older UI test scripts)
+        }
         ImGuiID left = 0, right = 0;
         ImGui::DockBuilderSplitNode(rest, ImGuiDir_Left, 0.5f, &left, &right);
         ImGuiID tl = 0, bl = 0, tr = 0, br = 0;
@@ -177,6 +215,10 @@ void dockspace(bool forceReset, const char* tools, const char* topLeft, const ch
         ImGui::DockBuilderSplitNode(right, ImGuiDir_Up, 0.5f, &tr, &br);
 
         ImGui::DockBuilderDockWindow(tools, toolsNode);
+        if (withPanels) {
+            ImGui::DockBuilderDockWindow(rightTop, panelTop);
+            ImGui::DockBuilderDockWindow(rightBottom, panelBottom);
+        }
         ImGui::DockBuilderDockWindow(topLeft, tl);
         ImGui::DockBuilderDockWindow(topRight, tr);
         ImGui::DockBuilderDockWindow(bottomLeft, bl);

@@ -6,6 +6,7 @@ SceneBrush makeSceneBrush(const Brush& b) {
     SceneBrush s;
     s.id = b.id;
     s.polys = b.polygons();
+    s.faces = b.faces;
     for (const Polygon& p : s.polys)
         for (const Vec3& v : p.verts) s.bounds.add(v);
     return s;

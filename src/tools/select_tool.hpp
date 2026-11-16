@@ -28,6 +28,7 @@ private:
     double u0_ = 0, v0_ = 0;
     AABB startBox_, curBox_;
     bool clone_ = false;
+    bool textureLock_ = true;
     BrushId pressedId_ = 0; // brush clicked inside a multi-selection (narrow to it on plain click)
     std::vector<Brush> ghosts_;
     Vec3 rotCenter_, rotAxis_;

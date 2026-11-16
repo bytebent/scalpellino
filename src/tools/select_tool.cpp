@@ -67,6 +67,7 @@ void SelectTool::press(ToolEnv& env, const Pointer& p) {
     view_ = p.view;
     u0_ = p.u;
     v0_ = p.v;
+    textureLock_ = env.textureLock;
     startBox_ = curBox_ = doc.selectionBounds();
     clone_ = (mode_ == Mode::Moving) && env.shift;
     ghosts_.clear();
@@ -78,9 +79,9 @@ void SelectTool::updateGhosts(const Document& doc) {
         const Brush* b = doc.find(id);
         if (!b) continue;
         Brush g = *b;
-        if (mode_ == Mode::Moving) g.translate(curBox_.min - startBox_.min, true);
-        else if (mode_ == Mode::Rotating) g.rotate(rotCenter_, rotAxis_, rotAngle_, true);
-        else g.remapBounds(startBox_, curBox_, true);
+        if (mode_ == Mode::Moving) g.translate(curBox_.min - startBox_.min, textureLock_);
+        else if (mode_ == Mode::Rotating) g.rotate(rotCenter_, rotAxis_, rotAngle_, textureLock_);
+        else g.remapBounds(startBox_, curBox_, textureLock_);
         ghosts_.push_back(std::move(g));
     }
     if (mode_ == Mode::Rotating) {

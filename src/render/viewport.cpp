@@ -1,5 +1,6 @@
 #include "render/viewport.hpp"
 #include "rlgl.h"
+#include "render/texture_library.hpp"
 #include <algorithm>
 #include <cmath>
 
@@ -319,12 +320,34 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
     DrawLine3D({0, 0, 0}, {0, 256, 0}, {70, 200, 70, 255});
     DrawLine3D({0, 0, 0}, {0, 0, 256}, {80, 120, 230, 255});
 
-    // ---- flat-shaded brushes
+    // ---- brushes: textured (default) or flat-shaded per brush colour
     auto drawSolid = [&](const SceneBrush& b, Color base) {
         for (const Polygon& p : b.polys) {
             const Color c = shade(base, p.normal);
             for (size_t i = 1; i + 1 < p.verts.size(); ++i)
                 DrawTriangle3D(toRl(p.verts[0]), toRl(p.verts[i]), toRl(p.verts[i + 1]), c);
+        }
+    };
+    auto drawTextured = [&](const SceneBrush& b, Color tint, bool faceSelection) {
+        for (const Polygon& p : b.polys) {
+            if (p.face < 0 || p.face >= (int)b.faces.size()) continue;
+            const Face& f = b.faces[p.face];
+            const Texture2D& tex = scene.textures->get(f.texture);
+            const TexSize ts{std::max(1, tex.width), std::max(1, tex.height)};
+            Color t = tint;
+            if (faceSelection && scene.selectedFaces.count({b.id, p.face})) t = {255, 105, 105, 255};
+            const Color c = shade(t, p.normal);
+            rlSetTexture(tex.id);
+            rlBegin(RL_TRIANGLES);
+            rlColor4ub(c.r, c.g, c.b, 255);
+            for (size_t i = 1; i + 1 < p.verts.size(); ++i)
+                for (const Vec3* v : {&p.verts[0], &p.verts[i], &p.verts[i + 1]}) {
+                    const UV uv = texCoord(f, *v, ts);
+                    rlTexCoord2f((float)uv.u, (float)uv.v);
+                    rlVertex3f((float)v->x, (float)v->y, (float)v->z);
+                }
+            rlEnd();
+            rlSetTexture(0);
         }
     };
     auto drawEdges = [&](const SceneBrush& b, Color c) {
@@ -333,12 +356,17 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
                 DrawLine3D(toRl(p.verts[i]), toRl(p.verts[(i + 1) % p.verts.size()]), c);
     };
     const Color selTint{235, 110, 110, 255};
+    const bool textured = scene.textures != nullptr;
     for (const SceneBrush& b : scene.brushes) {
         const bool sel = scene.selected.count(b.id) > 0;
         if (sel && scene.hideSelected) continue;
-        drawSolid(b, sel ? selTint : brushColor(b.id));
+        if (textured) drawTextured(b, sel ? Color{255, 150, 150, 255} : WHITE, true);
+        else drawSolid(b, sel ? selTint : brushColor(b.id));
     }
-    for (const SceneBrush& g : scene.ghosts) drawSolid(g, selTint);
+    for (const SceneBrush& g : scene.ghosts) {
+        if (textured) drawTextured(g, {255, 150, 150, 255}, false);
+        else drawSolid(g, selTint);
+    }
     for (const SceneBrush& g : scene.invalidGhosts) drawSolid(g, kInvalid);
 
     // Selection outlines on top (visible through other brushes, like Hammer).
@@ -349,6 +377,11 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
             if (scene.selected.count(b.id)) drawEdges(b, kSelected);
     for (const SceneBrush& g : scene.ghosts) drawEdges(g, kSelected);
     for (const SceneBrush& g : scene.invalidGhosts) drawEdges(g, kInvalid);
+    for (const SceneBrush& b : scene.brushes)
+        for (const Polygon& p : b.polys)
+            if (scene.selectedFaces.count({b.id, p.face}))
+                for (size_t i = 0; i < p.verts.size(); ++i)
+                    DrawLine3D(toRl(p.verts[i]), toRl(p.verts[(i + 1) % p.verts.size()]), {255, 230, 80, 255});
     if (scene.previewBox) {
         const AABB& pb = *scene.previewBox;
         const Vec3 c = pb.center(), s = pb.size();

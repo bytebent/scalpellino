@@ -1,7 +1,7 @@
 # Milestone 3 (part 1): endless 2D grid — a block far outside the classic +-4096 area.
 tool block
-press 1 334 224
-drag 398 160
+wpress 1 0 1
+wdrag 128 129
 release
 key Return
 transform move 6000 5000 0

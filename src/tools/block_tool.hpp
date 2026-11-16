@@ -19,6 +19,7 @@ public:
 
     bool hasPreview() const { return box_.has_value(); }
     std::string texture = "default";
+    double textureScale = 1.0;
 
 private:
     enum class Mode { Idle, Drawing, Editing };

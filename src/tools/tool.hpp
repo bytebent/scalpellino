@@ -6,6 +6,7 @@
 #include "core/grid.hpp"
 #include "render/scene.hpp"
 #include "render/viewport.hpp"
+#include <string>
 #include <vector>
 
 namespace scal {
@@ -27,6 +28,8 @@ struct ToolEnv {
     bool alt = false;                            // Option on macOS
     const Vec3* pivot = nullptr;                 // custom rotation pivot (null = box centre)
     bool slopeAngles = false;                    // drag rotation snaps to grid-friendly slopes
+    bool textureLock = true;                     // textures stay put when brushes move
+    std::string* currentTexture = nullptr;       // texture tool eyedropper target
 };
 
 // Grid-friendly rotation angles (radians, 0..2pi): Pythagorean angles, whose sine and

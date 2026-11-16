@@ -1,0 +1,56 @@
+# Milestone 3: textured view, texture browser, texture tool, face edits.
+# Floor (Tile_19) + back wall (Bricks_24); default layout with the right-hand panels.
+texture Tile_19
+tool block
+wpress 1 -256 -256
+wdrag 256 256
+release
+key Return
+expect texture Tile_19
+texture Bricks_24
+wpress 1 -256 224
+wdrag 256 256
+release
+key Return
+expect texture Bricks_24
+tool select
+wpress 3 0 64
+wdrag 0 200
+wdrag 0 320
+release
+expect size 512 32 320
+shot m3-03-textured-room.png
+# -- texture tool: pick the wall's front face in the 3D view
+tool texture
+press3d -122 -115
+release
+expect pickedfaces 1
+expect texture Bricks_24
+facerotate 90
+facefit
+expect edges
+shot m3-04-face-picked-rotated-fitted.png
+# -- Option+click the floor: eyedropper makes Tile_19 the current texture
+press3d -2 45 alt
+release
+expect current Tile_19
+expect pickedfaces 1
+# -- Shift+click the wall: all its faces; apply the current texture; undo
+press3d -122 -115 shift
+release
+expect pickedfaces 6
+applytexture
+expect texture Tile_19
+undo
+expect texture Bricks_24
+# -- flat colour mode
+rendermode flat
+shot m3-05-flat-mode.png
+rendermode textured
+# -- textures survive save + open
+save m3-test.map
+open m3-test.map
+expect brushes 2
+selectall
+tool select
+quit

@@ -4,6 +4,7 @@
 #include "core/grid.hpp"
 #include "core/transform.hpp"
 #include "core/hull.hpp"
+#include "core/texture.hpp"
 #include "io/map_format.hpp"
 #include <cmath>
 #include <cstdio>
@@ -316,6 +317,77 @@ static void testSnapToGrid() {
     CHECK(!snapBrushToGrid(thin, 64).ok);
 }
 
+static const Polygon& polyOfFace(const std::vector<Polygon>& ps, int face) {
+    for (const Polygon& p : ps) if (p.face == face) return p;
+    return ps[0];
+}
+
+static void testTextures() {
+    const TexSize ts{512, 512};
+    Brush b = makeBox(box({0, 0, 0}, {256, 64, 128}), "Bricks_24");
+    const auto polys = b.polygons();
+    // Face 2 is +X (wall facing X): axes (0,1,0) / (0,0,-1).
+    Face f = b.faces[2];
+    const Polygon& pf = polyOfFace(polys, 2);
+    UV uv = texCoord(f, {256, 32, 64}, ts);
+    CHECK(near(uv.u, 32.0 / 512) && near(uv.v, -64.0 / 512));
+
+    // Fit: the face's corners map exactly onto the texture's corners.
+    fitTexture(f, pf, ts);
+    double umin = 1e9, umax = -1e9, vmin = 1e9, vmax = -1e9;
+    for (const Vec3& p : pf.verts) {
+        const UV q = texCoord(f, p, ts);
+        umin = std::min(umin, q.u); umax = std::max(umax, q.u);
+        vmin = std::min(vmin, q.v); vmax = std::max(vmax, q.v);
+    }
+    CHECK(near(umax - umin, 1, 1e-9) && near(vmax - vmin, 1, 1e-9));
+    CHECK(near(std::fmod(umin + 10, 1.0), 0, 1e-9) || near(std::fmod(umin + 10, 1.0), 1, 1e-9));
+    CHECK(!std::signbit(f.u.offset) && !std::signbit(f.v.offset)); // no "-0" in the UI
+    // Fit 2 x 1 halves the U scale.
+    Face f2 = b.faces[2];
+    fitTexture(f2, pf, ts, 2, 1);
+    CHECK(near(f2.scaleU, f.scaleU / 2, 1e-12));
+
+    // Justify left: the face's left edge sits on a texture edge.
+    Face j = b.faces[2];
+    j.u.offset = 123;
+    justifyTexture(j, pf, ts, Justify::Left);
+    double smin = 1e9;
+    for (const Vec3& p : pf.verts) smin = std::min(smin, dot(p, j.u.axis) / j.scaleU + j.u.offset);
+    CHECK(near(std::fmod(smin + 5120, 512.0), 0, 1e-9) || near(std::fmod(smin + 5120, 512.0), 512, 1e-9));
+    // Justify centre: the face centre maps to the texture centre.
+    justifyTexture(j, pf, ts, Justify::Center);
+    const Vec3 c{256, 32, 64};
+    const UV cu = texCoord(j, c, ts);
+    CHECK(near(std::fmod(cu.u + 10, 1.0), 0.5, 1e-9) && near(std::fmod(cu.v + 10, 1.0), 0.5, 1e-9));
+
+    // Rotate: axes stay perpendicular to the normal and to each other; 4 x 90 = identity.
+    Face r = b.faces[2];
+    const Vec3 n = r.plane().n;
+    rotateTexture(r, n, 90);
+    CHECK(near(dot(r.u.axis, n), 0) && near(dot(r.v.axis, n), 0) && near(dot(r.u.axis, r.v.axis), 0));
+    CHECK(nearV(r.u.axis, cross(n, b.faces[2].u.axis)) || nearV(r.u.axis, -cross(n, b.faces[2].u.axis)));
+    rotateTexture(r, n, 90); rotateTexture(r, n, 90); rotateTexture(r, n, 90);
+    CHECK(nearV(r.u.axis, b.faces[2].u.axis, 1e-9) && nearV(r.v.axis, b.faces[2].v.axis, 1e-9));
+
+    // Align to face on a slope: axes lie in the face plane, unit length.
+    Brush w = makeBox(box({0, 0, 0}, {64, 64, 64}), "a");
+    w.faces.push_back(makeFace(normalize({1, 0, 1}), {64, 0, 0}, "a"));
+    Face s = w.faces.back();
+    const Vec3 sn = s.plane().n;
+    alignTextureToFace(s, sn);
+    CHECK(near(dot(s.u.axis, sn), 0, 1e-9) && near(dot(s.v.axis, sn), 0, 1e-9));
+    CHECK(near(length(s.u.axis), 1, 1e-9) && near(length(s.v.axis), 1, 1e-9));
+    alignTextureToWorld(s, sn);
+    CHECK(s.u.offset == 0 && s.rotation == 0);
+
+    // Picking: a ray from -X hits the -X face (index 3); from inside -> nothing.
+    double t = 0;
+    CHECK(rayHitFace(b, {-100, 32, 64}, {1, 0, 0}, &t) == 3 && near(t, 100));
+    CHECK(rayHitFace(b, {-100, 32, 300}, {0, 0, -1}, &t) == -1);
+    CHECK(rayHitFace(b, {128, 32, 300}, {0, 0, -1}, &t) == 0 && near(t, 172));
+}
+
 static void testRay() {
     Brush b = makeBox(box({0, 0, 0}, {64, 64, 64}), "a");
     CHECK(near(rayHit(b, {-100, 32, 32}, {1, 0, 0}), 100));
@@ -446,6 +518,7 @@ int main() {
     testTransform();
     testHull();
     testSnapToGrid();
+    testTextures();
     testRay();
     testUndo();
     testDirty();

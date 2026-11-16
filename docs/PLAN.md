@@ -10,9 +10,9 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 
 ## Current status
 
-- Released: v0.1.0 (M0+M1), v0.1.1 (Retina, font, menus, Transform dialog; user
-  confirmed it works), **v0.2.0 = milestone 2 Precision** (this step).
-- **Next: milestone 3 — Textures.** Plan below.
+- Released: v0.1.0, v0.1.1, v0.2.0 (precision), **v0.3.0 = milestone 3 Textures** (this
+  step) + endless 2D grid.
+- **Next: milestone 4 — Shaping** (clip tool incl. 3-point clipping, carve/CSG).
 
 ## How to work in this repo
 
@@ -26,12 +26,14 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   -DFETCHCONTENT_SOURCE_DIR_RLIMGUI=...`. Linux needs `libxrandr-dev libxinerama-dev
   libxcursor-dev libxi-dev libgl1-mesa-dev`.
 - **Scripted UI tests:** `tests/ui/*.script`, run by `tests/ui/run.sh <app> [shot-dir]`
-  (Linux + Xvfb; CI job `linux`). The script language is documented at the bottom of
-  `src/app/editor.cpp` (press/drag/release in view pixels, key, undo, save/open, shot,
-  `expect brushes|selected <n>`, `expect size x y z`). Pixel coordinates assume the
-  default 1440x900 window and default layout; top view centre = local (334,224),
-  zoom 0.5 (2 world units per px). Tip: snapped drags shift brushes by up to half a grid
-  cell, so compute brush edges from snapped values before aiming clicks near edges.
+  (Linux + Xvfb; CI job `linux`, at 1x and forced 2x). The script language is documented
+  in `src/app/editor.cpp` above `loadScript`. **Use world coordinates** for 2D input
+  (`wpress <view> <u> <v> [mods]`, `wdrag <u> <v>`, `release`) and `press3d <dx> <dy>`
+  (relative to the 3D view centre) so scripts don't depend on the window layout.
+  (Pixel `press/drag` still exist but broke once when the layout changed.) Default 2D
+  zoom is 0.5 px/unit. Tip: snapped drags shift brushes by up to half a grid cell, so
+  compute brush edges from snapped values before aiming clicks near edges.
+  `printviews` prints each view's origin/size (debugging).
 - CLI: `--open <map>`, `--script <file>`, `--screenshot <png>`. Automated runs never
   read or write the user's layout settings.
 - Screenshots: every screenshot taken goes in `docs/screenshots/`, named
@@ -55,6 +57,11 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 
 ## Open questions (parked)
 
+- **Texture browser, later:** tags, folders/collections, favourites, recently used,
+  sorting by size, previews of how a texture tiles (user: "eventually a lot of
+  functionality, e.g. tags; for now searchable by name is fine").
+- **Texture folder picking** uses a typed path (no native folder dialog yet).
+
 - **Vertex tool extras:** edge handles (drag an edge = both its corners), marquee
   (drag-box) vertex selection, corner handles in the 3D view. Not in v0.2.0.
 - **Grid-friendly angles:** user asked for "rotate by exact dimensions"; delivered as typed
@@ -73,28 +80,63 @@ Delivered: vertex tool, snap vertices to grid, pivot, grid-friendly (Pythagorean
 rotation angles, microgrid + custom grid sizes. See log. Not done (parked, below):
 edge handles, marquee vertex selection, vertex handles in the 3D view.
 
-## Milestone 3 plan — Textures
+## Milestone 3 — Textures (done, v0.3.0)
 
-Needs (not blocking): a folder of the user's own textures to test with. Until then, use
-procedurally generated test textures (checker, bricks, noise) created at runtime or by a
-test script — never downloaded.
+Delivered: texture library (built-in + user folders), textured 3D view, browser with
+search by name, texture tool (pick faces), Face panel, Texture menu. User wants later:
+**tags and much more browser functionality** (parked below).
 
-1. Texture library: user picks texture folders (stored in user settings, never in repo);
-   load PNG/TGA lazily, thumbnails cached; nearest-neighbour filtering by default.
-2. Textured 3D mode: UVs from Valve 220 axes (u = dot(p, U)/scaleU + offU, divided by
-   texture width; same for v), per-texture batches. Missing texture = checker pattern.
-3. Texture browser panel: grid of thumbnails, filter by name, current texture.
-4. Apply: texture tool — click a face in 3D to apply current texture; Shift+click =
-   whole brush; Block tool uses current texture.
-5. Face edit panel: shift/scale/rotation fields, fit, justify, align world/face;
-   texture lock toggle (default on).
-6. Face picking in 3D (ray vs polygons, nearest face).
-7. Tests: UV maths (incl. texture lock after move/rotate), face picking, `.map` round
-   trip with texture names; UI script applying textures; screenshots.
+## Milestone 4 plan — Shaping
+
+1. Clip tool (Shift+X): 2-point clip in a 2D view (line through two snapped points,
+   plane perpendicular to the view), and 3-point clip (Hammer++ style: third point in
+   another view or typed). Keep front / back / both (cycle with a key + menu items),
+   preview, Return applies, Esc cancels. Typed points dialog.
+2. Carve (CSG subtract) of the selection from touching brushes, producing clean convex
+   pieces (Hammer's carve is notorious for messy splits — merge where possible).
+3. Hollow (make a room from a block, wall thickness dialog) — common Hammer workflow.
+4. Tests: core split/clip/carve (convexity, volume preserved, no slivers), UI scripts.
 
 ## Milestone 1 plan — Brushes (done)
 
 ## Log
+
+### 2026-11-16 — Endless 2D grid + Milestone 3: Textures (v0.3.0)
+- **Endless grid** (user request): 2D grid drawn over the whole visible range, views can
+  pan to ±1M units; red square kept as a reference for the classic ±4096 area; brush
+  clipping start polygon enlarged so brushes far outside work (core test). 3D grid
+  unchanged.
+- **Textures from the user:** Tile_19 and Bricks_24 (Screaming Brain Studios, CC0),
+  stored in `assets/textures/` as 8-bit RGB (from 16-bit RGBA, no visual change) with
+  their license; bundled into the app (macOS `Contents/Resources/textures`, Linux next to
+  the binary); listed in `docs/THIRD_PARTY.md`. CI checks the bundle contains them.
+- `core/texture`: Valve 220 UVs, fit (n x m), justify L/R/T/B/C, align to world/face,
+  rotate, offset wrapping (no "-0"), ray -> face picking.
+- `render/texture_library`: built-in + user folders (recursive; PNG/TGA/JPG/BMP; name =
+  file stem, spaces -> `_`; user folders override built-ins), lazy GPU loading with
+  mipmaps, crisp (nearest) or smooth filtering, magenta checker for missing textures.
+  User folders saved in the settings folder (`texture_folders.txt`), never in the repo.
+- 3D view: textured (default) or flat colours (View menu); selected brushes tinted;
+  texture tool hides brush tint and highlights picked faces (tint + yellow outline).
+- UI: right-hand **Textures** panel (current texture, search by name, thumbnails,
+  Apply, Add folder, Rescan) and **Face** panel (shift, scale, rotation ±90, fit with
+  times, justify, align, apply, use this texture, texture lock). **Texture tool**
+  (Shift+A): click / Cmd+click / Shift+click whole brush / Option+click eyedropper.
+  **Texture menu**: apply (Shift+T), tool, texture lock, default scale (0.25 default),
+  filtering, add folder, rescan. New brushes use the current texture + default scale.
+- Layout v3 (right panel column). This broke the old pixel-based UI scripts (the old
+  layout had unequal view heights, 449 vs 407); converted all scripts to world
+  coordinates (`wpress`/`wdrag`/`press3d`) computed from the old geometry — now
+  layout-independent.
+- **Tests:** core **497 checks, 0 failed** (+ texture maths, far-away brushes). UI:
+  `m1_brushes`, `m2_precision`, `m3_textures` (endless grid), `m3_textures_apply`
+  (textured room, pick face, rotate + fit, eyedropper, Shift+click brush, apply, undo,
+  flat mode, save/open), `v011_transform_menus` — **all PASS at 1x and 2x**.
+  Idle: **0 ticks / 10 s**.
+- Screenshots: `m3-01-endless-grid`, `m3-02-past-the-border`, `m3-03-textured-room`,
+  `m3-04-face-picked-rotated-fitted`, `m3-05-flat-mode`.
+- Process note: I used `git stash` once to compare builds — risky with uncommitted work
+  (it came back fine). Don't; compare with a separate clone or printed values instead.
 
 ### 2026-11-16 — Milestone 2: Precision (v0.2.0)
 - `core/hull`: brush from vertices (brute-force convex hull, merges coplanar points into

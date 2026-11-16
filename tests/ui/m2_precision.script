@@ -1,8 +1,8 @@
 # Milestone 2: vertex tool (valid + invalid moves, typed move), snap to grid,
-# Pythagorean rotation, microgrid. Top view centre = local (334,224), 2 units/px.
+# Pythagorean rotation, microgrid. 2D input uses world coordinates (wpress/wdrag).
 tool block
-press 1 334 224
-drag 398 208
+wpress 1 0 1
+wdrag 128 33
 release
 key Return
 expect size 128 32 64
@@ -19,20 +19,20 @@ expect size 128 32 64
 grid 16
 # -- vertex tool: drag the corner at (128,32) (both stacked corners) to x=160
 tool vertex
-press 1 398 208
+wpress 1 128 33
 release
-press 1 398 208
-drag 405 208
-drag 414 208
+wpress 1 128 33
+wdrag 142 33
+wdrag 160 33
 release
 expect size 160 32 64
 expect faces 6
 expect edges
 shot m2-01-vertex-moved.png
 # -- invalid: drag that corner inside the brush -> magenta preview, not applied
-press 1 414 208
-drag 380 214
-drag 358 220
+wpress 1 160 33
+wdrag 92 21
+wdrag 48 9
 shot m2-02-vertex-invalid-preview.png
 release
 expect size 160 32 64
@@ -46,8 +46,8 @@ selectall
 key Delete
 grid 8
 tool block
-press 1 334 224
-drag 374 204
+wpress 1 0 1
+wdrag 80 41
 release
 key Return
 expect size 80 40 64

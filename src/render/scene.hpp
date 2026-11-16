@@ -12,8 +12,12 @@ namespace scal {
 struct SceneBrush {
     BrushId id = 0;
     std::vector<Polygon> polys;
+    std::vector<Face> faces; // texture data for each polygon's face index
     AABB bounds;
 };
+
+class TextureLibrary;
+using FaceRef = std::pair<BrushId, int>; // brush id + face index
 
 struct Scene {
     std::vector<SceneBrush> brushes;
@@ -27,6 +31,8 @@ struct Scene {
     struct VertexHandle { Vec3 pos; bool selected; };
     std::vector<VertexHandle> vertexHandles; // vertex tool corners
     std::optional<Vec3> pivot;               // custom rotation pivot marker
+    TextureLibrary* textures = nullptr;      // set -> textured 3D view
+    std::set<FaceRef> selectedFaces;         // texture tool selection (highlighted in 3D)
 };
 
 SceneBrush makeSceneBrush(const Brush& b);

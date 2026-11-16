@@ -14,6 +14,9 @@ struct MenuState {
     bool vertexTool = false, verticesSelected = false;
     int pivotMode = 0;
     bool slopeAngles = false, microgrid = false;
+    bool textureTool = false, textureLock = true, smoothTextures = false, textured3D = true;
+    bool canApplyTexture = false;
+    double defaultScale = 0.25;
 };
 
 struct MenuActions {
@@ -30,6 +33,11 @@ struct MenuActions {
     int pivotMode = -1;          // 0 centre, 1 origin, 2 custom (opens dialog)
     int rotSnap = -1;            // 0 = 15 degree steps, 1 = grid-friendly slopes
     bool toggleMicrogrid = false, setGridSize = false;
+    bool applyTexture = false, toolTexture = false, toggleTextureLock = false;
+    double defaultScale = 0;     // > 0: new default texture scale
+    int smoothTextures = -1;     // 0 crisp, 1 smooth
+    int textured3D = -1;         // 0 flat colours, 1 textured
+    bool addTextureFolder = false, rescanTextures = false;
 };
 
 // Draws the menu bar and reports clicked items.
@@ -41,7 +49,8 @@ void drawStatusBar(const char* text);
 // Creates the dockspace; builds the default layout (tools strip on the left, 2x2 views)
 // on first run or when reset. Window names must match the windows' titles.
 void dockspace(bool forceReset, const char* tools, const char* topLeft, const char* topRight,
-               const char* bottomLeft, const char* bottomRight);
+               const char* bottomLeft, const char* bottomRight, const char* rightTop,
+               const char* rightBottom, bool withPanels = true);
 
 // Help -> Controls: every shortcut in one place.
 void drawControlsWindow(bool* open);

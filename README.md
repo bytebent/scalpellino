@@ -26,7 +26,7 @@ Everything is also in the menus (File, Edit, Tools, Transform, View, Help), and
 
 | Action | Keys |
 |---|---|
-| Select / Block / Vertex tool | **Shift+S** / **Shift+B** / **Shift+V** |
+| Select / Block / Vertex / Texture tool | **Shift+S** / **Shift+B** / **Shift+V** / **Shift+A** |
 | Draw a block | Block tool: drag in a 2D view, adjust handles in any 2D view, **Return** creates, **Esc** cancels |
 | Select | click a brush (2D or 3D); **Cmd+click** adds/removes; **Cmd+A** all; **Esc** none |
 | Move / resize | drag a selection / drag its handles or edges (snaps to the grid) |
@@ -40,6 +40,13 @@ Everything is also in the menus (File, Edit, Tools, Transform, View, Help), and
 | Pivot for rotate/scale | Transform → Pivot (selection centre, world origin, typed point) |
 | Grid-friendly rotation | Transform → Drag rotation snapping → 3:4:5-style angles (corners stay on whole numbers) |
 | Grid size / microgrid | View → Set grid size... (any size, e.g. 80) / Microgrid (0.125–0.5) |
+| Choose a texture | **Textures** panel (right): search by name, click a thumbnail |
+| Apply current texture | **Shift+T** — to selected brushes, or to faces picked with the Texture tool |
+| Pick faces | Texture tool, 3D view: click; **Cmd+click** adds; **Shift+click** whole brush; **Option+click** picks up that face's texture |
+| Adjust a face's texture | **Face** panel (right): shift, scale, rotation, fit, justify, align to world/face |
+| Your own textures | Texture → Add texture folder... (PNG, TGA, JPG, BMP; subfolders included) |
+| Texture lock, default scale, crisp/smooth | Texture menu |
+| Textured / flat 3D view | View menu |
 | Delete | **Delete** or **Backspace** |
 | Undo / redo | **Cmd+Z** / **Cmd+Shift+Z** |
 | New / open / save / save as | **Cmd+N** / **Cmd+O** / **Cmd+S** / **Cmd+Shift+S** |
@@ -53,6 +60,8 @@ Everything is also in the menus (File, Edit, Tools, Transform, View, Help), and
 | Show grid / snap to grid | **Shift+R** / **Shift+W** |
 
 Keys are read by physical position, so they work the same on any keyboard layout.
+The 2D grid is endless; the red square only marks the classic ±4096 area.
+Two CC0 textures (Tile_19, Bricks_24 by Screaming Brain Studios) are built in.
 Maps are saved as Valve 220 `.map` files (readable by TrenchBroom and func_godot).
 File open/save currently use a path field; native Mac file dialogs come later.
 
