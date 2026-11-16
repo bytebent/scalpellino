@@ -12,8 +12,8 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 
 - Released: v0.1.0 … v0.4.0, **v0.5.0 = milestone 5 Curve tool** + texture wrapping +
   CI trimmed to Intel/Linux (this step). User asked to report only at v0.5.0.
-- **Next: milestone 6 — Look** (lights, environment, camera bookmarks, scale figure,
-  Y2K preview, PNG renders). Needs a short design chat first? See plan below.
+- **Now: milestone 6 — Workflow + shapes** (roadmap reordered with the user, see
+  ARCHITECTURE §15). Report to the user at v0.6.0.
 
 ## How to work in this repo
 
@@ -106,18 +106,28 @@ fields, handles in all 2D views (incl. depth), Return/Esc. Not done (parked): ed
 curved-wall depth by dragging in other views (typed only), centre column option for
 stairs, more shapes (dome, cone, torus, helix ramp).
 
-## Milestone 6 plan — Look (draft; discuss with the user)
+## Milestone 6 plan — Workflow + shapes
 
-1. Light entities (point, spot, sun) placed in 2D views, Properties panel (colour,
-   brightness, radius / cone), shown as icons; stored as `.map` entities (`light`,
-   `light_spot`, `light_environment`-style keys).
-2. Environment (sky colour / texture, fog colour + distance, ambient) in worldspawn keys.
-3. Camera bookmarks (editor-only) + scale figure (72-unit ghost person, toggle).
-4. Y2K preview mode in the 3D view: low-res target (e.g. 640x480), nearest upscale,
-   per-vertex lighting from lights (no shadows), fog, env-map chrome on chosen textures,
-   bloom, dithering — each toggleable. nodraw faces hidden.
-5. Render button: PNG still at a chosen resolution from a camera bookmark.
-6. Tests: lighting maths in core (attenuation, normals), entity round trip, screenshots.
+User wishes (2026-11-16 evening): more shapes; hide shapes' outlines in 2D views when
+there are too many, plus "show all"; a tool that finds interpenetrating brushes and moves
+the camera to them; a click to put all views back on the origin.
+1. Block tool primitives (one convex brush each): box, wedge, cylinder, cone, pyramid,
+   sphere; sides field; Properties panel when the Block tool is active.
+2. Curve shapes: dome (hemisphere shell), helix ramp, straight stairs, spiral stairs
+   centre column option.
+3. Hide selected / hide unselected / show all (undoable) + visgroups (named, toggle
+   visible, panel). Hidden brushes: not drawn, not pickable, skipped by select all.
+   Saved in our extended `.map` (worldspawn `_scal_visgroups`, `//@` brush metadata).
+4. Find overlapping brushes: list of pairs (touching doesn't count), Next/Prev, selects
+   the pair and moves the 3D camera + centres 2D views on it.
+5. Views to origin: button in each view corner + View menu (Cmd+0).
+
+## Later milestones (agreed order)
+
+7 Terrain (in our `.map`), 8 World (lights, sky picker setting — not a sealed box, fog,
+camera bookmarks, scale figure), 9 Renderer (PNG, cull what the camera can't see,
+terminal-style render log like Hammer's compile window + log file), 10 Y2K shaders,
+11 Export.
 
 ## Milestone 1 plan — Brushes (done)
 

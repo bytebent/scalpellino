@@ -159,6 +159,12 @@ That's all. No gameplay entities.
 
 ## 8. File formats
 
+- **Our own extended `.map`** (decided with the user): one file holds everything — brushes,
+  generated groups, visgroups/hidden state, and later terrain — while staying a valid
+  Valve 220 `.map` that other tools can still open. Extra data lives where other tools
+  ignore it: `_scal_*` keys, `func_group` entities, and `//@` metadata comment lines inside
+  brush blocks. How terrain and other extras go to other apps is decided at the export
+  milestone (likely: terrain as a mesh in `.glb` / the Godot package).
 - **Native: Valve 220 `.map`.** Plain text, readable by func_godot and TrenchBroom.
   Editor-only data (visgroups, camera bookmarks, curve-generator parameters) stored as
   extra keys other tools ignore.
@@ -230,14 +236,18 @@ docs/         this file, roadmap
 
 ## 15. Roadmap
 
-| # | Milestone | Done when |
-|---|-----------|-----------|
-| 0 | Skeleton | Window with 4 viewports + grids, fly camera, near-zero idle CPU, CI builds `.app` for Intel + Apple Silicon |
-| 1 | Brushes | Block tool, select/move/resize/rotate, grid snapping, undo/redo, save/load `.map` (+ v0.1.1: Retina, menus, Transform dialog) |
-| 2 | Precision | Vertex tool (realtime, invalid shapes highlighted), snap vertices to grid, pivot point, grid-friendly (Pythagorean) rotation angles, microgrid + custom grid sizes (inspired by Hammer++) |
-| 3 | Textures | Texture folder loading, browser (search by name), apply, texture tool + face edit, texture lock (done, v0.3.0). Later: tags and richer browser |
-| 4 | Shaping | Clip (2- and 3-point), carve (CSG), hollow (done, v0.4.0) |
-| 5 | Curve tool | Arch, carve arch, ring, curved wall, spiral stairs; regenerable + bake (done, v0.5.0) |
-| 6 | Look | Lights, environment, camera bookmarks, scale figure, Y2K preview, PNG render |
-| 7 | Export | `.glb`, Godot scene package, baked-look `.glb`; verified in Godot via func_godot and glTF import |
-| 8 | Extras | `.wad` textures, Lua generators, baked lighting |
+| # | Milestone | Status |
+|---|-----------|--------|
+| 0 | Skeleton | done (v0.1.0) |
+| 1 | Brushes (+ v0.1.1 Retina, menus, Transform dialog) | done |
+| 2 | Precision: vertex tool, snap to grid, pivot, Pythagorean angles, microgrid | done (v0.2.0) |
+| 3 | Textures: library, browser, texture tool, face panel, nodraw, wrap | done (v0.3.x, v0.5.0) |
+| 4 | Shaping: clip (2/3-point), carve, hollow | done (v0.4.0) |
+| 5 | Curve tool: arch, ring, curved wall, spiral stairs, arched opening; groups | done (v0.5.0) |
+| 6 | Workflow + shapes: hide/show + visgroups, overlap finder, views to origin, block primitives (wedge, cylinder, cone, pyramid, sphere), more curves (dome, helix ramp, straight stairs, stairs column) | in progress |
+| 7 | Terrain: grid patches from faces, sculpt (raise/lower/smooth/flatten/noise; typed radius/strength), 2-texture blend painting, auto-stitched neighbours, heightmap import; stored in our `.map` | |
+| 8 | World: lights, sky picker (a setting, not a sealed box), fog, camera bookmarks, scale figure | |
+| 9 | Renderer: PNG renders, only what the camera sees (frustum, back faces, nodraw, optional outside-only), terminal-style render log window (+ log file) | |
+| 10 | Y2K look: shaders (low-res, fog, chrome, bloom, dithering) | |
+| 11 | Export: `.glb`, Godot package, terrain as mesh; nodraw skipped | |
+| later | `.wad` textures, Lua generators, baked lighting, texture tags | |
