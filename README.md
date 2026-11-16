@@ -42,14 +42,15 @@ Everything is also in the menus (File, Edit, Tools, Transform, View, Help), and
 | Grid size / microgrid | View → Set grid size... (any size, e.g. 80) / Microgrid (0.125–0.5) |
 | Choose a texture | **Textures** panel (right): search by name, click a thumbnail |
 | Apply current texture | **Shift+T** — to selected brushes, or to faces picked with the Texture tool |
-| Pick faces | Texture tool, 3D view: click; **Cmd+click** adds; **Shift+click** whole brush; **Option+click** picks up that face's texture |
+| Pick faces | Texture tool, 3D view: click; **Shift+click** adds/removes a face; **Cmd+click** whole brush; **Option+click** picks up that face's texture |
+| Hidden faces | Texture → Apply nodraw: faces with `nodraw` show in the editor but are never rendered or exported |
 | Adjust a face's texture | **Face** panel (right): shift, scale, rotation, fit, justify, align to world/face |
 | Your own textures | Texture → Add texture folder... (PNG, TGA, JPG, BMP; subfolders included) |
 | Texture lock, default scale, crisp/smooth | Texture menu |
 | Textured / flat 3D view | View menu |
 | Delete | **Delete** or **Backspace** |
 | Undo / redo | **Cmd+Z** / **Cmd+Shift+Z** |
-| New / open / save / save as | **Cmd+N** / **Cmd+O** / **Cmd+S** / **Cmd+Shift+S** |
+| New / open / save / save as | **Cmd+N** / **Cmd+O** / **Cmd+S** / **Cmd+Shift+S** (Mac file dialogs; File → Open by typing a path also works) |
 | Center 2D views on selection | **Cmd+E** |
 | Fly mode in 3D view (toggle) | **Z** while hovering the 3D view; **Esc** also exits |
 | Move while flying | **W A S D**, **Q/E** down/up, hold **Shift** for fast |
@@ -61,9 +62,8 @@ Everything is also in the menus (File, Edit, Tools, Transform, View, Help), and
 
 Keys are read by physical position, so they work the same on any keyboard layout.
 The 2D grid is endless; the red square only marks the classic ±4096 area.
-Two CC0 textures (Tile_19, Bricks_24 by Screaming Brain Studios) are built in.
+Built-in textures: Tile_19 and Bricks_24 (Screaming Brain Studios, CC0) and `nodraw`.
 Maps are saved as Valve 220 `.map` files (readable by TrenchBroom and func_godot).
-File open/save currently use a path field; native Mac file dialogs come later.
 
 ## Building locally
 

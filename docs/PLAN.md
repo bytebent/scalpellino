@@ -10,8 +10,9 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 
 ## Current status
 
-- Released: v0.1.0, v0.1.1, v0.2.0 (precision), **v0.3.0 = milestone 3 Textures** (this
-  step) + endless 2D grid.
+- Released: v0.1.0, v0.1.1, v0.2.0 (precision), v0.3.0 (textures + endless grid),
+  **v0.3.1** (nodraw, texture-tool modifiers swapped, native Mac file dialogs).
+  User confirmed v0.3.0 works incl. save/load; keep Source-style 0.25 default scale.
 - **Next: milestone 4 — Shaping** (clip tool incl. 3-point clipping, carve/CSG).
 
 ## How to work in this repo
@@ -60,7 +61,8 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 - **Texture browser, later:** tags, folders/collections, favourites, recently used,
   sorting by size, previews of how a texture tiles (user: "eventually a lot of
   functionality, e.g. tags; for now searchable by name is fine").
-- **Texture folder picking** uses a typed path (no native folder dialog yet).
+- **Native dialogs are untested on a real Mac by me** (CI compiles them; no GUI there).
+  Ask the user to try Cmd+O / Cmd+Shift+S / Texture → Add folder → Browse.
 
 - **Vertex tool extras:** edge handles (drag an edge = both its corners), marquee
   (drag-box) vertex selection, corner handles in the 3D view. Not in v0.2.0.
@@ -100,6 +102,26 @@ search by name, texture tool (pick faces), Face panel, Texture menu. User wants 
 ## Milestone 1 plan — Brushes (done)
 
 ## Log
+
+### 2026-11-16 — v0.3.1: nodraw, modifier swap, native file dialogs
+User feedback on v0.3.0: works (incl. save/load); wants a don't-draw texture for faces
+that renders/exports must skip; in the texture tool Cmd+click should take the whole brush
+and Shift+click add/remove single faces; file navigation instead of typing paths.
+- `nodraw` built-in texture (`assets/textures/nodraw.png`, ours, CC0): yellow, labelled,
+  striped. `core/texture`: `kNoDrawTexture`, `isNoDraw()` (also accepts
+  `tools/toolsnodraw`, `common/nodraw`). Texture → Apply nodraw. ARCHITECTURE: every
+  render/export except `.map` must skip nodraw faces.
+- Texture tool: Cmd+click = whole brush (Cmd+Shift+click adds it), Shift+click =
+  add/remove one face; 2D Shift+click adds. Help/README/hints updated.
+- Native dialogs: `src/platform/file_dialog_mac.mm` (NSOpenPanel / NSSavePanel, AppKit),
+  stub elsewhere (falls back to the typed-path dialogs). Used by Open, Save as, the
+  unsaved-changes "Save", and Texture folders → Browse. **Opened only once no modifier
+  key or mouse button is held**, because the system panel swallows key-up events and Cmd
+  would otherwise stay "stuck" (next click = Cmd+click). File → Open by typing a path...
+  kept (goes through the unsaved-changes check). Automated runs never use native panels.
+- **Tests:** core 499 checks, 0 failed. UI scripts all PASS at 1x and 2x
+  (`m3_textures_apply` now covers Cmd+click brush, Shift+click toggling, nodraw).
+- Screenshot: `m3-06-nodraw-floor-top`.
 
 ### 2026-11-16 — Endless 2D grid + Milestone 3: Textures (v0.3.0)
 - **Endless grid** (user request): 2D grid drawn over the whole visible range, views can

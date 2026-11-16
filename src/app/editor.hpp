@@ -85,7 +85,8 @@ private:
     // Textures (milestone 3)
     void drawTextureBrowser();
     void drawFacePanel();
-    void applyCurrentTexture();
+    void applyCurrentTexture() { applyTexture(currentTexture_); }
+    void applyTexture(const std::string& name);
     // Applies fn to every picked face (texture tool) as one undoable command.
     template <class Fn> void editFaces(const char* name, Fn fn);
     void loadTextureFolders();
@@ -94,7 +95,10 @@ private:
     void openMap(const std::string& path);
     bool saveMap(const std::string& path);
     void save();          // to current path, or ask
-    enum class Pending { None, New, Open, Quit };
+    void requestSaveAs(); // native Save panel on macOS, typed path elsewhere
+    void requestOpen();   // native Open panel on macOS, typed path elsewhere
+    void runNativeDialog();
+    enum class Pending { None, New, Open, OpenPath, Quit };
     void guardUnsaved(Pending action); // runs action now or asks first
     void runPending();
 
@@ -171,6 +175,12 @@ private:
     bool askTexFolder_ = false;
     char folderBuf_[1024] = "";
     int fitTimes_[2] = {1, 1};
+
+    // Native file dialogs (macOS). They open only once no modifier key or mouse button is
+    // held: the system panel swallows key-up events, which would leave Cmd "stuck".
+    enum class Native { None, Open, SaveAs, Folder };
+    Native native_ = Native::None;
+    bool useNative_ = false;
 
     bool exit_ = false;
     unsigned long long redraws_ = 0;

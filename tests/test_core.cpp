@@ -381,6 +381,9 @@ static void testTextures() {
     alignTextureToWorld(s, sn);
     CHECK(s.u.offset == 0 && s.rotation == 0);
 
+    CHECK(isNoDraw("nodraw") && isNoDraw("NODRAW") && isNoDraw("tools/toolsnodraw"));
+    CHECK(!isNoDraw("Bricks_24") && !isNoDraw("nodraw_old"));
+
     // Picking: a ray from -X hits the -X face (index 3); from inside -> nothing.
     double t = 0;
     CHECK(rayHitFace(b, {-100, 32, 64}, {1, 0, 0}, &t) == 3 && near(t, 100));

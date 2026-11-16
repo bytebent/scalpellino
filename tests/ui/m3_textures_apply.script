@@ -35,14 +35,29 @@ press3d -2 45 alt
 release
 expect current Tile_19
 expect pickedfaces 1
-# -- Shift+click the wall: all its faces; apply the current texture; undo
-press3d -122 -115 shift
+# -- Cmd+click the wall: all its faces; apply the current texture; undo
+press3d -122 -115 cmd
 release
 expect pickedfaces 6
 applytexture
 expect texture Tile_19
 undo
 expect texture Bricks_24
+# -- Shift+click toggles single faces: remove the front face, add it back
+press3d -122 -115 shift
+release
+expect pickedfaces 5
+press3d -122 -115 shift
+release
+expect pickedfaces 6
+# -- nodraw on the floor's top face (hidden faces are never rendered/exported)
+press3d -2 45
+release
+expect pickedfaces 1
+applynodraw
+expect texture nodraw
+shot m3-06-nodraw-floor-top.png
+undo
 # -- flat colour mode
 rendermode flat
 shot m3-05-flat-mode.png

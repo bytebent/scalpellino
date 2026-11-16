@@ -1,8 +1,9 @@
 #pragma once
 // Texture tool (Shift+A): pick faces to texture and adjust.
-//  3D view: click a face; Cmd+click adds/removes; Shift+click = every face of that brush;
+//  3D view: click a face; Shift+click adds/removes single faces; Cmd+click = every face
+//           of that brush (Cmd+Shift+click adds that brush's faces);
 //           Option+click = eyedropper (that face's texture becomes the current texture).
-//  2D views: click a brush = all its faces.
+//  2D views: click a brush = all its faces (Shift+click adds).
 // The Face panel and Texture menu act on the picked faces.
 #include "tools/tool.hpp"
 #include <set>

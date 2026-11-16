@@ -156,6 +156,9 @@ That's all. No gameplay entities.
 - **Native: Valve 220 `.map`.** Plain text, readable by func_godot and TrenchBroom.
   Editor-only data (visgroups, camera bookmarks, curve-generator parameters) stored as
   extra keys other tools ignore.
+- **nodraw:** faces textured `nodraw` (also recognised: `tools/toolsnodraw`, `common/nodraw`)
+  are shown in the editor but skipped by every render and export (Y2K preview, PNG
+  renders, `.glb`, Godot package). The `.map` export keeps them, as other tools expect.
 - **Textures:** built-in CC0 textures inside the app + the user's folders of PNG/TGA/JPG/BMP
   (name = file name without extension). Half-Life `.wad` support later.
 
@@ -231,4 +234,4 @@ docs/         this file, roadmap
 | 5 | Curve tool | Arch, carve arch, ring, curved wall, spiral stairs; regenerable + bake |
 | 6 | Look | Lights, environment, camera bookmarks, scale figure, Y2K preview, PNG render |
 | 7 | Export | `.glb`, Godot scene package, baked-look `.glb`; verified in Godot via func_godot and glTF import |
-| 8 | Extras | `.wad` textures, Lua generators, baked lighting, native file dialogs |
+| 8 | Extras | `.wad` textures, Lua generators, baked lighting |

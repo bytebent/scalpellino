@@ -11,6 +11,7 @@ MenuActions drawMenuBar(const MenuState& st) {
     if (ImGui::BeginMenu("File")) {
         if (ImGui::MenuItem("New", "Cmd+N")) a.newMap = true;
         if (ImGui::MenuItem("Open...", "Cmd+O")) a.open = true;
+        if (ImGui::MenuItem("Open by typing a path...")) a.openPath = true;
         ImGui::Separator();
         if (ImGui::MenuItem("Save", "Cmd+S")) a.save = true;
         if (ImGui::MenuItem("Save as...", "Cmd+Shift+S")) a.saveAs = true;
@@ -79,6 +80,7 @@ MenuActions drawMenuBar(const MenuState& st) {
     }
     if (ImGui::BeginMenu("Texture")) {
         if (ImGui::MenuItem("Apply current texture", "Shift+T", false, st.canApplyTexture)) a.applyTexture = true;
+        if (ImGui::MenuItem("Apply nodraw (hidden faces)", nullptr, false, st.canApplyTexture)) a.applyNoDraw = true;
         if (ImGui::MenuItem("Texture tool (pick faces)", "Shift+A", st.textureTool)) a.toolTexture = true;
         ImGui::Separator();
         if (ImGui::MenuItem("Texture lock", nullptr, st.textureLock)) a.toggleTextureLock = true;
@@ -142,7 +144,7 @@ void drawControlsWindow(bool* open) {
             {"Snap vertices to grid", "Cmd+B"},
             {"Pivot / rotation snapping", "Transform menu"},
             {"Grid size / microgrid", "View menu"},
-            {"Texture tool (pick faces)", "Shift+A; 3D: click, Cmd+click, Shift+click brush, Option+click picks texture"},
+            {"Texture tool (pick faces)", "Shift+A; 3D: click, Shift+click add/remove face, Cmd+click whole brush, Option+click picks texture"},
             {"Apply current texture", "Shift+T (selected brushes, or picked faces)"},
             {"Textures / Face panels", "right side: search by name, click to choose; adjust picked faces"},
             {"Delete", "Delete or Backspace"},

@@ -20,7 +20,7 @@ struct MenuState {
 };
 
 struct MenuActions {
-    bool newMap = false, open = false, save = false, saveAs = false, quit = false;
+    bool newMap = false, open = false, openPath = false, save = false, saveAs = false, quit = false;
     bool undo = false, redo = false, duplicate = false, del = false, selectAll = false, selectNone = false;
     bool toolSelect = false, toolBlock = false, createBlock = false, cancel = false;
     bool transform = false;
@@ -33,7 +33,7 @@ struct MenuActions {
     int pivotMode = -1;          // 0 centre, 1 origin, 2 custom (opens dialog)
     int rotSnap = -1;            // 0 = 15 degree steps, 1 = grid-friendly slopes
     bool toggleMicrogrid = false, setGridSize = false;
-    bool applyTexture = false, toolTexture = false, toggleTextureLock = false;
+    bool applyTexture = false, applyNoDraw = false, toolTexture = false, toggleTextureLock = false;
     double defaultScale = 0;     // > 0: new default texture scale
     int smoothTextures = -1;     // 0 crisp, 1 smooth
     int textured3D = -1;         // 0 flat colours, 1 textured

@@ -53,6 +53,12 @@ if(SCAL_BUILD_APP)
     src/tools/texture_tool.cpp
     src/ui/layout.cpp
   )
+  if(APPLE)
+    enable_language(OBJCXX)
+    list(APPEND SCAL_APP_SOURCES src/platform/file_dialog_mac.mm)
+  else()
+    list(APPEND SCAL_APP_SOURCES src/platform/file_dialog_stub.cpp)
+  endif()
 
   # Built-in textures shipped with the app.
   file(GLOB SCAL_BUILTIN_TEXTURES ${CMAKE_CURRENT_SOURCE_DIR}/assets/textures/*.png
@@ -68,6 +74,7 @@ if(SCAL_BUILD_APP)
       MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION}
       MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION})
     target_compile_definitions(Scalpellino PRIVATE GL_SILENCE_DEPRECATION)
+    target_link_libraries(Scalpellino PRIVATE "-framework AppKit")
   else()
     add_executable(Scalpellino ${SCAL_APP_SOURCES})
     add_custom_command(TARGET Scalpellino POST_BUILD

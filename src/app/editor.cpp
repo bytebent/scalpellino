@@ -3,6 +3,7 @@
 #include "core/hull.hpp"
 #include "core/texture.hpp"
 #include "app/settings.hpp"
+#include "platform/file_dialog.hpp"
 #include "ui/layout.hpp"
 
 #include "imgui.h"
@@ -77,6 +78,7 @@ Editor::Editor(const EditorOptions& opt) : opt_(opt) {
     lastBox_.max = {64, 64, 64};
     if (!opt_.openPath.empty()) openMap(opt_.openPath);
     if (!opt_.scriptPath.empty()) loadScript(opt_.scriptPath);
+    useNative_ = nativeDialogsAvailable() && !opt_.automated();
     updateTitle();
 }
 
@@ -204,6 +206,7 @@ bool Editor::frame(float dt) {
     if (m.toggleMicrogrid) grid_.setMicrogrid(!grid_.microgrid);
     if (m.setGridSize) { gridSizeBuf_ = grid_.size; precisionError_.clear(); askGridSize_ = true; }
     if (m.applyTexture) applyCurrentTexture();
+    if (m.applyNoDraw) applyTexture(kNoDrawTexture);
     if (m.toolTexture) setTool(&textureTool_);
     if (m.toggleTextureLock) tfTexLock_ = !tfTexLock_;
     if (m.defaultScale > 0) defaultScale_ = m.defaultScale;
@@ -216,7 +219,8 @@ bool Editor::frame(float dt) {
     if (m.newMap) guardUnsaved(Pending::New);
     if (m.open) guardUnsaved(Pending::Open);
     if (m.save) save();
-    if (m.saveAs) { std::snprintf(pathBuf_, sizeof pathBuf_, "%s", path_.empty() ? defaultMapPath().c_str() : path_.c_str()); askSaveAs_ = true; }
+    if (m.saveAs) requestSaveAs();
+    if (m.openPath) guardUnsaved(Pending::OpenPath);
 
     if (!ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId) && !io.WantTextInput) handleKeyboard();
 
@@ -235,6 +239,7 @@ bool Editor::frame(float dt) {
         if (sb.valid()) lastBox_ = sb;
     }
 
+    runNativeDialog();
     updateTitle();
     return flying_ || rmbLook_ || !script_.empty() || !opt_.screenshot.empty();
 }
@@ -259,7 +264,7 @@ void Editor::handleKeyboard() {
         }
         if (IsKeyPressed(KEY_B)) snapSelectionToGrid();
         if (IsKeyPressed(KEY_E)) centerViews();
-        if (IsKeyPressed(KEY_S)) { if (shift_) { std::snprintf(pathBuf_, sizeof pathBuf_, "%s", path_.empty() ? defaultMapPath().c_str() : path_.c_str()); askSaveAs_ = true; } else save(); }
+        if (IsKeyPressed(KEY_S)) { if (shift_) requestSaveAs(); else save(); }
         if (IsKeyPressed(KEY_O)) guardUnsaved(Pending::Open);
         if (IsKeyPressed(KEY_N)) guardUnsaved(Pending::New);
         return;
@@ -458,7 +463,7 @@ void Editor::drawDialogs() {
         ImGui::Text("Save changes to %s first?", path_.empty() ? "this map" : fileName(path_).c_str());
         if (ImGui::Button("Save")) {
             ImGui::CloseCurrentPopup();
-            if (path_.empty()) { std::snprintf(pathBuf_, sizeof pathBuf_, "%s", defaultMapPath().c_str()); askSaveAs_ = true; }
+            if (path_.empty()) requestSaveAs();
             else if (saveMap(path_)) runPending();
             else pending_ = Pending::None;
         }
@@ -823,9 +828,8 @@ template <class Fn> void Editor::editFaces(const char* name, Fn fn) {
     doc_.apply(doc_.makeModify(out, name));
 }
 
-void Editor::applyCurrentTexture() {
+void Editor::applyTexture(const std::string& tex) {
     if (tool_ == &textureTool_ && !textureTool_.faces(doc_).empty()) {
-        const std::string tex = currentTexture_;
         editFaces("Apply texture", [&](Face& f, const Polygon&, TexSize, const Vec3&) { f.texture = tex; });
         return;
     }
@@ -834,7 +838,7 @@ void Editor::applyCurrentTexture() {
     for (BrushId id : doc_.selection())
         if (const Brush* b = doc_.find(id)) {
             Brush c = *b;
-            for (Face& f : c.faces) f.texture = currentTexture_;
+            for (Face& f : c.faces) f.texture = tex;
             out.push_back(std::move(c));
         }
     doc_.apply(doc_.makeModify(out, "Apply texture"));
@@ -920,6 +924,10 @@ void Editor::drawTextureBrowser() {
         if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
         const bool enter = ImGui::InputTextWithHint("##folder", "folder path to add", folderBuf_, sizeof folderBuf_,
                                                     ImGuiInputTextFlags_EnterReturnsTrue);
+        if (useNative_) {
+            if (ImGui::Button("Browse...")) { native_ = Native::Folder; ImGui::CloseCurrentPopup(); }
+            ImGui::SameLine();
+        }
         if ((ImGui::Button("Add") || enter) && folderBuf_[0]) {
             textures_.addUserFolder(folderBuf_);
             saveTextureFolders();
@@ -937,7 +945,7 @@ void Editor::drawFacePanel() {
         if (tool_ != &textureTool_) {
             ImGui::TextWrapped("Pick faces with the Texture tool (Shift+A) to adjust how textures sit on them.");
         } else if (faces.empty()) {
-            ImGui::TextWrapped("Click faces in the 3D view. Cmd+click adds, Shift+click takes the whole brush, Option+click picks up a face's texture.");
+            ImGui::TextWrapped("Click faces in the 3D view. Shift+click adds or removes a face, Cmd+click takes the whole brush, Option+click picks up a face's texture.");
         } else {
             const Face& f = doc_.find(faces[0].first)->faces[faces[0].second];
             ImGui::Text("%zu face(s)   %s", faces.size(), f.texture.c_str());
@@ -1031,10 +1039,55 @@ bool Editor::saveMap(const std::string& path) {
     return true;
 }
 
+void Editor::requestSaveAs() {
+    if (useNative_) { native_ = Native::SaveAs; return; }
+    std::snprintf(pathBuf_, sizeof pathBuf_, "%s", path_.empty() ? defaultMapPath().c_str() : path_.c_str());
+    askSaveAs_ = true;
+}
+
+void Editor::requestOpen() {
+    if (useNative_) { native_ = Native::Open; return; }
+    std::snprintf(pathBuf_, sizeof pathBuf_, "%s", path_.empty() ? defaultMapPath().c_str() : path_.c_str());
+    askOpen_ = true;
+}
+
+void Editor::runNativeDialog() {
+    if (native_ == Native::None) return;
+    // Wait until no modifier key or mouse button is held (see editor.hpp).
+    for (int k : {KEY_LEFT_SUPER, KEY_RIGHT_SUPER, KEY_LEFT_SHIFT, KEY_RIGHT_SHIFT, KEY_LEFT_ALT, KEY_RIGHT_ALT,
+                  KEY_LEFT_CONTROL, KEY_RIGHT_CONTROL})
+        if (IsKeyDown(k)) return;
+    for (int b : {MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT, MOUSE_BUTTON_MIDDLE})
+        if (IsMouseButtonDown(b)) return;
+    const Native what = native_;
+    native_ = Native::None;
+    namespace fs = std::filesystem;
+    const std::string docs = fs::path(defaultMapPath()).parent_path().string();
+    const std::string startDir = path_.empty() ? docs : fs::path(path_).parent_path().string();
+    std::string picked;
+    switch (what) {
+        case Native::Open:
+            if (openFileDialog(startDir, {"map"}, picked)) openMap(picked);
+            break;
+        case Native::SaveAs:
+            if (saveFileDialog(startDir, path_.empty() ? "untitled.map" : fileName(path_), {"map"}, picked)) {
+                if (fs::path(picked).extension() != ".map") picked += ".map";
+                if (saveMap(picked)) runPending();
+                else pending_ = Pending::None;
+            } else {
+                pending_ = Pending::None; // cancelled: e.g. don't quit
+            }
+            break;
+        case Native::Folder:
+            if (chooseFolderDialog(docs, picked)) { textures_.addUserFolder(picked); saveTextureFolders(); }
+            break;
+        case Native::None: break;
+    }
+}
+
 void Editor::save() {
     if (path_.empty()) {
-        std::snprintf(pathBuf_, sizeof pathBuf_, "%s", defaultMapPath().c_str());
-        askSaveAs_ = true;
+        requestSaveAs();
     } else {
         saveMap(path_);
     }
@@ -1053,7 +1106,8 @@ void Editor::runPending() {
     pending_ = Pending::None;
     switch (p) {
         case Pending::New:  newMap(); break;
-        case Pending::Open:
+        case Pending::Open: requestOpen(); break;
+        case Pending::OpenPath:
             std::snprintf(pathBuf_, sizeof pathBuf_, "%s", path_.empty() ? defaultMapPath().c_str() : path_.c_str());
             askOpen_ = true;
             break;
@@ -1078,7 +1132,7 @@ void Editor::runPending() {
 //   layout classic|default   (classic = no right-hand panels; older scripts use it)
 //   wpress <view> <u> <v> [mods] / wdrag <u> <v>   (2D input in world coordinates)
 //   press3d <dx> <dy> [mods]   (3D view click relative to its centre)
-//   tool texture   texturedir <path>   texture <name>   applytexture   rendermode flat|textured
+//   tool texture   texturedir <path>   texture <name>   applytexture   applynodraw   rendermode flat|textured
 //   texscale <s>   facefit   facerotate <deg>   facealign world|face
 //   facejustify left|right|top|bottom|center
 //   expect texture <name>   expect pickedfaces <n>   expect current <name>
@@ -1255,6 +1309,7 @@ void Editor::stepScript() {
     } else if (cmd == "texturedir") { std::string d; std::getline(in >> std::ws, d); textures_.addUserFolder(d);
     } else if (cmd == "texture") { in >> currentTexture_;
     } else if (cmd == "applytexture") { applyCurrentTexture();
+    } else if (cmd == "applynodraw") { applyTexture(kNoDrawTexture);
     } else if (cmd == "rendermode") { std::string m; in >> m; textured3D_ = m != "flat";
     } else if (cmd == "texscale") { in >> defaultScale_;
     } else if (cmd == "facefit") { editFaces("Fit texture", [&](Face& x, const Polygon& p, TexSize ts, const Vec3&) { fitTexture(x, p, ts); });

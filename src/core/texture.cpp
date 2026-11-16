@@ -1,5 +1,6 @@
 #include "core/texture.hpp"
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 
 namespace scal {
@@ -95,6 +96,13 @@ void justifyTexture(Face& f, const Polygon& poly, TexSize ts, Justify j) {
 void normalizeTextureOffsets(Face& f, TexSize ts) {
     f.u.offset = wrap(f.u.offset, ts.w);
     f.v.offset = wrap(f.v.offset, ts.h);
+}
+
+bool isNoDraw(const std::string& name) {
+    std::string n;
+    for (char c : name) n += (char)std::tolower((unsigned char)c);
+    // Ours, plus the names other tools use for the same idea.
+    return n == "nodraw" || n == "tools/toolsnodraw" || n == "toolsnodraw" || n == "common/nodraw";
 }
 
 int rayHitFace(const Brush& b, const Vec3& o, const Vec3& dir, double* tOut) {

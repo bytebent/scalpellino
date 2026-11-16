@@ -21,7 +21,7 @@ void TextureTool::press(ToolEnv& env, const Pointer& p) {
     message_.clear();
     if (!p.view->is2D()) {
         const FaceRef hit = pickFace3D(doc, *p.view, p.local);
-        if (hit.second < 0) { if (!env.cmd) faces_.clear(); return; }
+        if (hit.second < 0) { if (!env.shift) faces_.clear(); return; }
         const Brush* b = doc.find(hit.first);
         if (env.alt) { // eyedropper
             if (b && env.currentTexture) {
@@ -30,10 +30,12 @@ void TextureTool::press(ToolEnv& env, const Pointer& p) {
             }
             return;
         }
-        if (env.shift && b) {
-            if (!env.cmd) faces_.clear();
+        if (env.cmd && b) {
+            // Cmd+click: the whole brush (Cmd+Shift+click adds it to the picked faces).
+            if (!env.shift) faces_.clear();
             for (int i = 0; i < (int)b->faces.size(); ++i) faces_.insert({b->id, i});
-        } else if (env.cmd) {
+        } else if (env.shift) {
+            // Shift+click: add / remove single faces.
             if (!faces_.erase(hit)) faces_.insert(hit);
         } else {
             faces_ = {hit};
@@ -41,7 +43,7 @@ void TextureTool::press(ToolEnv& env, const Pointer& p) {
         return;
     }
     const BrushId id = pick2D(env.sceneBrushes, *p.view, p.local);
-    if (!env.cmd) faces_.clear();
+    if (!env.shift) faces_.clear();
     if (const Brush* b = doc.find(id))
         for (int i = 0; i < (int)b->faces.size(); ++i) faces_.insert({b->id, i});
 }
@@ -65,7 +67,7 @@ void TextureTool::decorate(const Document& doc, Scene& scene) const {
 
 const char* TextureTool::hint() const {
     if (!message_.empty()) return message_.c_str();
-    return "3D: click face  Cmd+click add  Shift+click whole brush  Option+click pick texture   Shift+T: apply current texture";
+    return "3D: click face  Shift+click add/remove  Cmd+click whole brush  Option+click pick texture   Shift+T: apply current texture";
 }
 
 } // namespace scal

@@ -4,6 +4,7 @@
 //   s = dot(p, u.axis) / scaleU + u.offset,   t = dot(p, v.axis) / scaleV + v.offset
 // and normalized texture coordinates (s / width, t / height).
 #include "core/brush.hpp"
+#include <string>
 
 namespace scal {
 
@@ -34,6 +35,11 @@ void justifyTexture(Face& f, const Polygon& poly, TexSize ts, Justify j);
 
 // Wraps offsets into [0, size) (same look, tidy numbers).
 void normalizeTextureOffsets(Face& f, TexSize ts);
+
+// "nodraw": a tool texture for faces that are never rendered or exported (hidden sides).
+// The editor shows it (yellow NODRAW); renders and exports skip those faces.
+constexpr const char* kNoDrawTexture = "nodraw";
+bool isNoDraw(const std::string& textureName);
 
 // Face hit first by a ray (unit dir); returns face index or -1. `tOut` = distance.
 int rayHitFace(const Brush& b, const Vec3& origin, const Vec3& dir, double* tOut = nullptr);
