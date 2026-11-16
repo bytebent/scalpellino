@@ -67,6 +67,10 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 
 ## Milestone 2 plan — Textures
 
+Needs (not blocking): a folder of the user's own textures to test with. Until then, use
+procedurally generated test textures (checker, bricks, noise) created at runtime or by a
+test script — never downloaded.
+
 1. Texture library: user picks texture folders (stored in user settings, never in repo);
    load PNG/TGA lazily, thumbnails cached; nearest-neighbour filtering by default.
 2. Textured 3D mode: UVs from Valve 220 axes (u = dot(p, U)/scaleU + offU, divided by
@@ -108,6 +112,8 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   mistakes (editor was right) — see tip in "How to work".
 - Design decisions made without asking (parked above for confirmation): Option+drag
   rotate, click-narrows-multiselection, path-field dialogs.
+- **CI (run 43779079748): all green** — Linux build + core tests + scripted UI tests on
+  Xvfb; Intel and Apple Silicon builds + core tests + app zips.
 
 ### 2026-11-16 — M1 core: brushes, document, undo, .map IO
 - `core/math.hpp` (Vec3/Plane/AABB, doubles), `core/brush` (planes → CCW polygons by
