@@ -17,6 +17,8 @@ struct MenuState {
     bool textureTool = false, textureLock = true, smoothTextures = false, textured3D = true;
     bool canApplyTexture = false;
     double defaultScale = 0.25;
+    bool clipTool = false, clipPlane = false;
+    int clipKeep = 0; // 0 both, 1 front, 2 back
 };
 
 struct MenuActions {
@@ -38,6 +40,8 @@ struct MenuActions {
     int smoothTextures = -1;     // 0 crisp, 1 smooth
     int textured3D = -1;         // 0 flat colours, 1 textured
     bool addTextureFolder = false, rescanTextures = false;
+    bool toolClip = false, clipApply = false, clipPoints = false, carve = false, hollow = false;
+    int clipKeep = -1;
 };
 
 // Draws the menu bar and reports clicked items.

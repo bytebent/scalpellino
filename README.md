@@ -26,7 +26,7 @@ Everything is also in the menus (File, Edit, Tools, Transform, View, Help), and
 
 | Action | Keys |
 |---|---|
-| Select / Block / Vertex / Texture tool | **Shift+S** / **Shift+B** / **Shift+V** / **Shift+A** |
+| Select / Block / Vertex / Texture / Clip tool | **Shift+S** / **Shift+B** / **Shift+V** / **Shift+A** / **Shift+X** |
 | Draw a block | Block tool: drag in a 2D view, adjust handles in any 2D view, **Return** creates, **Esc** cancels |
 | Select | click a brush (2D or 3D); **Cmd+click** adds/removes; **Cmd+A** all; **Esc** none |
 | Move / resize | drag a selection / drag its handles or edges (snaps to the grid) |
@@ -43,12 +43,15 @@ Everything is also in the menus (File, Edit, Tools, Transform, View, Help), and
 | Choose a texture | **Textures** panel (right): search by name, click a thumbnail |
 | Apply current texture | **Shift+T** — to selected brushes, or to faces picked with the Texture tool |
 | Pick faces | Texture tool, 3D view: click; **Shift+click** adds/removes a face; **Cmd+click** whole brush; **Option+click** picks up that face's texture |
+| Clip | Clip tool: drag a line in a 2D view; drag points 1–3 in any 2D view (3 tilts the plane); **Shift+X** again cycles keep both/front/back; **Return** clips; Tools → Clip points... types them |
+| Carve | **Cmd+Shift+C**: cut the selection's shape out of the brushes it touches |
+| Hollow | **Cmd+Shift+H**: turn brushes into walls of a typed thickness |
 | Hidden faces | Texture → Apply nodraw: faces with `nodraw` show in the editor but are never rendered or exported |
 | Adjust a face's texture | **Face** panel (right): shift, scale, rotation, fit, justify, align to world/face |
 | Your own textures | Texture → Add texture folder... (PNG, TGA, JPG, BMP; subfolders included) |
 | Texture lock, default scale, crisp/smooth | Texture menu |
 | Textured / flat 3D view | View menu |
-| Delete | **Delete** or **Backspace** |
+| Delete | **Delete** or **Backspace** (in any tool) |
 | Undo / redo | **Cmd+Z** / **Cmd+Shift+Z** |
 | New / open / save / save as | **Cmd+N** / **Cmd+O** / **Cmd+S** / **Cmd+Shift+S** (Mac file dialogs; File → Open by typing a path also works) |
 | Center 2D views on selection | **Cmd+E** |

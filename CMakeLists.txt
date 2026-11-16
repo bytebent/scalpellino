@@ -57,6 +57,7 @@ if(SCAL_BUILD_APP)
     src/tools/block_tool.cpp
     src/tools/vertex_tool.cpp
     src/tools/texture_tool.cpp
+    src/tools/clip_tool.cpp
     src/ui/layout.cpp
   )
   if(APPLE)

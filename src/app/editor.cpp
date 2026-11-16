@@ -2,6 +2,7 @@
 #include "io/map_format.hpp"
 #include "core/hull.hpp"
 #include "core/texture.hpp"
+#include "core/csg.hpp"
 #include "app/settings.hpp"
 #include "platform/file_dialog.hpp"
 #include "ui/layout.hpp"
@@ -126,7 +127,9 @@ void Editor::onRelease(int view, Vector2 local, bool real) {
 
 void Editor::onKey(int key) {
     ToolEnv e = env();
-    tool_->key(e, key);
+    if (tool_->key(e, key)) return;
+    // Delete works in every tool that doesn't use the key itself.
+    if (key == KEY_DELETE || key == KEY_BACKSPACE) deleteSelection();
 }
 
 // ------------------------------------------------------------------ frame
@@ -162,6 +165,9 @@ bool Editor::frame(float dt) {
     st.smoothTextures = textures_.smooth();
     st.textured3D = textured3D_;
     st.defaultScale = defaultScale_;
+    st.clipTool = tool_ == &clipTool_;
+    st.clipPlane = clipTool_.hasPlane();
+    st.clipKeep = clipTool_.keep == ClipTool::Keep::Both ? 0 : clipTool_.keep == ClipTool::Keep::Front ? 1 : 2;
     st.canApplyTexture = !doc_.selection().empty() || (tool_ == &textureTool_ && !textureTool_.faces(doc_).empty());
     const MenuActions m = drawMenuBar(st);
     const std::string status = statusText();
@@ -205,6 +211,20 @@ bool Editor::frame(float dt) {
     if (m.rotSnap >= 0) slopeAngles_ = m.rotSnap == 1;
     if (m.toggleMicrogrid) grid_.setMicrogrid(!grid_.microgrid);
     if (m.setGridSize) { gridSizeBuf_ = grid_.size; precisionError_.clear(); askGridSize_ = true; }
+    if (m.toolClip) { if (tool_ == &clipTool_) clipTool_.cycleKeep(); else setTool(&clipTool_); }
+    if (m.clipKeep >= 0) clipTool_.keep = m.clipKeep == 0 ? ClipTool::Keep::Both : m.clipKeep == 1 ? ClipTool::Keep::Front : ClipTool::Keep::Back;
+    if (m.clipApply) onKey(KEY_ENTER);
+    if (m.clipPoints) {
+        Vec3 a, b, c;
+        if (clipTool_.hasPlane()) clipTool_.points(a, b, c);
+        else { const AABB sb = doc_.selectionBounds(); a = sb.center(); b = a + Vec3{0, 64, 0}; c = a + Vec3{0, 0, 64}; }
+        const Vec3 pts[3] = {a, b, c};
+        for (int i = 0; i < 3; ++i) for (int k = 0; k < 3; ++k) clipBuf_[i][k] = pts[i][k];
+        shapingError_.clear();
+        askClipPoints_ = true;
+    }
+    if (m.carve) carveWithSelection();
+    if (m.hollow) { shapingError_.clear(); askHollow_ = true; }
     if (m.applyTexture) applyCurrentTexture();
     if (m.applyNoDraw) applyTexture(kNoDrawTexture);
     if (m.toolTexture) setTool(&textureTool_);
@@ -230,6 +250,7 @@ bool Editor::frame(float dt) {
     drawDialogs();
     drawTransformDialog();
     drawPrecisionDialogs();
+    drawShapingDialogs();
     drawControlsWindow(&controlsOpen_);
     closeDialogs_ = false;
 
@@ -263,6 +284,8 @@ void Editor::handleKeyboard() {
             else openTransformDialog();
         }
         if (IsKeyPressed(KEY_B)) snapSelectionToGrid();
+        if (shift_ && IsKeyPressed(KEY_C)) carveWithSelection();
+        if (shift_ && IsKeyPressed(KEY_H) && !doc_.selection().empty()) { shapingError_.clear(); askHollow_ = true; }
         if (IsKeyPressed(KEY_E)) centerViews();
         if (IsKeyPressed(KEY_S)) { if (shift_) requestSaveAs(); else save(); }
         if (IsKeyPressed(KEY_O)) guardUnsaved(Pending::Open);
@@ -278,6 +301,7 @@ void Editor::handleKeyboard() {
     if (shift_ && IsKeyPressed(KEY_B)) setTool(&blockTool_);
     if (shift_ && IsKeyPressed(KEY_V)) setTool(&vertexTool_);
     if (shift_ && IsKeyPressed(KEY_A)) setTool(&textureTool_);
+    if (shift_ && IsKeyPressed(KEY_X)) { if (tool_ == &clipTool_) clipTool_.cycleKeep(); else setTool(&clipTool_); }
     if (shift_ && IsKeyPressed(KEY_T)) applyCurrentTexture();
 
     for (int k : {KEY_ENTER, KEY_KP_ENTER, KEY_ESCAPE, KEY_DELETE, KEY_BACKSPACE})
@@ -357,6 +381,12 @@ void Editor::drawViews() {
             ImDrawList* dl = ImGui::GetWindowDrawList();
             dl->AddText(ImVec2(origin.x + 6, origin.y + 4), IM_COL32(200, 200, 200, 255), v.label());
             if (v.is2D() && scene.handleBox) drawSizeLabels(v, *scene.handleBox, origin);
+            if (v.is2D() && scene.clipPoints.size() == 3)
+                for (int k = 0; k < 3; ++k) {
+                    const Vector2 c = v.worldToLocal2D(scene.clipPoints[k][v.axU()], scene.clipPoints[k][v.axV()]);
+                    const char num[2] = {(char)('1' + k), 0};
+                    dl->AddText(ImVec2(origin.x + c.x + 8, origin.y + c.y - 18 + 6 * k), IM_COL32(255, 255, 255, 255), num);
+                }
         }
         ImGui::End();
     }
@@ -425,6 +455,7 @@ void Editor::drawToolsPanel() {
         toolButton(&blockTool_, "Shift+B");
         toolButton(&vertexTool_, "Shift+V");
         toolButton(&textureTool_, "Shift+A");
+        toolButton(&clipTool_, "Shift+X");
     }
     ImGui::End();
 }
@@ -790,6 +821,114 @@ void Editor::drawPrecisionDialogs() {
     }
 }
 
+// ------------------------------------------------------------------ shaping
+
+void Editor::carveWithSelection() {
+    if (doc_.selection().empty()) return;
+    tool_->cancel();
+    const std::set<BrushId> cutters = doc_.selection();
+    std::vector<Brush> modified, added;
+    std::set<BrushId> deleted;
+    int touched = 0;
+    for (const Brush& b : doc_.brushes()) {
+        if (cutters.count(b.id)) continue;
+        std::vector<Brush> pieces{b};
+        bool changed = false;
+        for (BrushId cid : cutters) {
+            const Brush* cutter = doc_.find(cid);
+            std::vector<Brush> next;
+            for (const Brush& p : pieces) {
+                std::vector<Brush> r = carveBrush(p, *cutter);
+                if (r.size() != 1 || r[0].faces.size() != p.faces.size()) changed = true;
+                for (Brush& q : r) next.push_back(std::move(q));
+            }
+            pieces = std::move(next);
+        }
+        if (!changed) continue;
+        ++touched;
+        if (pieces.empty()) { deleted.insert(b.id); continue; }
+        pieces[0].id = b.id;
+        modified.push_back(pieces[0]);
+        for (size_t i = 1; i < pieces.size(); ++i) added.push_back(pieces[i]);
+    }
+    if (touched == 0) { errorText_ = "Carve: the selection doesn't touch any other brush."; return; }
+    doc_.apply(doc_.makeChange(modified, std::move(added), deleted, "Carve", &cutters));
+}
+
+void Editor::hollowSelection(double t) {
+    if (doc_.selection().empty()) return;
+    tool_->cancel();
+    std::vector<Brush> modified, added;
+    for (BrushId id : doc_.selection()) {
+        const Brush* b = doc_.find(id);
+        if (!b) continue;
+        std::string err;
+        std::vector<Brush> walls = hollowBrush(*b, t, err);
+        if (walls.empty()) { shapingError_ = err; return; }
+        walls[0].id = id;
+        modified.push_back(walls[0]);
+        for (size_t i = 1; i < walls.size(); ++i) added.push_back(walls[i]);
+    }
+    Command c = doc_.makeChange(modified, std::move(added), {}, "Hollow");
+    doc_.apply(std::move(c));
+}
+
+void Editor::drawShapingDialogs() {
+    const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    if (askClipPoints_) { ImGui::OpenPopup("Clip points"); askClipPoints_ = false; }
+    if (askHollow_) { ImGui::OpenPopup("Hollow"); askHollow_ = false; }
+    auto buttons = [&](bool& apply, bool& cancel) {
+        apply = ImGui::Button("Apply (Return)") || ImGui::IsKeyPressed(ImGuiKey_Enter, false) ||
+                ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false);
+        ImGui::SameLine();
+        cancel = ImGui::Button("Cancel (Esc)") || ImGui::IsKeyPressed(ImGuiKey_Escape, false) || closeDialogs_;
+    };
+    bool apply = false, cancel = false;
+
+    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    if (ImGui::BeginPopupModal("Clip points", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextUnformatted("The clip plane goes through these three points:");
+        ImGui::PushItemWidth(260);
+        ImGui::InputScalarN("Point 1", ImGuiDataType_Double, clipBuf_[0], 3, nullptr, nullptr, "%g");
+        ImGui::InputScalarN("Point 2", ImGuiDataType_Double, clipBuf_[1], 3, nullptr, nullptr, "%g");
+        ImGui::InputScalarN("Point 3", ImGuiDataType_Double, clipBuf_[2], 3, nullptr, nullptr, "%g");
+        ImGui::PopItemWidth();
+        ImGui::TextDisabled("Then Return in the views clips (Tools -> Clip: keep chooses the side).");
+        if (!shapingError_.empty()) ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", shapingError_.c_str());
+        buttons(apply, cancel);
+        if (apply) {
+            const Vec3 a{clipBuf_[0][0], clipBuf_[0][1], clipBuf_[0][2]};
+            const Vec3 b{clipBuf_[1][0], clipBuf_[1][1], clipBuf_[1][2]};
+            const Vec3 c{clipBuf_[2][0], clipBuf_[2][1], clipBuf_[2][2]};
+            if (length(cross(c - a, b - a)) < 1e-9) shapingError_ = "The three points are on one line: no plane.";
+            else { setTool(&clipTool_); clipTool_.setPoints(a, b, c); ImGui::CloseCurrentPopup(); }
+        } else if (cancel) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+
+    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    if (ImGui::BeginPopupModal("Hollow", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextUnformatted("Turn the selected brushes into walls around an empty inside.");
+        ImGui::SetNextItemWidth(120);
+        if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+        ImGui::InputDouble("wall thickness", &hollowThickness_, 0, 0, "%g");
+        for (double t : {4.0, 8.0, 16.0, 32.0, 64.0}) {
+            char b[16]; std::snprintf(b, sizeof b, "%g", t);
+            if (ImGui::SmallButton(b)) hollowThickness_ = t;
+            ImGui::SameLine();
+        }
+        ImGui::NewLine();
+        if (!shapingError_.empty()) ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", shapingError_.c_str());
+        buttons(apply, cancel);
+        if (apply) {
+            shapingError_.clear();
+            hollowSelection(hollowThickness_);
+            if (shapingError_.empty()) ImGui::CloseCurrentPopup();
+        } else if (cancel) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+}
+
 // ------------------------------------------------------------------ textures
 
 void Editor::loadTextureFolders() {
@@ -1136,6 +1275,8 @@ void Editor::runPending() {
 //   texscale <s>   facefit   facerotate <deg>   facealign world|face
 //   facejustify left|right|top|bottom|center
 //   expect texture <name>   expect pickedfaces <n>   expect current <name>
+//   tool clip   clippoints x y z  x y z  x y z   clipkeep both|front|back   (key Return clips)
+//   carve   hollow <thickness>   expect volume <v>   (sum of all brush volumes, +-0.5)
 //   shot <file.png>         quit
 //   expect brushes|selected <n>  |  expect size <x> <y> <z>  (selection bounds, +-0.5)
 //   expect edges   (every brush/preview edge in the 2D views is visible on screen)
@@ -1238,7 +1379,7 @@ void Editor::stepScript() {
     if (cmd == "tool") {
         std::string t; in >> t;
         setTool(t == "block" ? (Tool*)&blockTool_ : t == "vertex" ? (Tool*)&vertexTool_
-              : t == "texture" ? (Tool*)&textureTool_ : (Tool*)&selectTool_);
+              : t == "texture" ? (Tool*)&textureTool_ : t == "clip" ? (Tool*)&clipTool_ : (Tool*)&selectTool_);
     } else if (cmd == "press") {
         int v; float x, y; in >> v >> x >> y;
         std::string mod;
@@ -1310,6 +1451,25 @@ void Editor::stepScript() {
     } else if (cmd == "texture") { in >> currentTexture_;
     } else if (cmd == "applytexture") { applyCurrentTexture();
     } else if (cmd == "applynodraw") { applyTexture(kNoDrawTexture);
+    } else if (cmd == "clippoints") {
+        Vec3 a, b, c;
+        in >> a.x >> a.y >> a.z >> b.x >> b.y >> b.z >> c.x >> c.y >> c.z;
+        setTool(&clipTool_);
+        clipTool_.setPoints(a, b, c);
+    } else if (cmd == "clipkeep") {
+        std::string k; in >> k;
+        clipTool_.keep = k == "front" ? ClipTool::Keep::Front : k == "back" ? ClipTool::Keep::Back : ClipTool::Keep::Both;
+    } else if (cmd == "carve") { carveWithSelection();
+    } else if (cmd == "hollow") {
+        double t = 16; in >> t;
+        shapingError_.clear();
+        hollowSelection(t);
+        if (!shapingError_.empty()) std::fprintf(stderr, "script: hollow refused: %s\n", shapingError_.c_str());
+    } else if (cmd == "expect" && in.str().find(" volume ") != std::string::npos) {
+        std::string w; double want = 0; in >> w >> want;
+        double got = 0;
+        for (const Brush& b : doc_.brushes()) got += brushVolume(b);
+        if (std::fabs(got - want) > 0.5) { std::fprintf(stderr, "script FAIL (command %d): total volume %g, expected %g\n", scriptLine_, got, want); ++scriptFailures_; }
     } else if (cmd == "rendermode") { std::string m; in >> m; textured3D_ = m != "flat";
     } else if (cmd == "texscale") { in >> defaultScale_;
     } else if (cmd == "facefit") { editFaces("Fit texture", [&](Face& x, const Polygon& p, TexSize ts, const Vec3&) { fitTexture(x, p, ts); });

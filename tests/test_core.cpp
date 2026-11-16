@@ -493,6 +493,24 @@ static void testUndo() {
     CHECK(!d.canRedo());
 }
 
+static void testMakeChange() {
+    Document d;
+    d.apply(d.makeAdd({makeBox(box({0, 0, 0}, {64, 64, 64}), "a"), makeBox(box({100, 0, 0}, {164, 64, 64}), "a")}, "Create"));
+    const BrushId a = d.brushes()[0].id, b = d.brushes()[1].id;
+    Brush am = *d.find(a);
+    am.translate({0, 0, 64}, true);
+    d.apply(d.makeChange({am}, {makeBox(box({0, 200, 0}, {64, 264, 64}), "a")}, {b}, "Mixed"));
+    CHECK(d.brushes().size() == 2);
+    CHECK(d.find(b) == nullptr);
+    CHECK(nearV(d.find(a)->bounds().min, {0, 0, 64}));
+    CHECK(d.selection().count(a) == 1 && d.selection().size() == 2);
+    CHECK(d.undo());
+    CHECK(d.brushes().size() == 2 && d.find(b) != nullptr);
+    CHECK(nearV(d.find(a)->bounds().min, {0, 0, 0}));
+    CHECK(d.redo());
+    CHECK(d.find(b) == nullptr);
+}
+
 static void testDirty() {
     Document d;
     CHECK(!d.dirty());
@@ -585,6 +603,7 @@ int main() {
     testCsg();
     testRay();
     testUndo();
+    testMakeChange();
     testDirty();
     testMapRoundTrip();
     testMapQuakeFormat();

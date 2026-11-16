@@ -216,6 +216,22 @@ void Viewport::render2D(const Grid& grid, const Scene& scene) {
             }
     }
 
+    // ---- clip tool: line 1-2, guide 1-3, numbered point handles
+    if (scene.clipPoints.size() == 3) {
+        const Vector2 c[3] = {phys(scene.clipPoints[0][U], scene.clipPoints[0][V]),
+                              phys(scene.clipPoints[1][U], scene.clipPoints[1][V]),
+                              phys(scene.clipPoints[2][U], scene.clipPoints[2][V])};
+        const Color line{255, 255, 255, 255};
+        segment(c[0], c[1], thick, line);
+        if (std::hypot(c[2].x - c[0].x, c[2].y - c[0].y) > 2) segment(c[0], c[2], thin, {150, 150, 150, 255});
+        const Color cols[3] = {{90, 230, 120, 255}, {90, 170, 255, 255}, {255, 210, 70, 255}};
+        const float r = (float)(5 * P);
+        for (int i = 2; i >= 0; --i) {
+            DrawCircleV(c[i], r + (float)P, BLACK);
+            DrawCircleV(c[i], r, cols[i]);
+        }
+    }
+
     // ---- custom rotation pivot: cyan circle with a cross
     if (scene.pivot) {
         const Vector2 c = phys((*scene.pivot)[U], (*scene.pivot)[V]);

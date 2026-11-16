@@ -230,7 +230,7 @@ docs/         this file, roadmap
 | 1 | Brushes | Block tool, select/move/resize/rotate, grid snapping, undo/redo, save/load `.map` (+ v0.1.1: Retina, menus, Transform dialog) |
 | 2 | Precision | Vertex tool (realtime, invalid shapes highlighted), snap vertices to grid, pivot point, grid-friendly (Pythagorean) rotation angles, microgrid + custom grid sizes (inspired by Hammer++) |
 | 3 | Textures | Texture folder loading, browser (search by name), apply, texture tool + face edit, texture lock (done, v0.3.0). Later: tags and richer browser |
-| 4 | Shaping | Clip (2- and 3-point), carve (CSG) |
+| 4 | Shaping | Clip (2- and 3-point), carve (CSG), hollow (done, v0.4.0) |
 | 5 | Curve tool | Arch, carve arch, ring, curved wall, spiral stairs; regenerable + bake |
 | 6 | Look | Lights, environment, camera bookmarks, scale figure, Y2K preview, PNG render |
 | 7 | Export | `.glb`, Godot scene package, baked-look `.glb`; verified in Godot via func_godot and glTF import |

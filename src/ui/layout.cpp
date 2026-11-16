@@ -35,6 +35,20 @@ MenuActions drawMenuBar(const MenuState& st) {
         if (ImGui::MenuItem("Block", "Shift+B", st.blockTool)) a.toolBlock = true;
         if (ImGui::MenuItem("Vertex", "Shift+V", st.vertexTool)) a.toolVertex = true;
         if (ImGui::MenuItem("Texture", "Shift+A", st.textureTool)) a.toolTexture = true;
+        if (ImGui::MenuItem("Clip", "Shift+X", st.clipTool)) a.toolClip = true;
+        ImGui::Separator();
+        if (ImGui::BeginMenu("Clip: keep")) {
+            if (ImGui::MenuItem("Both pieces", nullptr, st.clipKeep == 0)) a.clipKeep = 0;
+            if (ImGui::MenuItem("Front", nullptr, st.clipKeep == 1)) a.clipKeep = 1;
+            if (ImGui::MenuItem("Back", nullptr, st.clipKeep == 2)) a.clipKeep = 2;
+            ImGui::TextDisabled("Shift+X cycles while clipping");
+            ImGui::EndMenu();
+        }
+        if (ImGui::MenuItem("Clip points...", nullptr, false, st.hasSelection)) a.clipPoints = true;
+        if (ImGui::MenuItem("Apply clip", "Return", false, st.clipTool && st.clipPlane)) a.clipApply = true;
+        ImGui::Separator();
+        if (ImGui::MenuItem("Carve with selection", "Cmd+Shift+C", false, st.hasSelection)) a.carve = true;
+        if (ImGui::MenuItem("Hollow...", "Cmd+Shift+H", false, st.hasSelection)) a.hollow = true;
         ImGui::Separator();
         if (ImGui::MenuItem("Move selected vertices...", "Cmd+Shift+T", false, st.vertexTool && st.verticesSelected)) a.vertexMove = true;
         ImGui::Separator();
@@ -147,6 +161,10 @@ void drawControlsWindow(bool* open) {
             {"Texture tool (pick faces)", "Shift+A; 3D: click, Shift+click add/remove face, Cmd+click whole brush, Option+click picks texture"},
             {"Apply current texture", "Shift+T (selected brushes, or picked faces)"},
             {"Textures / Face panels", "right side: search by name, click to choose; adjust picked faces"},
+            {"Clip tool", "Shift+X: drag a line in a 2D view; drag points 1-3 (3 tilts the plane); Return clips"},
+            {"Clip: keep both / front / back", "Shift+X again cycles (Tools menu)"},
+            {"Carve with selection", "Cmd+Shift+C: cuts the selection's shape out of touching brushes"},
+            {"Hollow", "Cmd+Shift+H: turn brushes into walls of a typed thickness"},
             {"Delete", "Delete or Backspace"},
             {"Undo / redo", "Cmd+Z / Cmd+Shift+Z"},
             {"New / open / save / save as", "Cmd+N / Cmd+O / Cmd+S / Cmd+Shift+S"},

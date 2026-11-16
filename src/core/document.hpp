@@ -66,6 +66,12 @@ public:
     Command makeAdd(std::vector<Brush> brushes, const std::string& name);
     Command makeDelete(const std::set<BrushId>& ids, const std::string& name);
     Command makeModify(const std::vector<Brush>& modified, const std::string& name);
+    // Mixed edit as one undo step (clip, carve, hollow). New brushes get ids. The
+    // selection afterwards is `selectAfter` if given, else the old selection minus
+    // deleted brushes plus the added ones.
+    Command makeChange(const std::vector<Brush>& modified, std::vector<Brush> added,
+                       const std::set<BrushId>& deleted, const std::string& name,
+                       const std::set<BrushId>* selectAfter = nullptr);
 
 private:
     void setBrush(BrushId id, const std::optional<Brush>& b);

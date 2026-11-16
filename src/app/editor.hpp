@@ -12,6 +12,7 @@
 #include "tools/select_tool.hpp"
 #include "tools/vertex_tool.hpp"
 #include "tools/texture_tool.hpp"
+#include "tools/clip_tool.hpp"
 #include "render/texture_library.hpp"
 #include <deque>
 #include <memory>
@@ -98,6 +99,11 @@ private:
     void requestSaveAs(); // native Save panel on macOS, typed path elsewhere
     void requestOpen();   // native Open panel on macOS, typed path elsewhere
     void runNativeDialog();
+
+    // Shaping (milestone 4)
+    void carveWithSelection();
+    void hollowSelection(double thickness);
+    void drawShapingDialogs();
     enum class Pending { None, New, Open, OpenPath, Quit };
     void guardUnsaved(Pending action); // runs action now or asks first
     void runPending();
@@ -120,6 +126,7 @@ private:
     BlockTool blockTool_;
     VertexTool vertexTool_;
     TextureTool textureTool_;
+    ClipTool clipTool_;
     Tool* tool_ = &selectTool_;
 
     int capture_ = -1;          // view that owns the current left-button drag
@@ -181,6 +188,11 @@ private:
     enum class Native { None, Open, SaveAs, Folder };
     Native native_ = Native::None;
     bool useNative_ = false;
+
+    bool askClipPoints_ = false, askHollow_ = false;
+    double clipBuf_[3][3] = {};
+    double hollowThickness_ = 16;
+    std::string shapingError_;
 
     bool exit_ = false;
     unsigned long long redraws_ = 0;

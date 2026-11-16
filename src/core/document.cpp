@@ -115,4 +115,27 @@ Command Document::makeModify(const std::vector<Brush>& modified, const std::stri
     return c;
 }
 
+Command Document::makeChange(const std::vector<Brush>& modified, std::vector<Brush> added,
+                             const std::set<BrushId>& deleted, const std::string& name,
+                             const std::set<BrushId>* selectAfter) {
+    Command c;
+    c.name = name;
+    c.selectionBefore = selection_;
+    c.selectionAfter = selection_;
+    for (const Brush& b : modified)
+        if (const Brush* old = find(b.id)) c.changes.push_back({b.id, *old, b});
+    for (BrushId id : deleted)
+        if (const Brush* old = find(id)) {
+            c.changes.push_back({id, *old, std::nullopt});
+            c.selectionAfter.erase(id);
+        }
+    for (Brush& b : added) {
+        b.id = newId();
+        c.selectionAfter.insert(b.id);
+        c.changes.push_back({b.id, std::nullopt, std::move(b)});
+    }
+    if (selectAfter) c.selectionAfter = *selectAfter;
+    return c;
+}
+
 } // namespace scal

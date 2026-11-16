@@ -33,6 +33,8 @@ struct Scene {
     std::optional<Vec3> pivot;               // custom rotation pivot marker
     TextureLibrary* textures = nullptr;      // set -> textured 3D view
     std::set<FaceRef> selectedFaces;         // texture tool selection (highlighted in 3D)
+    std::vector<Vec3> clipPoints;            // clip tool: points 1, 2, 3
+    bool clipActive = false;
 };
 
 SceneBrush makeSceneBrush(const Brush& b);

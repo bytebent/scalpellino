@@ -10,10 +10,10 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 
 ## Current status
 
-- Released: v0.1.0, v0.1.1, v0.2.0 (precision), v0.3.0 (textures + endless grid),
-  **v0.3.1** (nodraw, texture-tool modifiers swapped, native Mac file dialogs).
-  User confirmed v0.3.0 works incl. save/load; keep Source-style 0.25 default scale.
-- **Next: milestone 4 — Shaping** (clip tool incl. 3-point clipping, carve/CSG).
+- Released: v0.1.0, v0.1.1, v0.2.0, v0.3.0, v0.3.1 (nodraw, native dialogs — compiled in
+  CI; untested by hand), **v0.4.0 = milestone 4 Shaping** (clip, carve, hollow).
+- **Next: milestone 5 — Curve tool** (arch, carve arch, ring, curved wall, spiral stairs;
+  regenerable + bake). See ARCHITECTURE §6.
 
 ## How to work in this repo
 
@@ -88,20 +88,54 @@ Delivered: texture library (built-in + user folders), textured 3D view, browser 
 search by name, texture tool (pick faces), Face panel, Texture menu. User wants later:
 **tags and much more browser functionality** (parked below).
 
-## Milestone 4 plan — Shaping
+## Milestone 4 — Shaping (done, v0.4.0)
 
-1. Clip tool (Shift+X): 2-point clip in a 2D view (line through two snapped points,
-   plane perpendicular to the view), and 3-point clip (Hammer++ style: third point in
-   another view or typed). Keep front / back / both (cycle with a key + menu items),
-   preview, Return applies, Esc cancels. Typed points dialog.
-2. Carve (CSG subtract) of the selection from touching brushes, producing clean convex
-   pieces (Hammer's carve is notorious for messy splits — merge where possible).
-3. Hollow (make a room from a block, wall thickness dialog) — common Hammer workflow.
-4. Tests: core split/clip/carve (convexity, volume preserved, no slivers), UI scripts.
+Delivered: clip tool (2-point drag + 3 draggable points, keep both/front/back, typed
+points), carve with selection, hollow. Not done: merging carve fragments into fewer
+pieces (carve can leave more pieces than strictly needed).
+
+## Milestone 5 plan — Curve tool
+
+From ARCHITECTURE §6 (agreed with the user): curves in the tool, flat faces in the
+result; Return generates, Esc cancels; NO mouse-wheel parameters — typed fields in a small
+panel + viewport handles.
+1. Core generators (pure, tested): arch (curved underside + filled square top), ring /
+   pipe (full or partial, thickness), curved wall along a spline, spiral stairs. Slices
+   are convex, neighbours share exact vertices (no cracks), grid-snapped where possible.
+2. Generated group remembers its parameters (stored as extra keys in the .map) and can be
+   regenerated; "Bake" turns it into plain brushes. Needs groups in the document model.
+3. Carve arch: draw on an existing wall, cut an arched opening (uses carve).
+4. Curve tool UI: draw in a 2D view (arc: two clicks for the ends, drag for bulge),
+   parameter panel (segments, thickness, depth...), live preview, Return/Esc, menus.
+5. Tests: convexity, shared vertices (no gaps), volume checks, .map round trip of params.
 
 ## Milestone 1 plan — Brushes (done)
 
 ## Log
+
+### 2026-11-16 — Milestone 4: Shaping (v0.4.0)
+- `core/csg`: `brushVolume`, `removeUnusedFaces`, `faceFromPoints`, `splitBrush` (plane
+  through 3 points, drops slivers < 0.001), `carveBrush` (subtract a convex cutter: split
+  by each cutter plane, keep outside pieces), `hollowBrush` (carve a copy shrunk by the
+  wall thickness; refuses if too thin). `Document::makeChange` (modify + add + delete
+  as one undo step).
+- **Clip tool** (Shift+X; again cycles keep both/front/back; Tools menu): drag a line in
+  a 2D view -> plane straight into the screen; three numbered point handles (green 1,
+  blue 2, yellow 3) draggable in any 2D view; point 3 in another view tilts the plane;
+  Tools -> Clip points... to type them; preview shows only kept pieces; Return applies
+  (cap faces get the brush's own texture); Esc cancels.
+- **Carve with selection** (Cmd+Shift+C) and **Hollow...** (Cmd+Shift+H, thickness dialog
+  with quick buttons). Delete/Backspace now works in every tool (found by the UI test:
+  it only worked in the Select tool).
+- Process slip: committed CMakeLists referencing `csg.cpp` before committing the file ->
+  one red CI run; fixed by the next commit. Always `git status` before committing.
+- **Tests:** core **570 checks, 0 failed** (split straight/miss/diagonal with volume
+  preservation, carve tunnel volumes + no overlap + no-op + fully inside, hollow 6 walls
+  with exact volume + textures + too-thin refusal, makeChange undo/redo). UI
+  `m4_shaping` (2-point clip both, 3-point clip front = exactly half volume, hollow,
+  carve + delete cutter) and all older scripts: **PASS at 1x and 2x**.
+- Screenshots: `m4-01-clip-preview`, `m4-02-three-point-clip-preview`,
+  `m4-03-three-point-clip-result`, `m4-04-hollow`, `m4-05-carved`.
 
 ### 2026-11-16 — v0.3.1: nodraw, modifier swap, native file dialogs
 User feedback on v0.3.0: works (incl. save/load); wants a don't-draw texture for faces
