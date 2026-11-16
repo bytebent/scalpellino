@@ -7,6 +7,7 @@
 #include "core/texture.hpp"
 #include "core/csg.hpp"
 #include "core/curves.hpp"
+#include "core/primitives.hpp"
 #include "io/map_format.hpp"
 #include <cmath>
 #include <cstdio>
@@ -597,14 +598,108 @@ static void testCurves() {
     // Neighbouring fill slices share corners.
     CHECK(sharesCorners(r.fill[0], r.fill[1], 2));
 
+    // ---- Spiral stairs with a centre column: one more brush, as tall as the stairs.
+    st.column = true;
+    r = generateCurve(st);
+    CHECK(r.ok() && r.brushes.size() == 13);
+    if (r.ok()) CHECK(near(r.brushes.back().bounds().max.z, 184) && near(r.brushes.back().bounds().min.z, 0));
+    st.column = false;
+
+    // ---- Helix ramp: 16 pieces over a full turn; consecutive pieces share an edge face.
+    CurveParams hr = st;
+    hr.shape = CurveShape::HelixRamp;
+    hr.steps = 16; hr.rise = 8; hr.thickness = 8; hr.innerRadius = 32;
+    r = generateCurve(hr);
+    CHECK(r.ok() && r.brushes.size() == 16);
+    for (size_t i = 0; i + 1 < r.brushes.size(); ++i) CHECK(sharesCorners(r.brushes[i], r.brushes[i + 1], 4));
+    if (r.ok()) CHECK(near(r.brushes.back().bounds().max.z, 16 * 8 + 8)); // 16 rises + thickness
+
+    // ---- Dome: 8 x 3 pieces, all valid; volume close to a hemisphere shell.
+    CurveParams dm;
+    dm.shape = CurveShape::Dome;
+    dm.axU = 0; dm.axV = 1; dm.axD = 2;
+    dm.u0 = -128; dm.u1 = 128; dm.v0 = -128; dm.v1 = 128; dm.d0 = 0;
+    dm.segments = 16; dm.rings = 4; dm.thickness = 16; dm.roundToWhole = false;
+    r = generateCurve(dm);
+    CHECK(r.ok() && r.brushes.size() == 64);
+    vol = 0;
+    for (const Brush& b : r.brushes) { CHECK(b.valid()); vol += brushVolume(b); }
+    const double shell = 2.0 / 3 * pi * (128.0 * 128 * 128 - 112.0 * 112 * 112);
+    CHECK(vol > 0.8 * shell && vol < shell);
+    for (size_t i = 0; i + 1 < 16; ++i) CHECK(sharesCorners(r.brushes[i], r.brushes[i + 1], 4));
+    dm.roundToWhole = true;
+    r = generateCurve(dm);
+    CHECK(r.ok() && r.brushes.size() == 64);
+
+    // ---- Straight stairs: 8 solid steps in a 256 x 128 box = half the box volume + half a step row.
+    CurveParams ss;
+    ss.shape = CurveShape::StraightStairs;
+    ss.u0 = 0; ss.u1 = 256; ss.v0 = 0; ss.v1 = 128; ss.d0 = 0; ss.d1 = 64; ss.steps = 8;
+    r = generateCurve(ss);
+    CHECK(r.ok() && r.brushes.size() == 8);
+    vol = 0;
+    for (const Brush& b : r.brushes) vol += brushVolume(b);
+    CHECK(near(vol, 32.0 * 64 * 16 * (1 + 2 + 3 + 4 + 5 + 6 + 7 + 8), 1e-3));
+    // Rising to the right: the leftmost step is the lowest.
+    if (r.ok()) CHECK(r.brushes[0].bounds().max.z == 16 && r.brushes[0].bounds().min.y == 0);
+    ss.flip = true;
+    r = generateCurve(ss);
+    if (r.ok()) CHECK(r.brushes[0].bounds().max.z == 16 && r.brushes[0].bounds().max.y == 256);
+    ss.solid = false; ss.thickness = 8;
+    r = generateCurve(ss);
+    CHECK(r.ok());
+    if (r.ok()) CHECK(r.brushes[7].bounds().size().z == 8);
+
     // ---- Parameters round-trip through key/values (stored in the .map).
     CurveParams k = st;
-    k.texture = "Bricks_24"; k.clockwise = true; k.thickness = 7.25;
+    k.texture = "Bricks_24"; k.clockwise = true; k.thickness = 7.25; k.column = true; k.rings = 6; k.flip = true;
     CurveParams back;
     CHECK(curveFromKeys(curveToKeys(k), back));
     CHECK(back.shape == CurveShape::SpiralStairs && back.texture == "Bricks_24" && back.clockwise);
     CHECK(back.thickness == 7.25 && back.steps == 12 && back.axD == 2 && back.u0 == -128);
+    CHECK(back.column && back.rings == 6 && back.flip && back.solid);
     CHECK(!curveFromKeys({{"shape", "teapot"}}, back));
+}
+
+static void testPrimitives() {
+    const double pi = 3.14159265358979323846;
+    const AABB bx = box({0, 0, 0}, {128, 128, 256});
+    for (Primitive k : {Primitive::Box, Primitive::Wedge, Primitive::Cylinder, Primitive::Cone, Primitive::Pyramid, Primitive::Sphere}) {
+        auto b = makePrimitive(k, bx, 2, 0, 16, false, "a", 0.25);
+        CHECK(b.has_value());
+        if (!b) continue;
+        CHECK(b->valid());
+        // Every primitive fills its box exactly along each axis.
+        const AABB bb = b->bounds();
+        CHECK(near(bb.min.x, 0, 1e-9) && near(bb.max.x, 128, 1e-9));
+        CHECK(near(bb.min.z, 0, 1e-9) && near(bb.max.z, 256, 1e-9));
+        for (const Face& f : b->faces) CHECK(f.texture == "a" && f.scaleU == 0.25);
+    }
+    // Volumes against the polygon maths.
+    const double n = 16, R = 64, H = 256;
+    const double ngon = 0.5 * n * R * R * std::sin(2 * pi / n);
+    auto vol = [&](Primitive k) { return brushVolume(*makePrimitive(k, bx, 2, 0, 16, false, "a", 1)); };
+    CHECK(near(vol(Primitive::Box), 128.0 * 128 * 256, 1e-6));
+    CHECK(near(vol(Primitive::Wedge), 128.0 * 128 * 256 / 2, 1e-6));
+    CHECK(near(vol(Primitive::Cylinder), ngon * H, 1e-3));
+    CHECK(near(vol(Primitive::Cone), ngon * H / 3, 1e-3));
+    CHECK(near(vol(Primitive::Pyramid), 128.0 * 128 * 256 / 3, 1e-6));
+    const double sphereish = vol(Primitive::Sphere);
+    CHECK(sphereish > 0.8 * (4.0 / 3 * pi * 64 * 64 * 128) && sphereish < 4.0 / 3 * pi * 64 * 64 * 128);
+    // Wedge: full height on the min-X side, zero on the max-X side.
+    auto w = makePrimitive(Primitive::Wedge, bx, 2, 0, 16, false, "a", 1);
+    double topAtMinX = 0, topAtMaxX = 0;
+    for (const Vec3& v : brushVertices(*w)) {
+        if (v.x == 0) topAtMinX = std::max(topAtMinX, v.z);
+        if (v.x == 128) topAtMaxX = std::max(topAtMaxX, v.z);
+    }
+    CHECK(topAtMinX == 256 && topAtMaxX == 0);
+    // Rounded to whole units: all corners integer.
+    auto rc = makePrimitive(Primitive::Cylinder, bx, 2, 0, 12, true, "a", 1);
+    CHECK(rc && rc->valid() && brushOnGrid(*rc, 1));
+    // Cylinder lying along X (drawn in the side view).
+    auto lx = makePrimitive(Primitive::Cylinder, box({0, 0, 0}, {256, 64, 64}), 0, 1, 8, false, "a", 1);
+    CHECK(lx && lx->faces.size() == 10);
 }
 
 static void testRay() {
@@ -812,6 +907,7 @@ int main() {
     testTextures();
     testCsg();
     testCurves();
+    testPrimitives();
     testRay();
     testUndo();
     testMakeChange();

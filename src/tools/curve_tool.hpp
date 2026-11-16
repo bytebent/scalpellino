@@ -38,6 +38,9 @@ public:
 
 private:
     enum class Drag { None, Drawing, Box, Point };
+    bool uprightShape() const {
+        return params.shape == CurveShape::SpiralStairs || params.shape == CurveShape::HelixRamp || params.shape == CurveShape::Dome;
+    }
     bool viewMatches(const Viewport& v) const { return v.axU() == params.axU && v.axV() == params.axV; }
 
     bool hasShape_ = false;

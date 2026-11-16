@@ -9,7 +9,7 @@
 
 namespace scal {
 
-enum class CurveShape { Arch, Ring, CurvedWall, SpiralStairs, CarveArch };
+enum class CurveShape { Arch, Ring, CurvedWall, SpiralStairs, CarveArch, Dome, HelixRamp, StraightStairs };
 
 const char* curveShapeName(CurveShape s);       // "arch", "ring", ...
 bool curveShapeFromName(const std::string& n, CurveShape& out);
@@ -33,6 +33,13 @@ struct CurveParams {
     double innerRadius = 16, turnDeg = 360, rise = 16;
     int steps = 16;
     bool clockwise = false;
+    bool column = false;                    // spiral stairs: centre column (inner radius)
+    // Dome (top view, rises along the depth axis): rings of latitude; uses segments
+    // around and thickness for the shell.
+    int rings = 4;
+    // Straight stairs: `steps` across the box; solid to the floor or floating slabs of
+    // `thickness`; rising to the right (or left when flipped).
+    bool solid = true, flip = false;
     bool roundToWhole = true;               // round corners to whole units (clean .map)
     std::string texture = "default";
     double texScale = 0.25;

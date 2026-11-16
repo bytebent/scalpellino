@@ -114,6 +114,7 @@ private:
     void bakeCurves();         // selected generated groups -> plain brushes
     GroupId selectedGroup() const; // the single generated group the selection is, or 0
     void drawCurvePanel();
+    void drawBlockPanel();
     enum class Pending { None, New, Open, OpenPath, Quit };
     void guardUnsaved(Pending action); // runs action now or asks first
     void runPending();

@@ -11,6 +11,12 @@ AABB CurveTool::box3D() const {
     if (params.shape == CurveShape::SpiralStairs) {
         b.min[params.axD] = params.d0;
         b.max[params.axD] = params.d0 + params.rise * (params.steps - 1) + params.thickness;
+    } else if (params.shape == CurveShape::HelixRamp) {
+        b.min[params.axD] = params.d0;
+        b.max[params.axD] = params.d0 + params.rise * params.steps + params.thickness;
+    } else if (params.shape == CurveShape::Dome) {
+        b.min[params.axD] = params.d0;
+        b.max[params.axD] = params.d0 + std::min(params.u1 - params.u0, params.v1 - params.v0) / 2;
     } else {
         b.min[params.axD] = params.d0; b.max[params.axD] = params.d1;
     }
@@ -20,7 +26,7 @@ AABB CurveTool::box3D() const {
 void CurveTool::setBox3D(const AABB& b) {
     params.u0 = b.min[params.axU]; params.u1 = b.max[params.axU];
     params.v0 = b.min[params.axV]; params.v1 = b.max[params.axV];
-    if (params.shape == CurveShape::SpiralStairs) params.d0 = b.min[params.axD];
+    if (uprightShape()) params.d0 = b.min[params.axD]; // height comes from the shape's own settings
     else { params.d0 = b.min[params.axD]; params.d1 = b.max[params.axD]; }
 }
 
@@ -62,8 +68,8 @@ void CurveTool::press(ToolEnv& env, const Pointer& p) {
         if (editing_) return; // editing an existing curve: don't start a new one by accident
     }
     // Start drawing a new shape in this view.
-    if (params.shape == CurveShape::SpiralStairs && p.view->kind() != ViewKind::Top) {
-        message_ = "draw spiral stairs in the top view";
+    if (uprightShape() && p.view->kind() != ViewKind::Top) {
+        message_ = "draw this shape in the top view (it rises upwards)";
         return;
     }
     params.axU = p.view->axU();
@@ -75,7 +81,7 @@ void CurveTool::press(ToolEnv& env, const Pointer& p) {
     const int D = params.axD;
     const AABB sel = env.doc.selectionBounds();
     if (params.shape == CurveShape::CarveArch && sel.valid()) { params.d0 = sel.min[D]; params.d1 = sel.max[D]; }
-    else if (params.shape == CurveShape::SpiralStairs) { params.d0 = env.lastBox.min[D]; }
+    else if (uprightShape()) { params.d0 = env.lastBox.min[D]; }
     else { params.d0 = env.lastBox.min[D]; params.d1 = env.lastBox.max[D]; if (params.d1 <= params.d0) { params.d0 = 0; params.d1 = 16; } }
     params.u0 = params.u1 = au_;
     params.v0 = params.v1 = av_;
@@ -99,7 +105,7 @@ void CurveTool::drag(ToolEnv& env, const Pointer& p) {
         } else {
             params.u0 = std::min(au_, u); params.u1 = std::max(au_, u);
             params.v0 = std::min(av_, v); params.v1 = std::max(av_, v);
-            if (params.shape == CurveShape::Ring || params.shape == CurveShape::SpiralStairs) {
+            if (params.shape == CurveShape::Ring || uprightShape()) {
                 // Keep it square: a circle needs equal width and height.
                 const double s = std::max(params.u1 - params.u0, params.v1 - params.v0);
                 params.u0 = u >= au_ ? au_ : au_ - s; params.u1 = params.u0 + s;

@@ -1055,16 +1055,41 @@ void Editor::bakeCurves() {
     doc_.apply(std::move(c));
 }
 
+void Editor::drawBlockPanel() {
+    ImGui::TextUnformatted("Block tool");
+    static const char* shapes[] = {"Box", "Wedge", "Cylinder", "Cone", "Pyramid", "Sphere"};
+    int shape = (int)blockTool_.shape;
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::Combo("##blockshape", &shape, shapes, 6)) blockTool_.shape = (Primitive)shape;
+    const Primitive k = blockTool_.shape;
+    if (k == Primitive::Cylinder || k == Primitive::Cone || k == Primitive::Sphere) {
+        ImGui::SetNextItemWidth(120);
+        if (ImGui::InputInt("sides", &blockTool_.sides)) blockTool_.sides = std::clamp(blockTool_.sides, 3, 64);
+        ImGui::Checkbox("round corners to whole units", &blockTool_.roundToWhole);
+    }
+    ImGui::TextDisabled(k == Primitive::Wedge ? "slopes down to the right in the view you draw it in"
+                        : k == Primitive::Box ? "drag in a 2D view, Return creates"
+                        : "stands along the view's depth (top view = upright)");
+    ImGui::Text("texture: %s (scale %g)", currentTexture_.c_str(), defaultScale_);
+    ImGui::Separator();
+    ImGui::BeginDisabled(!blockTool_.hasPreview());
+    if (ImGui::Button("Create (Return)")) onKey(KEY_ENTER);
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel (Esc)")) onKey(KEY_ESCAPE);
+}
+
 void Editor::drawCurvePanel() {
     CurveParams& p = curveTool_.params;
     const bool editing = curveTool_.editingGroup() != 0;
     ImGui::TextUnformatted(editing ? "Editing a generated curve" : "Curve tool");
-    static const char* shapes[] = {"Arch (doorway)", "Ring / pipe / cylinder", "Curved wall", "Spiral stairs", "Arched opening (cut)"};
+    static const char* shapes[] = {"Arch (doorway)", "Ring / pipe / cylinder", "Curved wall", "Spiral stairs",
+                                   "Arched opening (cut)", "Dome", "Helix ramp", "Straight stairs"};
     int shape = (int)p.shape;
     ImGui::SetNextItemWidth(-1);
-    if (ImGui::Combo("##shape", &shape, shapes, 5) && !editing) {
+    if (ImGui::Combo("##shape", &shape, shapes, 8) && !editing) {
         p.shape = (CurveShape)shape;
-        if (p.shape == CurveShape::SpiralStairs) { p.thickness = 8; }
+        if (p.shape == CurveShape::SpiralStairs || p.shape == CurveShape::HelixRamp) { p.thickness = 8; }
     }
     ImGui::Separator();
     ImGui::PushItemWidth(120);
@@ -1102,6 +1127,32 @@ void Editor::drawCurvePanel() {
             dblField("inner radius", p.innerRadius);
             dblField("start degrees", p.startDeg);
             ImGui::Checkbox("clockwise", &p.clockwise);
+            ImGui::SameLine();
+            ImGui::Checkbox("centre column", &p.column);
+            ImGui::TextDisabled("draw in the top view");
+            break;
+        case CurveShape::HelixRamp:
+            intField("segments", p.steps, 1, 512);
+            dblField("rise per segment", p.rise);
+            dblField("thickness", p.thickness);
+            dblField("total turn (deg)", p.turnDeg);
+            dblField("inner radius", p.innerRadius);
+            dblField("start degrees", p.startDeg);
+            ImGui::Checkbox("clockwise", &p.clockwise);
+            ImGui::TextDisabled("draw in the top view");
+            break;
+        case CurveShape::Dome:
+            intField("segments around", p.segments, 3, 64);
+            intField("rings", p.rings, 1, 32);
+            dblField("shell thickness", p.thickness);
+            ImGui::TextDisabled("draw in the top view");
+            break;
+        case CurveShape::StraightStairs:
+            intField("steps", p.steps, 1, 256);
+            ImGui::Checkbox("solid to the floor", &p.solid);
+            if (!p.solid) dblField("step thickness", p.thickness);
+            ImGui::Checkbox("rise to the left", &p.flip);
+            ImGui::TextDisabled("the box = the staircase's side view");
             break;
         case CurveShape::CarveArch:
             intField("segments", p.segments, 2, 64);
@@ -1117,7 +1168,8 @@ void Editor::drawCurvePanel() {
     if (ImGui::InputScalarN("##box", ImGuiDataType_Double, box, 4, nullptr, nullptr, "%g")) { p.u0 = box[0]; p.v0 = box[1]; p.u1 = box[2]; p.v1 = box[3]; }
     double depth[2] = {p.d0, p.d1};
     ImGui::SetNextItemWidth(240);
-    if (ImGui::InputScalarN("##depth", ImGuiDataType_Double, depth, p.shape == CurveShape::SpiralStairs ? 1 : 2, nullptr, nullptr, "%g")) { p.d0 = depth[0]; p.d1 = depth[1]; }
+    const bool upright = p.shape == CurveShape::SpiralStairs || p.shape == CurveShape::HelixRamp || p.shape == CurveShape::Dome;
+    if (ImGui::InputScalarN("##depth", ImGuiDataType_Double, depth, upright ? 1 : 2, nullptr, nullptr, "%g")) { p.d0 = depth[0]; p.d1 = depth[1]; }
     ImGui::PopItemWidth();
     ImGui::Checkbox("round corners to whole units", &p.roundToWhole);
     if (p.shape != CurveShape::CarveArch) {
@@ -1324,6 +1376,11 @@ void Editor::drawTextureBrowser() {
 }
 
 void Editor::drawFacePanel() {
+    if (tool_ == &blockTool_) {
+        if (ImGui::Begin("Properties###face", nullptr, ImGuiWindowFlags_NoCollapse)) drawBlockPanel();
+        ImGui::End();
+        return;
+    }
     if (tool_ == &curveTool_) {
         if (ImGui::Begin("Properties###face", nullptr, ImGuiWindowFlags_NoCollapse)) drawCurvePanel();
         ImGui::End();
@@ -1534,9 +1591,11 @@ void Editor::runPending() {
 //   expect texture <name>   expect pickedfaces <n>   expect current <name>
 //   tool clip   clippoints x y z  x y z  x y z   clipkeep both|front|back   (key Return clips)
 //   carve   hollow <thickness>   expect volume <v>   (sum of all brush volumes, +-0.5)
-//   curveshape arch|ring|curved_wall|spiral_stairs|carve_arch   curveset <key> <value>
+//   curveshape arch|ring|curved_wall|spiral_stairs|carve_arch|dome|helix_ramp|straight_stairs
+//   curveset <key> <value>
 //   (keys as stored in the .map: segments, thickness, box, depth, sweep, flat_top...)
 //   editcurve   bakecurve   expect groups <n>
+//   blockshape box|wedge|cylinder|cone|pyramid|sphere [sides]
 //   block x0 y0 z0 x1 y1 z1 (test setup)   expect bounds minx miny minz maxx maxy maxz
 //   shot <file.png>         quit
 //   expect brushes|selected <n>  |  expect size <x> <y> <z>  (selection bounds, +-0.5)
@@ -1723,6 +1782,16 @@ void Editor::stepScript() {
         std::string k; in >> k;
         clipTool_.keep = k == "front" ? ClipTool::Keep::Front : k == "back" ? ClipTool::Keep::Back : ClipTool::Keep::Both;
     } else if (cmd == "carve") { carveWithSelection();
+    } else if (cmd == "blockshape") {
+        std::string n; in >> n;
+        for (Primitive k : {Primitive::Box, Primitive::Wedge, Primitive::Cylinder, Primitive::Cone, Primitive::Pyramid, Primitive::Sphere}) {
+            std::string pn = primitiveName(k);
+            for (char& ch : pn) ch = (char)std::tolower((unsigned char)ch);
+            if (pn == n) blockTool_.shape = k;
+        }
+        int sides = 0;
+        if (in >> sides) blockTool_.sides = sides;
+        setTool(&blockTool_);
     } else if (cmd == "curveshape") {
         std::string n; in >> n;
         CurveShape sh;

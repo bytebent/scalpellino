@@ -19,6 +19,7 @@ void BlockTool::press(ToolEnv& env, const Pointer& p) {
     }
     // Start a new rectangle (replaces any uncommitted preview).
     mode_ = Mode::Drawing;
+    axU_ = p.view->axU(); axV_ = p.view->axV(); axD_ = p.view->axD();
     box_.reset();
     au_ = env.grid.snapValue(p.u);
     av_ = env.grid.snapValue(p.v);
@@ -56,10 +57,9 @@ bool BlockTool::key(ToolEnv& env, int key) {
     }
     if ((key == KEY_ENTER || key == KEY_KP_ENTER) && box_ && mode_ == Mode::Idle) {
         Document& doc = env.doc;
-        Brush b = makeBox(*box_, texture);
-        for (Face& f : b.faces) f.scaleU = f.scaleV = textureScale;
-        if (b.valid()) {
-            doc.apply(doc.makeAdd({b}, "Create block"));
+        std::optional<Brush> b = previewBrush();
+        if (b && b->valid()) {
+            doc.apply(doc.makeAdd({*b}, shape == Primitive::Box ? "Create block" : std::string("Create ") + primitiveName(shape)));
             env.lastBox = *box_;
         }
         box_.reset();
@@ -68,10 +68,21 @@ bool BlockTool::key(ToolEnv& env, int key) {
     return false;
 }
 
+std::optional<Brush> BlockTool::previewBrush() const {
+    if (!box_) return std::nullopt;
+    // Wedge: its triangle faces the view it was drawn in (slopes along the view's
+    // horizontal axis, rises along its vertical axis). Round shapes stand along the
+    // view's depth axis (drawn in the top view = upright).
+    const int axis = shape == Primitive::Wedge ? axV_ : axD_;
+    return makePrimitive(shape, *box_, axis, axU_, sides, roundToWhole, texture, textureScale);
+}
+
 void BlockTool::decorate(const Document&, Scene& scene) const {
     if (box_) {
         scene.previewBox = box_;
         scene.handleBox = box_;
+        if (shape != Primitive::Box)
+            if (auto b = previewBrush()) scene.ghosts.push_back(makeSceneBrush(*b));
     }
 }
 

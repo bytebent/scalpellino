@@ -47,6 +47,23 @@ public:
 
     P2 round(P2 q) const { return roundP(q, p_.roundToWhole); }
 
+    // Brush from arbitrary 3D corner points (convex hull), textured like prisms.
+    bool hull(const std::vector<Vec3>& pts, CurveResult& r) const {
+        Brush tmpl;
+        HullResult h = brushFromVertices(pts, tmpl, false);
+        if (!h.ok) return false;
+        for (Face& f : h.brush.faces) {
+            f.texture = p_.texture;
+            f.scaleU = f.scaleV = p_.texScale;
+            defaultTexAxes(f.plane().n, f.u.axis, f.v.axis);
+            f.u.offset = f.v.offset = 0;
+            f.rotation = 0;
+        }
+        h.brush.id = 0;
+        r.brushes.push_back(std::move(h.brush));
+        return true;
+    }
+
 private:
     const CurveParams& p_;
 };
@@ -211,6 +228,91 @@ CurveResult spiralStairs(const CurveParams& p) {
         const double z0 = p.d0 + k * p.rise;
         if (!b.prism(poly, z0, z0 + p.thickness, r)) { r.error = "a step came out invalid (try other sizes or turn off rounding)"; return r; }
     }
+    if (p.column && Ri > 1e-9) {
+        // Centre column filling the inner radius, floor to the top of the last step.
+        std::vector<P2> col;
+        const int n = std::max(8, p.segments);
+        for (int i = 0; i < n; ++i) col.push_back(b.round({c.u + Ri * std::cos(2 * kPi * i / n), c.v + Ri * std::sin(2 * kPi * i / n)}));
+        if (!b.prism(col, p.d0, p.d0 + (N - 1) * p.rise + p.thickness, r)) { r.error = "the centre column came out invalid"; return r; }
+    }
+    return r;
+}
+
+CurveResult helixRamp(const CurveParams& p) {
+    CurveResult r;
+    Builder b(p);
+    const double W = p.u1 - p.u0, H = p.v1 - p.v0;
+    if (W <= 0 || H <= 0) { r.error = "draw a box first"; return r; }
+    const double Ro = std::min(W, H) / 2, Ri = p.innerRadius;
+    if (Ri < 0 || Ri >= Ro) { r.error = "inner radius must be between 0 and the outer radius"; return r; }
+    const int N = std::max(1, p.steps);
+    const double per = p.turnDeg / N;
+    if (std::fabs(per) >= 180) { r.error = "use more segments (each must turn less than 180 degrees)"; return r; }
+    if (p.thickness <= 0) { r.error = "thickness must be positive"; return r; }
+    const P2 c{(p.u0 + p.u1) / 2, (p.v0 + p.v1) / 2};
+    const double dir = p.clockwise ? -1 : 1;
+    // Corner points per segment edge k (shared by segments k-1 and k): exact reuse.
+    auto edge = [&](int k, double& z) {
+        const double a = (p.startDeg + dir * per * k) * kPi / 180;
+        z = p.d0 + k * p.rise;
+        return std::pair<P2, P2>{b.round(Ri > 1e-9 ? P2{c.u + Ri * std::cos(a), c.v + Ri * std::sin(a)} : c),
+                                 b.round({c.u + Ro * std::cos(a), c.v + Ro * std::sin(a)})};
+    };
+    for (int k = 0; k < N; ++k) {
+        double z0, z1;
+        const auto e0 = edge(k, z0), e1 = edge(k + 1, z1);
+        std::vector<Vec3> pts;
+        for (const P2& q : {e0.first, e0.second}) { pts.push_back(b.world(q, z0)); pts.push_back(b.world(q, z0 + p.thickness)); }
+        for (const P2& q : {e1.first, e1.second}) { pts.push_back(b.world(q, z1)); pts.push_back(b.world(q, z1 + p.thickness)); }
+        if (!b.hull(pts, r)) { r.error = "a ramp piece came out invalid (try more segments or turn off rounding)"; return r; }
+    }
+    return r;
+}
+
+CurveResult dome(const CurveParams& p) {
+    CurveResult r;
+    Builder b(p);
+    const double W = p.u1 - p.u0, H = p.v1 - p.v0;
+    if (W <= 0 || H <= 0) { r.error = "draw a box first"; return r; }
+    const double Ro = std::min(W, H) / 2, Ri = Ro - p.thickness;
+    if (p.thickness <= 0 || Ri <= 0) { r.error = "thickness must be between 0 and the radius"; return r; }
+    const int N = std::max(3, p.segments), M = std::max(1, p.rings);
+    const P2 c{(p.u0 + p.u1) / 2, (p.v0 + p.v1) / 2};
+    auto pt = [&](double R, int i, int j) {
+        const double lon = 2 * kPi * (i % N) / N, lat = (kPi / 2) * j / M;
+        const P2 q = b.round({c.u + R * std::cos(lat) * std::cos(lon), c.v + R * std::cos(lat) * std::sin(lon)});
+        double h = p.d0 + R * std::sin(lat);
+        if (p.roundToWhole) h = std::round(h);
+        return b.world(q, h);
+    };
+    for (int j = 0; j < M; ++j)
+        for (int i = 0; i < N; ++i) {
+            std::vector<Vec3> pts;
+            for (double R : {Ro, Ri})
+                for (int dj : {0, 1})
+                    for (int di : {0, 1}) pts.push_back(pt(R, i + di, j + dj));
+            if (!b.hull(pts, r)) { r.error = "a dome piece came out invalid (try fewer segments or a thicker shell)"; return r; }
+        }
+    return r;
+}
+
+CurveResult straightStairs(const CurveParams& p) {
+    CurveResult r;
+    Builder b(p);
+    const double W = p.u1 - p.u0, H = p.v1 - p.v0;
+    if (W <= 0 || H <= 0) { r.error = "draw a box first"; return r; }
+    const int N = std::max(1, p.steps);
+    if (!p.solid && p.thickness <= 0) { r.error = "step thickness must be positive"; return r; }
+    for (int k = 0; k < N; ++k) {
+        const int idx = p.flip ? N - 1 - k : k;      // which step from the left
+        const double ua = p.u0 + W * idx / N, ub = p.u0 + W * (idx + 1) / N;
+        const double top = p.v0 + H * (k + 1) / N;   // k-th step from the bottom
+        const double bottom = p.solid ? p.v0 : std::max(p.v0, top - p.thickness);
+        if (!b.prism({b.round({ua, bottom}), b.round({ub, bottom}), b.round({ub, top}), b.round({ua, top})}, p.d0, p.d1, r)) {
+            r.error = "a step came out invalid (box too small for that many steps?)";
+            return r;
+        }
+    }
     return r;
 }
 
@@ -232,12 +334,16 @@ const char* curveShapeName(CurveShape s) {
         case CurveShape::CurvedWall: return "curved_wall";
         case CurveShape::SpiralStairs: return "spiral_stairs";
         case CurveShape::CarveArch: return "carve_arch";
+        case CurveShape::Dome: return "dome";
+        case CurveShape::HelixRamp: return "helix_ramp";
+        case CurveShape::StraightStairs: return "straight_stairs";
     }
     return "arch";
 }
 
 bool curveShapeFromName(const std::string& n, CurveShape& out) {
-    for (CurveShape s : {CurveShape::Arch, CurveShape::Ring, CurveShape::CurvedWall, CurveShape::SpiralStairs, CurveShape::CarveArch})
+    for (CurveShape s : {CurveShape::Arch, CurveShape::Ring, CurveShape::CurvedWall, CurveShape::SpiralStairs, CurveShape::CarveArch,
+                         CurveShape::Dome, CurveShape::HelixRamp, CurveShape::StraightStairs})
         if (n == curveShapeName(s)) { out = s; return true; }
     return false;
 }
@@ -254,6 +360,10 @@ KeyValues curveToKeys(const CurveParams& p) {
             {"legs", p.legs ? "1" : "0"},
             {"control", num(p.cu) + " " + num(p.cv)},
             {"stairs", num(p.innerRadius) + " " + num(p.turnDeg) + " " + num(p.rise) + " " + std::to_string(p.steps) + " " + (p.clockwise ? "1" : "0")},
+            {"column", p.column ? "1" : "0"},
+            {"rings", std::to_string(p.rings)},
+            {"solid", p.solid ? "1" : "0"},
+            {"flip", p.flip ? "1" : "0"},
             {"round", p.roundToWhole ? "1" : "0"},
             {"texture", p.texture},
             {"tex_scale", num(p.texScale)}};
@@ -275,6 +385,10 @@ bool curveFromKeys(const KeyValues& kv, CurveParams& p) {
         else if (k == "control") std::sscanf(s, "%lf %lf", &p.cu, &p.cv);
         else if (k == "stairs") { int cw = 0; std::sscanf(s, "%lf %lf %lf %d %d", &p.innerRadius, &p.turnDeg, &p.rise, &p.steps, &cw); p.clockwise = cw != 0; }
         else if (k == "round") p.roundToWhole = v == "1";
+        else if (k == "column") p.column = v == "1";
+        else if (k == "rings") p.rings = std::atoi(s);
+        else if (k == "solid") p.solid = v == "1";
+        else if (k == "flip") p.flip = v == "1";
         else if (k == "texture") p.texture = v;
         else if (k == "tex_scale") p.texScale = std::strtod(s, nullptr);
     }
@@ -296,6 +410,9 @@ CurveResult generateCurve(const CurveParams& p) {
         case CurveShape::Ring: return ring(p);
         case CurveShape::CurvedWall: return curvedWall(p);
         case CurveShape::SpiralStairs: return spiralStairs(p);
+        case CurveShape::Dome: return dome(p);
+        case CurveShape::HelixRamp: return helixRamp(p);
+        case CurveShape::StraightStairs: return straightStairs(p);
     }
     return {};
 }
