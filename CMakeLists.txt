@@ -15,13 +15,20 @@ endif()
 
 # ---------------------------------------------------------------- core
 # Pure C++: no raylib, no ImGui. Must stay that way (see CLAUDE.md).
-add_library(scal_core INTERFACE)
-target_include_directories(scal_core INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+add_library(scal_core STATIC
+  src/core/brush.cpp
+  src/core/document.cpp)
+target_include_directories(scal_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
+# File formats. Also graphics-free, so it is tested headless too.
+add_library(scal_io STATIC
+  src/io/map_format.cpp)
+target_link_libraries(scal_io PUBLIC scal_core)
 
 if(SCAL_BUILD_TESTS)
   enable_testing()
   add_executable(scal_core_tests tests/test_core.cpp)
-  target_link_libraries(scal_core_tests PRIVATE scal_core)
+  target_link_libraries(scal_core_tests PRIVATE scal_core scal_io)
   add_test(NAME core COMMAND scal_core_tests)
 endif()
 
@@ -50,5 +57,12 @@ if(SCAL_BUILD_APP)
   endif()
 
   target_include_directories(Scalpellino PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-  target_link_libraries(Scalpellino PRIVATE scal_core scal_imgui raylib)
+  target_link_libraries(Scalpellino PRIVATE scal_core scal_io scal_imgui raylib)
 endif()
+
+# Warnings for our own code only (not third-party).
+foreach(t scal_core scal_io scal_core_tests Scalpellino)
+  if(TARGET ${t})
+    target_compile_options(${t} PRIVATE $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wall -Wextra -Wno-unused-parameter>)
+  endif()
+endforeach()

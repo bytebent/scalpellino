@@ -10,9 +10,10 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 
 ## Current status
 
-- **Milestone:** 0 (skeleton) — code done, waiting for first CI run on GitHub Macs and
-  user's hands-on check on Intel Mac.
-- **Next:** milestone 1 (brushes) — see plan below.
+- **Milestone 0:** done. CI green on Intel + Apple Silicon. Waiting for the user's
+  hands-on check on their Intel Mac (look, feel, idle fans).
+- **Milestone 1:** in progress. Core (brushes, document, undo, `.map` IO) done + tested.
+  Next: rendering brushes, Select + Block tools, undo/save UI.
 
 ## How to work in this repo
 
@@ -62,6 +63,26 @@ Goal: block tool, select/move/resize, grid snapping, undo/redo, save/load `.map`
 8. Cmd-Z / Cmd-Shift-Z, Cmd-S / Cmd-O (native file dialogs later; simple path field first).
 
 ## Log
+
+### 2026-11-16 — M1 core: brushes, document, undo, .map IO
+- `core/math.hpp` (Vec3/Plane/AABB, doubles), `core/brush` (planes → CCW polygons by
+  clipping, box factory, translate/remap with texture lock, ray hit), `core/document`
+  (brushes, selection, command history with before/after snapshots, dirty tracking),
+  `io/map_format` (Valve 220 writer; reader for Valve 220 + classic Quake faces; other
+  entities preserved verbatim; invalid brushes skipped and counted; atomic save).
+- Plane convention: n = normalize(cross(c - a, b - a)), same as TrenchBroom.
+- **Tests:** 252 checks, 0 failed (box geometry + winding + outward normals, wedge,
+  invalid brushes, texture lock on move, remap incl. mirroring, ray hits, undo/redo/
+  delete/redo-clearing, dirty flag, byte-identical .map round trip incl. non-integer
+  coords, classic Quake format, parse errors with line numbers).
+- Compiler warnings (-Wall -Wextra) on for our code: clean.
+
+### 2026-11-16 — First CI run
+- Intel (`macos-15-intel`) + Apple Silicon (`macos-15`) build, tests, app zip: **pass**.
+- Smoke screenshot on GitHub's Mac VMs: **impossible** — VMs have no OpenGL ("NSGL:
+  Failed to find a suitable pixel format"). App used to segfault after that; now exits
+  cleanly with code 2 and a message. Visual checks = Linux Xvfb screenshots + the user.
+- Annotation noise: Node 20 deprecation on actions v4 (harmless for now).
 
 ### 2026-11-16 — Milestone 0 skeleton
 - Added CMake project, pinned deps, `scal_core` (header-only so far: `core/grid.hpp`),

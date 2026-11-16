@@ -49,6 +49,10 @@ int main(int argc, char** argv) {
     SetTraceLogLevel(LOG_WARNING);
     SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_VSYNC_HINT);
     InitWindow(1440, 900, "Scalpellino");
+    if (!IsWindowReady()) {
+        std::fprintf(stderr, "Scalpellino: could not open an OpenGL window.\n");
+        return 2;
+    }
     SetExitKey(KEY_NULL); // Esc must never quit the app
     {
         int hz = GetMonitorRefreshRate(GetCurrentMonitor());
