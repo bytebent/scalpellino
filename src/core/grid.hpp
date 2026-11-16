@@ -7,7 +7,8 @@
 
 namespace scal {
 
-// Half-extent of the editable world, in Hammer units (GoldSrc: -4096..4096).
+// Half-extent of the classic GoldSrc area (-4096..4096), drawn as a reference border.
+// Brushes and the 2D grid are not limited to it.
 constexpr double kWorldHalf = 4096.0;
 
 struct Grid {

@@ -820,6 +820,7 @@ void Editor::runPending() {
 //   rotate90 x|y|z <+1|-1>  flip x|y|z  duplicate  dialog transform|controls  closedialogs
 //   tool vertex   vertexmove dx dy dz   snapgrid   microgrid on|off   rotsnap slopes|15
 //   pivot center|origin|<x y z>   expect ongrid   expect faces <n>
+//   view <1|2|3> <u> <v> [zoom]   (centre a 2D view; zoom = pixels per unit)
 //   shot <file.png>         quit
 //   expect brushes|selected <n>  |  expect size <x> <y> <z>  (selection bounds, +-0.5)
 //   expect edges   (every brush/preview edge in the 2D views is visible on screen)
@@ -959,6 +960,10 @@ void Editor::stepScript() {
     } else if (cmd == "duplicate") { duplicate();
     } else if (cmd == "closedialogs") { closeDialogs_ = true;
     } else if (cmd == "snapgrid") { snapSelectionToGrid();
+    } else if (cmd == "view") {
+        // view <1|2|3> <u> <v> [zoom]  (centre a 2D view on world u,v)
+        int vi; double u, v, z = 0; in >> vi >> u >> v >> z;
+        if (vi >= 1 && vi <= 3) { views_[vi]->center2D(u, v); if (z > 0) views_[vi]->setZoom2D(z); }
     } else if (cmd == "microgrid") { std::string on; in >> on; grid_.setMicrogrid(on == "on");
     } else if (cmd == "rotsnap") { std::string m; in >> m; slopeAngles_ = m == "slopes";
     } else if (cmd == "pivot") {

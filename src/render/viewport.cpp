@@ -25,6 +25,7 @@ const Color kGround    { 48,  48,  56, 255};
 const Color kGround1024{ 80,  70,  50, 255};
 
 constexpr double kMinZoom = 0.02;  // px per unit
+constexpr double kViewLimit = 1 << 20; // how far 2D views can pan (the grid is endless)
 constexpr double kMaxZoom = 32.0;
 constexpr double kMinLinePx = 4.0; // hide grid lines closer than this
 
@@ -137,11 +138,12 @@ void Viewport::render2D(const Grid& grid, const Scene& scene) {
     const int thin = 1;                                   // grid: one physical pixel
     const int thick = std::max(1, (int)std::lround(P));   // geometry: one logical pixel
 
-    // Visible world range, clamped to the world bounds.
-    const double uMin = std::max(panU_ - hw / zoom_, -kWorldHalf);
-    const double uMax = std::min(panU_ + hw / zoom_,  kWorldHalf);
-    const double vMin = std::max(panV_ - hh / zoom_, -kWorldHalf);
-    const double vMax = std::min(panV_ + hh / zoom_,  kWorldHalf);
+    // Visible world range. The grid is endless (builds can go past the classic
+    // +-4096 area); the red border only marks that area for reference.
+    const double uMin = panU_ - hw / zoom_;
+    const double uMax = panU_ + hw / zoom_;
+    const double vMin = panV_ - hh / zoom_;
+    const double vMax = panV_ + hh / zoom_;
 
     if (uMin < uMax && vMin < vMax) {
         const double top = sy(vMax), bottom = sy(vMin);
@@ -255,8 +257,8 @@ void Viewport::render2D(const Grid& grid, const Scene& scene) {
 void Viewport::pan2D(Vector2 d) {
     panU_ -= d.x / zoom_;
     panV_ += d.y / zoom_;
-    panU_ = std::clamp(panU_, -kWorldHalf, kWorldHalf);
-    panV_ = std::clamp(panV_, -kWorldHalf, kWorldHalf);
+    panU_ = std::clamp(panU_, -kViewLimit, kViewLimit);
+    panV_ = std::clamp(panV_, -kViewLimit, kViewLimit);
 }
 
 void Viewport::zoom2D(float wheel, Vector2 local) {

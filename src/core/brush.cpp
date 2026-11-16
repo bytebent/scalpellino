@@ -44,7 +44,8 @@ std::vector<Vec3> clipPolygon(const std::vector<Vec3>& poly, const Plane& plane,
 
 std::vector<Polygon> Brush::polygons() const {
     std::vector<Polygon> polys;
-    const double big = kWorldHalf * 8.0;
+    // Start polygon for clipping: large enough for brushes far outside the classic area.
+    const double big = double(1 << 21);
     for (size_t i = 0; i < faces.size(); ++i) {
         const Plane pl = faces[i].plane();
         if (length(pl.n) < 0.5) continue; // degenerate face points

@@ -82,6 +82,14 @@ static void testBoxGeometry() {
         for (const Vec3& p : f.p) CHECK(p.x == std::round(p.x) && p.y == std::round(p.y) && p.z == std::round(p.z));
 }
 
+static void testFarAway() {
+    // Brushes far outside the classic +-4096 area are fine.
+    Brush b = makeBox(box({20000, -30000, 5000}, {20064, -29936, 5128}), "a");
+    CHECK(b.valid());
+    CHECK(nearV(b.bounds().min, {20000, -30000, 5000}));
+    CHECK(nearV(b.bounds().max, {20064, -29936, 5128}));
+}
+
 static void testWedge() {
     // Box cut diagonally -> wedge with 5 faces (the cut makes the top face vanish).
     Brush b = makeBox(box({0, 0, 0}, {64, 64, 64}), "a");
@@ -429,6 +437,7 @@ static void testMapErrors() {
 int main() {
     testGrid();
     testBoxGeometry();
+    testFarAway();
     testWedge();
     testInvalid();
     testTranslateTextureLock();

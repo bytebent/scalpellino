@@ -1,0 +1,16 @@
+# Milestone 3 (part 1): endless 2D grid — a block far outside the classic +-4096 area.
+tool block
+press 1 334 224
+drag 398 160
+release
+key Return
+transform move 6000 5000 0
+expect size 128 128 64
+view 1 6064 5064 0.5
+view 2 5064 32 0.5
+view 3 6064 32 0.5
+expect edges
+shot m3-01-endless-grid.png
+view 1 4096 4096 0.1
+shot m3-02-past-the-border.png
+quit
