@@ -5,6 +5,7 @@
 #include "core/transform.hpp"
 #include "core/hull.hpp"
 #include "core/texture.hpp"
+#include "core/csg.hpp"
 #include "io/map_format.hpp"
 #include <cmath>
 #include <cstdio>
@@ -391,6 +392,65 @@ static void testTextures() {
     CHECK(rayHitFace(b, {128, 32, 300}, {0, 0, -1}, &t) == 0 && near(t, 172));
 }
 
+static void testCsg() {
+    const Brush cube = makeBox(box({0, 0, 0}, {64, 64, 64}), "a");
+    CHECK(near(brushVolume(cube), 64.0 * 64 * 64, 1e-6));
+
+    // Split at x = 16 (plane normal +X): back = x 0..16, front = x 16..64.
+    SplitResult s = splitBrush(cube, {16, 0, 0}, {16, 0, 64}, {16, 64, 0}, "cap");
+    CHECK(s.front && s.back);
+    if (s.front && s.back) {
+        CHECK(nearV(s.back->bounds().max, {16, 64, 64}) || nearV(s.front->bounds().max, {16, 64, 64}));
+        CHECK(near(brushVolume(*s.front) + brushVolume(*s.back), brushVolume(cube), 1e-6));
+        CHECK(s.front->faces.size() == 6 && s.back->faces.size() == 6); // old face replaced, no leftovers
+        int caps = 0;
+        for (const Face& f : s.back->faces) caps += f.texture == "cap";
+        CHECK(caps == 1);
+    }
+    // A plane that misses the brush: everything on one side.
+    s = splitBrush(cube, {100, 0, 0}, {100, 0, 64}, {100, 64, 0}, "cap");
+    CHECK((s.front.has_value() ^ s.back.has_value()));
+    // Diagonal split -> two wedges, volume preserved.
+    s = splitBrush(cube, {0, 0, 0}, {0, 0, 64}, {64, 64, 0}, "cap");
+    CHECK(s.front && s.back);
+    if (s.front && s.back) {
+        CHECK(s.front->faces.size() == 5 && s.back->faces.size() == 5);
+        CHECK(near(brushVolume(*s.front), brushVolume(*s.back), 1e-6));
+    }
+
+    // Carve a tunnel through a block: volume of the pieces = block - tunnel.
+    const Brush block = makeBox(box({0, 0, 0}, {128, 128, 128}), "a");
+    const Brush tunnel = makeBox(box({32, 32, -16}, {96, 96, 144}), "b");
+    std::vector<Brush> pieces = carveBrush(block, tunnel);
+    double vol = 0;
+    for (const Brush& p : pieces) { CHECK(p.valid()); vol += brushVolume(p); }
+    CHECK(near(vol, 128.0 * 128 * 128 - 64.0 * 64 * 128, 1e-3));
+    CHECK(pieces.size() >= 4 && pieces.size() <= 4);
+    // Pieces don't overlap: their volumes add up and none intrudes into the tunnel.
+    for (const Brush& p : pieces) {
+        const AABB pb = p.bounds();
+        const bool insideTunnel = pb.min.x >= 32 && pb.max.x <= 96 && pb.min.y >= 32 && pb.max.y <= 96;
+        CHECK(!insideTunnel);
+    }
+    // No overlap -> unchanged; fully inside -> nothing left.
+    CHECK(carveBrush(block, makeBox(box({500, 0, 0}, {564, 64, 64}), "b")).size() == 1);
+    CHECK(carveBrush(makeBox(box({40, 40, 0}, {80, 80, 64}), "a"), tunnel).empty());
+
+    // Hollow: a 256 cube with 16-unit walls.
+    std::string err;
+    const Brush room = makeBox(box({0, 0, 0}, {256, 256, 256}), "wall");
+    std::vector<Brush> walls = hollowBrush(room, 16, err);
+    CHECK(err.empty());
+    CHECK(walls.size() == 6);
+    vol = 0;
+    for (const Brush& w : walls) vol += brushVolume(w);
+    CHECK(near(vol, 256.0 * 256 * 256 - 224.0 * 224 * 224, 1e-3));
+    // The inner faces got the room's texture (from the cutter = the room itself).
+    for (const Brush& w : walls) for (const Face& f : w.faces) CHECK(f.texture == "wall");
+    // Too thick -> refused.
+    CHECK(hollowBrush(makeBox(box({0, 0, 0}, {64, 64, 20}), "w"), 16, err).empty() && !err.empty());
+}
+
 static void testRay() {
     Brush b = makeBox(box({0, 0, 0}, {64, 64, 64}), "a");
     CHECK(near(rayHit(b, {-100, 32, 32}, {1, 0, 0}), 100));
@@ -522,6 +582,7 @@ int main() {
     testHull();
     testSnapToGrid();
     testTextures();
+    testCsg();
     testRay();
     testUndo();
     testDirty();
