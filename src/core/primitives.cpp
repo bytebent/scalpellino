@@ -1,5 +1,7 @@
 #include "core/primitives.hpp"
 #include "core/hull.hpp"
+#include "core/csg.hpp"
+#include <array>
 #include <cmath>
 #include <vector>
 
@@ -20,6 +22,26 @@ const char* primitiveName(Primitive p) {
     }
     return "Box";
 }
+
+namespace {
+// Brush from faces given as 3 points each (Quake style), oriented away from `inside`.
+// Round shapes are built this way: fast (no hull search) and with rounding only the
+// plane points move, so the solid stays exactly convex.
+std::optional<Brush> fromTriples(const std::vector<std::array<Vec3, 3>>& tris, const Vec3& inside,
+                                 const std::string& texture, double texScale) {
+    Brush br;
+    for (const auto& t : tris) {
+        if (length(cross(t[1] - t[0], t[2] - t[0])) < 1e-9) continue; // degenerate after rounding
+        const Vec3 mid = (t[0] + t[1] + t[2]) / 3.0;
+        Face f = faceFromPoints(t[0], t[1], t[2], mid - inside, texture);
+        f.scaleU = f.scaleV = texScale;
+        br.faces.push_back(f);
+    }
+    removeUnusedFaces(br);
+    if (!br.valid()) return std::nullopt;
+    return br;
+}
+} // namespace
 
 std::optional<Brush> makePrimitive(Primitive kind, const AABB& b, int axis, int slopeAxis, int sides,
                                    bool roundToWhole, const std::string& texture, double texScale) {
@@ -62,19 +84,30 @@ std::optional<Brush> makePrimitive(Primitive kind, const AABB& b, int axis, int 
             }
             break;
         }
-        case Primitive::Cylinder:
+        case Primitive::Cylinder: {
+            std::vector<std::array<Vec3, 3>> tris;
+            auto R = [&](Vec3 p) { if (roundToWhole) p = {std::round(p.x), std::round(p.y), std::round(p.z)}; return p; };
             for (int i = 0; i < n; ++i) {
-                const double ang = 2 * kPi * i / n;
-                add(ringPoint(ang, b.min[axis], 1));
-                add(ringPoint(ang, b.max[axis], 1));
+                const double a0 = 2 * kPi * i / n, a1 = 2 * kPi * (i + 1) / n;
+                tris.push_back({R(ringPoint(a0, b.min[axis], 1)), R(ringPoint(a1, b.min[axis], 1)), R(ringPoint(a0, b.max[axis], 1))});
             }
-            break;
+            tris.push_back({R(ringPoint(0, b.min[axis], 1)), R(ringPoint(2.1, b.min[axis], 1)), R(ringPoint(4.2, b.min[axis], 1))});
+            tris.push_back({R(ringPoint(0, b.max[axis], 1)), R(ringPoint(2.1, b.max[axis], 1)), R(ringPoint(4.2, b.max[axis], 1))});
+            return fromTriples(tris, c, texture, texScale);
+        }
         case Primitive::Cone: {
-            for (int i = 0; i < n; ++i) add(ringPoint(2 * kPi * i / n, b.min[axis], 1));
+            std::vector<std::array<Vec3, 3>> tris;
+            auto R = [&](Vec3 p) { if (roundToWhole) p = {std::round(p.x), std::round(p.y), std::round(p.z)}; return p; };
             Vec3 tip = c;
             tip[axis] = b.max[axis];
-            add(tip);
-            break;
+            for (int i = 0; i < n; ++i) {
+                const double a0 = 2 * kPi * i / n, a1 = 2 * kPi * (i + 1) / n;
+                tris.push_back({R(ringPoint(a0, b.min[axis], 1)), R(ringPoint(a1, b.min[axis], 1)), R(tip)});
+            }
+            tris.push_back({R(ringPoint(0, b.min[axis], 1)), R(ringPoint(2.1, b.min[axis], 1)), R(ringPoint(4.2, b.min[axis], 1))});
+            Vec3 inside = c;
+            inside[axis] = b.min[axis] + s[axis] / 4;
+            return fromTriples(tris, inside, texture, texScale);
         }
         case Primitive::Pyramid: {
             for (double u : {b.min[a1], b.max[a1]})
@@ -87,19 +120,23 @@ std::optional<Brush> makePrimitive(Primitive kind, const AABB& b, int axis, int 
             break;
         }
         case Primitive::Sphere: {
-            // Rings of latitude between the poles; `sides` around, sides/2 rings.
+            // Rings of latitude between the poles; one face per cell, built from planes.
             const int rings = std::max(2, n / 2);
-            Vec3 lo = c, hi = c;
-            lo[axis] = b.min[axis];
-            hi[axis] = b.max[axis];
-            add(lo);
-            add(hi);
-            for (int r = 1; r < rings; ++r) {
+            auto R = [&](Vec3 p) { if (roundToWhole) p = {std::round(p.x), std::round(p.y), std::round(p.z)}; return p; };
+            auto P = [&](int r, int i) { // r = 0 (bottom pole) .. rings (top pole)
                 const double lat = -kPi / 2 + kPi * r / rings;
                 const double h = c[axis] + std::sin(lat) * s[axis] / 2;
-                for (int i = 0; i < n; ++i) add(ringPoint(2 * kPi * i / n, h, std::cos(lat)));
-            }
-            break;
+                if (r == 0 || r == rings) { Vec3 p = c; p[axis] = r == 0 ? b.min[axis] : b.max[axis]; return R(p); }
+                return R(ringPoint(2 * kPi * (i % n) / n, h, std::cos(lat)));
+            };
+            std::vector<std::array<Vec3, 3>> tris;
+            for (int r = 0; r < rings; ++r)
+                for (int i = 0; i < n; ++i) {
+                    if (r == 0) tris.push_back({P(0, i), P(1, i), P(1, i + 1)});
+                    else if (r == rings - 1) tris.push_back({P(r, i), P(r, i + 1), P(rings, i)});
+                    else tris.push_back({P(r, i), P(r, i + 1), P(r + 1, i)});
+                }
+            return fromTriples(tris, c, texture, texScale);
         }
         case Primitive::Box: break;
     }

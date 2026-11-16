@@ -74,7 +74,13 @@ std::optional<Brush> BlockTool::previewBrush() const {
     // horizontal axis, rises along its vertical axis). Round shapes stand along the
     // view's depth axis (drawn in the top view = upright).
     const int axis = shape == Primitive::Wedge ? axV_ : axD_;
-    return makePrimitive(shape, *box_, axis, axU_, sides, roundToWhole, texture, textureScale);
+    const PreviewKey key{*box_, shape, sides, axis, axU_, roundToWhole, texture, textureScale};
+    if (!(cacheKey_ && *cacheKey_ == key)) {
+        cacheBrush_ = makePrimitive(shape, *box_, axis, axU_, sides, roundToWhole, texture, textureScale);
+        cacheKey_ = key;
+        cacheGhost_.reset();
+    }
+    return cacheBrush_;
 }
 
 void BlockTool::decorate(const Document&, Scene& scene) const {
@@ -82,7 +88,10 @@ void BlockTool::decorate(const Document&, Scene& scene) const {
         scene.previewBox = box_;
         scene.handleBox = box_;
         if (shape != Primitive::Box)
-            if (auto b = previewBrush()) scene.ghosts.push_back(makeSceneBrush(*b));
+            if (auto b = previewBrush()) {
+                if (!cacheGhost_) cacheGhost_ = makeSceneBrush(*b);
+                scene.ghosts.push_back(*cacheGhost_);
+            }
     }
 }
 

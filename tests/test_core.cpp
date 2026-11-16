@@ -10,6 +10,7 @@
 #include "core/primitives.hpp"
 #include "io/map_format.hpp"
 #include <cmath>
+#include <random>
 #include <cstdio>
 #include <sstream>
 #include <string>
@@ -675,6 +676,37 @@ static void testCurves() {
     CHECK(r.ok());
     if (r.ok()) CHECK(r.brushes[7].bounds().size().z == 8);
 
+    // ---- No shape's pieces may cut into each other, with or without rounding, also with
+    //      uneven settings (found by the user: rounded domes; also the stairs column).
+    {
+        std::vector<CurveParams> all;
+        CurveParams x; x.shape = CurveShape::Arch; x.u0 = 0; x.u1 = 130; x.v0 = 0; x.v1 = 170; x.d0 = 0; x.d1 = 16; x.segments = 7; all.push_back(x);
+        CurveParams y; y.shape = CurveShape::Ring; y.axU = 0; y.axV = 1; y.axD = 2; y.u0 = -101; y.u1 = 101; y.v0 = -101; y.v1 = 101; y.d1 = 32; y.segments = 11; y.thickness = 23; all.push_back(y);
+        y.thickness = 101; all.push_back(y);
+        CurveParams z; z.shape = CurveShape::CurvedWall; z.axU = 0; z.axV = 1; z.axD = 2; z.u0 = 0; z.v0 = 0; z.u1 = 301; z.v1 = 43; z.cu = 150; z.cv = 171; z.d1 = 128; z.thickness = 17; z.segments = 9; all.push_back(z);
+        CurveParams q; q.shape = CurveShape::SpiralStairs; q.axU = 0; q.axV = 1; q.axD = 2; q.u0 = -150; q.u1 = 150; q.v0 = -150; q.v1 = 150;
+        q.steps = 13; q.turnDeg = 330; q.rise = 16; q.thickness = 24; q.innerRadius = 37; q.column = true; all.push_back(q);
+        q.turnDeg = 720; q.steps = 24; all.push_back(q);
+        CurveParams h = q; h.shape = CurveShape::HelixRamp; h.column = false; h.steps = 21; h.rise = 7; h.thickness = 9; all.push_back(h);
+        CurveParams dmx; dmx.shape = CurveShape::Dome; dmx.axU = 0; dmx.axV = 1; dmx.axD = 2; dmx.u0 = -131; dmx.u1 = 131; dmx.v0 = -131; dmx.v1 = 131;
+        dmx.segments = 13; dmx.rings = 5; dmx.thickness = 17; all.push_back(dmx);
+        dmx.segments = 24; dmx.rings = 8; dmx.thickness = 9; all.push_back(dmx);
+        CurveParams sx; sx.shape = CurveShape::StraightStairs; sx.u0 = 0; sx.u1 = 251; sx.v0 = 0; sx.v1 = 133; sx.d1 = 64; sx.steps = 7; all.push_back(sx);
+        for (CurveParams cp : all)
+            for (bool rnd : {false, true}) {
+                cp.roundToWhole = rnd;
+                CurveResult rr = generateCurve(cp);
+                CHECK(rr.ok());
+                for (size_t i = 0; i < rr.brushes.size(); ++i) { rr.brushes[i].id = (BrushId)(i + 1); CHECK(rr.brushes[i].valid()); }
+                const auto ov = findOverlaps(rr.brushes, 0.01);
+                CHECK(ov.empty());
+                if (!ov.empty()) std::printf("  overlaps in %s (round=%d): %zu\n", curveShapeName(cp.shape), (int)rnd, ov.size());
+            }
+        // A column with steps that don't line up turn after turn is refused, not broken.
+        q.turnDeg = 500; q.steps = 13;
+        CHECK(!generateCurve(q).ok());
+    }
+
     // ---- Parameters round-trip through key/values (stored in the .map).
     CurveParams k = st;
     k.texture = "Bricks_24"; k.clockwise = true; k.thickness = 7.25; k.column = true; k.rings = 6; k.flip = true;
@@ -950,6 +982,49 @@ static void testMapErrors() {
     CHECK(r.ok && r.skippedBrushes == 1);
 }
 
+// The hull uses a fast edge-pivoting search; it must find exactly the faces a plain
+// "every triple of points" search finds, also for clouds full of coplanar points.
+static int bruteHullFaces(const std::vector<Vec3>& pts) {
+    std::vector<Plane> planes;
+    const size_t n = pts.size();
+    for (size_t i = 0; i < n; ++i)
+        for (size_t j = i + 1; j < n; ++j)
+            for (size_t k = j + 1; k < n; ++k) {
+                Vec3 nn = cross(pts[j] - pts[i], pts[k] - pts[i]);
+                if (length(nn) < 1e-9) continue;
+                nn = normalize(nn);
+                double d = dot(nn, pts[i]), mx = -1e300, mn = 1e300;
+                for (const Vec3& p : pts) { const double sd = dot(nn, p) - d; mx = std::max(mx, sd); mn = std::min(mn, sd); }
+                if (mx <= 1e-5) {} else if (mn >= -1e-5) { nn = -nn; d = -d; } else continue;
+                bool dup = false;
+                for (const Plane& q : planes) if (dot(q.n, nn) > 1 - 1e-9 && std::fabs(q.d - d) < 1e-5) dup = true;
+                if (!dup) planes.push_back({nn, d});
+            }
+    return (int)planes.size();
+}
+
+void testHullFast() {
+    std::mt19937 rng(11);
+    for (int it = 0; it < 400; ++it) {
+        const int range = it % 3 == 0 ? 3 : it % 3 == 1 ? 8 : 1000;
+        std::vector<Vec3> pts;
+        for (int i = 0, cnt = 4 + (int)(rng() % 30); i < cnt; ++i) {
+            const Vec3 p{double(rng() % range), double(rng() % range), double(rng() % range)};
+            bool dup = false;
+            for (const Vec3& q : pts) if (length(q - p) < 1e-6) dup = true;
+            if (!dup) pts.push_back(p);
+        }
+        const HullResult h = brushFromVertices(pts, Brush{}, false);
+        const int b = bruteHullFaces(pts);
+        CHECK((h.ok ? (int)h.brush.faces.size() : -1) == (b >= 4 ? b : -1));
+    }
+    // A 32-sided sphere: many corners, must rebuild (was minutes with the old search).
+    AABB box; box.add({0, 0, 0}); box.add({256, 256, 256});
+    auto sph = makePrimitive(Primitive::Sphere, box, 2, 0, 32, true, "a", 1);
+    CHECK(sph.has_value());
+    if (sph) CHECK(brushFromVertices(brushVertices(*sph), *sph).ok);
+}
+
 int main() {
     testGrid();
     testBoxGeometry();
@@ -961,6 +1036,7 @@ int main() {
     testRotate();
     testTransform();
     testHull();
+    testHullFast();
     testSnapToGrid();
     testTextures();
     testCsg();

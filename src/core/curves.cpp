@@ -1,5 +1,7 @@
 #include "core/curves.hpp"
 #include "core/hull.hpp"
+#include "core/csg.hpp"
+#include <array>
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -46,6 +48,24 @@ public:
     }
 
     P2 round(P2 q) const { return roundP(q, p_.roundToWhole); }
+
+    // Brush from faces given as 3 points each, oriented away from `inside`. Neighbouring
+    // pieces that pass the very same 3 points for a shared side get the identical plane,
+    // so they can't overlap or leave gaps, even with rounded (non-coplanar) corners.
+    bool planes(const std::vector<std::array<Vec3, 3>>& tris, const Vec3& inside, CurveResult& r) const {
+        Brush br;
+        for (const auto& t : tris) {
+            if (length(cross(t[1] - t[0], t[2] - t[0])) < 1e-9) continue;
+            const Vec3 mid = (t[0] + t[1] + t[2]) / 3.0;
+            Face f = faceFromPoints(t[0], t[1], t[2], mid - inside, p_.texture);
+            f.scaleU = f.scaleV = p_.texScale;
+            br.faces.push_back(f);
+        }
+        removeUnusedFaces(br);
+        if (!br.valid()) return false;
+        r.brushes.push_back(std::move(br));
+        return true;
+    }
 
     // Brush from arbitrary 3D corner points (convex hull), textured like prisms.
     bool hull(const std::vector<Vec3>& pts, CurveResult& r) const {
@@ -214,8 +234,15 @@ CurveResult spiralStairs(const CurveParams& p) {
     if (p.thickness <= 0) { r.error = "step thickness must be positive"; return r; }
     const P2 c{(p.u0 + p.u1) / 2, (p.v0 + p.v1) / 2};
     const double dir = p.clockwise ? -1 : 1;
+    // Step boundary angle, wrapped to one turn: the same boundary on every turn must give
+    // exactly the same (rounded) corner, also for values that land on .5 before rounding.
+    auto stepAngle = [&](int k) {
+        double deg = std::fmod(p.startDeg + dir * per * k, 360.0);
+        if (deg < 0) deg += 360;
+        return std::round(deg * 1e9) / 1e9 * kPi / 180;
+    };
     for (int k = 0; k < N; ++k) {
-        const double a0 = (p.startDeg + dir * per * k) * kPi / 180, a1 = (p.startDeg + dir * per * (k + 1)) * kPi / 180;
+        const double a0 = stepAngle(k), a1 = stepAngle(k + 1);
         std::vector<P2> poly;
         if (Ri > 1e-9) {
             poly.push_back(b.round({c.u + Ri * std::cos(a0), c.v + Ri * std::sin(a0)}));
@@ -229,10 +256,31 @@ CurveResult spiralStairs(const CurveParams& p) {
         if (!b.prism(poly, z0, z0 + p.thickness, r)) { r.error = "a step came out invalid (try other sizes or turn off rounding)"; return r; }
     }
     if (p.column && Ri > 1e-9) {
-        // Centre column filling the inner radius, floor to the top of the last step.
+        // Centre column, floor to the top of the last step. Its corners are the steps'
+        // own inner corners, so each step's inner edge lies exactly on the column.
+        auto innerAt = [&](int k) {
+            const double a = stepAngle(k);
+            return b.round({c.u + Ri * std::cos(a), c.v + Ri * std::sin(a)});
+        };
         std::vector<P2> col;
-        const int n = std::max(8, p.segments);
-        for (int i = 0; i < n; ++i) col.push_back(b.round({c.u + Ri * std::cos(2 * kPi * i / n), c.v + Ri * std::sin(2 * kPi * i / n)}));
+        const double turn = std::fabs(p.turnDeg);
+        if (turn <= 360 + 1e-9) {
+            for (int k = 0; k <= N; ++k) col.push_back(innerAt(k));
+            // Rest of the circle, where no steps are: plain arc points.
+            const double gap = 360 - turn;
+            const int extra = (int)std::ceil(gap / 45);
+            for (int e = 1; e < extra; ++e) {
+                const double a = (p.startDeg + dir * (turn + gap * e / extra)) * kPi / 180;
+                col.push_back(b.round({c.u + Ri * std::cos(a), c.v + Ri * std::sin(a)}));
+            }
+        } else {
+            const double perTurn = 360 / std::fabs(per);
+            if (std::fabs(perTurn - std::round(perTurn)) > 1e-9) {
+                r.error = "with a centre column, steps over more than one turn must divide a full circle evenly (e.g. 16 steps per 360 degrees)";
+                return r;
+            }
+            for (int k = 0; k < (int)std::round(perTurn); ++k) col.push_back(innerAt(k));
+        }
         if (!b.prism(col, p.d0, p.d0 + (N - 1) * p.rise + p.thickness, r)) { r.error = "the centre column came out invalid"; return r; }
     }
     return r;
@@ -278,20 +326,43 @@ CurveResult dome(const CurveParams& p) {
     if (p.thickness <= 0 || Ri <= 0) { r.error = "thickness must be between 0 and the radius"; return r; }
     const int N = std::max(3, p.segments), M = std::max(1, p.rings);
     const P2 c{(p.u0 + p.u1) / 2, (p.v0 + p.v1) / 2};
-    auto pt = [&](double R, int i, int j) {
+    // Rings meet on flat horizontal planes (outer and inner corner of a boundary at the
+    // same height), so with rounding the ring boundaries stay exactly flat and shared.
+    auto pt = [&](bool outer, int i, int j) { // j = M is the pole
         const double lon = 2 * kPi * (i % N) / N, lat = (kPi / 2) * j / M;
-        const P2 q = b.round({c.u + R * std::cos(lat) * std::cos(lon), c.v + R * std::cos(lat) * std::sin(lon)});
-        double h = p.d0 + R * std::sin(lat);
-        if (p.roundToWhole) h = std::round(h);
-        return b.world(q, h);
+        if (j == M) return b.world(b.round(c), p.roundToWhole ? std::round(p.d0 + (outer ? Ro : Ri)) : p.d0 + (outer ? Ro : Ri));
+        double h = Ri * std::sin(lat);
+        if (p.roundToWhole) h = std::round(p.d0 + h) - p.d0;
+        const double R = outer ? std::sqrt(Ro * Ro - h * h) : std::sqrt(std::max(0.0, Ri * Ri - h * h));
+        return b.world(b.round({c.u + R * std::cos(lon), c.v + R * std::sin(lon)}), p.d0 + h);
     };
+    auto O = [&](int i, int j) { return pt(true, i, j); };
+    auto I = [&](int i, int j) { return pt(false, i, j); };
+    // Shared sides are always built from the same three points (see Builder::planes).
+    // In the top ring all pieces meet at the pole, so there the sides go through the centre
+    // line (they'd cross each other near the pole if rounding tilted them differently).
+    const Vec3 axisLow = b.world(b.round(c), p.d0);
+    auto meridian = [&](int i, int j) {
+        if (j + 1 == M) return std::array<Vec3, 3>{O(i, j), O(0, M), axisLow};
+        return std::array<Vec3, 3>{O(i, j), O(i, j + 1), I(i, j)};
+    };
+    auto latitude = [&](int i, int j) { return std::array<Vec3, 3>{O(i, j), O(i + 1, j), I(i, j)}; };
     for (int j = 0; j < M; ++j)
         for (int i = 0; i < N; ++i) {
-            std::vector<Vec3> pts;
-            for (double R : {Ro, Ri})
-                for (int dj : {0, 1})
-                    for (int di : {0, 1}) pts.push_back(pt(R, i + di, j + dj));
-            if (!b.hull(pts, r)) { r.error = "a dome piece came out invalid (try fewer segments or a thicker shell)"; return r; }
+            std::vector<std::array<Vec3, 3>> faces{
+                {O(i, j), O(i + 1, j), O(i, j + 1)},  // outside
+                {I(i, j), I(i + 1, j), I(i, j + 1)},  // inside
+                meridian(i, j), meridian(i + 1, j),   // sides between neighbours around
+                latitude(i, j)};                      // bottom (the base for j = 0)
+            if (j + 1 < M) faces.push_back(latitude(i, j + 1)); // top (shared with the ring above)
+            if (j + 1 == M) { // top ring: the outside/inside faces end at the pole
+                faces[0] = {O(i, j), O(i + 1, j), O(0, M)};
+                faces[1] = {I(i, j), I(i + 1, j), I(0, M)};
+            }
+            Vec3 mid;
+            for (int di : {0, 1}) for (int dj : {0, 1}) mid += O(i + di, j + dj) + I(i + di, j + dj);
+            mid = mid / 8.0;
+            if (!b.planes(faces, mid, r)) { r.error = "a dome piece came out invalid (try fewer segments or a thicker shell)"; return r; }
         }
     return r;
 }

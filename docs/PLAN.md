@@ -12,7 +12,9 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 
 - Released: v0.1.0 … v0.4.0, **v0.5.0 = milestone 5 Curve tool** + texture wrapping +
   CI trimmed to Intel/Linux (this step). User asked to report only at v0.5.0.
-- **v0.6.0 = milestone 6 Workflow + shapes** (this step). Reported to the user.
+- **v0.6.0 = milestone 6 Workflow + shapes**. Reported to the user.
+- **v0.6.1 = fixes** the user reported for v0.6.0: rounded domes overlapped themselves;
+  spheres lagged when resized. Also fixed the spiral stairs column. See log.
 - **Next: milestone 7 — Terrain** (stored in our extended `.map`). Plan below.
 
 ## How to work in this repo
@@ -136,6 +138,61 @@ terminal-style render log like Hammer's compile window + log file), 10 Y2K shade
 ## Milestone 1 plan — Brushes (done)
 
 ## Log
+
+### 2026-11-16 — v0.6.1: self-overlapping shapes, fast round shapes and hull
+- **User report:** rounded domes are made of overlapping pieces; spheres lag when resized.
+- **Measured first:** a probe ran `findOverlaps` on every curve shape, with rounding on
+  and off. Results:
+  - Rounded dome: 56 overlaps. Without rounding: 0.
+  - Spiral stairs + column, 330° turn: 6–7 overlaps.
+  - Everything else: 0.
+  - Sphere build: 50 ms at 16 sides, 14.4 s at 32 sides.
+- **Cause of the sphere lag:** not vertex snapping. Two things together:
+  - The O(n⁴) brute-force hull (`brushFromVertices`), used for building primitives.
+  - The block tool rebuilding its preview in `decorate()` 4× per frame.
+- **Dome fix** (`curves.cpp`):
+  - Pieces are now built from planes (`Builder::planes`, 3 points per face).
+  - Neighbours pass the identical 3 points for a shared side, so the planes are identical.
+  - Ring boundaries are horizontal (outer and inner corner at the same height), so they
+    stay flat when rounded.
+  - In the top ring, the sides pass through the centre line, so pieces meeting at the
+    pole can't cross.
+  - Trade-off: with rounding about 29% of the corners land slightly off whole units
+    (plane intersections). Previously all corners were on whole units but the pieces
+    overlapped.
+- **Stairs fix:**
+  - The step angles are wrapped to one turn (`stepAngle`), so a boundary rounds to the
+    same corner on every turn. Values landing exactly on .5 used to round differently
+    per turn.
+  - The column's corners are the steps' inner corners, plus arc points for the gap.
+  - With several turns, the steps per turn must divide 360°; otherwise a clear error.
+- **Speed:**
+  - Cylinder, cone and sphere are now built from planes (`fromTriples` in
+    `primitives.cpp`). Sphere at 32 sides: 14.4 s → ~0.12 s; at 64 sides: ~1 s.
+  - The block tool caches the preview brush and its drawable polygons, keyed on box,
+    shape, sides, axes, rounding and texture.
+  - The hull is now gift wrapping: find one face, then pivot around each face edge to
+    the neighbour with the smallest fold angle. The old brute force remains as a
+    fallback if anything looks degenerate.
+  - Vertex-editing rebuild of a 32-sided sphere: 28 s → 0.1 s.
+  - Bug found on the way: `atan2(-0.0, x)` gave −π for points on the face itself; fixed.
+- **Tests:**
+  - Core: **2197 checks, 0 failed**. New:
+    - Every curve shape, rounding on and off, uneven sizes: no overlaps, all valid.
+    - An uneven multi-turn column is refused.
+    - The fast hull equals brute force on 400 random clouds, including heavily coplanar
+      integer grids.
+    - A 32-sided sphere rebuilds.
+  - Probes (not committed):
+    - Fast hull vs brute force on 3000 clouds: 0 mismatches.
+    - Dome sweep of 540 settings: 0 overlaps. 12 refusals, only for tiny domes where the
+      inner radius is ~4 units with many rings and rounding.
+  - UI: all 10 scripts PASS at 1× and 2×. New: `v061_fixes`:
+    - A rounded dome (13×5) and a 720° column stair, both 0 overlaps.
+    - A 32-sided sphere drawn, resized with a handle and created.
+  - Screenshots: `screenshots/m6-10-rounded-dome-no-overlaps.png`,
+    `screenshots/m6-11-sphere-32-resized.png`.
+- Next: report to the user; then milestone 7 Terrain (waiting for go-ahead).
 
 ### 2026-11-16 — Milestone 6: Workflow + shapes (v0.6.0)
 - `core/primitives`: box, wedge (triangle in the drawing view), cylinder, cone, pyramid,

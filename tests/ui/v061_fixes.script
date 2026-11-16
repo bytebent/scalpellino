@@ -1,0 +1,47 @@
+# v0.6.1 fixes: rounded domes and the spiral stairs column no longer cut into
+# themselves; a 32-sided sphere can be resized (and created) without stalling.
+# -- dome, rounding on, uneven settings
+curveshape dome
+curveset round 1
+curveset segments 13
+curveset rings 5
+curveset thickness 17
+wpress 1 0 0
+wdrag 131 131
+wdrag 262 262
+release
+key Return
+expect brushes 65
+findoverlaps
+expect overlaps 0
+shot m6-10-rounded-dome-no-overlaps.png
+# -- spiral stairs with centre column, two full turns, rounding on
+curveshape spiral_stairs
+curveset steps 24
+curveset turn 720
+curveset inner_radius 37
+curveset column 1
+wpress 1 -400 -400
+wdrag -250 -250
+wdrag -100 -100
+release
+key Return
+expect brushes 90
+findoverlaps
+expect overlaps 0
+# -- 32-sided sphere: draw, then resize with the right-edge handle, then create
+blockshape sphere 32
+wpress 1 400 0
+wdrag 528 128
+release
+wpress 1 528 64
+wdrag 560 64
+wdrag 592 64
+release
+expect edges
+shot m6-11-sphere-32-resized.png
+key Return
+expect brushes 91
+findoverlaps
+expect overlaps 0
+quit

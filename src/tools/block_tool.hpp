@@ -1,4 +1,5 @@
 #pragma once
+#include "render/scene.hpp"
 // Block tool: drag a rectangle in a 2D view to get a box preview (depth taken from the
 // last brush), adjust it with handles in any 2D view, Return creates it, Esc cancels.
 #include "core/primitives.hpp"
@@ -38,6 +39,17 @@ private:
     AABB startBox_;
     BoxGrab grab_;
     int axU_ = 0, axV_ = 1, axD_ = 2; // axes of the view the block was drawn in
+    // Last built preview (round shapes with many sides are costly; decorate runs per view).
+    struct PreviewKey {
+        AABB box; Primitive shape; int sides, axis, slope; bool round; std::string tex; double scale;
+        bool operator==(const PreviewKey& o) const {
+            return box.min == o.box.min && box.max == o.box.max && shape == o.shape && sides == o.sides && axis == o.axis &&
+                   slope == o.slope && round == o.round && tex == o.tex && scale == o.scale;
+        }
+    };
+    mutable std::optional<PreviewKey> cacheKey_;
+    mutable std::optional<Brush> cacheBrush_;
+    mutable std::optional<SceneBrush> cacheGhost_; // its drawable polygons
 };
 
 } // namespace scal
