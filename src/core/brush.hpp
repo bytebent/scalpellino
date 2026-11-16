@@ -2,6 +2,7 @@
 // Convex brush defined by planes (Quake/Hammer style), with Valve 220 texture axes.
 #include "core/math.hpp"
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -32,12 +33,27 @@ struct Polygon {
     int face = -1; // index into Brush::faces
 };
 
+// Terrain (milestone 7): one face of the brush becomes a grid of (2^power)+1 points per
+// side, each lifted along the face normal by `heights`; `alpha` blends from the face's
+// texture (0) to `texture2` (1). The brush itself stays an ordinary convex brush; only
+// that face is drawn as the terrain surface. Functions are in core/terrain.hpp.
+struct Terrain {
+    int face = -1;               // index into Brush::faces (that face must have 4 corners)
+    int power = 3;               // 2^power cells per side
+    Vec3 start;                  // grid starts at the face corner nearest this point
+    std::vector<double> heights; // size()*size(), row-major: [j * size() + i]
+    std::vector<double> alpha;   // same layout, 0..1
+    std::string texture2;        // blend texture ("" = none yet)
+    int size() const { return (1 << power) + 1; }
+};
+
 struct Brush {
     BrushId id = 0;
     std::uint32_t group = 0; // generated group (curve tool) this brush belongs to; 0 = none
     std::uint32_t visgroup = 0; // named visibility group; 0 = none
     bool hidden = false;        // hidden with "Hide selected" (until "Show all")
     std::vector<Face> faces;
+    std::optional<Terrain> terrain;
 
     // Computes face polygons. Faces that clip away completely produce no polygon.
     std::vector<Polygon> polygons() const;

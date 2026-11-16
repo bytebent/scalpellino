@@ -64,10 +64,13 @@ SplitResult splitBrush(const Brush& b, const Vec3& a, const Vec3& bp, const Vec3
     if (mn >= -kSliver) { r.front = b; return r; }
 
     // Back part: keep where distance <= 0 -> add a face with outward normal pl.n.
+    // Cut pieces are plain brushes: their faces change, so a terrain wouldn't fit.
     Brush back = b;
+    back.terrain.reset();
     back.faces.push_back(capFace(pl, a, bp, c, capTexture));
     // Front part: outward normal -pl.n.
     Brush front = b;
+    front.terrain.reset();
     front.faces.push_back(capFace(flipped(pl), a, bp, c, capTexture));
     removeUnusedFaces(back);
     removeUnusedFaces(front);

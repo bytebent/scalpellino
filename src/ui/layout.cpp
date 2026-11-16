@@ -37,6 +37,7 @@ MenuActions drawMenuBar(const MenuState& st) {
         if (ImGui::MenuItem("Texture", "Shift+A", st.textureTool)) a.toolTexture = true;
         if (ImGui::MenuItem("Clip", "Shift+X", st.clipTool)) a.toolClip = true;
         if (ImGui::MenuItem("Curve (arch, ring, wall, stairs)", "Shift+C", st.curveTool)) a.toolCurve = true;
+        if (ImGui::MenuItem("Terrain (sculpt, paint)", "Shift+G", st.terrainTool)) a.toolTerrain = true;
         ImGui::Separator();
         if (ImGui::BeginMenu("Clip: keep")) {
             if (ImGui::MenuItem("Both pieces", nullptr, st.clipKeep == 0)) a.clipKeep = 0;
@@ -122,6 +123,21 @@ MenuActions drawMenuBar(const MenuState& st) {
         if (ImGui::MenuItem("Rescan texture folders")) a.rescanTextures = true;
         ImGui::EndMenu();
     }
+    if (ImGui::BeginMenu("Terrain")) {
+        if (ImGui::MenuItem("Make terrain / grid size...", nullptr, false, st.canMakeTerrain)) a.makeTerrain = true;
+        if (ImGui::MenuItem("Remove terrain", nullptr, false, st.terrainSelected)) a.removeTerrain = true;
+        ImGui::Separator();
+        if (ImGui::MenuItem("Terrain tool", "Shift+G", st.terrainTool)) a.toolTerrain = true;
+        static const char* modes[] = {"Raise", "Lower", "Smooth", "Flatten", "Noise", "Paint texture", "Erase paint"};
+        for (int i = 0; i < 7; ++i)
+            if (ImGui::MenuItem(modes[i], nullptr, st.terrainTool && st.terrainMode == i)) a.terrainMode = i;
+        ImGui::Separator();
+        if (ImGui::MenuItem("Import heightmap...", nullptr, false, st.terrainSelected)) a.heightmap = true;
+        if (ImGui::MenuItem("Stitch neighbouring edges")) a.stitchTerrain = true;
+        ImGui::TextDisabled("Make terrain: top face of selected brushes,");
+        ImGui::TextDisabled("or the faces picked with the Texture tool");
+        ImGui::EndMenu();
+    }
     if (ImGui::BeginMenu("View")) {
         // Shortcut labels are for an Italian keyboard (the two keys right of P).
         if (ImGui::MenuItem("Smaller grid", "\xC3\xA8")) a.gridSmaller = true;
@@ -180,6 +196,9 @@ void drawControlsWindow(bool* open) {
             {"Hollow", "Cmd+Shift+H: turn brushes into walls of a typed thickness"},
             {"Curve tool", "Shift+C: pick a shape in Properties, drag a box (wall: start to end); Return creates"},
             {"Edit / bake a curve", "Tools menu (select the generated shape first)"},
+            {"Make terrain", "Terrain menu: top face of selected brushes (or faces picked with the Texture tool)"},
+            {"Terrain tool", "Shift+G: drag over terrain (3D, or a 2D view facing it); mode, radius, amount in Properties; Esc cancels a stroke"},
+            {"Heightmap / stitch / remove", "Terrain menu"},
             {"Delete", "Delete or Backspace"},
             {"Undo / redo", "Cmd+Z / Cmd+Shift+Z"},
             {"New / open / save / save as", "Cmd+N / Cmd+O / Cmd+S / Cmd+Shift+S"},

@@ -15,6 +15,7 @@
 #include "tools/texture_tool.hpp"
 #include "tools/clip_tool.hpp"
 #include "tools/curve_tool.hpp"
+#include "tools/terrain_tool.hpp"
 #include "render/texture_library.hpp"
 #include <deque>
 #include <memory>
@@ -125,6 +126,22 @@ private:
     void dropInvisibleFromSelection();
     void drawVisgroupsPanel();
 
+    // Terrain (milestone 7)
+    void makeTerrainNow(int power);   // selected brushes' top faces, or picked faces
+    void removeTerrain();
+    void stitchAllTerrain();
+    bool importHeightmap(const std::string& path, double low, double high); // false + terrainError_
+    // Applies changed copies of terrain brushes plus stitching with every other terrain.
+    void applyTerrainEdit(std::vector<Brush> edited, const char* name);
+    bool selectionHasTerrain() const;
+    void drawTerrainPanel();
+    void drawTerrainDialogs();
+    bool askMakeTerrain_ = false, askHeightmap_ = false;
+    int terrainPower_ = 3;
+    char heightmapPath_[1024] = "";
+    double heightLow_ = 0, heightHigh_ = 256;
+    std::string terrainError_;
+
     // Overlap finder + navigation
     void findOverlapsNow();
     void focusOverlap(int index);
@@ -159,6 +176,7 @@ private:
     TextureTool textureTool_;
     ClipTool clipTool_;
     CurveTool curveTool_;
+    TerrainTool terrainTool_;
     Tool* tool_ = &selectTool_;
 
     int capture_ = -1;          // view that owns the current left-button drag
@@ -217,7 +235,7 @@ private:
 
     // Native file dialogs (macOS). They open only once no modifier key or mouse button is
     // held: the system panel swallows key-up events, which would leave Cmd "stuck".
-    enum class Native { None, Open, SaveAs, Folder };
+    enum class Native { None, Open, SaveAs, Folder, Heightmap };
     Native native_ = Native::None;
     bool useNative_ = false;
 

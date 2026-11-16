@@ -15,7 +15,10 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 - **v0.6.0 = milestone 6 Workflow + shapes**. Reported to the user.
 - **v0.6.1 = fixes** the user reported for v0.6.0: rounded domes overlapped themselves;
   spheres lagged when resized. Also fixed the spiral stairs column. See log.
-- **Next: milestone 7 — Terrain** (stored in our extended `.map`). Plan below.
+- **v0.7.0 = milestone 7 Terrain** (this step). Report to the user, then wait for the
+  go-ahead on milestone 8.
+- **Next: milestone 8 — World**: lights, sky picker (a setting, not a sealed box), fog,
+  camera bookmarks, 72-unit scale figure.
 
 ## How to work in this repo
 
@@ -62,6 +65,16 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 
 - **Curve tool extras:** drag curved-wall depth in other views; stairs centre column;
   dome / cone / torus / helix ramp; per-shape remembered settings.
+- **Terrain, decided without asking (confirm with the user):**
+  - A sculpt stroke is applied when the mouse is released. It's an edit, like moving,
+    not a creation, so the Return rule doesn't apply. Esc during a drag cancels it.
+  - One blend texture per patch: painting with a new texture replaces that patch's
+    second texture.
+  - Clip, carve, hollow and vertex editing turn a terrain brush back into a plain brush.
+  - In 2D views the full grid is drawn. In 3D, a selected terrain shows only its outline.
+- **Terrain extras, later:** more than 2 textures per patch; sculpting limited to the
+  selection; a "set height" mode; edges between different grid sizes (now they only
+  match where grid points meet).
 
 - **Texture browser, later:** tags, folders/collections, favourites, recently used,
   sorting by size, previews of how a texture tiles (user: "eventually a lot of
@@ -113,7 +126,15 @@ stairs, more shapes (dome, cone, torus, helix ramp).
 Delivered: block primitives, dome / helix ramp / straight stairs / stairs column,
 hide/show + visgroups (saved), overlap finder with camera jumps, views to origin.
 
-## Milestone 7 plan — Terrain (draft)
+## Milestone 7 — Terrain (done, v0.7.0)
+
+Delivered: terrain from 4-cornered faces (2–32 cells), resampling grid-size change,
+sculpt (raise / lower / smooth / flatten / noise) and paint / erase with typed radius,
+amount, strength and falloff, a circle laid on the surface, dab spacing, one undo step
+per stroke, stitched neighbours (shared points), heightmap import, `.map` storage, 3D
+blend of two textures, picking raised terrain. Original draft kept below.
+
+### Draft (as planned)
 
 User: "a terrain tool like Hammer's, maybe better"; keep it in our own `.map`; export
 decided at the end.
@@ -138,6 +159,65 @@ terminal-style render log like Hammer's compile window + log file), 10 Y2K shade
 ## Milestone 1 plan — Brushes (done)
 
 ## Log
+
+### 2026-11-16 — Milestone 7: Terrain (v0.7.0)
+- **Core** (`core/terrain.{hpp,cpp}`, data in `Brush::terrain`):
+  - The grid is bilinear over the face's 4 corners; heights go along the face normal.
+  - The start corner is a stored point. It follows translate, rotate and remap; a mirror
+    transposes the grid, and scaling scales heights along the normal.
+  - `makeTerrain` (new, or a resample keeping the shape), `topQuadFace`, `terrainGrid`.
+  - `sculpt` modes: raise, lower, smooth, flatten, noise, paint, erase. Falloffs: soft,
+    linear, hard.
+  - `stitchTerrain`, `applyHeightmap`, `rayHitGrid` / `rayHitTerrain`.
+  - All edits go through "shared points" (same flat spot and normal = one point), so
+    neighbouring patches never crack.
+  - `splitBrush` drops terrain from its pieces.
+- **File:** `//@ terrain …`, `//@ th` rows, `//@ ta` rows (only when painted).
+  Incomplete data is a load error.
+- **Drawing:**
+  - `SceneBrush` replaces the terrain face with one polygon per cell, with per-corner
+    blend values and smooth normals.
+  - 3D: the second texture is drawn over the first, with the blend as transparency.
+  - The selection outline shows only the terrain's border.
+  - The brush circle is laid onto the surface in 3D (48 rays) and drawn flat in 2D.
+- **Tool** (`tools/terrain_tool`):
+  - Strokes work in 3D, or in 2D along the view depth.
+  - Dabs every radius/5. One `makeModify` per stroke, so one undo step.
+  - Esc cancels a stroke. The new `Tool::hover` hook keeps the circle under the mouse.
+- **Editor:**
+  - Terrain menu: make / grid size, remove, tool + modes, heightmap, stitch.
+  - Shift+G, a tool button, the Properties panel, and Make terrain / Import heightmap
+    dialogs (Browse… uses the native panel on macOS).
+  - Every terrain edit is stitched against all other terrain (`applyTerrainEdit`).
+  - `pick3D` and the Texture tool's face picking now hit raised terrain.
+- **Script:**
+  - New commands: `terrain make|remove|stitch|heightmap`, `terrainset`, `whover`,
+    `camera`, `expect terrains`, `expect terrainheight`.
+  - `tests/ui/run.sh` now copies `tests/ui/assets/` into each run (heightmap image).
+- **Tests:**
+  - Core: **3140 checks, 0 failed**. New terrain checks cover:
+    - the grid, bounds and ray hits;
+    - move, rotate, mirror, scale and upside-down;
+    - cut pieces and 3-corner faces;
+    - every mode and the falloffs;
+    - seams through every mode, and stitch repair;
+    - resample exactness, heightmap orientation, and the `.map` round trip, including
+      broken data.
+  - UI: all 11 scripts PASS at 1× and 2×. New: `m7_terrain`, covering:
+    - two patches, a raise across the seam (equal on both sides), undo/redo;
+    - a multi-dab stroke as one undo step;
+    - smooth, flatten, noise, and paint from the 3D view;
+    - a grid-size change, heightmap import, move, save + open, remove.
+  - Perf: 16 patches of 33×33 points take 5 ms per dab, and a ray over all of them
+    0.4 ms.
+  - Idle CPU with a terrain map open: 0 ticks over 10 s.
+  - Screenshots:
+    - `screenshots/m7-01-terrain-tool-circle.png`
+    - `screenshots/m7-02-sculpted-top-view.png`
+    - `screenshots/m7-03-painted-3d.png`: Tile_19 blended into Bricks_24 over a hill,
+      with the circle lying on the surface.
+    - `screenshots/m7-04-heightmap-hill.png`
+- Next: report to the user; milestone 8 (World) after the go-ahead.
 
 ### 2026-11-16 — v0.6.1: self-overlapping shapes, fast round shapes and hull
 - **User report:** rounded domes are made of overlapping pieces; spheres lag when resized.

@@ -49,6 +49,10 @@ public:
     void resetToOrigin();
     // 3D: keep the viewing direction, move back from `target` by `distance`.
     void lookAt(const Vec3& target, double distance);
+    // 3D camera position and direction (degrees), e.g. for scripted screenshots.
+    void setCamera(const Vec3& pos, float yaw, float pitch) {
+        pos_ = {(float)pos.x, (float)pos.y, (float)pos.z}; yaw_ = yaw; pitch_ = pitch;
+    }
     void zoom2D(float wheel, Vector2 localPx);
     void screenToWorld2D(Vector2 localPx, double& u, double& v) const;
     Vector2 worldToLocal2D(double u, double v) const;

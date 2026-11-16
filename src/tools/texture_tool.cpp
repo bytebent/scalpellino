@@ -1,5 +1,6 @@
 #include "tools/texture_tool.hpp"
 #include "core/texture.hpp"
+#include "core/terrain.hpp"
 
 namespace scal {
 
@@ -13,6 +14,10 @@ FaceRef pickFace3D(const Document& doc, const Viewport& vp, Vector2 local) {
         double t = 0;
         const int f = rayHitFace(b, o, d, &t);
         if (f >= 0 && t < bestT) { bestT = t; best = {b.id, f}; }
+        if (b.terrain) { // a raised terrain sticks out of its brush
+            const double tt = rayHitTerrain(b, o, d);
+            if (tt >= 0 && tt < bestT) { bestT = tt; best = {b.id, b.terrain->face}; }
+        }
     }
     return best;
 }

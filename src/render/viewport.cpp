@@ -48,6 +48,19 @@ inline void segment(Vector2 a, Vector2 b, int t, Color c) {
 
 Vector3 toRl(const Vec3& v) { return {(float)v.x, (float)v.y, (float)v.z}; }
 
+// Terrain tool circle: 64 points around the centre, in the plane across the normal.
+std::vector<Vec3> cursorCircle(const Scene::BrushCursor& c) {
+    Vec3 a = std::fabs(c.normal.z) < 0.9 ? Vec3{0, 0, 1} : Vec3{1, 0, 0};
+    a = normalize(cross(c.normal, a));
+    const Vec3 b = cross(c.normal, a);
+    std::vector<Vec3> pts;
+    for (int i = 0; i < 64; ++i) {
+        const double t = 2 * 3.14159265358979323846 * i / 64;
+        pts.push_back(c.center + a * (std::cos(t) * c.radius) + b * (std::sin(t) * c.radius));
+    }
+    return pts;
+}
+
 // Stable pastel color per brush (flat-shaded 3D mode, like Hammer's "flat" view).
 Color brushColor(BrushId id) {
     unsigned h = id * 2654435761u;
@@ -202,6 +215,13 @@ void Viewport::render2D(const Grid& grid, const Scene& scene) {
             if (scene.selected.count(b.id) && !scene.hidden.count(b.id)) drawBrush(b, kSelected);
     for (const SceneBrush& g : scene.ghosts) drawBrush(g, kSelected);
     for (const SceneBrush& g : scene.invalidGhosts) drawBrush(g, kInvalid);
+    if (scene.brushCursor) {
+        const auto pts = cursorCircle(*scene.brushCursor);
+        for (size_t i = 0; i < pts.size(); ++i) {
+            const Vec3 &a = pts[i], &e = pts[(i + 1) % pts.size()];
+            segment(phys(a[U], a[V]), phys(e[U], e[V]), thick, kPreview);
+        }
+    }
 
     // ---- vertex tool corners: white, selected red (drawn on top)
     {
@@ -337,15 +357,61 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
     DrawLine3D({0, 0, 0}, {0, 0, 256}, {80, 120, 230, 255});
 
     // ---- brushes: textured (default) or flat-shaded per brush colour
+    // Terrain cells: smooth per-corner shading; the second texture is drawn over the
+    // first with the painted blend as transparency (same points, so it sits exactly on it).
+    auto drawTerrain = [&](const SceneBrush& b, Color tint, bool textured) {
+        if (!b.terrain) return;
+        const Face& f = b.faces[b.terrain->face];
+        for (int pass = 0; pass < 2; ++pass) {
+            std::string texName = pass == 0 ? f.texture : b.texture2;
+            if (pass == 1 && (!textured || b.texture2.empty())) break;
+            unsigned texId = 0;
+            TexSize ts{1, 1};
+            if (textured) {
+                const Texture2D& tex = scene.textures->get(texName);
+                texId = tex.id;
+                ts = {std::max(1, tex.width), std::max(1, tex.height)};
+            }
+            const size_t cells = b.polys.size() - b.terrainFirst;
+            for (size_t c = 0; c < cells; ++c) {
+                const Polygon& p = b.polys[b.terrainFirst + c];
+                const float* al = &b.cellAlpha[4 * c];
+                if (pass == 1 && al[0] <= 0 && al[1] <= 0 && al[2] <= 0 && al[3] <= 0) continue;
+                rlCheckRenderBatchLimit(6);
+                if (texId) rlSetTexture(texId);
+                rlBegin(RL_TRIANGLES);
+                for (int k : {0, 1, 2, 0, 2, 3}) {
+                    const Color sc = shade(tint, b.cellNormals[4 * c + k]);
+                    const unsigned char a = pass == 0 ? 255 : (unsigned char)std::lround(std::clamp(al[k], 0.0f, 1.0f) * 255);
+                    rlColor4ub(sc.r, sc.g, sc.b, a);
+                    if (texId) {
+                        const UV uv = texCoord(f, p.verts[k], ts);
+                        rlTexCoord2f((float)uv.u, (float)uv.v);
+                    }
+                    rlVertex3f((float)p.verts[k].x, (float)p.verts[k].y, (float)p.verts[k].z);
+                }
+                rlEnd();
+                if (texId) rlSetTexture(0);
+            }
+        }
+    };
     auto drawSolid = [&](const SceneBrush& b, Color base) {
-        for (const Polygon& p : b.polys) {
+        if (b.terrain) drawTerrain(b, base, false);
+        for (size_t pi = 0; pi < (b.terrain ? b.terrainFirst : b.polys.size()); ++pi) {
+            const Polygon& p = b.polys[pi];
             const Color c = shade(base, p.normal);
             for (size_t i = 1; i + 1 < p.verts.size(); ++i)
                 DrawTriangle3D(toRl(p.verts[0]), toRl(p.verts[i]), toRl(p.verts[i + 1]), c);
         }
     };
     auto drawTextured = [&](const SceneBrush& b, Color tint, bool faceSelection) {
-        for (const Polygon& p : b.polys) {
+        if (b.terrain) {
+            Color t = tint;
+            if (faceSelection && scene.selectedFaces.count({b.id, b.terrain->face})) t = {255, 105, 105, 255};
+            drawTerrain(b, t, true);
+        }
+        for (size_t pi = 0; pi < (b.terrain ? b.terrainFirst : b.polys.size()); ++pi) {
+            const Polygon& p = b.polys[pi];
             if (p.face < 0 || p.face >= (int)b.faces.size()) continue;
             const Face& f = b.faces[p.face];
             const Texture2D& tex = scene.textures->get(f.texture);
@@ -367,9 +433,21 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
         }
     };
     auto drawEdges = [&](const SceneBrush& b, Color c) {
-        for (const Polygon& p : b.polys)
+        const size_t plain = b.terrain ? b.terrainFirst : b.polys.size();
+        for (size_t pi = 0; pi < plain; ++pi) {
+            const Polygon& p = b.polys[pi];
             for (size_t i = 0; i < p.verts.size(); ++i)
                 DrawLine3D(toRl(p.verts[i]), toRl(p.verts[(i + 1) % p.verts.size()]), c);
+        }
+        if (b.terrain) { // terrain: just its outline (the grid would hide the shape)
+            const TerrainGrid& g = *b.terrain;
+            for (int k = 0; k + 1 < g.n; ++k) {
+                DrawLine3D(toRl(g.at(k, 0)), toRl(g.at(k + 1, 0)), c);
+                DrawLine3D(toRl(g.at(k, g.n - 1)), toRl(g.at(k + 1, g.n - 1)), c);
+                DrawLine3D(toRl(g.at(0, k)), toRl(g.at(0, k + 1)), c);
+                DrawLine3D(toRl(g.at(g.n - 1, k)), toRl(g.at(g.n - 1, k + 1)), c);
+            }
+        }
     };
     const Color selTint{235, 110, 110, 255};
     const bool textured = scene.textures != nullptr;
@@ -403,6 +481,12 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
         const AABB& pb = *scene.previewBox;
         const Vec3 c = pb.center(), s = pb.size();
         DrawCubeWires(toRl(c), (float)s.x, (float)s.y, (float)s.z, kPreview);
+    }
+    if (scene.brushCursor) {
+        const auto pts = scene.brushCursor->ring.empty() ? cursorCircle(*scene.brushCursor) : scene.brushCursor->ring;
+        for (size_t i = 0; i < pts.size(); ++i) DrawLine3D(toRl(pts[i]), toRl(pts[(i + 1) % pts.size()]), kPreview);
+        const Vec3 tip = scene.brushCursor->center + scene.brushCursor->normal * (scene.brushCursor->radius * 0.25);
+        DrawLine3D(toRl(scene.brushCursor->center), toRl(tip), kPreview);
     }
     rlDrawRenderBatchActive();
     rlEnableDepthTest();

@@ -8,6 +8,7 @@
 #include "core/csg.hpp"
 #include "core/curves.hpp"
 #include "core/primitives.hpp"
+#include "core/terrain.hpp"
 #include "io/map_format.hpp"
 #include <cmath>
 #include <random>
@@ -943,6 +944,52 @@ static void testMapRoundTrip() {
     // Exact values survived.
     CHECK(d2.brushes()[2].faces[0].p[0] == d.brushes()[2].faces[0].p[0]);
     if (a != b) std::printf("---- first\n%s\n---- second\n%s\n", a.c_str(), b.c_str());
+
+    // Terrain round trip: exact heights, blend, second texture, start corner; brushes
+    // without painting have no blend rows; broken terrain data is reported.
+    {
+        AABB tb; tb.add({0, 0, 0}); tb.add({256, 256, 64});
+        Brush t1 = makeBox(tb, "a");
+        CHECK(makeTerrain(t1, topQuadFace(t1), 3).empty());
+        std::vector<Brush> ts{t1};
+        SculptDab d; d.center = {100, 90, 64}; d.radius = 120; d.amount = 13.37;
+        sculpt(ts, d);
+        d.mode = SculptMode::Paint; d.strength = 0.3; d.texture = "Tile_19";
+        sculpt(ts, d);
+        tb.min.x += 300; tb.max.x += 300;
+        Brush t2 = makeBox(tb, "a");
+        CHECK(makeTerrain(t2, topQuadFace(t2), 2).empty());
+        t2.terrain->heights[3] = -7.25;
+        Document td;
+        td.apply(td.makeAdd({ts[0], t2}, "add"));
+        const std::string text = writeMap(td);
+        CHECK(text.find("//@ terrain face=") != std::string::npos);
+        CHECK(text.find("tex2=Tile_19") != std::string::npos);
+        Document te;
+        CHECK(readMap(text, te).ok);
+        CHECK(te.brushes().size() == 2);
+        if (te.brushes().size() == 2) {
+            const Brush &r1 = te.brushes()[0], &r2 = te.brushes()[1];
+            CHECK(r1.terrain && r2.terrain);
+            if (r1.terrain && r2.terrain) {
+                CHECK(r1.terrain->heights == ts[0].terrain->heights);
+                CHECK(r1.terrain->alpha == ts[0].terrain->alpha);
+                CHECK(r1.terrain->texture2 == "Tile_19");
+                CHECK(nearV(r1.terrain->start, ts[0].terrain->start));
+                CHECK(r2.terrain->power == 2 && near(r2.terrain->heights[3], -7.25));
+                CHECK(r2.terrain->alpha.size() == 25);
+                CHECK(terrainValid(r1) && terrainValid(r2));
+            }
+        }
+        std::string broken = text;
+        const size_t th = broken.find("//@ th");
+        broken.erase(th, broken.find('\n', th) - th + 1); // drop one row
+        Document tf;
+        const MapReadResult rr = readMap(broken, tf);
+        CHECK(!rr.ok);
+        CHECK(rr.error.find("terrain") != std::string::npos);
+    }
+
 }
 
 static void testMapQuakeFormat() {
@@ -980,6 +1027,198 @@ static void testMapErrors() {
     // An invalid brush is skipped, not fatal.
     r = readMap("{\n\"classname\" \"worldspawn\"\n{\n( 0 0 0 ) ( 0 64 0 ) ( 64 0 0 ) t 0 0 0 1 1\n}\n}\n", d);
     CHECK(r.ok && r.skippedBrushes == 1);
+}
+
+
+// ---- Terrain (milestone 7)
+static Vec3 highestPoint(const Brush& b) {
+    const auto g = terrainGrid(b);
+    Vec3 best{0, 0, -1e300};
+    for (const Vec3& p : g->pos) if (p.z > best.z) best = p;
+    return best;
+}
+
+void testTerrain() {
+    AABB box; box.add({0, 0, 0}); box.add({256, 256, 64});
+    Brush b = makeBox(box, "a");
+    const int top = topQuadFace(b);
+    CHECK(top >= 0);
+    CHECK(near(b.faces[top].plane().n.z, 1));
+    CHECK(makeTerrain(b, top, 3).empty());
+    CHECK(b.terrain && b.terrain->size() == 9);
+    auto g = terrainGrid(b);
+    CHECK(g.has_value());
+    CHECK(nearV(g->corners[0], {0, 0, 64}));      // starts at the lowest corner
+    for (size_t k = 0; k < g->pos.size(); ++k) CHECK(near(g->pos[k].z, 64));
+    CHECK(near(g->at(4, 4).x, 128) && near(g->at(4, 4).y, 128));
+    // bad power, bad face
+    CHECK(!makeTerrain(b, top, 0).empty());
+    CHECK(!makeTerrain(b, top, 6).empty());
+
+    // A raised point; bounds include it; ray hits it.
+    b.terrain->heights[4 * 9 + 4] = 32;
+    CHECK(near(b.bounds().max.z, 96));
+    CHECK(near(rayHitTerrain(b, {128, 128, 1000}, {0, 0, -1}), 1000 - 96, 1e-6));
+    CHECK(rayHitTerrain(b, {600, 128, 1000}, {0, 0, -1}) < 0);
+    CHECK(near(rayHitTerrain(b, {32, 32, 1000}, {0, 0, -1}), 1000 - 64, 1e-6));
+
+    // Asymmetric bump at i=6, j=2 -> follows move, rotation, mirror and scale.
+    b.terrain->heights[4 * 9 + 4] = 0;
+    b.terrain->heights[2 * 9 + 6] = 20;
+    Vec3 bump = highestPoint(b);
+    CHECK(nearV(bump, {192, 64, 84}));
+    {
+        Brush m = b;
+        m.translate({10, -20, 5}, true);
+        CHECK(nearV(highestPoint(m), bump + Vec3{10, -20, 5}, 1e-6));
+        Brush r = b;
+        r.rotate({128, 128, 0}, {0, 0, 1}, 3.14159265358979323846 / 2, true);
+        CHECK(nearV(highestPoint(r), {192, 192, 84}, 1e-6)); // (64,-64) from the centre turns to (64,64)
+        std::string err;
+        TransformSpec mx; mx.kind = TransformKind::Scale; mx.scale = {-1, 1, 1}; mx.pivot = {128, 0, 0};
+        auto mir = applyTransform({b}, mx, true, err);
+        CHECK(mir.size() == 1);
+        if (!mir.empty()) CHECK(nearV(highestPoint(mir[0]), {64, 64, 84}, 1e-6));
+        TransformSpec sc; sc.kind = TransformKind::Scale; sc.scale = {1, 1, 2}; sc.pivot = {0, 0, 0};
+        auto big = applyTransform({b}, sc, true, err);
+        CHECK(big.size() == 1);
+        if (!big.empty()) CHECK(nearV(highestPoint(big[0]), {192, 64, 128 + 40}, 1e-6));
+        TransformSpec fz; fz.kind = TransformKind::Scale; fz.scale = {1, 1, -1}; fz.pivot = {0, 0, 32};
+        auto upside = applyTransform({b}, fz, true, err); // terrain now faces down, bump too
+        CHECK(upside.size() == 1);
+        if (!upside.empty()) {
+            const auto ug = terrainGrid(upside[0]);
+            CHECK(ug.has_value());
+            if (ug) { double lo = 1e300; for (const Vec3& p : ug->pos) lo = std::min(lo, p.z); CHECK(near(lo, -20, 1e-6)); }
+        }
+    }
+    // Cutting a terrain brush gives plain brushes.
+    {
+        const SplitResult sr = splitBrush(b, {128, 0, 0}, {128, 0, 1}, {128, 1, 0}, "a");
+        CHECK(sr.front && sr.back);
+        if (sr.front) CHECK(!sr.front->terrain);
+        if (sr.back) CHECK(!sr.back->terrain);
+    }
+    // A 3-corner face can't be terrain.
+    {
+        const SplitResult sr = splitBrush(makeBox(box, "a"), {0, 128, 0}, {0, 128, 1}, {128, 0, 0}, "a");
+        CHECK(sr.front.has_value());
+        if (sr.front) {
+            Brush tri = *sr.front;
+            int triTop = -1;
+            for (const Polygon& p : tri.polygons()) if (p.normal.z > 0.9) triTop = p.face;
+            CHECK(triTop >= 0);
+            CHECK(!makeTerrain(tri, triTop, 3).empty());
+        }
+    }
+
+    // Sculpt: hard raise by 8 within 64 units of the centre (flat distance).
+    {
+        std::vector<Brush> bs{makeBox(box, "a")};
+        CHECK(makeTerrain(bs[0], topQuadFace(bs[0]), 3).empty());
+        SculptDab d; d.mode = SculptMode::Raise; d.falloff = Falloff::Hard; d.center = {128, 128, 64}; d.radius = 64; d.amount = 8;
+        CHECK(sculpt(bs, d));
+        const auto sg = terrainGrid(bs[0]);
+        int raised = 0;
+        for (size_t k = 0; k < sg->pos.size(); ++k) {
+            const double dist = std::hypot(sg->base[k].x - 128, sg->base[k].y - 128);
+            CHECK(near(sg->pos[k].z, dist <= 64 ? 72 : 64));
+            if (dist <= 64) ++raised;
+        }
+        CHECK(raised == 13); // centre + 4 at 32 + 4 diagonal + 4 at 64
+        // Soft falloff: centre full, rim zero.
+        CHECK(near(falloffWeight(Falloff::Soft, 0, 10), 1) && near(falloffWeight(Falloff::Soft, 10, 10), 0));
+        CHECK(near(falloffWeight(Falloff::Linear, 5, 10), 0.5) && near(falloffWeight(Falloff::Hard, 11, 10), 0));
+        // Flatten (full strength) back to the original surface.
+        d.mode = SculptMode::Flatten; d.strength = 1; d.flattenTarget = {0, 0, 64}; d.radius = 100;
+        CHECK(sculpt(bs, d));
+        for (double h : bs[0].terrain->heights) CHECK(near(h, 0));
+        CHECK(!sculpt(bs, d)); // nothing left to change
+        // Paint sets the second texture and blend; erase takes it away.
+        d.mode = SculptMode::Paint; d.strength = 0.5; d.texture = "Tile_19"; d.radius = 40;
+        CHECK(sculpt(bs, d));
+        CHECK(bs[0].terrain->texture2 == "Tile_19");
+        CHECK(near(bs[0].terrain->alpha[4 * 9 + 4], 0.5));
+        CHECK(near(bs[0].terrain->alpha[0], 0));
+        d.mode = SculptMode::Erase; d.strength = 1;
+        CHECK(sculpt(bs, d));
+        CHECK(near(bs[0].terrain->alpha[4 * 9 + 4], 0));
+        // Noise is repeatable for the same seed and stays within +-amount.
+        std::vector<Brush> n1 = bs, n2 = bs;
+        d.mode = SculptMode::Noise; d.amount = 10; d.falloff = Falloff::Hard; d.radius = 1000; d.seed = 7;
+        sculpt(n1, d); sculpt(n2, d);
+        bool varied = false;
+        for (size_t k = 0; k < n1[0].terrain->heights.size(); ++k) {
+            CHECK(near(n1[0].terrain->heights[k], n2[0].terrain->heights[k]));
+            CHECK(std::fabs(n1[0].terrain->heights[k]) <= 10 + 1e-9);
+            if (std::fabs(n1[0].terrain->heights[k] - n1[0].terrain->heights[0]) > 0.5) varied = true;
+        }
+        CHECK(varied);
+        // Smooth flattens a spike.
+        std::vector<Brush> sp = bs;
+        sp[0].terrain->heights.assign(81, 0);
+        sp[0].terrain->heights[4 * 9 + 4] = 40;
+        d.mode = SculptMode::Smooth; d.strength = 1; d.falloff = Falloff::Hard; d.radius = 1000;
+        CHECK(sculpt(sp, d));
+        CHECK(near(sp[0].terrain->heights[4 * 9 + 4], 0));
+        CHECK(near(sp[0].terrain->heights[4 * 9 + 5], 10));
+    }
+
+    // Neighbouring patches stay stitched through every kind of dab.
+    {
+        AABB b2; b2.add({256, 0, 0}); b2.add({512, 256, 64});
+        std::vector<Brush> bs{makeBox(box, "a"), makeBox(b2, "a")};
+        for (Brush& x : bs) CHECK(makeTerrain(x, topQuadFace(x), 3).empty());
+        auto seamOk = [&]() {
+            const auto ga = terrainGrid(bs[0]), gb = terrainGrid(bs[1]);
+            int shared = 0;
+            bool ok = true;
+            for (size_t p = 0; p < ga->base.size(); ++p)
+                for (size_t q = 0; q < gb->base.size(); ++q)
+                    if (length(ga->base[p] - gb->base[q]) < 1e-6) {
+                        ++shared;
+                        if (length(ga->pos[p] - gb->pos[q]) > 1e-9) ok = false;
+                        if (std::fabs(bs[0].terrain->alpha[p] - bs[1].terrain->alpha[q]) > 1e-9) ok = false;
+                    }
+            return ok && shared == 9;
+        };
+        SculptDab d; d.center = {256, 100, 64}; d.radius = 90;
+        for (SculptMode m : {SculptMode::Raise, SculptMode::Noise, SculptMode::Smooth, SculptMode::Paint, SculptMode::Lower, SculptMode::Flatten}) {
+            d.mode = m; d.amount = 12; d.strength = 0.6; d.texture = "t2"; d.flattenTarget = {0, 0, 70};
+            CHECK(sculpt(bs, d));
+            CHECK(seamOk());
+        }
+        // Out-of-step edges (e.g. edited apart) are pulled together by stitching.
+        bs[0].terrain->heights[4 * 9 + 8] += 5;
+        CHECK(!seamOk());
+        CHECK(stitchTerrain(bs) == 1);
+        CHECK(seamOk());
+        CHECK(stitchTerrain(bs) == 0);
+    }
+
+    // Changing the grid size keeps the shape (a straight slope stays exact).
+    {
+        Brush s = makeBox(box, "a");
+        CHECK(makeTerrain(s, topQuadFace(s), 2).empty());
+        for (int j = 0; j < 5; ++j) for (int i = 0; i < 5; ++i) s.terrain->heights[j * 5 + i] = 10.0 * i;
+        CHECK(makeTerrain(s, s.terrain->face, 4).empty());
+        CHECK(s.terrain->size() == 17);
+        for (int j = 0; j < 17; ++j) for (int i = 0; i < 17; ++i) CHECK(near(s.terrain->heights[j * 17 + i], 40.0 * i / 16, 1e-9));
+    }
+
+    // Heightmap: a 2 x 1 image black -> white along X gives a slope 0..100.
+    {
+        std::vector<Brush> bs{makeBox(box, "a")};
+        CHECK(makeTerrain(bs[0], topQuadFace(bs[0]), 3).empty());
+        CHECK(applyHeightmap(bs, {0.0f, 1.0f}, 2, 1, 0, 100));
+        const auto hg = terrainGrid(bs[0]);
+        for (size_t k = 0; k < hg->pos.size(); ++k) CHECK(near(hg->pos[k].z, 64 + 100 * hg->base[k].x / 256, 1e-9));
+        // image top row = +Y side
+        CHECK(applyHeightmap(bs, {1.0f, 0.0f}, 1, 2, 0, 50));
+        const auto vg = terrainGrid(bs[0]);
+        for (size_t k = 0; k < vg->pos.size(); ++k) CHECK(near(vg->pos[k].z, 64 + 50 * vg->base[k].y / 256, 1e-9));
+        CHECK(!applyHeightmap(bs, {}, 0, 0, 0, 1));
+    }
 }
 
 // The hull uses a fast edge-pivoting search; it must find exactly the faces a plain
@@ -1042,6 +1281,7 @@ int main() {
     testCsg();
     testCurves();
     testPrimitives();
+    testTerrain();
     testRay();
     testUndo();
     testMakeChange();

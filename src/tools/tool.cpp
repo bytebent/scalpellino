@@ -1,4 +1,5 @@
 #include "tools/tool.hpp"
+#include "core/terrain.hpp"
 #include <algorithm>
 #include <cmath>
 
@@ -134,7 +135,11 @@ BrushId pick3D(const Document& doc, const Viewport& vp, Vector2 local) {
     double bestT = 1e300;
     for (const Brush& b : doc.brushes()) {
         if (!doc.visible(b)) continue;
-        const double t = rayHit(b, o, d);
+        double t = rayHit(b, o, d);
+        if (b.terrain) { // a raised terrain sticks out of its brush
+            const double tt = rayHitTerrain(b, o, d);
+            if (tt >= 0 && (t < 0 || tt < t)) t = tt;
+        }
         if (t >= 0 && t < bestT) { bestT = t; best = b.id; }
     }
     return best;

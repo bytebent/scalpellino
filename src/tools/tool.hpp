@@ -47,6 +47,8 @@ public:
     virtual void press(ToolEnv&, const Pointer&) {}
     virtual void drag(ToolEnv&, const Pointer&) {}
     virtual void release(ToolEnv&, const Pointer&) {}
+    // Mouse moved over a view with no button down (p.view == nullptr: left the views).
+    virtual void hover(ToolEnv&, const Pointer&) {}
     // Return/Enter, Esc, Delete... Returns true if handled.
     virtual bool key(ToolEnv&, int key) { return false; }
     virtual void decorate(const Document&, Scene&) const {}

@@ -21,12 +21,12 @@ isn't signed with an Apple developer certificate). Or in Terminal:
 
 ## Controls (so far)
 
-Everything is also in the menus (File, Edit, Tools, Transform, View, Help), and
+Everything is also in the menus (File, Edit, Tools, Transform, Texture, Terrain, View, Help), and
 **Help → Controls** (F1) lists every shortcut.
 
 | Action | Keys |
 |---|---|
-| Select / Block / Vertex / Texture / Clip / Curve tool | **Shift+S** / **Shift+B** / **Shift+V** / **Shift+A** / **Shift+X** / **Shift+C** |
+| Select / Block / Vertex / Texture / Clip / Curve / Terrain tool | **Shift+S** / **Shift+B** / **Shift+V** / **Shift+A** / **Shift+X** / **Shift+C** / **Shift+G** |
 | Draw a block | Block tool: drag in a 2D view, adjust handles in any 2D view, **Return** creates, **Esc** cancels; shape (box, wedge, cylinder, cone, pyramid, sphere) and sides in the **Properties** panel |
 | Select | click a brush (2D or 3D); **Cmd+click** adds/removes; **Cmd+A** all; **Esc** none |
 | Move / resize | drag a selection / drag its handles or edges (snaps to the grid) |
@@ -48,6 +48,9 @@ Everything is also in the menus (File, Edit, Tools, Transform, View, Help), and
 | Hollow | **Cmd+Shift+H**: turn brushes into walls of a typed thickness |
 | Curves | Curve tool: pick a shape in the **Properties** panel (arch, ring/pipe/cylinder, curved wall, spiral stairs with optional column, arched opening, dome, helix ramp, straight stairs), drag a box in a 2D view (curved wall: start → end, then drag the bend point), adjust with handles or typed values, **Return** creates |
 | Edit / bake a curve | select it (one click selects the whole shape), Tools → Edit curve / Bake curve into plain brushes |
+| Make terrain | Terrain → Make terrain: the top face of each selected brush (or faces picked with the Texture tool) becomes a grid of 2–32 cells per side; run it again to change the grid size |
+| Sculpt / paint terrain | Terrain tool (**Shift+G**): drag over terrain in the 3D view or a 2D view facing it. Modes raise, lower, smooth, flatten, noise, paint (current texture), erase paint; radius, amount/strength and falloff typed in **Properties**. One drag = one undo step, **Esc** cancels a drag. Neighbouring patches stay stitched |
+| Heightmap / stitch / remove terrain | Terrain menu (Import heightmap: grey image, black/white heights typed) |
 | Wrap a texture around a corner | Texture tool: click a face, **Option+Shift+click** the neighbouring face (repeat to go around); or pick several and use **Wrap around** (Face panel / Texture menu) |
 | Hidden faces | Texture → Apply nodraw: faces with `nodraw` show in the editor but are never rendered or exported |
 | Adjust a face's texture | **Face** panel (right): shift, scale, rotation, fit, justify, align to world/face |

@@ -1,4 +1,5 @@
 #include "io/map_format.hpp"
+#include "core/terrain.hpp"
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
@@ -37,6 +38,26 @@ void writeBrush(std::ostringstream& o, const Brush& b) {
         if (b.visgroup) o << " visgroup=" << b.visgroup;
         if (b.hidden) o << " hidden=1";
         o << '\n';
+    }
+    if (b.terrain) {
+        // Terrain: a header, then one line of heights per grid row ("th") and, if any
+        // blending was painted, one line of blend values per row ("ta").
+        const Terrain& t = *b.terrain;
+        const int n = t.size();
+        o << "//@ terrain face=" << t.face << " power=" << t.power << " start=" << num(t.start.x) << ','
+          << num(t.start.y) << ',' << num(t.start.z);
+        if (!t.texture2.empty()) o << " tex2=" << t.texture2;
+        o << '\n';
+        bool painted = false;
+        for (double a : t.alpha) if (a != 0) painted = true;
+        for (int pass = 0; pass < (painted ? 2 : 1); ++pass) {
+            const std::vector<double>& v = pass == 0 ? t.heights : t.alpha;
+            for (int j = 0; j < n && (int)v.size() == n * n; ++j) {
+                o << (pass == 0 ? "//@ th" : "//@ ta");
+                for (int i = 0; i < n; ++i) o << ' ' << num(v[(size_t)j * n + i]);
+                o << '\n';
+            }
+        }
     }
     for (const Face& f : b.faces) {
         for (const Vec3& p : f.p) o << "( " << num(p.x) << ' ' << num(p.y) << ' ' << num(p.z) << " ) ";
@@ -253,12 +274,51 @@ public:
             if (t.kind == Token::Meta) { meta(lex_.next().text, b); continue; }
             fail(t, "unexpected '" + t.text + "' in brush (patches are not supported)");
         }
+        if (b.terrain) {
+            // Blend rows are left out when nothing was painted.
+            Terrain& tr = *b.terrain;
+            const size_t nn = (size_t)tr.size() * tr.size();
+            if (tr.power < kMinTerrainPower || tr.power > kMaxTerrainPower || tr.heights.size() != nn)
+                fail(lex_.peek(), "terrain data is incomplete");
+            if (tr.alpha.empty()) tr.alpha.assign(nn, 0);
+            if (tr.alpha.size() != nn) fail(lex_.peek(), "terrain blend data is incomplete");
+        }
         return b;
     }
 
-    // "//@ visgroup=3 hidden=1" -> brush fields.
+    // "//@ visgroup=3 hidden=1" -> brush fields. "//@ terrain ...", "//@ th ...",
+    // "//@ ta ..." -> terrain (header, height row, blend row).
     static void meta(const std::string& text, Brush& b) {
         std::istringstream in(text);
+        std::string first;
+        in >> first;
+        if (first == "th" || first == "ta") {
+            if (!b.terrain) return;
+            std::vector<double>& v = first == "th" ? b.terrain->heights : b.terrain->alpha;
+            std::string w;
+            while (in >> w) v.push_back(std::strtod(w.c_str(), nullptr));
+            return;
+        }
+        if (first == "terrain") {
+            Terrain t;
+            std::string kv;
+            while (in >> kv) {
+                const size_t eq = kv.find('=');
+                if (eq == std::string::npos) continue;
+                const std::string k = kv.substr(0, eq), v = kv.substr(eq + 1);
+                if (k == "face") t.face = std::atoi(v.c_str());
+                else if (k == "power") t.power = std::atoi(v.c_str());
+                else if (k == "tex2") t.texture2 = v;
+                else if (k == "start") {
+                    double x = 0, y = 0, z = 0;
+                    if (std::sscanf(v.c_str(), "%lf,%lf,%lf", &x, &y, &z) == 3) t.start = {x, y, z};
+                }
+            }
+            b.terrain = std::move(t);
+            return;
+        }
+        in.clear();
+        in.str(text);
         std::string kv;
         while (in >> kv) {
             const size_t eq = kv.find('=');

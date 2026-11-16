@@ -9,6 +9,7 @@ fail=0
 for script in "$HERE"/*.script; do
   name="$(basename "$script" .script)"
   work="$(mktemp -d)"
+  cp -r "$HERE/assets" "$work/assets" # files scripts load (e.g. a heightmap image)
   ( cd "$work" && timeout 120 xvfb-run -a -s "-screen 0 1600x1000x24" "$APP" --script "$script" )
   code=$?
   if [ $code -eq 0 ]; then echo "PASS $name"; else echo "FAIL $name (exit $code)"; fail=1; fi

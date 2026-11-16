@@ -1,5 +1,6 @@
 #include "core/brush.hpp"
 #include "core/grid.hpp"
+#include "core/terrain.hpp"
 #include <algorithm>
 #include <cmath>
 
@@ -81,6 +82,9 @@ AABB Brush::bounds() const {
     AABB b;
     for (const Polygon& p : polygons())
         for (const Vec3& v : p.verts) b.add(v);
+    if (terrain)
+        if (auto g = terrainGrid(*this))
+            for (const Vec3& v : g->pos) b.add(v);
     return b;
 }
 
@@ -96,6 +100,7 @@ bool Brush::valid() const {
 }
 
 void Brush::translate(const Vec3& delta, bool textureLock) {
+    if (terrain) terrain->start += delta;
     for (Face& f : faces) {
         for (Vec3& p : f.p) p += delta;
         if (textureLock) {
@@ -112,6 +117,7 @@ Vec3 rotateVec(const Vec3& v, const Vec3& k, double a) {
 }
 
 void Brush::rotate(const Vec3& center, const Vec3& axis, double radians, bool textureLock) {
+    if (terrain) terrain->start = center + rotateVec(terrain->start - center, axis, radians);
     for (Face& f : faces) {
         for (Vec3& p : f.p) p = cleanVec(center + rotateVec(p - center, axis, radians));
         if (textureLock) {
@@ -136,6 +142,15 @@ void Brush::remapBounds(const AABB& from, const AABB& to, bool textureLock) {
         for (int a = 0; a < 3; ++a) r[a] = to.min[a] + (p[a] - from.min[a]) * k[a];
         return r;
     };
+    if (terrain && terrain->face >= 0 && terrain->face < (int)faces.size()) {
+        // Heights go along the face normal: they stretch with the scale along it.
+        const Vec3 n = faces[terrain->face].plane().n;
+        const double f = length(Vec3{n.x * k.x, n.y * k.y, n.z * k.z});
+        for (double& h : terrain->heights) h *= f;
+        terrain->start = map(terrain->start);
+        // A mirror turns the corner order around: transpose so heights stay in place.
+        if (k.x * k.y * k.z < 0) transposeTerrain(*terrain);
+    }
     for (Face& f : faces) {
         // Keep texture anchored at the first plane point (lock) before moving points.
         const Vec3 oldAnchor = f.p[0];

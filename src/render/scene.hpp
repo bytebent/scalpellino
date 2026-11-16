@@ -2,6 +2,7 @@
 // What the viewports draw this frame: brush polygons (cached per document revision,
 // with tool previews substituted), selection, and tool overlays.
 #include "core/document.hpp"
+#include "core/terrain.hpp"
 #include <optional>
 #include <set>
 #include <unordered_map>
@@ -14,6 +15,14 @@ struct SceneBrush {
     std::vector<Polygon> polys;
     std::vector<Face> faces; // texture data for each polygon's face index
     AABB bounds;
+    // Terrain: the terrain face's polygon is replaced by one 4-point polygon per grid
+    // cell, polys[terrainFirst ...]; per corner of each cell a blend value and a smooth
+    // normal (4 per cell, same order as the cell's verts).
+    std::optional<TerrainGrid> terrain;
+    size_t terrainFirst = 0;
+    std::string texture2;
+    std::vector<float> cellAlpha;
+    std::vector<Vec3> cellNormals;
 };
 
 class TextureLibrary;
@@ -36,6 +45,14 @@ struct Scene {
     std::vector<Vec3> clipPoints;            // clip tool: points 1, 2, 3
     bool clipActive = false;
     std::set<BrushId> hidden;                // brushes not drawn (e.g. a curve being regenerated)
+    std::vector<SceneBrush> replaced;        // drawn like normal brushes in place of hidden ones
+                                             // (terrain being sculpted)
+    struct BrushCursor {
+        Vec3 center, normal;
+        double radius;
+        std::vector<Vec3> ring; // optional: the circle laid onto the surface (3D view)
+    };
+    std::optional<BrushCursor> brushCursor;  // terrain tool: circle on the surface
 };
 
 SceneBrush makeSceneBrush(const Brush& b);

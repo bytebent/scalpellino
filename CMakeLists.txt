@@ -28,7 +28,8 @@ add_library(scal_core STATIC
   src/core/texture.cpp
   src/core/csg.cpp
   src/core/curves.cpp
-  src/core/primitives.cpp)
+  src/core/primitives.cpp
+  src/core/terrain.cpp)
 target_include_directories(scal_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 # File formats. Also graphics-free, so it is tested headless too.
@@ -61,6 +62,7 @@ if(SCAL_BUILD_APP)
     src/tools/texture_tool.cpp
     src/tools/clip_tool.cpp
     src/tools/curve_tool.cpp
+    src/tools/terrain_tool.cpp
     src/ui/layout.cpp
   )
   if(APPLE)
