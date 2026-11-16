@@ -10,11 +10,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # Intel only on every push. Apple Silicon runners often queue 5-10 minutes on
+        # free plans; build them on demand with the "apple-silicon" workflow instead.
         include:
           - runner: macos-15-intel
             arch: intel
-          - runner: macos-15
-            arch: apple-silicon
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4

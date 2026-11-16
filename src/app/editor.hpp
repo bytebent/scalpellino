@@ -88,6 +88,8 @@ private:
     void drawFacePanel();
     void applyCurrentTexture() { applyTexture(currentTexture_); }
     void applyTexture(const std::string& name);
+    // Wraps from the start face through every connected picked face (one undo step).
+    void wrapAroundPicked();
     // Applies fn to every picked face (texture tool) as one undoable command.
     template <class Fn> void editFaces(const char* name, Fn fn);
     void loadTextureFolders();

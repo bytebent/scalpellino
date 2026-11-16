@@ -14,8 +14,8 @@ Open the repo's **Releases** page (right-hand side on GitHub):
   successful push.
 - **Versions** (v0.1.0, ...) — milestone snapshots that don't change.
 
-Download `Scalpellino-intel.zip` (or `Scalpellino-apple-silicon.zip`), unzip it, and on
-first launch allow it in **System Settings → Privacy & Security → Open Anyway** (the app
+Download `Scalpellino-intel.zip` (Apple Silicon builds are made on demand: Actions tab →
+**apple-silicon** → Run workflow), unzip it, and on first launch allow it in **System Settings → Privacy & Security → Open Anyway** (the app
 isn't signed with an Apple developer certificate). Or in Terminal:
 `xattr -dr com.apple.quarantine /path/to/Scalpellino.app`
 
@@ -46,6 +46,7 @@ Everything is also in the menus (File, Edit, Tools, Transform, View, Help), and
 | Clip | Clip tool: drag a line in a 2D view; drag points 1–3 in any 2D view (3 tilts the plane); **Shift+X** again cycles keep both/front/back; **Return** clips; Tools → Clip points... types them |
 | Carve | **Cmd+Shift+C**: cut the selection's shape out of the brushes it touches |
 | Hollow | **Cmd+Shift+H**: turn brushes into walls of a typed thickness |
+| Wrap a texture around a corner | Texture tool: click a face, **Option+Shift+click** the neighbouring face (repeat to go around); or pick several and use **Wrap around** (Face panel / Texture menu) |
 | Hidden faces | Texture → Apply nodraw: faces with `nodraw` show in the editor but are never rendered or exported |
 | Adjust a face's texture | **Face** panel (right): shift, scale, rotation, fit, justify, align to world/face |
 | Your own textures | Texture → Add texture folder... (PNG, TGA, JPG, BMP; subfolders included) |

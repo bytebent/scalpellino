@@ -113,6 +113,24 @@ panel + viewport handles.
 
 ## Log
 
+### 2026-11-16 — CI trimmed + texture wrap (no separate release; ships in v0.5.0)
+User: Apple Silicon CI felt slow; asked to skip it unless needed; asked for wrapping a
+texture around a corner; asked to go straight on to milestone 5 and only report at
+v0.5.0 (no v0.4.1 release).
+- Measured: Apple Silicon jobs *run* in 20-50 s but *queue* 5-10 min (once 15). They only
+  duplicated the Intel build + core tests. Removed from per-push CI; on-demand
+  `.github/workflows/apple-silicon.yml` (workflow_dispatch) kept. Releases now carry the
+  Intel zip only (INSTALL notes + README updated).
+- `core/texture::wrapTexture`: folds the source face's axes about the shared edge
+  (rotation that maps one normal onto the other), copies texture/scale/rotation, sets
+  offsets so texels match along the edge. Tests: pillar +X -> +Y -> -X continuity at
+  several heights, axes in the new plane, non-adjacent refused.
+- Texture tool: Option+Shift+click = wrap from the last clicked face onto this one (then
+  it becomes the start: walk around a pillar). Face panel / Texture menu **Wrap around**:
+  from the start face through all connected picked faces (BFS, one undo step).
+- Tests: core 579 checks, 0 failed; new UI script `m4_wrap` PASS; screenshot
+  `m4-06-wrapped-corner`.
+
 ### 2026-11-16 — Milestone 4: Shaping (v0.4.0)
 - `core/csg`: `brushVolume`, `removeUnusedFaces`, `faceFromPoints`, `splitBrush` (plane
   through 3 points, drops slivers < 0.001), `carveBrush` (subtract a convex cutter: split

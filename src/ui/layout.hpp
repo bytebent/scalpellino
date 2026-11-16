@@ -14,6 +14,7 @@ struct MenuState {
     bool vertexTool = false, verticesSelected = false;
     int pivotMode = 0;
     bool slopeAngles = false, microgrid = false;
+    bool facesPicked = false;
     bool textureTool = false, textureLock = true, smoothTextures = false, textured3D = true;
     bool canApplyTexture = false;
     double defaultScale = 0.25;
@@ -35,7 +36,7 @@ struct MenuActions {
     int pivotMode = -1;          // 0 centre, 1 origin, 2 custom (opens dialog)
     int rotSnap = -1;            // 0 = 15 degree steps, 1 = grid-friendly slopes
     bool toggleMicrogrid = false, setGridSize = false;
-    bool applyTexture = false, applyNoDraw = false, toolTexture = false, toggleTextureLock = false;
+    bool applyTexture = false, applyNoDraw = false, wrapAround = false, toolTexture = false, toggleTextureLock = false;
     double defaultScale = 0;     // > 0: new default texture scale
     int smoothTextures = -1;     // 0 crisp, 1 smooth
     int textured3D = -1;         // 0 flat colours, 1 textured

@@ -1,0 +1,30 @@
+# Texture wrap around a corner (v0.4.x). Pillar 64 x 64 x 256 in Tile_19.
+texture Tile_19
+tool block
+wpress 1 0 0
+wdrag 64 64
+release
+key Return
+transform scale 1 1 4
+# pick the -Y side (right of the 3D view) and give it Bricks_24
+tool texture
+press3d 12 -25
+release
+expect pickedfaces 1
+texture Bricks_24
+applytexture
+expect texture Bricks_24
+# Option+Shift+click the -X side (left): the bricks continue around the corner
+press3d -12 -25 alt shift
+release
+expect pickedfaces 1
+expect texture Bricks_24
+shot m4-06-wrapped-corner.png
+undo
+# Wrap around: Cmd+click (whole pillar, started from the -Y side), then Wrap around
+press3d 12 -25 cmd
+release
+expect pickedfaces 6
+wraparound
+expect texture Bricks_24
+quit

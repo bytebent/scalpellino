@@ -382,6 +382,35 @@ static void testTextures() {
     alignTextureToWorld(s, sn);
     CHECK(s.u.offset == 0 && s.rotation == 0);
 
+    // Wrap around a corner: +X face (2) -> +Y face (4) of a pillar; texels match along
+    // the shared vertical edge, and the new axes lie in the +Y face.
+    {
+        Brush pil = makeBox(box({0, 0, 0}, {64, 64, 256}), "Bricks_24");
+        Face& fx = pil.faces[2];
+        fx.u.offset = 37; fx.v.offset = 11; fx.scaleU = 0.25; fx.scaleV = 0.5;
+        rotateTexture(fx, fx.plane().n, 30);
+        const auto pp = pil.polygons();
+        Face fy = pil.faces[4];
+        fy.texture = "other";
+        CHECK(wrapTexture(fx, polyOfFace(pp, 2), fy, polyOfFace(pp, 4)));
+        CHECK(fy.texture == "Bricks_24" && fy.scaleU == 0.25);
+        const Vec3 ny = fy.plane().n;
+        CHECK(near(dot(fy.u.axis, ny), 0, 1e-9) && near(dot(fy.v.axis, ny), 0, 1e-9));
+        for (double z : {0.0, 77.0, 256.0}) {
+            const Vec3 p{64, 64, z};
+            const UV a = texCoord(fx, p, ts), b = texCoord(fy, p, ts);
+            CHECK(near(a.u, b.u, 1e-9) && near(a.v, b.v, 1e-9));
+        }
+        // Keep going around: +Y -> -X face (3).
+        Face fmx = pil.faces[3];
+        CHECK(wrapTexture(fy, polyOfFace(pp, 4), fmx, polyOfFace(pp, 3)));
+        const UV a = texCoord(fy, {0, 64, 100}, ts), b = texCoord(fmx, {0, 64, 100}, ts);
+        CHECK(near(a.u, b.u, 1e-9) && near(a.v, b.v, 1e-9));
+        // Opposite faces share no edge -> refused.
+        Face fmx2 = pil.faces[3];
+        CHECK(!wrapTexture(fx, polyOfFace(pp, 2), fmx2, polyOfFace(pp, 3)));
+    }
+
     CHECK(isNoDraw("nodraw") && isNoDraw("NODRAW") && isNoDraw("tools/toolsnodraw"));
     CHECK(!isNoDraw("Bricks_24") && !isNoDraw("nodraw_old"));
 

@@ -23,6 +23,7 @@ void TextureTool::press(ToolEnv& env, const Pointer& p) {
         const FaceRef hit = pickFace3D(doc, *p.view, p.local);
         if (hit.second < 0) { if (!env.shift) faces_.clear(); return; }
         const Brush* b = doc.find(hit.first);
+        if (env.alt && env.shift) { wrapOnto(env.doc, hit); return; }
         if (env.alt) { // eyedropper
             if (b && env.currentTexture) {
                 *env.currentTexture = b->faces[hit.second].texture;
@@ -34,11 +35,13 @@ void TextureTool::press(ToolEnv& env, const Pointer& p) {
             // Cmd+click: the whole brush (Cmd+Shift+click adds it to the picked faces).
             if (!env.shift) faces_.clear();
             for (int i = 0; i < (int)b->faces.size(); ++i) faces_.insert({b->id, i});
+            primary_ = hit;
         } else if (env.shift) {
             // Shift+click: add / remove single faces.
-            if (!faces_.erase(hit)) faces_.insert(hit);
+            if (!faces_.erase(hit)) { faces_.insert(hit); if (primary_.second < 0) primary_ = hit; }
         } else {
             faces_ = {hit};
+            primary_ = hit;
         }
         return;
     }
@@ -46,6 +49,34 @@ void TextureTool::press(ToolEnv& env, const Pointer& p) {
     if (!env.shift) faces_.clear();
     if (const Brush* b = doc.find(id))
         for (int i = 0; i < (int)b->faces.size(); ++i) faces_.insert({b->id, i});
+}
+
+FaceRef TextureTool::primary(const Document& doc) const {
+    const Brush* b = doc.find(primary_.first);
+    if (!b || primary_.second < 0 || primary_.second >= (int)b->faces.size()) return {0, -1};
+    return primary_;
+}
+
+void TextureTool::wrapOnto(Document& doc, const FaceRef& target) {
+    const FaceRef src = primary(doc);
+    if (src.second < 0) { message_ = "click a face first, then Option+Shift+click its neighbour"; return; }
+    if (src == target) return;
+    const Brush* sb = doc.find(src.first);
+    const Brush* tb = doc.find(target.first);
+    if (!sb || !tb) return;
+    auto polyOf = [](const Brush& b, int face) {
+        for (const Polygon& p : b.polygons()) if (p.face == face) return p;
+        return Polygon{};
+    };
+    Brush out = *tb;
+    if (!wrapTexture(sb->faces[src.second], polyOf(*sb, src.second), out.faces[target.second], polyOf(*tb, target.second))) {
+        message_ = "those faces don't share an edge";
+        return;
+    }
+    doc.apply(doc.makeModify({out}, "Wrap texture"));
+    primary_ = target;
+    faces_ = {target};
+    message_ = "wrapped - Option+Shift+click the next face to keep going";
 }
 
 bool TextureTool::key(ToolEnv&, int key) {
@@ -67,7 +98,7 @@ void TextureTool::decorate(const Document& doc, Scene& scene) const {
 
 const char* TextureTool::hint() const {
     if (!message_.empty()) return message_.c_str();
-    return "3D: click face  Shift+click add/remove  Cmd+click whole brush  Option+click pick texture   Shift+T: apply current texture";
+    return "3D: click face  Shift+click add/remove  Cmd+click whole brush  Option+click pick texture  Option+Shift+click wrap onto face   Shift+T: apply";
 }
 
 } // namespace scal

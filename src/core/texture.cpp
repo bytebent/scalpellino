@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <vector>
 
 namespace scal {
 
@@ -91,6 +92,33 @@ void justifyTexture(Face& f, const Polygon& poly, TexSize ts, Justify j) {
             break;
     }
     normalizeTextureOffsets(f, ts);
+}
+
+bool wrapTexture(const Face& from, const Polygon& fp, Face& to, const Polygon& tp) {
+    // Shared edge: two corners present in both polygons.
+    std::vector<Vec3> shared;
+    for (const Vec3& a : fp.verts)
+        for (const Vec3& b : tp.verts)
+            if (length(a - b) < 1e-4) { shared.push_back(a); break; }
+    if (shared.size() < 2) return false;
+    const Vec3 q = shared[0];
+    const Vec3 e = normalize(shared[1] - shared[0]);
+    const Vec3 na = from.plane().n, nb = to.plane().n;
+    // Angle that folds face A's plane onto face B's, about the edge.
+    const double ang = std::atan2(dot(cross(na, nb), e), dot(na, nb));
+    const Vec3 ru = rotateVec(from.u.axis, e, ang);
+    const Vec3 rv = rotateVec(from.v.axis, e, ang);
+    to.texture = from.texture;
+    to.scaleU = from.scaleU;
+    to.scaleV = from.scaleV;
+    to.rotation = from.rotation;
+    // Keep texel coordinates equal on the edge (pivot q lies on it; e is fixed by the
+    // rotation, so the whole edge matches).
+    to.u.offset = from.u.offset + (dot(q, from.u.axis) - dot(q, ru)) / from.scaleU;
+    to.v.offset = from.v.offset + (dot(q, from.v.axis) - dot(q, rv)) / from.scaleV;
+    to.u.axis = cleanVec(ru);
+    to.v.axis = cleanVec(rv);
+    return true;
 }
 
 void normalizeTextureOffsets(Face& f, TexSize ts) {

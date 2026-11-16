@@ -1,0 +1,27 @@
+name: apple-silicon
+
+# On-demand Apple Silicon build (Actions tab -> apple-silicon -> Run workflow).
+# Not run on every push: free Apple Silicon runners often wait 5-10 minutes in the queue.
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build --config Release -j 4
+      - name: Core tests
+        run: ctest --test-dir build --output-on-failure
+      - name: Package app
+        run: |
+          codesign --force --deep --sign - build/Scalpellino.app
+          ditto -c -k --keepParent build/Scalpellino.app Scalpellino-apple-silicon.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Scalpellino-apple-silicon
+          path: Scalpellino-apple-silicon.zip
+          retention-days: 30

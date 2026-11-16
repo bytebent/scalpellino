@@ -33,6 +33,12 @@ enum class Justify { Left, Right, Top, Bottom, Center };
 // Shifts the texture so its edge (or centre) lines up with the face's edge (or centre).
 void justifyTexture(Face& f, const Polygon& poly, TexSize ts, Justify j);
 
+// Continues `from`'s texture onto the neighbouring face `to` as if folded around their
+// shared edge (Hammer's "wrap"): texture, scale and rotation are copied, the axes are
+// rotated about the edge, and offsets are set so texels line up exactly along the edge.
+// Returns false if the faces don't share an edge.
+bool wrapTexture(const Face& from, const Polygon& fromPoly, Face& to, const Polygon& toPoly);
+
 // Wraps offsets into [0, size) (same look, tidy numbers).
 void normalizeTextureOffsets(Face& f, TexSize ts);
 

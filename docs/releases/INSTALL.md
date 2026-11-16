@@ -1,7 +1,8 @@
 ## Download
 
 - **Intel Mac:** `Scalpellino-intel.zip`
-- **Apple Silicon Mac (M1/M2/...):** `Scalpellino-apple-silicon.zip`
+- **Apple Silicon Mac (M1/M2/...):** not built automatically; run the `apple-silicon`
+  workflow in the Actions tab to get one.
 
 ## First launch
 

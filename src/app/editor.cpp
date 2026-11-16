@@ -168,6 +168,7 @@ bool Editor::frame(float dt) {
     st.clipTool = tool_ == &clipTool_;
     st.clipPlane = clipTool_.hasPlane();
     st.clipKeep = clipTool_.keep == ClipTool::Keep::Both ? 0 : clipTool_.keep == ClipTool::Keep::Front ? 1 : 2;
+    st.facesPicked = tool_ == &textureTool_ && textureTool_.faces(doc_).size() > 1;
     st.canApplyTexture = !doc_.selection().empty() || (tool_ == &textureTool_ && !textureTool_.faces(doc_).empty());
     const MenuActions m = drawMenuBar(st);
     const std::string status = statusText();
@@ -227,6 +228,7 @@ bool Editor::frame(float dt) {
     if (m.hollow) { shapingError_.clear(); askHollow_ = true; }
     if (m.applyTexture) applyCurrentTexture();
     if (m.applyNoDraw) applyTexture(kNoDrawTexture);
+    if (m.wrapAround) wrapAroundPicked();
     if (m.toolTexture) setTool(&textureTool_);
     if (m.toggleTextureLock) tfTexLock_ = !tfTexLock_;
     if (m.defaultScale > 0) defaultScale_ = m.defaultScale;
@@ -983,6 +985,44 @@ void Editor::applyTexture(const std::string& tex) {
     doc_.apply(doc_.makeModify(out, "Apply texture"));
 }
 
+void Editor::wrapAroundPicked() {
+    const std::vector<FaceRef> picked = textureTool_.faces(doc_);
+    if (picked.size() < 2) return;
+    FaceRef start = textureTool_.primary(doc_);
+    if (std::find(picked.begin(), picked.end(), start) == picked.end()) start = picked[0];
+    std::vector<Brush> work; // copies of touched brushes
+    auto brushOf = [&](BrushId id) -> Brush& {
+        for (Brush& b : work) if (b.id == id) return b;
+        work.push_back(*doc_.find(id));
+        return work.back();
+    };
+    auto polyOf = [](const Brush& b, int face) {
+        for (const Polygon& p : b.polygons()) if (p.face == face) return p;
+        return Polygon{};
+    };
+    std::vector<FaceRef> done{start};
+    bool progress = true;
+    while (progress) {
+        progress = false;
+        for (const FaceRef& f : picked) {
+            if (std::find(done.begin(), done.end(), f) != done.end()) continue;
+            for (const FaceRef& d : done) {
+                Brush& db = brushOf(d.first);
+                const Face src = db.faces[d.second];
+                const Polygon sp = polyOf(db, d.second);
+                Brush& fb = brushOf(f.first);
+                if (wrapTexture(src, sp, fb.faces[f.second], polyOf(fb, f.second))) {
+                    done.push_back(f);
+                    progress = true;
+                    break;
+                }
+            }
+        }
+    }
+    if (done.size() < 2) { errorText_ = "Wrap around: none of the picked faces touch the first one."; return; }
+    doc_.apply(doc_.makeModify(work, "Wrap texture"));
+}
+
 void Editor::drawTextureBrowser() {
     if (ImGui::Begin("Textures###textures", nullptr, ImGuiWindowFlags_NoCollapse)) {
         // Current texture with a small preview.
@@ -1136,6 +1176,12 @@ void Editor::drawFacePanel() {
             if (ImGui::SmallButton("World")) editFaces("Align texture", [&](Face& x, const Polygon&, TexSize, const Vec3& n) { alignTextureToWorld(x, n); });
             ImGui::SameLine();
             if (ImGui::SmallButton("Face")) editFaces("Align texture", [&](Face& x, const Polygon&, TexSize, const Vec3& n) { alignTextureToFace(x, n); });
+            if (faces.size() > 1) {
+                if (ImGui::Button("Wrap around")) wrapAroundPicked();
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Continue the first clicked face's texture around all connected picked faces");
+            } else {
+                ImGui::TextDisabled("Wrap: Option+Shift+click the next face");
+            }
             ImGui::Separator();
             if (ImGui::Button("Apply current texture")) applyCurrentTexture();
             ImGui::SameLine();
@@ -1271,7 +1317,8 @@ void Editor::runPending() {
 //   layout classic|default   (classic = no right-hand panels; older scripts use it)
 //   wpress <view> <u> <v> [mods] / wdrag <u> <v>   (2D input in world coordinates)
 //   press3d <dx> <dy> [mods]   (3D view click relative to its centre)
-//   tool texture   texturedir <path>   texture <name>   applytexture   applynodraw   rendermode flat|textured
+//   tool texture   texturedir <path>   texture <name>   applytexture   applynodraw   wraparound
+//   rendermode flat|textured
 //   texscale <s>   facefit   facerotate <deg>   facealign world|face
 //   facejustify left|right|top|bottom|center
 //   expect texture <name>   expect pickedfaces <n>   expect current <name>
@@ -1451,6 +1498,7 @@ void Editor::stepScript() {
     } else if (cmd == "texture") { in >> currentTexture_;
     } else if (cmd == "applytexture") { applyCurrentTexture();
     } else if (cmd == "applynodraw") { applyTexture(kNoDrawTexture);
+    } else if (cmd == "wraparound") { wrapAroundPicked();
     } else if (cmd == "clippoints") {
         Vec3 a, b, c;
         in >> a.x >> a.y >> a.z >> b.x >> b.y >> b.z >> c.x >> c.y >> c.z;

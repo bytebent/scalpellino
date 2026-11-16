@@ -96,6 +96,7 @@ MenuActions drawMenuBar(const MenuState& st) {
         if (ImGui::MenuItem("Apply current texture", "Shift+T", false, st.canApplyTexture)) a.applyTexture = true;
         if (ImGui::MenuItem("Apply nodraw (hidden faces)", nullptr, false, st.canApplyTexture)) a.applyNoDraw = true;
         if (ImGui::MenuItem("Texture tool (pick faces)", "Shift+A", st.textureTool)) a.toolTexture = true;
+        if (ImGui::MenuItem("Wrap around picked faces", "Option+Shift+click", false, st.facesPicked)) a.wrapAround = true;
         ImGui::Separator();
         if (ImGui::MenuItem("Texture lock", nullptr, st.textureLock)) a.toggleTextureLock = true;
         if (ImGui::BeginMenu("Default scale for new brushes")) {
@@ -160,6 +161,7 @@ void drawControlsWindow(bool* open) {
             {"Grid size / microgrid", "View menu"},
             {"Texture tool (pick faces)", "Shift+A; 3D: click, Shift+click add/remove face, Cmd+click whole brush, Option+click picks texture"},
             {"Apply current texture", "Shift+T (selected brushes, or picked faces)"},
+            {"Wrap texture around a corner", "Texture tool: click a face, Option+Shift+click the next (repeat)"},
             {"Textures / Face panels", "right side: search by name, click to choose; adjust picked faces"},
             {"Clip tool", "Shift+X: drag a line in a 2D view; drag points 1-3 (3 tilts the plane); Return clips"},
             {"Clip: keep both / front / back", "Shift+X again cycles (Tools menu)"},
