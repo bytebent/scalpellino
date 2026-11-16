@@ -68,8 +68,8 @@ jobs:
 
   # Publishes the Mac builds on the repo's Releases page:
   #  - every push to main updates the "latest" pre-release (newest working build)
-  #  - pushing a version tag (v0.1.0, ...) creates a permanent release, with notes from
-  #    docs/releases/<tag>.md
+  #  - a version release (v0.1.0, ...) is created for every docs/releases/vX.Y.Z.md that
+  #    has no release yet (at the commit that pushed it); pushing a vX.Y.Z tag also works
   release:
     needs: [macos, linux]
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
@@ -99,4 +99,13 @@ jobs:
             gh release delete latest --yes --cleanup-tag || true
             gh release create latest dist/*.zip --prerelease --target "${GITHUB_SHA}" \
               --title "Latest build" --notes-file latest-notes.md
+            # Version releases from notes files that don't have a release yet.
+            for notes in docs/releases/v*.md; do
+              [ -f "$notes" ] || continue
+              tag="$(basename "$notes" .md)"
+              if ! gh release view "$tag" >/dev/null 2>&1; then
+                gh release create "$tag" dist/*.zip --target "${GITHUB_SHA}" --latest \
+                  --title "Scalpellino ${tag}" --notes-file "$notes"
+              fi
+            done
           fi

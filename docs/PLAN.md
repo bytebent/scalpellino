@@ -40,8 +40,10 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   read or write the user's layout settings.
 - Screenshots: every screenshot taken goes in `docs/screenshots/`, named
   `m<milestone>-<nn>-<what>.png`.
-- Releases: see log entry "GitHub Releases". To cut a version: write
-  `docs/releases/vX.Y.Z.md`, commit, `git tag vX.Y.Z && git push origin vX.Y.Z`.
+- Releases: see log entry "GitHub Releases". To cut a version: add
+  `docs/releases/vX.Y.Z.md` and push to `main`; CI creates the tag + release once the
+  builds pass. (AI workspace note: pushing tags and GitHub API writes are blocked there,
+  so this file-driven route is the one to use.)
 - CI: `.github/workflows/build.yml` — macOS Intel (`macos-15-intel`) + Apple Silicon
   (`macos-15`): build, core tests, ad-hoc sign, zip artifact. Linux: build, core tests,
   scripted UI tests, screenshots artifact. (GitHub's Mac VMs have no OpenGL, so UI tests
@@ -92,9 +94,11 @@ test script — never downloaded.
 
 ### 2026-11-16 — GitHub Releases
 - CI `release` job (after Mac + Linux jobs pass): every push to `main` replaces the
-  `latest` pre-release with fresh Intel + Apple Silicon zips; pushing a tag `vX.Y.Z`
-  creates a permanent release with notes from `docs/releases/vX.Y.Z.md` (falls back to
-  `docs/releases/INSTALL.md`). Release notes contain no links or machine details.
+  `latest` pre-release with fresh Intel + Apple Silicon zips, and creates a permanent
+  release for each `docs/releases/vX.Y.Z.md` that has none yet (tag made by CI at that
+  commit). Pushing a `vX.Y.Z` tag manually also works. Release notes contain no links or
+  machine details. Tag push and API tag creation were refused by the AI workspace proxy,
+  hence the file-driven route.
 - Versioning: tag `v0.<milestone>.<patch>` at the end of each milestone.
   `v0.1.0` = milestones 0 + 1.
 
