@@ -44,9 +44,14 @@ struct Brush {
 
     // Moves the brush. With texture lock, textures stay fixed to the surface.
     void translate(const Vec3& delta, bool textureLock);
+    // Rotates around `center` about unit `axis` by `radians` (right-hand rule).
+    void rotate(const Vec3& center, const Vec3& axis, double radians, bool textureLock);
     // Maps the brush's bounds from `from` to `to` (per-axis scale + move).
     void remapBounds(const AABB& from, const AABB& to, bool textureLock);
 };
+
+// Rotates v about unit `axis` by `radians` (Rodrigues).
+Vec3 rotateVec(const Vec3& v, const Vec3& axis, double radians);
 
 // World-aligned default texture axes for a face normal (Hammer style).
 void defaultTexAxes(const Vec3& normal, Vec3& u, Vec3& v);

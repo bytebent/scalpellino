@@ -3,6 +3,8 @@
 // Owns its render texture; draws only when asked.
 #include "raylib.h"
 #include "core/grid.hpp"
+#include "core/math.hpp"
+#include "render/scene.hpp"
 
 namespace scal {
 
@@ -22,29 +24,37 @@ public:
     const char* axisU() const;      // horizontal axis name for 2D views
     const char* axisV() const;      // vertical axis name for 2D views
 
+    // World axis index (0=x, 1=y, 2=z) shown horizontally / vertically / along depth.
+    int axU() const;
+    int axV() const;
+    int axD() const;
+
     // Keeps the render texture matching the on-screen size.
     void resize(int w, int h);
     const RenderTexture2D& target() const { return rt_; }
     int width()  const { return w_; }
     int height() const { return h_; }
 
-    void render(const Grid& grid);
+    void render(const Grid& grid, const Scene& scene);
 
-    // --- 2D navigation
+    // --- 2D navigation and mapping
     void pan2D(Vector2 deltaPx);
     void zoom2D(float wheel, Vector2 localPx);
-    // Local pixel -> world (u, v) on this view's plane.
     void screenToWorld2D(Vector2 localPx, double& u, double& v) const;
+    Vector2 worldToLocal2D(double u, double v) const;
+    Vector2 worldToLocal2D(const Vec3& p) const { return worldToLocal2D(p[axU()], p[axV()]); }
     double zoom() const { return zoom_; }
 
-    // --- 3D navigation
+    // --- 3D navigation and picking
     void look(Vector2 deltaPx);
     void fly(float forward, float right, float up, float dt, bool fast);
     Vector3 cameraPos() const { return pos_; }
+    Camera3D camera() const;
+    void pickRay(Vector2 localPx, Vec3& origin, Vec3& dir) const;
 
 private:
-    void render2D(const Grid& grid);
-    void render3D(const Grid& grid);
+    void render2D(const Grid& grid, const Scene& scene);
+    void render3D(const Grid& grid, const Scene& scene);
 
     ViewKind kind_;
     RenderTexture2D rt_{};

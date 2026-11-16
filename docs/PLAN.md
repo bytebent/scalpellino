@@ -10,10 +10,13 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 
 ## Current status
 
-- **Milestone 0:** done. CI green on Intel + Apple Silicon. Waiting for the user's
-  hands-on check on their Intel Mac (look, feel, idle fans).
-- **Milestone 1:** in progress. Core (brushes, document, undo, `.map` IO) done + tested.
-  Next: rendering brushes, Select + Block tools, undo/save UI.
+- **Milestone 0:** done.
+- **Milestone 1 (brushes):** done — block tool, select/move/resize/rotate/clone/delete,
+  grid snapping, undo/redo, save/open Valve 220 `.map`, unsaved-changes prompt.
+  Core tests + scripted UI tests pass locally; CI runs both.
+- **Waiting on user:** hands-on check of the Intel build (look, feel, idle fans, Retina
+  sharpness). Nothing is blocked by it.
+- **Next:** milestone 2 (textures) — see plan below.
 
 ## How to work in this repo
 
@@ -26,10 +29,21 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   configure with `-DFETCHCONTENT_SOURCE_DIR_RAYLIB=... -DFETCHCONTENT_SOURCE_DIR_IMGUI=...
   -DFETCHCONTENT_SOURCE_DIR_RLIMGUI=...`. Linux needs `libxrandr-dev libxinerama-dev
   libxcursor-dev libxi-dev libgl1-mesa-dev`.
+- **Scripted UI tests:** `tests/ui/*.script`, run by `tests/ui/run.sh <app> [shot-dir]`
+  (Linux + Xvfb; CI job `linux`). The script language is documented at the bottom of
+  `src/app/editor.cpp` (press/drag/release in view pixels, key, undo, save/open, shot,
+  `expect brushes|selected <n>`, `expect size x y z`). Pixel coordinates assume the
+  default 1440x900 window and default layout; top view centre = local (334,224),
+  zoom 0.5 (2 world units per px). Tip: snapped drags shift brushes by up to half a grid
+  cell, so compute brush edges from snapped values before aiming clicks near edges.
+- CLI: `--open <map>`, `--script <file>`, `--screenshot <png>`. Automated runs never
+  read or write the user's layout settings.
 - Screenshots: every screenshot taken goes in `docs/screenshots/`, named
   `m<milestone>-<nn>-<what>.png`.
 - CI: `.github/workflows/build.yml` — macOS Intel (`macos-15-intel`) + Apple Silicon
-  (`macos-15`) build, test, ad-hoc sign, zip artifact; Linux core tests.
+  (`macos-15`): build, core tests, ad-hoc sign, zip artifact. Linux: build, core tests,
+  scripted UI tests, screenshots artifact. (GitHub's Mac VMs have no OpenGL, so UI tests
+  can only run on Linux.)
 
 ## Pinned dependencies
 
@@ -41,28 +55,59 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 
 ## Open questions (parked)
 
-- **Retina/HiDPI:** the app currently renders at logical resolution (may look soft on
-  Retina screens). Needs the user's eyes on a real Mac before deciding how to handle it.
-- **Fly-mode up/down keys:** using Q/E for now. User hasn't specified.
+- **Retina/HiDPI:** renders at logical resolution (may look soft on Retina). Needs the
+  user's eyes on a real Mac.
+- **Fly-mode up/down keys:** Q/E for now. User hasn't specified.
+- **File dialogs:** open/save use an in-app path field. Native macOS dialogs (e.g. via
+  osascript or a small Cocoa helper) planned; confirm user wants native ones.
+- **Rotate gesture:** Option+drag on a corner handle (15° steps, Shift = free). Chosen
+  to keep handles visible and avoid Hammer's click-cycling. Confirm it feels right.
+- **Multi-selection click:** a plain click (no drag) on a brush that is part of a
+  multi-selection narrows the selection to that brush; dragging moves the group.
 
-## Milestone 1 plan — Brushes
+## Milestone 2 plan — Textures
 
-Goal: block tool, select/move/resize, grid snapping, undo/redo, save/load `.map`.
+1. Texture library: user picks texture folders (stored in user settings, never in repo);
+   load PNG/TGA lazily, thumbnails cached; nearest-neighbour filtering by default.
+2. Textured 3D mode: UVs from Valve 220 axes (u = dot(p, U)/scaleU + offU, divided by
+   texture width; same for v), per-texture batches. Missing texture = checker pattern.
+3. Texture browser panel: grid of thumbnails, filter by name, current texture.
+4. Apply: texture tool — click a face in 3D to apply current texture; Shift+click =
+   whole brush; Block tool uses current texture.
+5. Face edit panel: shift/scale/rotation fields, fit, justify, align world/face;
+   texture lock toggle (default on).
+6. Face picking in 3D (ray vs polygons, nearest face).
+7. Tests: UV maths (incl. texture lock after move/rotate), face picking, `.map` round
+   trip with texture names; UI script applying textures; screenshots.
 
-1. `core/math` — Vec3 (double), Plane, AABB.
-2. `core/brush` — convex brush from planes; planes → face polygons (clip a big quad by
-   all other planes); box brush factory; AABB.
-3. `core/document` — world entity with brushes; stable brush ids; selection set.
-4. `core/command` — command interface + undo stack (before/after brush snapshots).
-5. `io/map` — Valve 220 `.map` writer + reader; round-trip test.
-6. Render: brush wireframes in 2D views (selected = red, others = white-ish),
-   flat/solid brushes in 3D.
-7. Tools: Block (drag box in 2D → live preview → Return creates, Esc cancels; height from
-   grid default 64 or last brush), Select (click to pick in 2D/3D, drag to move with snap,
-   handles to resize), Delete key.
-8. Cmd-Z / Cmd-Shift-Z, Cmd-S / Cmd-O (native file dialogs later; simple path field first).
+## Milestone 1 plan — Brushes (done)
 
 ## Log
+
+### 2026-11-16 — Milestone 1 complete
+- Rendering: brush polygons cached per document revision (`render/scene`); 2D views draw
+  projected edges (selected red), size labels, handles (middle handles hidden on small
+  boxes); 3D view flat-shaded per-brush pastel colours, selection tinted red with
+  outlines drawn through geometry; block preview in yellow.
+- Tools (`src/tools`): Select (click/Cmd+click/marquee-free deselect, move, resize by
+  handles or edges, Shift+drag clone, Option+corner rotate 15° steps, Delete, Esc) and
+  Block (drag rectangle, depth from last brush, adjust in any 2D view, Return/Esc).
+- Editor (`src/app/editor`): menus (File/Edit/View), Tools panel docked left, status
+  bar with tool hint + selection size, window title with file name and `*` when dirty,
+  path-field Open/Save dialogs, unsaved-changes prompt on New/Open/Quit/window close.
+- Scripted input mode + `tests/ui/m1_brushes.script` (block, move, resize, undo/redo,
+  save/open, select all, clone, delete, Esc cancel, 3D pick, Cmd+click, rotate 45°,
+  undo) with `expect` checks. Added to CI (Linux + Xvfb).
+- Removed the macOS smoke-screenshot CI step (no OpenGL on GitHub Mac VMs).
+- **Tests:** core 288 checks, 0 failed. UI script PASS. Idle CPU with a map open:
+  **0 ticks / 10 s**. Warnings clean.
+- Screenshots: `screenshots/m1-01` … `m1-09` (block preview, two blocks, moved pillar,
+  resized pillar, undo, reopened + select all, clone, 3D pick, 45° rotation).
+- Bugs found & fixed along the way: scripted presses were being "released" by the real
+  mouse code (scripted input now bypasses mouse capture); several script coordinate
+  mistakes (editor was right) — see tip in "How to work".
+- Design decisions made without asking (parked above for confirmation): Option+drag
+  rotate, click-narrows-multiselection, path-field dialogs.
 
 ### 2026-11-16 — M1 core: brushes, document, undo, .map IO
 - `core/math.hpp` (Vec3/Plane/AABB, doubles), `core/brush` (planes → CCW polygons by

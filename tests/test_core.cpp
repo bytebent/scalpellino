@@ -120,6 +120,36 @@ static void testRemap() {
     CHECK(m.valid());
 }
 
+static void testRotate() {
+    const double pi = 3.14159265358979323846;
+    // 90 degrees about Z around the box centre: a 128x32 box becomes 32x128.
+    Brush b = makeBox(box({0, 0, 0}, {128, 32, 64}), "a");
+    const Brush orig = b;
+    const Vec3 c{64, 16, 32};
+    b.rotate(c, {0, 0, 1}, pi / 2, true);
+    CHECK(b.valid());
+    CHECK(nearV(b.bounds().min, {48, -48, 0}, 1e-9));
+    CHECK(nearV(b.bounds().max, {80, 80, 64}, 1e-9));
+    // 90-degree rotations keep plane points as clean integers.
+    for (const Face& f : b.faces)
+        for (const Vec3& p : f.p) CHECK(p.x == std::round(p.x) && p.y == std::round(p.y));
+    // Texture lock: a point and its rotated image get the same texture coordinate.
+    for (size_t i = 0; i < b.faces.size(); ++i) {
+        const Vec3 p0{10, 5, 20};
+        const Vec3 p1 = c + rotateVec(p0 - c, {0, 0, 1}, pi / 2);
+        const Face& f0 = orig.faces[i];
+        const Face& f1 = b.faces[i];
+        CHECK(near(dot(p0, f0.u.axis) / f0.scaleU + f0.u.offset, dot(p1, f1.u.axis) / f1.scaleU + f1.u.offset, 1e-9));
+        CHECK(near(dot(p0, f0.v.axis) / f0.scaleV + f0.v.offset, dot(p1, f1.v.axis) / f1.scaleV + f1.v.offset, 1e-9));
+    }
+    // 15 degrees: still a valid closed brush; full turn returns to start.
+    Brush r = makeBox(box({0, 0, 0}, {64, 64, 64}), "a");
+    for (int i = 0; i < 24; ++i) r.rotate({32, 32, 32}, {0, 0, 1}, pi / 12, true);
+    CHECK(r.valid());
+    CHECK(nearV(r.bounds().min, {0, 0, 0}, 1e-6));
+    CHECK(nearV(r.bounds().max, {64, 64, 64}, 1e-6));
+}
+
 static void testRay() {
     Brush b = makeBox(box({0, 0, 0}, {64, 64, 64}), "a");
     CHECK(near(rayHit(b, {-100, 32, 32}, {1, 0, 0}), 100));
@@ -245,6 +275,7 @@ int main() {
     testInvalid();
     testTranslateTextureLock();
     testRemap();
+    testRotate();
     testRay();
     testUndo();
     testDirty();

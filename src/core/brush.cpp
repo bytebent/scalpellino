@@ -105,6 +105,27 @@ void Brush::translate(const Vec3& delta, bool textureLock) {
     }
 }
 
+Vec3 rotateVec(const Vec3& v, const Vec3& k, double a) {
+    const double c = std::cos(a), s = std::sin(a);
+    return v * c + cross(k, v) * s + k * (dot(k, v) * (1 - c));
+}
+
+void Brush::rotate(const Vec3& center, const Vec3& axis, double radians, bool textureLock) {
+    for (Face& f : faces) {
+        for (Vec3& p : f.p) p = cleanVec(center + rotateVec(p - center, axis, radians));
+        if (textureLock) {
+            // Texture coord at a rotated point must equal the original's:
+            // offset' = offset + (dot(c, a) - dot(c, R a)) / scale, axis' = R a.
+            const Vec3 ru = rotateVec(f.u.axis, axis, radians);
+            const Vec3 rv = rotateVec(f.v.axis, axis, radians);
+            f.u.offset += (dot(center, f.u.axis) - dot(center, ru)) / f.scaleU;
+            f.v.offset += (dot(center, f.v.axis) - dot(center, rv)) / f.scaleV;
+            f.u.axis = cleanVec(ru);
+            f.v.axis = cleanVec(rv);
+        }
+    }
+}
+
 void Brush::remapBounds(const AABB& from, const AABB& to, bool textureLock) {
     const Vec3 fs = from.size(), ts = to.size();
     Vec3 k;

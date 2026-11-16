@@ -1,0 +1,89 @@
+# Milestone 1: block tool, select/move/resize, clone, delete, cancel, 3D pick, undo,
+# save/open. Pixel coordinates assume the default 1440x900 window and default layout
+# (top view centre = local 334,224 at zoom 0.5 -> 2 world units per pixel).
+tool block
+press 1 207 343
+drag 300 200
+drag 463 87
+release
+shot m1-01-block-preview.png
+expect brushes 0
+key Return
+expect brushes 1
+expect selected 1
+press 1 335 215
+drag 351 199
+release
+key Return
+expect brushes 2
+shot m1-02-two-blocks.png
+tool select
+# move the pillar right by 176 units
+press 1 343 207
+drag 400 207
+drag 423 207
+release
+shot m1-03-moved-pillar.png
+# stretch its top edge in the front view up to z=256
+press 2 343 183
+drag 343 120
+drag 343 87
+release
+shot m1-04-resized-pillar.png
+undo
+shot m1-05-undo-resize.png
+redo
+save m1-test.map
+open m1-test.map
+expect brushes 2
+selectall
+expect selected 2
+shot m1-06-reopened-select-all.png
+# click the pillar (x 160..192, y 16..48), then shift+drag clones it 128 units left
+press 1 422 208
+release
+expect selected 1
+press 1 422 208 shift
+drag 390 208
+drag 358 208
+release
+expect brushes 3
+shot m1-07-cloned.png
+key Delete
+expect brushes 2
+# block tool: Esc cancels the preview, so Return afterwards creates nothing
+tool block
+press 1 100 100
+drag 150 150
+release
+key Esc
+key Return
+expect brushes 2
+# 3D pick selects the floor
+tool select
+press 0 330 300
+release
+expect selected 1
+shot m1-08-pick-3d.png
+# cmd+click adds the pillar, delete both, undo restores both
+press 1 422 208 cmd
+release
+expect selected 2
+key Delete
+expect brushes 0
+undo
+expect brushes 2
+# rotate the floor 45 degrees: Option+drag its top-right corner to straight above the centre
+press 1 300 300
+release
+expect selected 1
+expect size 512 512 64
+press 1 462 88 alt
+drag 420 60
+drag 334 40
+release
+expect size 724.08 724.08 64
+shot m1-09-rotated-45.png
+undo
+expect size 512 512 64
+quit

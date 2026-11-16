@@ -38,8 +38,13 @@ if(SCAL_BUILD_APP)
 
   set(SCAL_APP_SOURCES
     src/app/main.cpp
+    src/app/editor.cpp
     src/app/settings.cpp
+    src/render/scene.cpp
     src/render/viewport.cpp
+    src/tools/tool.cpp
+    src/tools/select_tool.cpp
+    src/tools/block_tool.cpp
     src/ui/layout.cpp
   )
 

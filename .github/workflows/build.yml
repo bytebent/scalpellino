@@ -33,34 +33,35 @@ jobs:
           codesign --force --deep --sign - build/Scalpellino.app
           ditto -c -k --keepParent build/Scalpellino.app Scalpellino-${{ matrix.arch }}.zip
 
-      # Runner VMs have no real GPU; a screenshot may fail. Informational only.
-      - name: Smoke screenshot
-        continue-on-error: true
-        run: |
-          mkdir -p shot && cd shot
-          ../build/Scalpellino.app/Contents/MacOS/Scalpellino --screenshot ci-${{ matrix.arch }}.png &
-          PID=$!; ( sleep 60; kill $PID 2>/dev/null ) & wait $PID
-
       - uses: actions/upload-artifact@v4
         with:
           name: Scalpellino-${{ matrix.arch }}
           path: Scalpellino-${{ matrix.arch }}.zip
           retention-days: 30
 
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: screenshot-${{ matrix.arch }}
-          path: shot/*.png
-          if-no-files-found: ignore
-          retention-days: 30
 
-  linux-tests:
+  linux:
+    # Core tests + scripted UI tests on a virtual screen (Xvfb + Mesa software GL).
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Core tests (no app)
+      - name: Install X11/GL packages
         run: |
-          cmake -S . -B build -DSCAL_BUILD_APP=OFF -DCMAKE_BUILD_TYPE=Release
+          sudo apt-get update -q
+          sudo apt-get install -y -q libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev \
+            libgl1-mesa-dev libgl1-mesa-dri libxkbcommon-dev xvfb
+      - name: Build
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build -j 4
-          ctest --test-dir build --output-on-failure
+      - name: Core tests
+        run: ctest --test-dir build --output-on-failure
+      - name: UI tests (scripted)
+        run: tests/ui/run.sh "$PWD/build/Scalpellino" ui-shots
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ui-screenshots
+          path: ui-shots/*.png
+          if-no-files-found: ignore
+          retention-days: 30

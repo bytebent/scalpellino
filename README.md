@@ -23,6 +23,15 @@ Every push is built on GitHub for Intel and Apple Silicon Macs.
 
 | Action | Keys |
 |---|---|
+| Select tool / Block tool | **Shift+S** / **Shift+B** (or the Tools panel) |
+| Draw a block | Block tool: drag in a 2D view, adjust handles in any 2D view, **Return** creates, **Esc** cancels |
+| Select | click a brush (2D or 3D); **Cmd+click** adds/removes; click empty space deselects; **Cmd+A** all |
+| Move / resize | drag a selection / drag its handles or edges (snaps to the grid) |
+| Clone | **Shift+drag** a selection |
+| Rotate | **Option+drag** a corner handle (15° steps, add **Shift** for free rotation) |
+| Delete | **Delete** or **Backspace** |
+| Undo / redo | **Cmd+Z** / **Cmd+Shift+Z** |
+| New / open / save / save as | **Cmd+N** / **Cmd+O** / **Cmd+S** / **Cmd+Shift+S** |
 | Fly mode in 3D view (toggle) | **Z** while hovering the 3D view; **Esc** also exits |
 | Move while flying | **W A S D**, **Q/E** down/up, hold **Shift** for fast |
 | Look around without fly mode | hold **right mouse** in the 3D view (+ WASD) |
@@ -32,6 +41,8 @@ Every push is built on GitHub for Intel and Apple Silicon Macs.
 | Show grid / snap to grid | **Shift+R** / **Shift+W** |
 
 Keys are read by physical position, so they work the same on any keyboard layout.
+Maps are saved as Valve 220 `.map` files (readable by TrenchBroom and func_godot).
+File open/save currently use a path field; native Mac file dialogs come later.
 
 ## Building locally
 
