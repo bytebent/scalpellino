@@ -66,6 +66,14 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 
 ## Open questions (parked)
 
+- **Milestone 8, asked the user before starting (2026-11-16):** the editor shows a rough
+  idea of the world, like Hammer, not the render. Proposed: 3D view stays textured with
+  simple face shading; lights as coloured markers (spot = wire cone, sun = arrow), the
+  selected light's reach as a wire circle/sphere; sky as the 3D background; fog not shown
+  (or a simple distance tint). Open: background = sky image or its colour only? Optional
+  rough light preview (vertex lighting, no shadows, off by default) or none? Fog shown
+  or not? Bundle the panorama skies only (cube crosses accepted from user folders)?
+
 - **Curve tool extras:** drag curved-wall depth in other views; stairs centre column;
   dome / cone / torus / helix ramp; per-shape remembered settings.
 - **Terrain, decided without asking (confirm with the user):**
@@ -166,6 +174,14 @@ terminal-style render log like Hammer's compile window + log file), 10 Y2K shade
 ## Milestone 1 plan — Brushes (done)
 
 ## Log
+
+### 2026-11-16 — Two more built-in textures
+- `assets/textures/Grass_20.png`, `Tile_13.png` (Screaming Brain Studios, CC0, from the
+  owner; converted RGBA → RGB, fully opaque). Credited in `docs/THIRD_PARTY.md`.
+- The owner also gave three skies (04 day, 21 sunset, 15 night) as panoramas (2:1) and
+  cube crosses (4:3). Not added yet: they go in with milestone 8 once the sky questions
+  below are answered.
+- UI scripts: all 12 pass. No release for this alone (ships with the next one).
 
 ### 2026-11-16 — v0.7.1: terrain on any face, terrain points, more textures
 User feedback on v0.7.0: Make terrain took a block's top face (wanted: any face); the
