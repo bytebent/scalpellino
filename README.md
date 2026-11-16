@@ -8,16 +8,16 @@ Personal project. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the des
 
 ## Getting a build
 
-Every push is built on GitHub for Intel and Apple Silicon Macs.
+Open the repo's **Releases** page (right-hand side on GitHub):
 
-1. Open the repo's **Actions** tab, pick the latest green **build** run.
-2. Under **Artifacts**, download `Scalpellino-intel` (or `Scalpellino-apple-silicon`).
-3. Unzip it to get `Scalpellino.app`.
-4. The app isn't signed with an Apple developer certificate, so macOS will block it the
-   first time. Either:
-   - try to open it, then go to **System Settings → Privacy & Security** and click
-     **Open Anyway**, or
-   - in Terminal: `xattr -dr com.apple.quarantine /path/to/Scalpellino.app`
+- **Latest build** — the newest working build, updated automatically after every
+  successful push.
+- **Versions** (v0.1.0, ...) — milestone snapshots that don't change.
+
+Download `Scalpellino-intel.zip` (or `Scalpellino-apple-silicon.zip`), unzip it, and on
+first launch allow it in **System Settings → Privacy & Security → Open Anyway** (the app
+isn't signed with an Apple developer certificate). Or in Terminal:
+`xattr -dr com.apple.quarantine /path/to/Scalpellino.app`
 
 ## Controls (so far)
 

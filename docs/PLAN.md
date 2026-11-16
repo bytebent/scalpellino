@@ -40,6 +40,8 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   read or write the user's layout settings.
 - Screenshots: every screenshot taken goes in `docs/screenshots/`, named
   `m<milestone>-<nn>-<what>.png`.
+- Releases: see log entry "GitHub Releases". To cut a version: write
+  `docs/releases/vX.Y.Z.md`, commit, `git tag vX.Y.Z && git push origin vX.Y.Z`.
 - CI: `.github/workflows/build.yml` — macOS Intel (`macos-15-intel`) + Apple Silicon
   (`macos-15`): build, core tests, ad-hoc sign, zip artifact. Linux: build, core tests,
   scripted UI tests, screenshots artifact. (GitHub's Mac VMs have no OpenGL, so UI tests
@@ -87,6 +89,14 @@ test script — never downloaded.
 ## Milestone 1 plan — Brushes (done)
 
 ## Log
+
+### 2026-11-16 — GitHub Releases
+- CI `release` job (after Mac + Linux jobs pass): every push to `main` replaces the
+  `latest` pre-release with fresh Intel + Apple Silicon zips; pushing a tag `vX.Y.Z`
+  creates a permanent release with notes from `docs/releases/vX.Y.Z.md` (falls back to
+  `docs/releases/INSTALL.md`). Release notes contain no links or machine details.
+- Versioning: tag `v0.<milestone>.<patch>` at the end of each milestone.
+  `v0.1.0` = milestones 0 + 1.
 
 ### 2026-11-16 — Milestone 1 complete
 - Rendering: brush polygons cached per document revision (`render/scene`); 2D views draw
