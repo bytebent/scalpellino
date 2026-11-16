@@ -76,6 +76,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    # One release job at a time; a stale run must never replace a newer "latest".
+    concurrency:
+      group: release
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -94,6 +98,11 @@ jobs:
             gh release create "${GITHUB_REF_NAME}" dist/*.zip \
               --title "Scalpellino ${GITHUB_REF_NAME}" --notes-file "$notes" --verify-tag
           else
+            head="$(git ls-remote origin refs/heads/main | cut -f1)"
+            if [ "$head" != "${GITHUB_SHA}" ]; then
+              echo "main has moved on (${head::7}); a newer run will publish. Skipping."
+              exit 0
+            fi
             subject="$(git log -1 --format=%s)"
             { echo "Newest working build from \`main\` (${GITHUB_SHA::7}): ${subject}"; echo; cat docs/releases/INSTALL.md; } > latest-notes.md
             gh release delete latest --yes --cleanup-tag || true

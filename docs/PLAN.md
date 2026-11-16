@@ -99,6 +99,9 @@ test script — never downloaded.
   commit). Pushing a `vX.Y.Z` tag manually also works. Release notes contain no links or
   machine details. Tag push and API tag creation were refused by the AI workspace proxy,
   hence the file-driven route.
+- First run: **v0.1.0 published** (Intel + Apple Silicon zips). Bug: two runs raced and
+  the older one deleted the newer "latest" and then failed. Fix: release jobs share a
+  concurrency group and skip if `main` has moved past their commit.
 - Versioning: tag `v0.<milestone>.<patch>` at the end of each milestone.
   `v0.1.0` = milestones 0 + 1.
 
