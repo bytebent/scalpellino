@@ -196,10 +196,10 @@ void Viewport::render2D(const Grid& grid, const Scene& scene) {
         }
     };
     for (const SceneBrush& b : scene.brushes)
-        if (!scene.selected.count(b.id)) drawBrush(b, kBrush2D);
+        if (!scene.selected.count(b.id) && !scene.hidden.count(b.id)) drawBrush(b, kBrush2D);
     if (!scene.hideSelected)
         for (const SceneBrush& b : scene.brushes)
-            if (scene.selected.count(b.id)) drawBrush(b, kSelected);
+            if (scene.selected.count(b.id) && !scene.hidden.count(b.id)) drawBrush(b, kSelected);
     for (const SceneBrush& g : scene.ghosts) drawBrush(g, kSelected);
     for (const SceneBrush& g : scene.invalidGhosts) drawBrush(g, kInvalid);
 
@@ -376,6 +376,7 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
     for (const SceneBrush& b : scene.brushes) {
         const bool sel = scene.selected.count(b.id) > 0;
         if (sel && scene.hideSelected) continue;
+        if (scene.hidden.count(b.id)) continue;
         if (textured) drawTextured(b, sel ? Color{255, 150, 150, 255} : WHITE, true);
         else drawSolid(b, sel ? selTint : brushColor(b.id));
     }

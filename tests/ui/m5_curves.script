@@ -1,0 +1,116 @@
+# Milestone 5: curve tool. Arch (create, group select, move, edit, bake), ring,
+# spiral stairs (top view only), curved wall, arched opening cut into a wall.
+# -- Arch in the front view (u = y, v = z; depth x from the last box: 0..64)
+curveshape arch
+wpress 2 0 0
+wdrag 64 64
+wdrag 128 128
+release
+expect brushes 0
+expect edges
+shot m5-01-arch-preview.png
+key Return
+expect brushes 10
+expect groups 1
+expect selected 10
+expect bounds 0 0 0 64 128 128
+# clicking one piece selects the whole arch
+tool select
+key Esc
+wpress 2 24 104
+release
+expect selected 10
+# move it 64 along y (grab well inside: within 6 px of the edge is a resize handle),
+# then edit: 12 segments; it stays where it was moved
+wpress 2 24 104
+wdrag 56 104
+wdrag 88 104
+release
+expect bounds 0 64 0 64 192 128
+editcurve
+curveset segments 12
+key Return
+expect brushes 14
+expect groups 1
+expect bounds 0 64 0 64 192 128
+expect edges
+shot m5-02-arch-edited-12-segments.png
+# bake -> plain brushes; undo restores the group
+bakecurve
+expect groups 0
+expect brushes 14
+undo
+expect groups 1
+# -- Ring in the top view: 16 slices
+curveshape ring
+curveset segments 16
+curveset thickness 16
+wpress 1 300 0
+wdrag 428 128
+release
+key Return
+expect brushes 30
+expect groups 2
+# -- Spiral stairs: refused in the front view, fine in the top view
+curveshape spiral_stairs
+wpress 2 -300 0
+wdrag -100 100
+release
+expect brushes 30
+wpress 1 -300 -300
+wdrag -44 -44
+release
+key Return
+expect brushes 46
+expect groups 3
+shot m5-03-stairs-ring-arch.png
+# -- Curved wall in the top view, 8 slices
+curveshape curved_wall
+curveset segments 8
+wpress 1 0 -300
+wdrag 256 -300
+release
+expect edges
+shot m5-04-curved-wall-preview.png
+key Return
+expect brushes 54
+expect groups 4
+# -- Arched opening cut into a wall (exact volume with rounding off)
+tool select
+selectall
+key Delete
+expect brushes 0
+block -128 -416 0 128 -400 192
+expect volume 786432
+curveshape carve_arch
+curveset segments 8
+curveset round 0
+wpress 3 -32 0
+wdrag 32 128
+release
+shot m5-05-arched-opening-preview.png
+key Return
+expect volume 663048.46
+expect groups 0
+expect edges
+shot m5-06-arched-opening.png
+# -- save + open keeps groups and their settings
+tool select
+undo
+curveshape arch
+curveset round 1
+wpress 2 0 0
+wdrag 128 128
+release
+key Return
+save m5-test.map
+open m5-test.map
+expect groups 1
+tool select
+wpress 2 24 104
+release
+editcurve
+curveset segments 4
+key Return
+expect brushes 7
+quit

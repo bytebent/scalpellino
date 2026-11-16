@@ -3,6 +3,7 @@
 #include "core/hull.hpp"
 #include "core/texture.hpp"
 #include "core/csg.hpp"
+#include "core/curves.hpp"
 #include "app/settings.hpp"
 #include "platform/file_dialog.hpp"
 #include "ui/layout.hpp"
@@ -126,6 +127,10 @@ void Editor::onRelease(int view, Vector2 local, bool real) {
 }
 
 void Editor::onKey(int key) {
+    if (tool_ == &curveTool_ && (key == KEY_ENTER || key == KEY_KP_ENTER) && curveTool_.hasShape()) {
+        commitCurve();
+        return;
+    }
     ToolEnv e = env();
     if (tool_->key(e, key)) return;
     // Delete works in every tool that doesn't use the key itself.
@@ -168,6 +173,8 @@ bool Editor::frame(float dt) {
     st.clipTool = tool_ == &clipTool_;
     st.clipPlane = clipTool_.hasPlane();
     st.clipKeep = clipTool_.keep == ClipTool::Keep::Both ? 0 : clipTool_.keep == ClipTool::Keep::Front ? 1 : 2;
+    st.curveTool = tool_ == &curveTool_;
+    st.groupSelected = selectedGroup() != 0;
     st.facesPicked = tool_ == &textureTool_ && textureTool_.faces(doc_).size() > 1;
     st.canApplyTexture = !doc_.selection().empty() || (tool_ == &textureTool_ && !textureTool_.faces(doc_).empty());
     const MenuActions m = drawMenuBar(st);
@@ -224,6 +231,9 @@ bool Editor::frame(float dt) {
         shapingError_.clear();
         askClipPoints_ = true;
     }
+    if (m.toolCurve) setTool(&curveTool_);
+    if (m.editCurve) editCurve();
+    if (m.bakeCurve) bakeCurves();
     if (m.carve) carveWithSelection();
     if (m.hollow) { shapingError_.clear(); askHollow_ = true; }
     if (m.applyTexture) applyCurrentTexture();
@@ -236,6 +246,7 @@ bool Editor::frame(float dt) {
     if (m.textured3D >= 0) textured3D_ = m.textured3D == 1;
     if (m.addTextureFolder) { folderBuf_[0] = 0; askTexFolder_ = true; }
     if (m.rescanTextures) textures_.rescan();
+    if (!curveTool_.hasShape()) { curveTool_.params.texture = currentTexture_; curveTool_.params.texScale = defaultScale_; }
     blockTool_.texture = currentTexture_;
     blockTool_.textureScale = defaultScale_;
     if (m.newMap) guardUnsaved(Pending::New);
@@ -303,6 +314,7 @@ void Editor::handleKeyboard() {
     if (shift_ && IsKeyPressed(KEY_B)) setTool(&blockTool_);
     if (shift_ && IsKeyPressed(KEY_V)) setTool(&vertexTool_);
     if (shift_ && IsKeyPressed(KEY_A)) setTool(&textureTool_);
+    if (shift_ && IsKeyPressed(KEY_C)) setTool(&curveTool_);
     if (shift_ && IsKeyPressed(KEY_X)) { if (tool_ == &clipTool_) clipTool_.cycleKeep(); else setTool(&clipTool_); }
     if (shift_ && IsKeyPressed(KEY_T)) applyCurrentTexture();
 
@@ -458,6 +470,7 @@ void Editor::drawToolsPanel() {
         toolButton(&vertexTool_, "Shift+V");
         toolButton(&textureTool_, "Shift+A");
         toolButton(&clipTool_, "Shift+X");
+        toolButton(&curveTool_, "Shift+C");
     }
     ImGui::End();
 }
@@ -931,6 +944,198 @@ void Editor::drawShapingDialogs() {
     }
 }
 
+// ------------------------------------------------------------------ curves
+
+GroupId Editor::selectedGroup() const {
+    GroupId g = 0;
+    for (BrushId id : doc_.selection()) {
+        const Brush* b = doc_.find(id);
+        if (!b || b->group == 0) return 0;
+        if (g && b->group != g) return 0;
+        g = b->group;
+    }
+    return g && doc_.group(g) ? g : 0;
+}
+
+void Editor::commitCurve() {
+    const CurveParams p = curveTool_.params;
+    CurveResult r = generateCurve(p);
+    if (!r.ok()) { curveTool_.setMessage("can't build: " + r.error); return; }
+
+    if (p.shape == CurveShape::CarveArch) {
+        // Cut the opening out of the selected brushes (or everything it touches).
+        std::set<BrushId> targets = doc_.selection();
+        if (targets.empty()) for (const Brush& b : doc_.brushes()) targets.insert(b.id);
+        std::vector<Brush> modified, added;
+        std::set<BrushId> deleted;
+        int touched = 0;
+        for (BrushId id : targets) {
+            const Brush* b = doc_.find(id);
+            if (!b) continue;
+            std::vector<Brush> pieces{*b};
+            bool changed = false;
+            for (const Brush& cut : r.brushes) {
+                std::vector<Brush> next;
+                for (const Brush& q : pieces) {
+                    std::vector<Brush> c = carveBrush(q, cut);
+                    if (c.size() != 1 || c[0].faces.size() != q.faces.size()) changed = true;
+                    for (Brush& x : c) next.push_back(std::move(x));
+                }
+                pieces = std::move(next);
+            }
+            if (!changed) continue;
+            ++touched;
+            for (Brush& q : pieces) q.group = 0;
+            if (pieces.empty()) { deleted.insert(id); continue; }
+            pieces[0].id = id;
+            modified.push_back(pieces[0]);
+            for (size_t i = 1; i < pieces.size(); ++i) added.push_back(pieces[i]);
+        }
+        if (!touched) { curveTool_.setMessage("the opening doesn't cut through any selected brush"); return; }
+        // Refill above the curve with arch slices, in the wall's texture.
+        std::string wallTex = p.texture;
+        if (const Brush* w = doc_.find(*targets.begin()); w && !w->faces.empty()) wallTex = w->faces[0].texture;
+        for (Brush f : r.fill) {
+            for (Face& face : f.faces) face.texture = wallTex;
+            added.push_back(std::move(f));
+        }
+        Command c = doc_.makeChange(modified, std::move(added), deleted, "Carve arch");
+        for (const BrushChange& ch : c.changes) if (ch.after) c.selectionAfter.insert(ch.id);
+        doc_.apply(std::move(c));
+        curveTool_.finished();
+        return;
+    }
+
+    // A (re)generated group.
+    const GroupId old = curveTool_.editingGroup();
+    const GroupId gid = old ? old : doc_.newGroupId();
+    for (Brush& b : r.brushes) b.group = gid;
+    const std::set<BrushId> oldMembers = old ? doc_.groupMembers(old) : std::set<BrushId>{};
+    Command c = doc_.makeChange({}, std::move(r.brushes), oldMembers, old ? "Edit curve" : "Create curve");
+    std::set<BrushId> sel;
+    for (const BrushChange& ch : c.changes) if (ch.after) sel.insert(ch.id);
+    c.selectionAfter = sel;
+    std::optional<Group> before;
+    if (old) before = *doc_.group(old);
+    c.groupChanges.push_back({gid, before, Group{gid, curveToKeys(p)}});
+    doc_.apply(std::move(c));
+    curveTool_.finished();
+}
+
+void Editor::editCurve() {
+    const GroupId g = selectedGroup();
+    if (!g) return;
+    CurveParams p;
+    if (!curveFromKeys(doc_.group(g)->keys, p)) { errorText_ = "This group's curve settings can't be read."; return; }
+    // If the group was moved since it was made, follow it.
+    const CurveResult fresh = generateCurve(p);
+    AABB now, then;
+    for (BrushId id : doc_.groupMembers(g)) now.add(doc_.find(id)->bounds());
+    for (const Brush& b : fresh.brushes) then.add(b.bounds());
+    if (now.valid() && then.valid() && length(now.size() - then.size()) < 1e-6) shiftCurve(p, now.min - then.min);
+    setTool(&curveTool_);
+    curveTool_.startEditing(p, g);
+}
+
+void Editor::bakeCurves() {
+    std::set<GroupId> groups;
+    for (BrushId id : doc_.selection())
+        if (const Brush* b = doc_.find(id); b && b->group) groups.insert(b->group);
+    if (groups.empty()) return;
+    tool_->cancel();
+    std::vector<Brush> modified;
+    for (GroupId g : groups)
+        for (BrushId id : doc_.groupMembers(g)) {
+            Brush b = *doc_.find(id);
+            b.group = 0;
+            modified.push_back(std::move(b));
+        }
+    Command c = doc_.makeModify(modified, "Bake curve");
+    for (GroupId g : groups) c.groupChanges.push_back({g, *doc_.group(g), std::nullopt});
+    doc_.apply(std::move(c));
+}
+
+void Editor::drawCurvePanel() {
+    CurveParams& p = curveTool_.params;
+    const bool editing = curveTool_.editingGroup() != 0;
+    ImGui::TextUnformatted(editing ? "Editing a generated curve" : "Curve tool");
+    static const char* shapes[] = {"Arch (doorway)", "Ring / pipe / cylinder", "Curved wall", "Spiral stairs", "Arched opening (cut)"};
+    int shape = (int)p.shape;
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::Combo("##shape", &shape, shapes, 5) && !editing) {
+        p.shape = (CurveShape)shape;
+        if (p.shape == CurveShape::SpiralStairs) { p.thickness = 8; }
+    }
+    ImGui::Separator();
+    ImGui::PushItemWidth(120);
+    auto intField = [&](const char* label, int& v, int lo, int hi) {
+        if (ImGui::InputInt(label, &v)) v = std::clamp(v, lo, hi);
+    };
+    auto dblField = [&](const char* label, double& v) { ImGui::InputDouble(label, &v, 0, 0, "%g"); };
+    switch (p.shape) {
+        case CurveShape::Arch:
+            intField("segments", p.segments, 2, 64);
+            dblField("thickness", p.thickness);
+            ImGui::Checkbox("square top", &p.flatTop);
+            ImGui::SameLine();
+            ImGui::Checkbox("legs", &p.legs);
+            break;
+        case CurveShape::Ring:
+            intField("segments", p.segments, 1, 128);
+            dblField("thickness", p.thickness);
+            ImGui::TextDisabled("thickness = radius: solid cylinder");
+            dblField("start degrees", p.startDeg);
+            dblField("end degrees", p.endDeg);
+            break;
+        case CurveShape::CurvedWall:
+            intField("segments", p.segments, 1, 128);
+            dblField("thickness", p.thickness);
+            ImGui::TextDisabled("drag points 1 (start), 2 (end), 3 (bend)");
+            dblField("bend u", p.cu);
+            dblField("bend v", p.cv);
+            break;
+        case CurveShape::SpiralStairs:
+            intField("steps", p.steps, 1, 256);
+            dblField("rise per step", p.rise);
+            dblField("step thickness", p.thickness);
+            dblField("total turn (deg)", p.turnDeg);
+            dblField("inner radius", p.innerRadius);
+            dblField("start degrees", p.startDeg);
+            ImGui::Checkbox("clockwise", &p.clockwise);
+            break;
+        case CurveShape::CarveArch:
+            intField("segments", p.segments, 2, 64);
+            ImGui::TextDisabled("select the wall(s), draw the opening's box,");
+            ImGui::TextDisabled("Return cuts it out.");
+            break;
+    }
+    ImGui::Separator();
+    static const char* ax = "XYZ";
+    ImGui::Text("Box (%c %c) and depth (%c)", ax[p.axU], ax[p.axV], ax[p.axD]);
+    double box[4] = {p.u0, p.v0, p.u1, p.v1};
+    ImGui::SetNextItemWidth(240);
+    if (ImGui::InputScalarN("##box", ImGuiDataType_Double, box, 4, nullptr, nullptr, "%g")) { p.u0 = box[0]; p.v0 = box[1]; p.u1 = box[2]; p.v1 = box[3]; }
+    double depth[2] = {p.d0, p.d1};
+    ImGui::SetNextItemWidth(240);
+    if (ImGui::InputScalarN("##depth", ImGuiDataType_Double, depth, p.shape == CurveShape::SpiralStairs ? 1 : 2, nullptr, nullptr, "%g")) { p.d0 = depth[0]; p.d1 = depth[1]; }
+    ImGui::PopItemWidth();
+    ImGui::Checkbox("round corners to whole units", &p.roundToWhole);
+    if (p.shape != CurveShape::CarveArch) {
+        ImGui::Text("texture: %s", p.texture.c_str());
+        if (editing) { ImGui::SameLine(); if (ImGui::SmallButton("use current")) { p.texture = currentTexture_; p.texScale = defaultScale_; } }
+    }
+    ImGui::Separator();
+    const CurveResult& r = curveTool_.preview();
+    if (!curveTool_.hasShape()) ImGui::TextDisabled("drag in a 2D view to place the shape");
+    else if (!r.error.empty()) ImGui::TextColored(ImVec4(1, 0.45f, 0.45f, 1), "%s", r.error.c_str());
+    else ImGui::Text("%zu brushes", r.brushes.size());
+    ImGui::BeginDisabled(!curveTool_.hasShape() || !r.ok());
+    if (ImGui::Button(p.shape == CurveShape::CarveArch ? "Cut opening (Return)" : editing ? "Update (Return)" : "Create (Return)")) commitCurve();
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel (Esc)")) curveTool_.cancel();
+}
+
 // ------------------------------------------------------------------ textures
 
 void Editor::loadTextureFolders() {
@@ -1119,7 +1324,12 @@ void Editor::drawTextureBrowser() {
 }
 
 void Editor::drawFacePanel() {
-    if (ImGui::Begin("Face###face", nullptr, ImGuiWindowFlags_NoCollapse)) {
+    if (tool_ == &curveTool_) {
+        if (ImGui::Begin("Properties###face", nullptr, ImGuiWindowFlags_NoCollapse)) drawCurvePanel();
+        ImGui::End();
+        return;
+    }
+    if (ImGui::Begin("Properties###face", nullptr, ImGuiWindowFlags_NoCollapse)) {
         const std::vector<FaceRef> faces = textureTool_.faces(doc_);
         if (tool_ != &textureTool_) {
             ImGui::TextWrapped("Pick faces with the Texture tool (Shift+A) to adjust how textures sit on them.");
@@ -1207,7 +1417,7 @@ void Editor::openMap(const std::string& path) {
         return;
     }
     tool_->cancel();
-    doc_.reset(loaded.worldKeys, loaded.brushes(), loaded.otherEntities);
+    doc_.reset(loaded.worldKeys, loaded.brushes(), loaded.otherEntities, loaded.groups());
     path_ = path;
     if (r.skippedBrushes > 0)
         errorText_ = "Opened, but skipped " + std::to_string(r.skippedBrushes) + " invalid brush(es).";
@@ -1324,6 +1534,10 @@ void Editor::runPending() {
 //   expect texture <name>   expect pickedfaces <n>   expect current <name>
 //   tool clip   clippoints x y z  x y z  x y z   clipkeep both|front|back   (key Return clips)
 //   carve   hollow <thickness>   expect volume <v>   (sum of all brush volumes, +-0.5)
+//   curveshape arch|ring|curved_wall|spiral_stairs|carve_arch   curveset <key> <value>
+//   (keys as stored in the .map: segments, thickness, box, depth, sweep, flat_top...)
+//   editcurve   bakecurve   expect groups <n>
+//   block x0 y0 z0 x1 y1 z1 (test setup)   expect bounds minx miny minz maxx maxy maxz
 //   shot <file.png>         quit
 //   expect brushes|selected <n>  |  expect size <x> <y> <z>  (selection bounds, +-0.5)
 //   expect edges   (every brush/preview edge in the 2D views is visible on screen)
@@ -1426,7 +1640,8 @@ void Editor::stepScript() {
     if (cmd == "tool") {
         std::string t; in >> t;
         setTool(t == "block" ? (Tool*)&blockTool_ : t == "vertex" ? (Tool*)&vertexTool_
-              : t == "texture" ? (Tool*)&textureTool_ : t == "clip" ? (Tool*)&clipTool_ : (Tool*)&selectTool_);
+              : t == "texture" ? (Tool*)&textureTool_ : t == "clip" ? (Tool*)&clipTool_
+              : t == "curve" ? (Tool*)&curveTool_ : (Tool*)&selectTool_);
     } else if (cmd == "press") {
         int v; float x, y; in >> v >> x >> y;
         std::string mod;
@@ -1508,6 +1723,35 @@ void Editor::stepScript() {
         std::string k; in >> k;
         clipTool_.keep = k == "front" ? ClipTool::Keep::Front : k == "back" ? ClipTool::Keep::Back : ClipTool::Keep::Both;
     } else if (cmd == "carve") { carveWithSelection();
+    } else if (cmd == "curveshape") {
+        std::string n; in >> n;
+        CurveShape sh;
+        if (curveShapeFromName(n, sh)) curveTool_.params.shape = sh;
+        setTool(&curveTool_);
+    } else if (cmd == "curveset") {
+        // curveset <key> <value...>  (same keys as stored in the .map, e.g. segments 12)
+        std::string k, v; in >> k; std::getline(in >> std::ws, v);
+        CurveParams& cp = curveTool_.params;
+        KeyValues kv{{"shape", curveShapeName(cp.shape)}, {k, v}};
+        curveFromKeys(kv, cp);
+    } else if (cmd == "editcurve") { editCurve();
+    } else if (cmd == "block") {
+        // block x0 y0 z0 x1 y1 z1: test helper, creates (and selects) an exact box
+        AABB b; Vec3 a, c; in >> a.x >> a.y >> a.z >> c.x >> c.y >> c.z; b.add(a); b.add(c);
+        Brush br = makeBox(b, currentTexture_);
+        for (Face& f : br.faces) f.scaleU = f.scaleV = defaultScale_;
+        doc_.apply(doc_.makeAdd({br}, "Create block"));
+    } else if (cmd == "expect" && in.str().find(" bounds ") != std::string::npos) {
+        std::string w; Vec3 mn, mx; in >> w >> mn.x >> mn.y >> mn.z >> mx.x >> mx.y >> mx.z;
+        const AABB b = doc_.selectionBounds();
+        if (!b.valid() || length(b.min - mn) > 0.5 || length(b.max - mx) > 0.5) {
+            std::fprintf(stderr, "script FAIL (command %d): selection bounds %g %g %g .. %g %g %g\n", scriptLine_, b.min.x, b.min.y, b.min.z, b.max.x, b.max.y, b.max.z);
+            ++scriptFailures_;
+        }
+    } else if (cmd == "bakecurve") { bakeCurves();
+    } else if (cmd == "expect" && in.str().find(" groups ") != std::string::npos) {
+        std::string w; size_t n = 0; in >> w >> n;
+        if (doc_.groups().size() != n) { std::fprintf(stderr, "script FAIL (command %d): expected %zu groups, got %zu\n", scriptLine_, n, doc_.groups().size()); ++scriptFailures_; }
     } else if (cmd == "hollow") {
         double t = 16; in >> t;
         shapingError_.clear();

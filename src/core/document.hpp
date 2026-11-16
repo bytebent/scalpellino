@@ -2,6 +2,7 @@
 // The map being edited: world properties, world brushes, other entities (preserved),
 // selection, and undo history. All edits go through Document::apply(Command).
 #include "core/brush.hpp"
+#include <map>
 #include <optional>
 #include <set>
 #include <string>
@@ -18,6 +19,20 @@ struct RawEntity {
     std::vector<Brush> brushes;
 };
 
+// A group of brushes made by a generator (curve tool). `keys` hold the generator's
+// parameters so the group can be regenerated; baking removes the group.
+using GroupId = std::uint32_t;
+struct Group {
+    GroupId id = 0;
+    KeyValues keys;
+};
+
+struct GroupChange {
+    GroupId id = 0;
+    std::optional<Group> before;
+    std::optional<Group> after;
+};
+
 // One brush before/after an edit. Missing `before` = created; missing `after` = deleted.
 struct BrushChange {
     BrushId id = 0;
@@ -30,6 +45,7 @@ struct Command {
     std::vector<BrushChange> changes;
     std::set<BrushId> selectionBefore;
     std::set<BrushId> selectionAfter;
+    std::vector<GroupChange> groupChanges;
 };
 
 class Document {
@@ -40,6 +56,14 @@ public:
     const std::vector<Brush>& brushes() const { return brushes_; }
     const Brush* find(BrushId id) const;
     BrushId newId() { return nextId_++; }
+
+    // Generated groups.
+    const std::map<GroupId, Group>& groups() const { return groups_; }
+    const Group* group(GroupId id) const;
+    GroupId newGroupId() { return nextGroupId_++; }
+    std::set<BrushId> groupMembers(GroupId id) const;
+    // Adds every member of any group touched by `ids` (groups select as a whole).
+    std::set<BrushId> expandToGroups(const std::set<BrushId>& ids) const;
 
     const std::set<BrushId>& selection() const { return selection_; }
     void setSelection(std::set<BrushId> s) { selection_ = std::move(s); }
@@ -60,7 +84,9 @@ public:
     unsigned long long revision() const { return revision_; }
 
     // Replaces all content (used when loading). Clears history.
-    void reset(KeyValues world, std::vector<Brush> brushes, std::vector<RawEntity> others);
+    // Brush `group` fields must refer to entries of `groups` (ids are kept).
+    void reset(KeyValues world, std::vector<Brush> brushes, std::vector<RawEntity> others,
+               std::map<GroupId, Group> groups = {});
 
     // Helpers that build commands.
     Command makeAdd(std::vector<Brush> brushes, const std::string& name);
@@ -75,11 +101,16 @@ public:
 
 private:
     void setBrush(BrushId id, const std::optional<Brush>& b);
+    void setGroup(GroupId id, const std::optional<Group>& g);
+    // Adds group removals to `c` for groups that would have no brushes left.
+    void pruneEmptyGroups(Command& c) const;
     void bump() { ++revision_; }
 
     std::vector<Brush> brushes_;
     std::set<BrushId> selection_;
     BrushId nextId_ = 1;
+    std::map<GroupId, Group> groups_;
+    GroupId nextGroupId_ = 1;
     std::vector<Command> undo_, redo_;
     unsigned long long revision_ = 0, savedRevision_ = 0;
 };

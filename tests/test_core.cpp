@@ -6,6 +6,7 @@
 #include "core/hull.hpp"
 #include "core/texture.hpp"
 #include "core/csg.hpp"
+#include "core/curves.hpp"
 #include "io/map_format.hpp"
 #include <cmath>
 #include <cstdio>
@@ -480,6 +481,132 @@ static void testCsg() {
     CHECK(hollowBrush(makeBox(box({0, 0, 0}, {64, 64, 20}), "w"), 16, err).empty() && !err.empty());
 }
 
+static bool sharesCorners(const Brush& a, const Brush& b, size_t need) {
+    size_t n = 0;
+    for (const Vec3& p : brushVertices(a))
+        for (const Vec3& q : brushVertices(b))
+            if (length(p - q) < 1e-9) { ++n; break; }
+    return n >= need;
+}
+
+static void testCurves() {
+    const double pi = 3.14159265358979323846;
+    // ---- Arch in the front view (u = y, v = z, depth = x), 128 wide, 128 tall, 16 deep.
+    CurveParams a;
+    a.shape = CurveShape::Arch;
+    a.u0 = 0; a.u1 = 128; a.v0 = 0; a.v1 = 128; a.d0 = 0; a.d1 = 16;
+    a.segments = 8; a.thickness = 16; a.flatTop = true; a.legs = true; a.roundToWhole = false;
+    CurveResult r = generateCurve(a);
+    CHECK(r.ok());
+    CHECK(r.brushes.size() == 8 + 2);
+    double vol = 0;
+    for (const Brush& b : r.brushes) { CHECK(b.valid()); vol += brushVolume(b); }
+    // Solid = box above the spring line minus the inner half-polygon, plus two legs.
+    const double Ro = 64, Ri = 48, N = 8;
+    const double expected = (128.0 * Ro - 0.5 * N * Ri * Ri * std::sin(pi / N)) * 16 + 2 * (16.0 * 64 * 16);
+    CHECK(near(vol, expected, 1e-6));
+    // Neighbouring slices share their whole common edge (2 corners x 2 depths).
+    for (size_t i = 0; i + 1 < 8; ++i) CHECK(sharesCorners(r.brushes[i], r.brushes[i + 1], 4));
+    // Front view axes: depth along X.
+    const AABB ab = r.brushes[0].bounds();
+    CHECK(ab.min.x == 0 && ab.max.x == 16);
+
+    // Rounded to whole units: every corner is an integer, still all valid.
+    a.roundToWhole = true;
+    r = generateCurve(a);
+    CHECK(r.ok());
+    for (const Brush& b : r.brushes) {
+        CHECK(b.valid());
+        CHECK(brushOnGrid(b, 1));
+    }
+    for (size_t i = 0; i + 1 < 8; ++i) CHECK(sharesCorners(r.brushes[i], r.brushes[i + 1], 4));
+
+    // Too low for a round arch -> error.
+    a.v1 = 40;
+    CHECK(!generateCurve(a).ok());
+
+    // ---- Full ring, 16 slices: volume = outer polygon - inner polygon.
+    CurveParams g;
+    g.shape = CurveShape::Ring;
+    g.axU = 0; g.axV = 1; g.axD = 2;
+    g.u0 = -64; g.u1 = 64; g.v0 = -64; g.v1 = 64; g.d0 = 0; g.d1 = 32;
+    g.segments = 16; g.thickness = 16; g.roundToWhole = false;
+    r = generateCurve(g);
+    CHECK(r.ok() && r.brushes.size() == 16);
+    vol = 0;
+    for (const Brush& b : r.brushes) vol += brushVolume(b);
+    const double polyA = [&](double R) { return 0.5 * 16 * R * R * std::sin(2 * pi / 16); }(64) - 0.5 * 16 * 48 * 48 * std::sin(2 * pi / 16);
+    CHECK(near(vol, polyA * 32, 1e-6));
+    CHECK(sharesCorners(r.brushes[15], r.brushes[0], 4)); // closes up with no gap
+    // Thickness = radius -> a solid cylinder made of wedges.
+    g.thickness = 64;
+    r = generateCurve(g);
+    CHECK(r.ok() && r.brushes.size() == 16);
+    // Half ring, 3 slices of 60 degrees.
+    g.thickness = 16; g.startDeg = 0; g.endDeg = 180; g.segments = 3;
+    r = generateCurve(g);
+    CHECK(r.ok() && r.brushes.size() == 3);
+    // A slice spanning >= 180 degrees can't be convex -> error.
+    g.segments = 1;
+    CHECK(!generateCurve(g).ok());
+
+    // ---- Curved wall: 8 slices, consecutive slices share an edge.
+    CurveParams w;
+    w.shape = CurveShape::CurvedWall;
+    w.axU = 0; w.axV = 1; w.axD = 2;
+    w.u0 = 0; w.v0 = 0; w.u1 = 256; w.v1 = 0; w.cu = 128; w.cv = 128;
+    w.d0 = 0; w.d1 = 128; w.thickness = 16; w.segments = 8;
+    r = generateCurve(w);
+    CHECK(r.ok() && r.brushes.size() == 8);
+    for (size_t i = 0; i + 1 < r.brushes.size(); ++i) CHECK(sharesCorners(r.brushes[i], r.brushes[i + 1], 4));
+    // Far too tight for a thick wall -> error, not broken brushes.
+    w.u1 = 8; w.cu = 4; w.cv = 200; w.thickness = 64; w.segments = 2;
+    CHECK(!generateCurve(w).ok());
+
+    // ---- Spiral stairs: 12 steps, one full turn, each 16 higher.
+    CurveParams st;
+    st.shape = CurveShape::SpiralStairs;
+    st.axU = 0; st.axV = 1; st.axD = 2;
+    st.u0 = -128; st.u1 = 128; st.v0 = -128; st.v1 = 128; st.d0 = 0;
+    st.steps = 12; st.turnDeg = 360; st.rise = 16; st.thickness = 8; st.innerRadius = 16;
+    r = generateCurve(st);
+    CHECK(r.ok() && r.brushes.size() == 12);
+    if (r.ok()) {
+        CHECK(near(r.brushes[0].bounds().min.z, 0) && near(r.brushes[11].bounds().min.z, 176));
+        CHECK(near(r.brushes[11].bounds().max.z, 184));
+    }
+
+    // ---- Carve arch: a box cut through the wall, then arch slices refill the corners
+    //      above the curve. Volume = wall - (rectangle below the spring line + half polygon).
+    CurveParams ca;
+    ca.shape = CurveShape::CarveArch;
+    ca.axU = 1; ca.axV = 2; ca.axD = 0;
+    ca.u0 = 32; ca.u1 = 96; ca.v0 = 0; ca.v1 = 128; ca.d0 = 0; ca.d1 = 16; // the wall's depth
+    ca.segments = 8; ca.roundToWhole = false;
+    r = generateCurve(ca);
+    CHECK(r.ok() && r.brushes.size() == 1);
+    CHECK(r.fill.size() >= 6 && r.fill.size() <= 8);
+    const Brush wall = makeBox(box({0, 0, 0}, {16, 256, 192}), "w");
+    std::vector<Brush> pieces = carveBrush(wall, r.brushes[0]);
+    CHECK(pieces.size() <= 4); // left, right, below, above: clean rectangles
+    for (const Brush& f : r.fill) pieces.push_back(f);
+    vol = 0;
+    for (const Brush& p : pieces) { CHECK(p.valid()); vol += brushVolume(p); }
+    const double openingArea = 64.0 * (128 - 32) + 0.5 * 8 * 32 * 32 * std::sin(pi / 8);
+    CHECK(near(vol, brushVolume(wall) - openingArea * 16, 1e-3));
+    // Neighbouring fill slices share corners.
+    CHECK(sharesCorners(r.fill[0], r.fill[1], 2));
+
+    // ---- Parameters round-trip through key/values (stored in the .map).
+    CurveParams k = st;
+    k.texture = "Bricks_24"; k.clockwise = true; k.thickness = 7.25;
+    CurveParams back;
+    CHECK(curveFromKeys(curveToKeys(k), back));
+    CHECK(back.shape == CurveShape::SpiralStairs && back.texture == "Bricks_24" && back.clockwise);
+    CHECK(back.thickness == 7.25 && back.steps == 12 && back.axD == 2 && back.u0 == -128);
+    CHECK(!curveFromKeys({{"shape", "teapot"}}, back));
+}
+
 static void testRay() {
     Brush b = makeBox(box({0, 0, 0}, {64, 64, 64}), "a");
     CHECK(near(rayHit(b, {-100, 32, 32}, {1, 0, 0}), 100));
@@ -538,6 +665,60 @@ static void testMakeChange() {
     CHECK(nearV(d.find(a)->bounds().min, {0, 0, 0}));
     CHECK(d.redo());
     CHECK(d.find(b) == nullptr);
+}
+
+static void testGroups() {
+    // Generate an arch as a group, save, load: the group and its parameters survive.
+    CurveParams a;
+    a.shape = CurveShape::Arch;
+    a.u0 = 0; a.u1 = 128; a.v0 = 0; a.v1 = 128; a.d0 = 0; a.d1 = 16; a.segments = 6;
+    CurveResult r = generateCurve(a);
+    CHECK(r.ok());
+    Document d;
+    d.apply(d.makeAdd({makeBox(box({300, 0, 0}, {364, 64, 64}), "a")}, "Create"));
+    const GroupId gid = d.newGroupId();
+    for (Brush& b : r.brushes) b.group = gid;
+    Command c = d.makeChange({}, r.brushes, {}, "Arch");
+    c.groupChanges.push_back({gid, std::nullopt, Group{gid, curveToKeys(a)}});
+    d.apply(std::move(c));
+    CHECK(d.groups().size() == 1);
+    CHECK(d.groupMembers(gid).size() == 8);
+    // Selecting one member selects the whole group.
+    const BrushId one = *d.groupMembers(gid).begin();
+    CHECK(d.expandToGroups({one}).size() == 8);
+    // Undo removes brushes and the group; redo brings both back.
+    CHECK(d.undo());
+    CHECK(d.groups().empty() && d.brushes().size() == 1);
+    CHECK(d.redo());
+    CHECK(d.groups().size() == 1 && d.brushes().size() == 9);
+
+    const std::string text = writeMap(d);
+    CHECK(text.find("\"func_group\"") != std::string::npos && text.find("\"_scal_shape\" \"arch\"") != std::string::npos);
+    Document e;
+    CHECK(readMap(text, e).ok);
+    CHECK(e.brushes().size() == 9);
+    CHECK(e.groups().size() == 1);
+    const Group& g = e.groups().begin()->second;
+    CurveParams back;
+    CHECK(curveFromKeys(g.keys, back));
+    CHECK(back.shape == CurveShape::Arch && back.segments == 6 && back.u1 == 128);
+    CHECK(e.groupMembers(g.id).size() == 8);
+    CHECK(e.otherEntities.empty()); // the group isn't kept as an opaque entity
+    // A plain func_group from another tool stays an opaque entity.
+    Document f;
+    CHECK(readMap("{\n\"classname\" \"worldspawn\"\n}\n{\n\"classname\" \"func_group\"\n}\n", f).ok);
+    CHECK(f.otherEntities.size() == 1 && f.groups().empty());
+
+    // Deleting every brush of a group removes the group too; undo brings it back.
+    d.apply(d.makeDelete(d.groupMembers(gid), "Delete"));
+    CHECK(d.groups().empty());
+    CHECK(d.undo());
+    CHECK(d.groups().size() == 1 && d.groupMembers(gid).size() == 8);
+
+    // shiftCurve moves every coordinate.
+    CurveParams s = a;
+    shiftCurve(s, {100, 20, 30}); // front view: u = y, v = z, d = x
+    CHECK(s.u0 == 20 && s.v1 == 158 && s.d0 == 100);
 }
 
 static void testDirty() {
@@ -630,9 +811,11 @@ int main() {
     testSnapToGrid();
     testTextures();
     testCsg();
+    testCurves();
     testRay();
     testUndo();
     testMakeChange();
+    testGroups();
     testDirty();
     testMapRoundTrip();
     testMapQuakeFormat();

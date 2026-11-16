@@ -36,6 +36,7 @@ MenuActions drawMenuBar(const MenuState& st) {
         if (ImGui::MenuItem("Vertex", "Shift+V", st.vertexTool)) a.toolVertex = true;
         if (ImGui::MenuItem("Texture", "Shift+A", st.textureTool)) a.toolTexture = true;
         if (ImGui::MenuItem("Clip", "Shift+X", st.clipTool)) a.toolClip = true;
+        if (ImGui::MenuItem("Curve (arch, ring, wall, stairs)", "Shift+C", st.curveTool)) a.toolCurve = true;
         ImGui::Separator();
         if (ImGui::BeginMenu("Clip: keep")) {
             if (ImGui::MenuItem("Both pieces", nullptr, st.clipKeep == 0)) a.clipKeep = 0;
@@ -46,6 +47,9 @@ MenuActions drawMenuBar(const MenuState& st) {
         }
         if (ImGui::MenuItem("Clip points...", nullptr, false, st.hasSelection)) a.clipPoints = true;
         if (ImGui::MenuItem("Apply clip", "Return", false, st.clipTool && st.clipPlane)) a.clipApply = true;
+        ImGui::Separator();
+        if (ImGui::MenuItem("Edit curve", nullptr, false, st.groupSelected)) a.editCurve = true;
+        if (ImGui::MenuItem("Bake curve into plain brushes", nullptr, false, st.groupSelected)) a.bakeCurve = true;
         ImGui::Separator();
         if (ImGui::MenuItem("Carve with selection", "Cmd+Shift+C", false, st.hasSelection)) a.carve = true;
         if (ImGui::MenuItem("Hollow...", "Cmd+Shift+H", false, st.hasSelection)) a.hollow = true;
@@ -167,6 +171,8 @@ void drawControlsWindow(bool* open) {
             {"Clip: keep both / front / back", "Shift+X again cycles (Tools menu)"},
             {"Carve with selection", "Cmd+Shift+C: cuts the selection's shape out of touching brushes"},
             {"Hollow", "Cmd+Shift+H: turn brushes into walls of a typed thickness"},
+            {"Curve tool", "Shift+C: pick a shape in Properties, drag a box (wall: start to end); Return creates"},
+            {"Edit / bake a curve", "Tools menu (select the generated shape first)"},
             {"Delete", "Delete or Backspace"},
             {"Undo / redo", "Cmd+Z / Cmd+Shift+Z"},
             {"New / open / save / save as", "Cmd+N / Cmd+O / Cmd+S / Cmd+Shift+S"},

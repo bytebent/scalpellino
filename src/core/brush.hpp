@@ -34,6 +34,7 @@ struct Polygon {
 
 struct Brush {
     BrushId id = 0;
+    std::uint32_t group = 0; // generated group (curve tool) this brush belongs to; 0 = none
     std::vector<Face> faces;
 
     // Computes face polygons. Faces that clip away completely produce no polygon.

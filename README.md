@@ -26,7 +26,7 @@ Everything is also in the menus (File, Edit, Tools, Transform, View, Help), and
 
 | Action | Keys |
 |---|---|
-| Select / Block / Vertex / Texture / Clip tool | **Shift+S** / **Shift+B** / **Shift+V** / **Shift+A** / **Shift+X** |
+| Select / Block / Vertex / Texture / Clip / Curve tool | **Shift+S** / **Shift+B** / **Shift+V** / **Shift+A** / **Shift+X** / **Shift+C** |
 | Draw a block | Block tool: drag in a 2D view, adjust handles in any 2D view, **Return** creates, **Esc** cancels |
 | Select | click a brush (2D or 3D); **Cmd+click** adds/removes; **Cmd+A** all; **Esc** none |
 | Move / resize | drag a selection / drag its handles or edges (snaps to the grid) |
@@ -46,6 +46,8 @@ Everything is also in the menus (File, Edit, Tools, Transform, View, Help), and
 | Clip | Clip tool: drag a line in a 2D view; drag points 1–3 in any 2D view (3 tilts the plane); **Shift+X** again cycles keep both/front/back; **Return** clips; Tools → Clip points... types them |
 | Carve | **Cmd+Shift+C**: cut the selection's shape out of the brushes it touches |
 | Hollow | **Cmd+Shift+H**: turn brushes into walls of a typed thickness |
+| Curves | Curve tool: pick a shape in the **Properties** panel (arch, ring/pipe/cylinder, curved wall, spiral stairs, arched opening), drag a box in a 2D view (curved wall: start → end, then drag the bend point), adjust with handles or typed values, **Return** creates |
+| Edit / bake a curve | select it (one click selects the whole shape), Tools → Edit curve / Bake curve into plain brushes |
 | Wrap a texture around a corner | Texture tool: click a face, **Option+Shift+click** the neighbouring face (repeat to go around); or pick several and use **Wrap around** (Face panel / Texture menu) |
 | Hidden faces | Texture → Apply nodraw: faces with `nodraw` show in the editor but are never rendered or exported |
 | Adjust a face's texture | **Face** panel (right): shift, scale, rotation, fit, justify, align to world/face |

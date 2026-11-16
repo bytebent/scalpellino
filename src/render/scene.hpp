@@ -35,6 +35,7 @@ struct Scene {
     std::set<FaceRef> selectedFaces;         // texture tool selection (highlighted in 3D)
     std::vector<Vec3> clipPoints;            // clip tool: points 1, 2, 3
     bool clipActive = false;
+    std::set<BrushId> hidden;                // brushes not drawn (e.g. a curve being regenerated)
 };
 
 SceneBrush makeSceneBrush(const Brush& b);

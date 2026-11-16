@@ -14,8 +14,11 @@ void SelectTool::press(ToolEnv& env, const Pointer& p) {
     if (!p.view->is2D()) {
         const BrushId id = pick3D(doc, *p.view, p.local);
         std::set<BrushId> sel = doc.selection();
-        if (env.cmd) { if (id) { if (!sel.erase(id)) sel.insert(id); } }
-        else sel = id ? std::set<BrushId>{id} : std::set<BrushId>{};
+        const std::set<BrushId> hit = id ? doc.expandToGroups({id}) : std::set<BrushId>{};
+        if (env.cmd) {
+            if (id && sel.count(id)) for (BrushId h : hit) sel.erase(h);
+            else sel.insert(hit.begin(), hit.end());
+        } else sel = hit;
         doc.setSelection(sel);
         return;
     }
@@ -45,15 +48,17 @@ void SelectTool::press(ToolEnv& env, const Pointer& p) {
     if (mode_ == Mode::Idle) {
         const BrushId id = pick2D(env.sceneBrushes, *p.view, p.local);
         std::set<BrushId> sel = doc.selection();
+        const std::set<BrushId> hit = id ? doc.expandToGroups({id}) : std::set<BrushId>{};
         if (env.cmd) {
-            if (id) { if (!sel.erase(id)) sel.insert(id); }
+            if (id && sel.count(id)) for (BrushId h : hit) sel.erase(h);
+            else sel.insert(hit.begin(), hit.end());
             doc.setSelection(sel);
             return;
         }
         const bool insideSel = !sel.empty() && grabBox(*p.view, selBox, p.local).move;
-        pressedId_ = (id && sel.count(id) && sel.size() > 1) ? id : 0;
+        pressedId_ = (id && sel.count(id) && sel.size() > hit.size()) ? id : 0;
         if (id && !sel.count(id)) {
-            doc.setSelection({id});                // new pick replaces the selection
+            doc.setSelection(hit);                 // new pick replaces the selection (whole group)
         } else if (!id && !insideSel) {
             doc.setSelection({});                  // click on empty space deselects
             return;
@@ -116,7 +121,7 @@ void SelectTool::release(ToolEnv& env, const Pointer&) {
     if (mode_ == Mode::Idle) return;
     const bool changed = mode_ == Mode::Rotating ? rotAngle_ != 0
                        : (curBox_.min != startBox_.min || curBox_.max != startBox_.max);
-    if (!changed && pressedId_ && mode_ == Mode::Moving) env.doc.setSelection({pressedId_});
+    if (!changed && pressedId_ && mode_ == Mode::Moving) env.doc.setSelection(env.doc.expandToGroups({pressedId_}));
     if (changed && !ghosts_.empty()) {
         Document& doc = env.doc;
         if (clone_) {

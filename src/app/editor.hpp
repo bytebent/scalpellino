@@ -13,6 +13,7 @@
 #include "tools/vertex_tool.hpp"
 #include "tools/texture_tool.hpp"
 #include "tools/clip_tool.hpp"
+#include "tools/curve_tool.hpp"
 #include "render/texture_library.hpp"
 #include <deque>
 #include <memory>
@@ -106,6 +107,13 @@ private:
     void carveWithSelection();
     void hollowSelection(double thickness);
     void drawShapingDialogs();
+
+    // Curves (milestone 5)
+    void commitCurve();
+    void editCurve();          // load the selected generated group into the curve tool
+    void bakeCurves();         // selected generated groups -> plain brushes
+    GroupId selectedGroup() const; // the single generated group the selection is, or 0
+    void drawCurvePanel();
     enum class Pending { None, New, Open, OpenPath, Quit };
     void guardUnsaved(Pending action); // runs action now or asks first
     void runPending();
@@ -129,6 +137,7 @@ private:
     VertexTool vertexTool_;
     TextureTool textureTool_;
     ClipTool clipTool_;
+    CurveTool curveTool_;
     Tool* tool_ = &selectTool_;
 
     int capture_ = -1;          // view that owns the current left-button drag

@@ -19,6 +19,7 @@ struct MenuState {
     bool canApplyTexture = false;
     double defaultScale = 0.25;
     bool clipTool = false, clipPlane = false;
+    bool curveTool = false, groupSelected = false;
     int clipKeep = 0; // 0 both, 1 front, 2 back
 };
 
@@ -42,6 +43,7 @@ struct MenuActions {
     int textured3D = -1;         // 0 flat colours, 1 textured
     bool addTextureFolder = false, rescanTextures = false;
     bool toolClip = false, clipApply = false, clipPoints = false, carve = false, hollow = false;
+    bool toolCurve = false, editCurve = false, bakeCurve = false;
     int clipKeep = -1;
 };
 

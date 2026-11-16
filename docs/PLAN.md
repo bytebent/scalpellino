@@ -10,10 +10,10 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 
 ## Current status
 
-- Released: v0.1.0, v0.1.1, v0.2.0, v0.3.0, v0.3.1 (nodraw, native dialogs — compiled in
-  CI; untested by hand), **v0.4.0 = milestone 4 Shaping** (clip, carve, hollow).
-- **Next: milestone 5 — Curve tool** (arch, carve arch, ring, curved wall, spiral stairs;
-  regenerable + bake). See ARCHITECTURE §6.
+- Released: v0.1.0 … v0.4.0, **v0.5.0 = milestone 5 Curve tool** + texture wrapping +
+  CI trimmed to Intel/Linux (this step). User asked to report only at v0.5.0.
+- **Next: milestone 6 — Look** (lights, environment, camera bookmarks, scale figure,
+  Y2K preview, PNG renders). Needs a short design chat first? See plan below.
 
 ## How to work in this repo
 
@@ -58,6 +58,9 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 
 ## Open questions (parked)
 
+- **Curve tool extras:** drag curved-wall depth in other views; stairs centre column;
+  dome / cone / torus / helix ramp; per-shape remembered settings.
+
 - **Texture browser, later:** tags, folders/collections, favourites, recently used,
   sorting by size, previews of how a texture tiles (user: "eventually a lot of
   functionality, e.g. tags; for now searchable by name is fine").
@@ -94,24 +97,68 @@ Delivered: clip tool (2-point drag + 3 draggable points, keep both/front/back, t
 points), carve with selection, hollow. Not done: merging carve fragments into fewer
 pieces (carve can leave more pieces than strictly needed).
 
-## Milestone 5 plan — Curve tool
+## Milestone 5 — Curve tool (done, v0.5.0)
 
-From ARCHITECTURE §6 (agreed with the user): curves in the tool, flat faces in the
-result; Return generates, Esc cancels; NO mouse-wheel parameters — typed fields in a small
-panel + viewport handles.
-1. Core generators (pure, tested): arch (curved underside + filled square top), ring /
-   pipe (full or partial, thickness), curved wall along a spline, spiral stairs. Slices
-   are convex, neighbours share exact vertices (no cracks), grid-snapped where possible.
-2. Generated group remembers its parameters (stored as extra keys in the .map) and can be
-   regenerated; "Bake" turns it into plain brushes. Needs groups in the document model.
-3. Carve arch: draw on an existing wall, cut an arched opening (uses carve).
-4. Curve tool UI: draw in a 2D view (arc: two clicks for the ends, drag for bulge),
-   parameter panel (segments, thickness, depth...), live preview, Return/Esc, menus.
-5. Tests: convexity, shared vertices (no gaps), volume checks, .map round trip of params.
+Delivered: arch (square top, legs), ring / pipe / cylinder (sweep), curved wall
+(quadratic, bend handle), spiral stairs (top view), arched opening (box cut + arch-slice
+refill), generated groups (regenerable, follow moves, bake), Properties panel with typed
+fields, handles in all 2D views (incl. depth), Return/Esc. Not done (parked): editing
+curved-wall depth by dragging in other views (typed only), centre column option for
+stairs, more shapes (dome, cone, torus, helix ramp).
+
+## Milestone 6 plan — Look (draft; discuss with the user)
+
+1. Light entities (point, spot, sun) placed in 2D views, Properties panel (colour,
+   brightness, radius / cone), shown as icons; stored as `.map` entities (`light`,
+   `light_spot`, `light_environment`-style keys).
+2. Environment (sky colour / texture, fog colour + distance, ambient) in worldspawn keys.
+3. Camera bookmarks (editor-only) + scale figure (72-unit ghost person, toggle).
+4. Y2K preview mode in the 3D view: low-res target (e.g. 640x480), nearest upscale,
+   per-vertex lighting from lights (no shadows), fog, env-map chrome on chosen textures,
+   bloom, dithering — each toggleable. nodraw faces hidden.
+5. Render button: PNG still at a chosen resolution from a camera bookmark.
+6. Tests: lighting maths in core (attenuation, normals), entity round trip, screenshots.
 
 ## Milestone 1 plan — Brushes (done)
 
 ## Log
+
+### 2026-11-16 — Milestone 5: Curve tool (v0.5.0)
+- `core/curves`: generators for arch (flat top + legs), ring / pipe / cylinder (sweep),
+  curved wall (quadratic Bezier, offset by +-thickness/2), spiral stairs, carve arch
+  (cutter box + arch-slice fill). Slices are built as prisms via the convex hull of their
+  corners; neighbours reuse the same computed points (shared exact corners); optional
+  rounding to whole units (default on). Params <-> key/values; `shiftCurve`.
+- Document: `Brush::group`, `Group {id, keys}`, `GroupChange` in commands (undo/redo),
+  `groupMembers`, `expandToGroups`, automatic removal of groups that lose their last
+  brush (`pruneEmptyGroups`, undoable). `.map`: groups as `func_group` + `_scal_*` keys;
+  plain func_groups from other tools stay opaque.
+- Curve tool (Shift+C, Tools menu, Tools panel): Properties panel with shape + typed
+  fields + box/depth; drawing in a 2D view (stairs: top view only; ring/stairs kept
+  square); box handles in all 2D views (depth in the others); curved wall points 1/2/3;
+  preview; Return creates / updates; Esc cancels; Tools -> Edit curve (follows a moved
+  group), Bake curve. Select tool selects whole groups.
+- Bugs found by the new UI test: (1) groups survived deleting all their brushes ->
+  `pruneEmptyGroups`; (2) **File -> Open dropped the groups** (editor called
+  `Document::reset` without them; the core round-trip test didn't cover the editor path).
+  Both fixed. Script mistakes: clicked within 6 px of an edge (= resize handle).
+- Carve arch first used fan wedges / one convex cutter -> wall shards; now box cut + arch
+  slice refill = clean rectangles + radial slices (same exact volume).
+- GCC 13 `-Wnonnull` false positive on `vector = {..}` assignment; rewritten with
+  push_back to keep the build warning-free.
+- A `cd …; rm -f *` debug command was blocked by the safety check (nothing deleted); use
+  fresh `mktemp -d` folders for scratch runs instead.
+- **Tests:** core **689 checks, 0 failed** (arch volume exact vs polygon maths, shared
+  corners, rounding to whole units, too-low arch error, ring volume + closing gap,
+  cylinder, half ring, >=180-degree slice error, curved wall shared edges + too-tight
+  error, spiral stairs heights, carve arch volume + clean pieces, params round trip,
+  groups undo / select / map round trip / prune). UI `m5_curves` (arch create, group
+  select, move + edit follows, bake + undo, ring, stairs refused in front view, curved
+  wall, arched opening exact volume, save/open/edit) + all older scripts: **PASS at 1x
+  and 2x**. Idle: **0 ticks / 10 s**.
+- Screenshots: `m5-01-arch-preview`, `m5-02-arch-edited-12-segments`,
+  `m5-03-stairs-ring-arch`, `m5-04-curved-wall-preview`, `m5-05-arched-opening-preview`,
+  `m5-06-arched-opening`.
 
 ### 2026-11-16 — CI trimmed + texture wrap (no separate release; ships in v0.5.0)
 User: Apple Silicon CI felt slow; asked to skip it unless needed; asked for wrapping a

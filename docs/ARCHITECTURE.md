@@ -137,7 +137,13 @@ brushes are convex and grid-snapped where possible.
 
 The generated group **remembers its parameters** and can be re-opened and regenerated
 (e.g. 8 → 12 segments). **Bake** turns it into plain brushes for hand-editing.
-In `.map` files the parameters are stored as extra keys; other tools see normal brushes.
+In `.map` files a group is a `func_group` entity whose parameters are `_scal_*` keys;
+Quake-family tools (TrenchBroom, func_godot) merge func_group into the world and ignore
+the extra keys. Clicking any brush of a group selects the whole group. A group whose
+last brush is deleted disappears with it (undoable). If a group was moved, editing it
+follows the move; other hand edits are replaced when regenerating (bake first to keep them).
+**Carve arch** cuts a rectangular hole and refills the corners above the curve with arch
+slices (clean pieces instead of Hammer-style carve shards).
 
 ### Scale reference
 Toggleable ghost human figure (72 units tall) to judge proportions. Editor-only,
@@ -231,7 +237,7 @@ docs/         this file, roadmap
 | 2 | Precision | Vertex tool (realtime, invalid shapes highlighted), snap vertices to grid, pivot point, grid-friendly (Pythagorean) rotation angles, microgrid + custom grid sizes (inspired by Hammer++) |
 | 3 | Textures | Texture folder loading, browser (search by name), apply, texture tool + face edit, texture lock (done, v0.3.0). Later: tags and richer browser |
 | 4 | Shaping | Clip (2- and 3-point), carve (CSG), hollow (done, v0.4.0) |
-| 5 | Curve tool | Arch, carve arch, ring, curved wall, spiral stairs; regenerable + bake |
+| 5 | Curve tool | Arch, carve arch, ring, curved wall, spiral stairs; regenerable + bake (done, v0.5.0) |
 | 6 | Look | Lights, environment, camera bookmarks, scale figure, Y2K preview, PNG render |
 | 7 | Export | `.glb`, Godot scene package, baked-look `.glb`; verified in Godot via func_godot and glTF import |
 | 8 | Extras | `.wad` textures, Lua generators, baked lighting |

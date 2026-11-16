@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <map>
 #include <sstream>
 
 namespace scal {
@@ -53,11 +54,27 @@ std::string writeMap(const Document& doc) {
     writeKeys(o, doc.worldKeys);
     int i = 0;
     for (const Brush& b : doc.brushes()) {
+        if (b.group) continue; // written with its group below
         o << "// brush " << i++ << '\n';
         writeBrush(o, b);
     }
     o << "}\n";
     int e = 1;
+    // Generated groups: func_group entities (merged into the world by Quake-family tools)
+    // carrying the generator's parameters as "_scal_*" keys that other tools ignore.
+    for (const auto& [gid, g] : doc.groups()) {
+        o << "// entity " << e++ << "\n{\n";
+        KeyValues kv{{"classname", "func_group"}, {"_scal_group", std::to_string(gid)}};
+        for (const auto& [k, v] : g.keys) kv.emplace_back("_scal_" + k, v);
+        writeKeys(o, kv);
+        int j = 0;
+        for (const Brush& b : doc.brushes()) {
+            if (b.group != gid) continue;
+            o << "// brush " << j++ << '\n';
+            writeBrush(o, b);
+        }
+        o << "}\n";
+    }
     for (const RawEntity& ent : doc.otherEntities) {
         o << "// entity " << e++ << "\n{\n";
         writeKeys(o, ent.keys);
@@ -254,6 +271,8 @@ MapReadResult readMap(const std::string& text, Document& doc) {
     KeyValues world;
     std::vector<Brush> worldBrushes;
     std::vector<RawEntity> others;
+    std::map<GroupId, Group> groups;
+    GroupId nextGroup = 1;
     bool haveWorld = false;
     try {
         Parser p(text);
@@ -268,6 +287,21 @@ MapReadResult readMap(const std::string& text, Document& doc) {
                     if (b.valid()) worldBrushes.push_back(std::move(b));
                     else ++r.skippedBrushes;
                 }
+            } else if (classnameOf(keys) == "func_group" && [&] {
+                           for (const auto& [k, v] : keys) if (k.rfind("_scal_", 0) == 0 && k != "_scal_group") return true;
+                           return false;
+                       }()) {
+                // One of our generated groups: restore its parameters, brushes join the world.
+                Group g;
+                g.id = nextGroup++;
+                for (const auto& [k, v] : keys)
+                    if (k.rfind("_scal_", 0) == 0 && k != "_scal_group") g.keys.emplace_back(k.substr(6), v);
+                for (Brush& b : brushes) {
+                    if (!b.valid()) { ++r.skippedBrushes; continue; }
+                    b.group = g.id;
+                    worldBrushes.push_back(std::move(b));
+                }
+                groups[g.id] = std::move(g);
             } else {
                 others.push_back({std::move(keys), std::move(brushes)});
             }
@@ -277,7 +311,7 @@ MapReadResult readMap(const std::string& text, Document& doc) {
         return r;
     }
     if (!haveWorld) world = {{"classname", "worldspawn"}, {"mapversion", "220"}};
-    doc.reset(std::move(world), std::move(worldBrushes), std::move(others));
+    doc.reset(std::move(world), std::move(worldBrushes), std::move(others), std::move(groups));
     r.ok = true;
     return r;
 }
