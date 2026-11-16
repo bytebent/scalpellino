@@ -1,5 +1,10 @@
 cmake_minimum_required(VERSION 3.24)
 project(Scalpellino VERSION 0.0.1 LANGUAGES C CXX)
+# Objective-C++ (native macOS file dialogs). Must be enabled here, at the top level,
+# before any dependency is added — enabling it later breaks CMake's generator.
+if(APPLE)
+  enable_language(OBJCXX)
+endif()
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -20,7 +25,8 @@ add_library(scal_core STATIC
   src/core/document.cpp
   src/core/transform.cpp
   src/core/hull.cpp
-  src/core/texture.cpp)
+  src/core/texture.cpp
+  src/core/csg.cpp)
 target_include_directories(scal_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 # File formats. Also graphics-free, so it is tested headless too.
@@ -54,7 +60,6 @@ if(SCAL_BUILD_APP)
     src/ui/layout.cpp
   )
   if(APPLE)
-    enable_language(OBJCXX)
     list(APPEND SCAL_APP_SOURCES src/platform/file_dialog_mac.mm)
   else()
     list(APPEND SCAL_APP_SOURCES src/platform/file_dialog_stub.cpp)

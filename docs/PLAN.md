@@ -122,6 +122,9 @@ and Shift+click add/remove single faces; file navigation instead of typing paths
 - **Tests:** core 499 checks, 0 failed. UI scripts all PASS at 1x and 2x
   (`m3_textures_apply` now covers Cmd+click brush, Shift+click toggling, nodraw).
 - Screenshot: `m3-06-nodraw-floor-top`.
+- CI failure on first push: `enable_language(OBJCXX)` inside `if(SCAL_BUILD_APP)` after
+  the dependencies -> "CMAKE_OBJCXX_COMPILE_OBJECT not set". Fixed by enabling OBJCXX right
+  after `project()`. (Can't build macOS locally; CI is the compile check for `.mm`.)
 
 ### 2026-11-16 — Endless 2D grid + Milestone 3: Textures (v0.3.0)
 - **Endless grid** (user request): 2D grid drawn over the whole visible range, views can
