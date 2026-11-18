@@ -13,10 +13,13 @@ Read in this order:
 ## Where things stand
 
 - Released: v0.1.0 … v0.9.0 (milestone 9: Bryce-style math primitives), v0.9.1 (fix),
-  **v0.9.2** (units in cm, blending primitives, Snap to Land, Multi-Replicate).
+  v0.9.2 (units in cm, blending primitives, Snap to Land, Multi-Replicate), **v0.9.3**
+  (single pieces of a combination via Option+click; Multi-Replicate as a non-blocking
+  window).
 - **Next: milestone 10 — Props** (static models from `.glb` and Mazzuola's `.mazz`, with
   textures, no physics). Wait for the user's go-ahead; they had just received the
-  v0.9.2 report when this was written. Then M11 renderer, M12 Y2K, M13 export.
+  v0.9.3 report (which also gave an opinion on the Bottega shared folder) when this was
+  written. Then M11 renderer, M12 Y2K, M13 export.
 - Mazzuola (`bytebent/mazzuola`) is the user's companion modeller (design only so far).
   Its models become Scalpellino props.
 

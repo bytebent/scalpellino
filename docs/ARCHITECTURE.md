@@ -251,8 +251,8 @@ are; brush tools never touch primitives). `core/mathprim.hpp`.
 - **Combining (Bryce):** primitives with the same combination number form one shape:
   add pieces join, subtract pieces cut away (the cut shows the cutter's texture),
   intersect pieces keep only the overlap. Per-ray stretches inside each shape are joined,
-  cut and intersected. Clicking selects the whole combination; Properties lists the
-  pieces to pick one. Combine / Separate in the Primitives menu or Properties.
+  cut and intersected. Clicking selects the whole combination; Option+click (or the
+  list in Properties) picks one piece, which then moves, turns and sizes on its own. Combine / Separate in the Primitives menu or Properties.
 - **Blending (v0.9.2):** a piece's `blend` (units) melts its joint into the rest of the
   combination: smooth necks between add pieces, soft rims on cuts, soft edges on
   intersections (polynomial smooth min / max). Blended combinations use distance
@@ -286,8 +286,8 @@ are; brush tools never touch primitives). `core/mathprim.hpp`.
   further: offset (optionally scaled), turn (X, Y, Z degrees) and scale (%) per copy,
   about the selection (travelling with the copies), the world origin or a typed point.
   Brushes only move (they stay on the grid), primitives turn and scale, lights turn.
-  Groups and combinations are copied as new ones. Live preview, Return creates, one undo
-  step.
+  Groups and combinations are copied as new ones. Live preview in a non-modal window (the
+  views stay navigable), Return creates, Esc cancels, one undo step.
 
 ### Scale reference
 Toggleable ghost human figure (175 units = 1.75 m tall, blocky, see-through) to judge

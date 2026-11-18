@@ -55,8 +55,9 @@ Everything is also in the menus (File, Edit, Tools, Transform, Texture, Terrain,
 | Edit primitives | Click to select (Select, Light or Primitive tool), drag in a 2D view to move, drag the rings to turn (15° steps), drag a size handle (Shift: evenly), or type in **Properties**. **Delete**, **Cmd+D** |
 | Blend primitives | **Properties**, in a combination: blend (units) melts a piece smoothly into the others (0 = sharp) |
 | Snap to land / ground | **Cmd+J** (Transform menu): selected primitives drop onto the brushes, terrain or primitives below; Snap to ground: onto a typed height |
-| Multi-Replicate | **Cmd+Shift+D** (Edit menu): copies, each one step further: offset, turn and scale per copy (brushes only move); preview, **Return** creates |
+| Multi-Replicate | **Cmd+Shift+D** (Edit menu): copies, each one step further: offset, turn and scale per copy (brushes only move); the preview stays while you look around the views; **Return** creates, **Esc** cancels |
 | Combine primitives | Primitives menu or **Properties**: Combine selected; each piece adds, subtracts or intersects (Bryce-style); Separate |
+| One piece of a combination | **Option+click** it (or pick it in **Properties**): a click selects the whole combination, this selects just the piece to drag, turn or size on its own |
 | Lights | Light tool (**Shift+L**, World menu): choose point, spot or sun and its colour, brightness, reach and direction in **Properties**, click in a view to place it, **Return** creates, **Esc** cancels. Click a light's marker to select it (Select or Light tool), drag it in a 2D view to move it, **Delete** removes, **Cmd+D** duplicates |
 | Aim a light | Drag the rotation rings of a selected spot or sun (3D view: X red, Y green, Z blue; a 2D view: the ring around the axis you look along), 15° steps, or type pitch and yaw in **Properties** |
 | Sky, ambient light, fog | World → Environment… (built-in skies, or your own folders of 2:1 panoramas or 4:3 cube crosses) |

@@ -163,8 +163,9 @@ private:
     void drawReplicateDialog();
     bool applyReplicate(const ReplicateSpec& spec);
     ReplicateSpec repSpec_;
-    bool askReplicate_ = false, replicating_ = false, askGround_ = false;
+    bool replicating_ = false, askGround_ = false;
     bool scriptPreview_ = false; // scripts show the preview without the dialog
+    bool replicateFocus_ = false; // put the keyboard in its window when it opens
     int repPivot_ = 0;
     double groundHeight_ = 0;
     std::string landMessage_;

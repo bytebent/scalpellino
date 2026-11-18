@@ -68,8 +68,36 @@ LightId pickLight(const Document& doc, const Viewport& vp, Vector2 local) {
     return best;
 }
 
-MathPrimId pickPrim(const Document& doc, const Viewport& vp, Vector2 local, double* dist) {
+MathPrimId pickPrim(const Document& doc, const Viewport& vp, Vector2 local, double* dist, MathPrimId* piece,
+                    bool outlinesFirst) {
     if (doc.prims().empty()) return 0;
+    auto firstOf = [&](const MathPrim& p) {
+        MathPrimId first = p.id;
+        if (p.combo)
+            for (const MathPrim* m : comboMembers(doc.prims(), p.combo)) first = std::min(first, m->id);
+        return first;
+    };
+    // 2D: near an outline (thin shapes seen side-on, like a disc, or a piece inside others).
+    auto byOutline = [&]() -> MathPrimId {
+        if (!vp.is2D()) return 0;
+        const MathPrim* best = nullptr;
+        double bestD = kOutlineTol;
+        for (const MathPrim& p : doc.prims())
+            for (const Polyline& l : primOutline(p, 32))
+                for (size_t i = 0; i + 1 < l.pts.size() + (l.closed ? 1 : 0); ++i) {
+                    Vector2 a, b;
+                    vp.project(l.pts[i], a);
+                    vp.project(l.pts[(i + 1) % l.pts.size()], b);
+                    const double d = segDist(local, a, b);
+                    if (d < bestD) { bestD = d; best = &p; }
+                }
+        if (!best) return 0;
+        if (dist) *dist = 0;
+        if (piece) *piece = best->id;
+        return firstOf(*best);
+    };
+    if (outlinesFirst)
+        if (MathPrimId id = byOutline()) return id;
     Vec3 o, d;
     if (vp.is2D()) {
         double u = 0, v = 0;
@@ -84,25 +112,10 @@ MathPrimId pickPrim(const Document& doc, const Viewport& vp, Vector2 local, doub
     }
     if (auto h = rayHitPrims(doc.prims(), o, d)) {
         if (dist) *dist = h->t;
+        if (piece) *piece = h->prim;
         return h->picked;
     }
-    if (!vp.is2D()) return 0;
-    // 2D: near an outline (thin shapes seen side-on, like a disc).
-    for (const MathPrim& p : doc.prims())
-        for (const Polyline& l : primOutline(p, 32))
-            for (size_t i = 0; i + 1 < l.pts.size() + (l.closed ? 1 : 0); ++i) {
-                Vector2 a, b;
-                vp.project(l.pts[i], a);
-                vp.project(l.pts[(i + 1) % l.pts.size()], b);
-                if (segDist(local, a, b) < kOutlineTol) {
-                    MathPrimId first = p.id;
-                    if (p.combo)
-                        for (const MathPrim* m : comboMembers(doc.prims(), p.combo)) first = std::min(first, m->id);
-                    if (dist) *dist = 0;
-                    return first;
-                }
-            }
-    return 0;
+    return outlinesFirst ? 0 : byOutline();
 }
 
 namespace {
@@ -244,9 +257,11 @@ bool ObjectEdit::press(ToolEnv& env, const Pointer& p) {
             return false;
     }
     double tPrim = 0;
-    const MathPrimId pid = pickPrim(doc, vp, p.local, &tPrim);
+    MathPrimId piece = 0;
+    const MathPrimId pid = pickPrim(doc, vp, p.local, &tPrim, &piece, env.alt);
     if (!pid) return false;
-    const std::set<MathPrimId> group = doc.withCombos({pid});
+    // A plain click takes the whole combination; Option+click just the piece.
+    const std::set<MathPrimId> group = env.alt ? std::set<MathPrimId>{piece} : doc.withCombos({pid});
     if (vp.is2D()) {
         if (const BrushId bid = pick2D(env.sceneBrushes, vp, p.local)) {
             std::vector<const MathPrim*> ms;
@@ -277,7 +292,9 @@ bool ObjectEdit::press(ToolEnv& env, const Pointer& p) {
         doc.setPrimSelection(sel);
         return true;
     }
-    if (!sel.count(pid)) {
+    // Already selected (the whole combination, or this piece on its own): keep it, so a
+    // piece picked from Properties or with Option+click can be dragged by itself.
+    if (!sel.count(piece) || (env.alt && sel != group)) {
         doc.setPrimSelection(group);
         doc.setSelection({});
         doc.setLightSelection({});
@@ -285,7 +302,7 @@ bool ObjectEdit::press(ToolEnv& env, const Pointer& p) {
     if (!vp.is2D()) return true;
     lightsMode_ = false;
     primStart_ = selectedPrims(doc);
-    anchor_ = doc.findPrim(pid)->pos;
+    anchor_ = doc.findPrim(piece)->pos;
     begin(Mode::Move);
     return true;
 }
@@ -342,7 +359,9 @@ void ObjectEdit::drag(ToolEnv& env, const Pointer& p) {
     const double size0 = std::fabs(p0.size[a]);
     const bool even = env.shift || even_;
     // The handle follows the mouse: with the centre fixed (evenly) the size grows twice as much.
-    const double newSize = std::max(1.0, env.grid.snapValue(size0 + s * side * (even ? 2 : 1)));
+    // The change snaps to the grid (not the size), so an odd size stays as it is until
+    // the handle actually moves.
+    const double newSize = std::max(1.0, size0 + env.grid.snapValue(s * side * (even ? 2 : 1)));
     if (newSize - size0 == amount_) return;
     amount_ = newSize - size0;
     MathPrim m = p0;

@@ -1,0 +1,60 @@
+# v0.9.3: pieces of a combination move on their own (Option+click, or picked in
+# Properties), and Multi-Replicate is a window: the views stay free, Return / Esc in the
+# views create or cancel.
+block -600 -600 -40 600 600 0
+prim cube 0 0 60 200 200 120
+prim sphere 80 80 120 120 120 120
+primselect 0 1
+combine
+primselect 1
+primedit op subtract
+primselect
+tool select
+key Esc
+# a plain click selects the whole combination
+wpress 1 -60 -60
+release
+expect primsel 2
+key Esc
+# Option+click on the sphere's outline (top view, 45 degrees round its circle): just it
+wpress 1 122.43 122.43 alt
+release
+expect primsel 1
+expect primpos 80 80 120
+# grabbing a size handle without moving it changes nothing
+wpress 1 140 80
+release
+expect primsize 120 120 120
+# drag it on its own by its middle (it stays selected alone)
+wpress 1 80 80
+wdrag 80 32
+release
+expect primsel 1
+expect primpos 80 32 120
+# its ring and size handles work on it alone too: shrink it from its +X side
+wpress 1 140 32
+wdrag 108 32
+release
+expect primsize 88 120 120
+expect primpos 64 32 120
+# a plain click on the cube part takes the whole combination again
+key Esc
+wpress 1 -60 -60
+release
+expect primsel 2
+camera -420 -500 400 50 -32
+shot m9-07-piece-moved.png
+# -- Multi-Replicate window: Esc cancels, Return creates (keys from the views)
+replicateopen 3 300 0 0
+expect replicating on
+camera -300 -900 700 70 -35
+shot m9-08-replicate-window.png
+key Escape
+expect replicating off
+expect prims 2
+replicateopen 3 300 0 0
+camera 900 -900 700 135 -35
+key Return
+expect replicating off
+expect prims 8
+quit

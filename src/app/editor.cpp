@@ -135,6 +135,13 @@ void Editor::onRelease(int view, Vector2 local, bool real) {
 }
 
 void Editor::onKey(int key) {
+    // Multi-Replicate's window stays open while you look around: Return / Esc in the views
+    // create or cancel.
+    if (replicating_ && !scriptPreview_ && (key == KEY_ENTER || key == KEY_KP_ENTER || key == KEY_ESCAPE)) {
+        if (key != KEY_ESCAPE) applyReplicate(repSpec_);
+        replicating_ = false;
+        return;
+    }
     if (tool_ == &terrainTool_ && terrainTool_.picking() && (key == KEY_ENTER || key == KEY_KP_ENTER)) {
         makeTerrainNow(terrainPower_);
         return;
@@ -2069,7 +2076,8 @@ void Editor::openReplicate() {
     if (doc_.selection().empty() && doc_.primSelection().empty() && doc_.lightSelection().empty()) return;
     tool_->cancel();
     if (repSpec_.offset == Vec3{100, 0, 0} && grid_.size > 0) repSpec_.offset = {grid_.size * 4, 0, 0};
-    askReplicate_ = true;
+    replicating_ = true;
+    replicateFocus_ = true;
 }
 
 bool Editor::applyReplicate(const ReplicateSpec& spec) {
@@ -2135,7 +2143,6 @@ bool Editor::applyReplicate(const ReplicateSpec& spec) {
 }
 
 void Editor::drawReplicateDialog() {
-    if (askReplicate_) { ImGui::OpenPopup("Multi-Replicate"); askReplicate_ = false; replicating_ = true; }
     if (askGround_) { ImGui::OpenPopup("Snap to ground"); askGround_ = false; }
     const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
@@ -2151,12 +2158,18 @@ void Editor::drawReplicateDialog() {
         else if (cancel) ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }
-    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    if (ImGui::BeginPopupModal("Multi-Replicate", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+    // Multi-Replicate: a window, not a dialog, so the views stay free to look around
+    // (pan, zoom, orbit, fly) before the copies are made.
+    if (!replicating_ || scriptPreview_) return;
+    ImGui::SetNextWindowPos(ImVec2(center.x, center.y * 0.4f), ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.0f));
+    if (replicateFocus_) { ImGui::SetNextWindowFocus(); }
+    bool open = true;
+    if (ImGui::Begin("Multi-Replicate", &open, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse)) {
         ReplicateSpec& r = repSpec_;
         ImGui::TextUnformatted("Copies of the selection, each one step further than the last");
+        ImGui::TextDisabled("look around in the views freely; Return creates, Esc cancels");
         ImGui::SetNextItemWidth(120);
-        if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+        if (replicateFocus_) ImGui::SetKeyboardFocusHere();
         ImGui::InputInt("copies", &r.copies);
         r.copies = std::clamp(r.copies, 1, 1000);
         auto vec = [](const char* label, Vec3& v) {
@@ -2178,15 +2191,17 @@ void Editor::drawReplicateDialog() {
         r.pivot = (ReplicateSpec::Pivot)repPivot_;
         ImGui::TextDisabled("brushes only move (they stay on the grid); primitives and");
         ImGui::TextDisabled("lights also turn; primitives also scale");
-        const bool apply = ImGui::Button("Create (Return)") || ImGui::IsKeyPressed(ImGuiKey_Enter, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false);
+        const bool focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
+        const bool apply = ImGui::Button("Create (Return)") ||
+                           (focused && (ImGui::IsKeyPressed(ImGuiKey_Enter, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false)));
         ImGui::SameLine();
-        const bool cancel = ImGui::Button("Cancel (Esc)") || ImGui::IsKeyPressed(ImGuiKey_Escape, false) || closeDialogs_;
-        if (apply) { applyReplicate(r); replicating_ = false; ImGui::CloseCurrentPopup(); }
-        else if (cancel) { replicating_ = false; ImGui::CloseCurrentPopup(); }
-        ImGui::EndPopup();
-    } else if (!scriptPreview_) {
-        replicating_ = false;
+        const bool cancel = ImGui::Button("Cancel (Esc)") || (focused && ImGui::IsKeyPressed(ImGuiKey_Escape, false)) || closeDialogs_;
+        if (apply) { applyReplicate(r); replicating_ = false; }
+        else if (cancel) replicating_ = false;
     }
+    ImGui::End();
+    replicateFocus_ = false;
+    if (!open) replicating_ = false;
 }
 
 void Editor::setPrimOp(PrimOp op) {
@@ -2968,7 +2983,7 @@ void Editor::runPending() {
 //   tool prim   primset kind <k>|round|thickness|flat on/off|color r g b|texscale   primbox c s [axis]
 //   prim <kind> x y z sx sy sz [rx ry rz]   primedit <key> <value...>   primselect <index...>
 //   snapland   snapground <z>   replicate <n> ox oy oz [rot x y z] [scale x y z] [scaleoffset] [pivot selection|origin|x y z]
-//   replicatepreview on|off
+//   replicatepreview on|off   replicateopen <n> ox oy oz   expect replicating on|off
 //   combine   separate   expect prims|primsel <n>   expect primpos|primrot|primsize x y z   expect primop <op>
 //   environment sky <name|none> | ambient r g b | fog on|off | fogcolor r g b | fogrange <start> <end>
 //   bookmark add <name> | go <index>   expect sky <name>   expect bookmarks <n>   expect camera x y z
@@ -3343,6 +3358,15 @@ void Editor::stepScript() {
         }
         repSpec_ = r;
         applyReplicate(r);
+    } else if (cmd == "replicateopen") {
+        // replicateopen <copies> ox oy oz: open the Multi-Replicate window with these values
+        ReplicateSpec r = repSpec_;
+        in >> r.copies >> r.offset.x >> r.offset.y >> r.offset.z;
+        openReplicate();
+        repSpec_ = r;
+    } else if (cmd == "expect" && in.str().find(" replicating ") != std::string::npos) {
+        std::string w, v; in >> w >> v;
+        if (replicating_ != (v == "on")) { std::fprintf(stderr, "script FAIL (command %d): Multi-Replicate window is %s\n", scriptLine_, replicating_ ? "open" : "closed"); ++scriptFailures_; }
     } else if (cmd == "replicatepreview") {
         // replicatepreview on|off: show the dialog's preview with the last spec (screenshots)
         std::string v; in >> v; replicating_ = scriptPreview_ = v == "on";

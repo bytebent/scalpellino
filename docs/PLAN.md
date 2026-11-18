@@ -25,8 +25,10 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   props (`.glb` + `.mazz`, with textures, no physics), then M11 renderer, M12 Y2K, M13
   export.
 - **v0.9.0 = milestone 9 Math primitives**, v0.9.1 fix (conflicting widget IDs).
-- **v0.9.2** (this step): units to 1 cm, blending primitives, Snap to Land / Ground,
-  Multi-Replicate. Report to the user, then wait for the go-ahead on milestone 10.
+- **v0.9.2**: units to 1 cm, blending primitives, Snap to Land / Ground, Multi-Replicate.
+- **v0.9.3** (this step): pieces of a combination move on their own (Option+click);
+  Multi-Replicate is a window, so the views stay free while its preview is up. Report to
+  the user, then wait for the go-ahead on milestone 10.
 - **Next: milestone 10 — Props** (`.glb` first; `.mazz` when Mazzuola's format exists).
 
 ## How to work in this repo
@@ -106,6 +108,10 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   (selecting the whole combination sets it for all); textures melt over the widest blend
   in the combination; Multi-Replicate's default offset is 4 grid steps along X; Snap to
   Land handles selected objects lowest first, so stacked ones land on their new spots.
+- **Bottega shared folder (user idea, 2026-11-18, discussion only, not built):** one
+  folder that Mazzuola, Scalpellino and later texture tools all read and write
+  (`textures/ models/ maps/ palettes/ heightmaps/ skies/ shaders/ renders/`). Waiting for
+  the user's answer on the points raised in the v0.9.3 report before building anything.
 - **Primitives extras, later:** "align to slope" for Snap to Land; hiding primitives / visgroups; the Transform dialog on
   objects; Bryce's other shapes (pyramid, endless ground plane) if wanted.
 - **World extras, later:** hiding lights / lights in visgroups; moving lights together
@@ -212,6 +218,25 @@ terminal-style render log like Hammer's compile window + log file), 10 Y2K shade
 ## Milestone 1 plan — Brushes (done)
 
 ## Log
+
+### 2026-11-18 — v0.9.3: single pieces of a combination, Multi-Replicate as a window
+- **Pieces on their own:** a plain click still selects the whole combination;
+  **Option+click** selects just the piece under the cursor (in 2D the nearest outline
+  wins, so a subtract piece hidden inside the shape can be picked). A piece already
+  selected on its own (Option+click, or picked in Properties) stays that way when
+  clicked, so dragging, rings and size handles act on it alone. `pickPrim` now also
+  reports the hit piece. Status bar, Help → Controls and README say so.
+- **Multi-Replicate is a window, not a modal dialog**: pan, zoom, orbit and fly in the
+  views while the preview stays up. Return / Esc work from the views too; the window has
+  Create / Cancel and a close box.
+- **Fix found by the new test:** grabbing a size handle without moving it snapped an
+  off-grid size (120 on grid 16 became 128). The change is snapped now, not the size.
+- Script commands `replicateopen`, `expect replicating`; new UI script
+  `v093_pieces_replicate` (17 scripts).
+- **Tests:** core 4252 checks pass; all 17 UI scripts pass at 1x and 2x.
+- Screenshots: `screenshots/m9-07-piece-moved.png` (the subtract sphere moved and resized
+  alone), `screenshots/m9-08-replicate-window.png` (window up, 3D view turned to look at
+  the preview).
 
 ### 2026-11-18 — v0.9.2: units in cm, blending, Snap to Land, Multi-Replicate
 - **Units:** 1 unit = 1 cm (user's choice). Scale figure 175 units; fly speed, terrain

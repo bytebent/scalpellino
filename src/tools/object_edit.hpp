@@ -3,14 +3,16 @@
 // the select tool, the light tool and the primitive tool. Brush tools never touch them.
 //  - click a light's marker or a primitive (any view) to select it; brushes and the
 //    other kind are deselected. A primitive in a combination selects the whole
-//    combination. Cmd+click adds or removes.
+//    combination; Option+click selects just the piece under the cursor (a piece already
+//    selected on its own stays that way, so it can be dragged, turned and sized alone).
+//    Cmd+click adds or removes.
 //  - drag in a 2D view to move what was clicked (snapped to the grid).
 //  - rotation rings: around each selected spot/sun light, and one set around the
 //    selected primitives. Three in 3D (red = X, green = Y, blue = Z), one per 2D view
 //    (the axis you look along). Drag a ring to turn in 15 degree steps.
 //  - size handles on a single selected primitive: one on each face of its own box
 //    (only the ones you can see side-on in 2D). Drag to resize with the opposite face
-//    staying put; Shift+drag scales evenly about the centre. Sizes snap to the grid.
+//    staying put; Shift+drag scales evenly about the centre. Changes snap to the grid.
 // Every change is one undoable command on release; Esc during a drag cancels it.
 #include "tools/tool.hpp"
 #include <vector>
@@ -20,8 +22,11 @@ namespace scal {
 // Light whose marker is under `local` (nearest to the camera in 3D), or 0.
 LightId pickLight(const Document& doc, const Viewport& vp, Vector2 local);
 // Primitive under `local`: what a click selects (first member of a combination), or 0.
-// `dist` gets the distance along the view ray in 3D.
-MathPrimId pickPrim(const Document& doc, const Viewport& vp, Vector2 local, double* dist = nullptr);
+// `dist` gets the distance along the view ray in 3D; `piece` the piece itself that was
+// hit. With `outlinesFirst`, an outline near the cursor wins (so a piece hidden inside
+// its combination can still be picked in 2D).
+MathPrimId pickPrim(const Document& doc, const Viewport& vp, Vector2 local, double* dist = nullptr,
+                    MathPrimId* piece = nullptr, bool outlinesFirst = false);
 
 // Rings and size handles of the current selection, as drawn and picked.
 struct ObjectGizmo {

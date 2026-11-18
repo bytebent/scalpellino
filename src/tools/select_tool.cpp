@@ -179,7 +179,7 @@ const char* SelectTool::hint() const {
         case Mode::Rotating:
             std::snprintf(hintBuf_, sizeof hintBuf_, "rotating %.0f deg - Shift: free, Esc cancels", rotAngle_ * 180 / kPi);
             return hintBuf_;
-        default:             return "click: select   Cmd+click: add/remove   drag: move   Shift+drag: clone   Option+drag corner: rotate   Del: delete";
+        default:             return "click: select   Cmd+click: add/remove   drag: move   Shift+drag: clone   Option+drag corner: rotate   Option+click: one piece   Del: delete";
     }
 }
 
