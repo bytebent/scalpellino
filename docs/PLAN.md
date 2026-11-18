@@ -320,9 +320,22 @@ read and write. Agreed so far:
   - **One active camera (user):** a map can hold several cameras, but only one is
     **active**; the Camera Preview and Render use only that one. Making another camera
     active deactivates the old one.
-  - **Open:** the full list of camera options and presets; the roadmap order; whether the
-    shader format (GLSL) still fits. The roadmap below is unchanged until these are
-    settled.
+  - **Reflections and renderers (user, 2026-11-18):** the user wants **all three levels
+    of reflection**, chosen per material and by the render options: (1) environment only
+    (sky; the Y2K chrome look), (2) mirror reflections on flat surfaces (water, floors;
+    scene included), (3) real reflections and bending glass on any shape (Bryce look).
+    **Two renderers**, because the user loves the Source look and doesn't want it made
+    with a ray tracer: a **Source-style renderer** (fast, on the graphics card, baked
+    lighting; levels 1 and 2) and a **ray-tracing renderer** (Bryce look; level 3 and
+    the rest). The render options pick which one runs.
+  - **Consequences, proposed (not confirmed):** one scene, one camera, one render window
+    and log for both; a shared ray-casting core (used to bake the lights for the Source
+    renderer and to trace the ray renderer); the Source renderer first, the ray tracer
+    as its own later milestone; the shader format (GLSL, agreed earlier) belongs to the
+    Source renderer; the ray renderer's material form (settings, maybe a script) is open;
+    a material the Source renderer can't do (level 3) falls back to its nearest level.
+  - **Open:** the full list of camera options and presets; the roadmap order; the ray
+    renderer's material form. The roadmap below is unchanged until these are settled.
 
 ## Milestone 1 plan — Brushes (done)
 

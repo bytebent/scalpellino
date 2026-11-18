@@ -4,6 +4,11 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-18 — Reflections: all three levels, two renderers (docs only)
+- User: wants environment, mirror and full reflections depending on material and render
+  options, and two renderers (a Source-look one, not ray traced, and a ray tracer).
+  Recorded in PLAN with the proposed consequences marked as unconfirmed. No code changed.
+
 ### 2026-11-18 — The preview approximates the heavy stuff, shaders included (docs only)
 - User: the Camera Preview should show an approximation of the heavy effects, including
   shaders (corrects the earlier "no shaders" assumption). Reflections to be discussed
