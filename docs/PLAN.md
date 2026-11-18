@@ -14,8 +14,8 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   below and the log). Latest: **v0.9.3** (single pieces of a combination with
   Option+click; Multi-Replicate as a non-blocking window). Reported to the user.
 - **Next: milestone 10 — Props**, once the user says go (plan below).
-- **Roadmap (agreed with the user, 2026-11-18):** M10 Props → Random Replicate → M11
-  Renderer (+ endless ground / water / cloud planes) → M12 Nano-Preview (was "Y2K") → M13
+- **Roadmap (agreed with the user, 2026-11-18):** M10 Props → Random Replicate → Sky Lab
+  → M11 Renderer (+ endless ground / water / cloud planes) → M12 Camera Preview (was "Y2K") → M13
   Export. Details under "Roadmap".
 - **Bottega** (shared folder for Mazzuola, Scalpellino and later tools): being discussed,
   not built. Where it stands is under "Bottega" below.
@@ -216,14 +216,29 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
    filtering follows Scalpellino's Crisp / Smooth switch.
 2. **Random Replicate** (Bryce) — scatter copies with random offset / turn / size ranges,
    for props and primitives (brushes: offset only, as with Multi-Replicate).
-3. **M11 Renderer** — PNG renders of what the camera sees, a terminal-style render log
+3. **Sky Lab** (Bryce; agreed with the user in a separate chat, missed here until they
+   pointed it out) — make skies instead of only loading images. **Everything Bryce's Sky
+   Lab has** (user: "it is amazing"): sun and moon (position, size, glow, colour, moon
+   phase, halos / rings), stars and comets, cloud layers (cumulus / stratus, height,
+   cover, frequency, amplitude, colours), atmosphere (sky colours, haze, fog, colour
+   perspective, rainbow), sky modes (soft / darker / custom / off). The Bryce guide (the
+   user's PDF) is the reference: ask the user to attach it again before building.
+   - **Baked:** a live preview while tweaking; the result is a panorama for the existing
+     sky loader (no cost when idle). The settings are saved in the map, so Sky Lab can be
+     reopened and tweaked.
+   - **Sun lock:** if the map has a sun light, Sky Lab shows a tick box that locks the
+     sky's sun position to that light. No sun light, no tick box.
+   - Generated skies go to Bottega's `skies/` once Bottega exists.
+   - Comes after Random Replicate, before the renderer, so renders get good skies.
+4. **M11 Renderer** — PNG renders of what the camera sees, a terminal-style render log
    (+ log file), renders saved to `renders/` (in Bottega once it exists). Also endless
    ground, water and cloud planes (Bryce).
-4. **M12 Nano-Preview** (renamed from "Y2K preview") — the low-res look: small render
+5. **M12 Camera Preview** (renamed from "Y2K preview"; not "Nano-Preview") — the low-res look: small render
    target, nearest upscale, fog, per-vertex light, chrome, bloom, dithering; each step
    toggleable.
-5. **M13 Export** — `.glb` first (terrain and primitives become meshes; nodraw skipped);
-   Godot package low priority.
+6. **M13 Export** — `.glb` (terrain and primitives become meshes; nodraw skipped).
+   **Godot is not a priority** (user: Scalpellino will probably never be used with it):
+   it must not drive design choices; a Godot package only if asked for.
 - **Later:** `.wad` textures, Lua generators, baked lighting, texture tags.
 
 ## Bottega (shared folder) — discussion, not built
@@ -236,7 +251,7 @@ read and write. Agreed so far:
 - `renders/`: the renders Scalpellino makes (M11).
 - `shaders/`: Scalpellino does use shaders. Proposal (awaiting the user): the built-in
   ones (primitive drawing, fog, light preview) stay inside the app; `shaders/` holds the
-  shared *look* shaders (Nano-Preview's dither, palette, bloom…) so a model looks the
+  shared *look* shaders (Camera Preview's dither, palette, bloom…) so a model looks the
   same in Mazzuola as in a Scalpellino map.
 - Proposed, not yet confirmed: Bottega location chosen in each tool's settings; maps
   store paths relative to the Bottega root; a model folder keeps its own textures (and
@@ -254,6 +269,12 @@ read and write. Agreed so far:
   (no `heightmaps/`; palettes decided with Mazzuola; `renders/` = Scalpellino's renders)
   and the open `shaders/` proposal. ARCHITECTURE: roadmap table and "Y2K preview" →
   "Nano-Preview".
+- User: "you forgot about the skylab tool". It was agreed in a separate Bryce chat and
+  never written down. Discussed, then agreed: baked to a panorama with live preview;
+  everything Bryce's Sky Lab has; a "lock to sun light" tick box when the map has a sun
+  light. After Random Replicate, before M11.
+- User: Godot will probably never be used with Scalpellino, so it must not weigh on
+  choices. "Nano-Preview" is now **Camera Preview**.
 
 ### 2026-11-18 — v0.9.3: single pieces of a combination, Multi-Replicate as a window
 - **Pieces on their own:** a plain click still selects the whole combination;

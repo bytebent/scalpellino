@@ -19,7 +19,8 @@ Read in this order:
 - **Next: milestone 10 — Props** (static models from `.glb` and Mazzuola's `.mazz`, with
   textures, no physics). Wait for the user's go-ahead; they had just received the
   v0.9.3 report (which also gave an opinion on the Bottega shared folder) when this was
-  written. Then M11 renderer, M12 Y2K, M13 export.
+  written. Then Random Replicate, Sky Lab, M11 renderer, M12 Camera Preview, M13 export
+  (see PLAN.md "Roadmap").
 - Mazzuola (`bytebent/mazzuola`) is the user's companion modeller (design only so far).
   Its models become Scalpellino props.
 
@@ -40,6 +41,13 @@ Read in this order:
 
 ## Mistakes already made (don't repeat)
 
+- Lost the Sky Lab, agreed in a separate chat, because it was never written down. The
+  user also discusses Scalpellino in other chats: when something is agreed, put it in
+  PLAN.md the same day. Long sessions get compressed and lose details; the docs are the
+  memory, so keep PLAN.md's plan sections (not just the log) current.
+- Wrote a decision into the docs before discussing it. When the user raises something
+  new, discuss first, then record it.
+
 - Two Properties sections with the same widget labels (selected object + "new" object)
   gave Dear ImGui's "conflicting ID" error. Wrap each section in its own PushID. UI
   scripts now fail on duplicate IDs, so run them.
@@ -59,6 +67,10 @@ Read in this order:
   now has a no-overlap test. Keep that for new shapes.
 
 ## Decisions to keep
+
+- Godot will probably never be used with Scalpellino: don't let it weigh on choices.
+  `.glb` is the export that matters.
+- The low-res look is called **Camera Preview** (not "Y2K preview", not "Nano-Preview").
 
 - Source-style default texture scale 0.25.
 - Our own extended `.map` holds everything (groups, visgroups, terrain…). It stays a

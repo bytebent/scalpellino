@@ -52,7 +52,7 @@ Personal tool. Not distributed. Simplicity and speed beat features.
 │                                              │  curve, texture, light, camera
 ├──────────────────────────────────────────────┤
 │ Render (raylib)          │ IO                │  viewports, render modes,
-│                          │                   │  Nano-Prev.  │ .map, .glb, export
+│                          │                   │  Cam. Prev. │ .map, .glb, export
 ├──────────────────────────────────────────────┤
 │ Core  (no graphics, fully tested)            │  math, brushes, entities,
 │                                              │  document, commands/undo
@@ -203,7 +203,7 @@ Like Hammer's displacements, with fewer rules.
 
 ### World (milestone 8, done)
 The editor shows only a rough idea of the world, like Hammer did; the real look comes
-from the renderer (M11) and the Nano-Preview look (M12).
+from the renderer (M11) and the Camera Preview look (M12).
 - **Lights** (`core/world.hpp`, `Document::lights()`): point, spot, sun. Colour (0–255),
   brightness (Hammer-style, 200 = normal), reach (point, spot), direction as pitch/yaw
   (spot, sun; pitch −90 = down), inner/outer angles (spot). A light is a marker in every
@@ -324,7 +324,7 @@ That's all. No gameplay entities (doors, triggers, physics, scripting).
   Editor-only data (visgroups, camera bookmarks, curve-generator parameters) stored as
   extra keys other tools ignore.
 - **nodraw:** faces textured `nodraw` (also recognised: `tools/toolsnodraw`, `common/nodraw`)
-  are shown in the editor but skipped by every render and export (Nano-Preview, PNG
+  are shown in the editor but skipped by every render and export (Camera Preview, PNG
   renders, `.glb`, Godot package). The `.map` export keeps them, as other tools expect.
 - **Textures:** built-in CC0 textures inside the app + the user's folders of PNG/TGA/JPG/BMP
   (name = file name without extension). Half-Life `.wad` support later.
@@ -332,8 +332,8 @@ That's all. No gameplay entities (doors, triggers, physics, scripting).
 ## 9. Rendering
 
 - **2D views:** wireframe, redrawn only on change.
-- **3D modes:** wireframe, flat-color, textured, **Nano-Preview** (the Y2K look).
-- **Nano-Preview pipeline** (each step toggleable): low-res render target (e.g. 640×480) →
+- **3D modes:** wireframe, flat-color, textured, **Camera Preview** (the Y2K look).
+- **Camera Preview pipeline** (each step toggleable): low-res render target (e.g. 640×480) →
   nearest-neighbor upscale → distance fog → per-vertex lighting from light entities →
   chrome / environment maps → bloom → dithering.
 - **Render button:** saves a PNG still at a chosen resolution.
@@ -341,10 +341,13 @@ That's all. No gameplay entities (doors, triggers, physics, scripting).
 
 ## 10. Export tiers
 
+**`.glb` is the export that matters.** The user expects Scalpellino will probably never
+be used with Godot, so Godot must not drive design choices; tiers 1 and 3 stay ideas.
+
 1. **`.map` for func_godot** — geometry + texture names. Materials set up in Godot.
 2. **`.glb`** — geometry, UVs, embedded textures, nearest-filter samplers. Optional baked
    lighting as vertex colors or lightmap. Works in Godot, Unity, Unreal, Blender.
-3. **Godot scene package** — `.tscn` + textures + the Nano-Preview shaders ported to Godot shading
+3. **Godot scene package** — `.tscn` + textures + the Camera Preview shaders ported to Godot shading
    language + matching Environment (fog, glow). Opens in Godot looking like the preview.
 4. **Baked-look `.glb`** — for engines where shaders don't transfer: surface effects
    (lighting, chrome, dither) baked into textures. Camera effects (bloom, fog) can't be
@@ -405,7 +408,8 @@ docs/         this file, roadmap
 | 9 | Math primitives (Bryce-style): sphere, cube (rounded), cylinder, cone, torus, capsule, disc; exact per-pixel drawing; combining (add / subtract / intersect) and blending; single pieces movable; object handles shared with lights; 1 unit = 1 cm; Snap to Land / Ground; Multi-Replicate | done (v0.9.0 … v0.9.3) |
 | 10 | Props: static models (`.glb` first, then `.mazz`) with their textures, placed / turned / sized as objects; Snap to Land; reload when the file changes; no physics | next |
 | 10b | Random Replicate (Bryce): random offset / turn / size ranges for props and primitives | |
+| 10c | Sky Lab (Bryce, all of it): generated skies (sun, moon, stars, clouds, atmosphere) with live preview, baked to panoramas; settings kept in the map; tick box to lock the sun to the map's sun light | |
 | 11 | Renderer: PNG renders, only what the camera sees (frustum, back faces, nodraw, optional outside-only), terminal-style render log window (+ log file); endless ground / water / cloud planes | |
-| 12 | Nano-Preview (was "Y2K"): shaders (low-res, fog, chrome, bloom, dithering) | |
-| 13 | Export: `.glb` first, Godot package (low priority), terrain as mesh, primitives as meshes (Godot's round meshes where they match); nodraw skipped | |
+| 12 | Camera Preview (was "Y2K"): shaders (low-res, fog, chrome, bloom, dithering) | |
+| 13 | Export: `.glb`; Godot package only if asked for, terrain as mesh, primitives as meshes (Godot's round meshes where they match); nodraw skipped | |
 | later | `.wad` textures, Lua generators, baked lighting, texture tags | |
