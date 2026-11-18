@@ -7,6 +7,7 @@
 #include "app/settings.hpp"
 #include "platform/file_dialog.hpp"
 #include "ui/layout.hpp"
+#include "ui/imgui_checks.hpp"
 
 #include "imgui.h"
 #include "rlImGui.h"
@@ -2021,6 +2022,8 @@ void Editor::drawPrimPanel() {
         }
         MathPrim& b = primBuf_;
         const bool one = sel.size() == 1;
+        // Own ID scope: the "new primitive" fields below use the same labels.
+        ImGui::PushID("selected primitives");
         std::set<std::uint32_t> combos;
         for (MathPrimId id : sel) if (const MathPrim* p = doc_.findPrim(id)) combos.insert(p->combo);
         if (one) ImGui::Text("%s", kindNames[(int)b.kind]);
@@ -2093,10 +2096,12 @@ void Editor::drawPrimPanel() {
         ImGui::EndDisabled();
         if (!worldError_.empty()) ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", worldError_.c_str());
         ImGui::TextDisabled("Delete removes, Cmd+D duplicates");
+        ImGui::PopID();
         if (tool_ != &primTool_) return;
         ImGui::Separator();
     }
     PrimTool& t = primTool_;
+    ImGui::PushID("new primitive");
     ImGui::TextUnformatted("New primitive");
     int kind = (int)t.templ.kind;
     for (int i = 0; i < kPrimKinds; ++i) {
@@ -2141,6 +2146,7 @@ void Editor::drawPrimPanel() {
     } else {
         ImGui::TextDisabled("drag a box in a 2D view");
     }
+    ImGui::PopID();
 }
 
 void Editor::separatePrims() {
@@ -2218,6 +2224,8 @@ void Editor::drawLightPanel() {
                 lightBufRev_ = doc_.revision();
             }
         }
+        // Own ID scope: the "new light" fields below use the same labels.
+        ImGui::PushID("selected lights");
         ImGui::Text("%zu %s light(s) selected", sel.size(), lightKindName(lightBuf_.kind));
         const unsigned done = lightFields(lightBuf_, sel.size() == 1);
         if (done) {
@@ -2239,10 +2247,12 @@ void Editor::drawLightPanel() {
             ImGui::TextDisabled("or drag the rings");
         }
         ImGui::TextDisabled("Delete removes, Cmd+D duplicates");
+        ImGui::PopID();
         if (tool_ != &lightTool_) return;
         ImGui::Separator();
     }
     LightTool& t = lightTool_;
+    ImGui::PushID("new light");
     ImGui::TextUnformatted("New light");
     int kind = (int)t.templ.kind;
     ImGui::RadioButton("point", &kind, 0); ImGui::SameLine();
@@ -2256,6 +2266,7 @@ void Editor::drawLightPanel() {
     if (ImGui::Button("Create (Return)")) t.create(doc_);
     ImGui::EndDisabled();
     if (!t.pending) ImGui::TextDisabled("click in a view to place it");
+    ImGui::PopID();
 }
 
 Vec3 Editor::groundBelow(double x, double y) const {
@@ -2834,6 +2845,13 @@ std::string Editor::takeScreenshotRequest() {
 
 void Editor::stepScript() {
     if (script_.empty()) return;
+    // Every scripted frame: no two widgets may share an ID (ImGui would mix them up).
+    static bool idCheck = false;
+    if (!idCheck) { enableImGuiIdCheck(); idCheck = true; }
+    for (const std::string& label : takeImGuiIdConflicts()) {
+        std::fprintf(stderr, "script FAIL (command %d): two widgets share the ID of '%s'\n", scriptLine_, label.c_str());
+        ++scriptFailures_;
+    }
     if (warmup_ > 0) { --warmup_; return; } // let views get their sizes first
     std::istringstream in(script_.front());
     script_.pop_front();

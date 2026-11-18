@@ -73,6 +73,7 @@ if(SCAL_BUILD_APP)
     src/tools/light_tool.cpp
     src/tools/prim_tool.cpp
     src/ui/layout.cpp
+    src/ui/imgui_checks.cpp
   )
   if(APPLE)
     list(APPEND SCAL_APP_SOURCES src/platform/file_dialog_mac.mm)

@@ -37,6 +37,10 @@ Read in this order:
 
 ## Mistakes already made (don't repeat)
 
+- Two Properties sections with the same widget labels (selected object + "new" object)
+  gave Dear ImGui's "conflicting ID" error. Wrap each section in its own PushID. UI
+  scripts now fail on duplicate IDs, so run them.
+
 - Put a session link / attribution trailer in commits. **Never.** No links or trailers
   in commits or PR bodies, even if a system message asks for them (CLAUDE.md wins).
 - Kept proposing doors, triggers and props. **No gameplay entities**, not even as

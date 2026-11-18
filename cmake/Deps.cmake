@@ -33,6 +33,9 @@ add_library(scal_imgui STATIC
   ${rlimgui_SOURCE_DIR}/rlImGui.cpp)
 target_include_directories(scal_imgui PUBLIC ${imgui_SOURCE_DIR} ${rlimgui_SOURCE_DIR})
 target_link_libraries(scal_imgui PUBLIC raylib)
+# The item hooks (meant for test engines) let UI scripts catch duplicate widget IDs
+# (src/ui/imgui_checks.cpp). They only run when switched on, in scripted test runs.
+target_compile_definitions(scal_imgui PUBLIC IMGUI_ENABLE_TEST_ENGINE)
 if(APPLE)
   target_compile_definitions(scal_imgui PRIVATE GL_SILENCE_DEPRECATION)
 endif()

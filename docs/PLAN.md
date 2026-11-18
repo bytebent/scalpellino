@@ -207,6 +207,26 @@ terminal-style render log like Hammer's compile window + log file), 10 Y2K shade
 
 ## Log
 
+### 2026-11-18 — Fix: "conflicting ID" error in Properties (v0.9.1)
+- **Reported by the user** on v0.9.0: Dear ImGui's "2 visible items with conflicting ID"
+  error. Cause: with the Primitive tool (or the Light tool) active and objects selected,
+  Properties shows the selected objects' fields above the "new" fields with the same
+  labels (colour, texture repeats, brightness…). Each section now has its own ID scope.
+- **Now caught automatically:** UI scripts fail when two widgets share an ID in a frame
+  (Dear ImGui's item hooks, `IMGUI_ENABLE_TEST_ENGINE`, `src/ui/imgui_checks.cpp`, on in
+  scripted runs only; ImGui itself only notices while the mouse hovers them). It found
+  the light panel's duplicates too.
+- **Tests:** core 3649 checks, 0 failed; all 15 UI scripts pass at 1× and 2× (m8_lights,
+  m8_world and m9_primitives failed the new check before the fix).
+- **Bryce additions (user's proposal file), discussed:** Multi-Replicate (brushes: offset
+  only, no rotation), Snap to Land (props and primitives only), Random Replicate (after
+  props), infinite ground/water/clouds planes, "Y2K preview" renamed "Nano-Preview".
+  Not started; waiting for the user.
+- **Order agreed with the user:** v0.9.1 this fix; v0.9.2 = units to 1 cm + blending
+  primitives + Snap to Land / Multi-Replicate (one release, a commit per step, pushed
+  once); v0.10.0 props (`.glb` first); Random Replicate; M11 renderer with infinite
+  planes; M12 Nano-Preview; M13 export (`.glb` first, Godot package low priority).
+
 ### 2026-11-18 — Milestone 9: Math primitives (v0.9.0)
 - **Design talk:** the user asked for Bryce-style math primitives and (for M10) static
   props, after looking at the Mazzuola design. Decisions are in "Open questions".
