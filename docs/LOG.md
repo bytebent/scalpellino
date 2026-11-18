@@ -4,6 +4,14 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-18 — Props decisions and the idle test, recorded (docs only)
+- Discussed with the user and recorded in PLAN ("Open questions"): props are instanced,
+  v1 lighting = editor shading + fog, uniform scale by default (also for primitives, a
+  change to come), Shift+P and a Props panel, placing like a primitive with Snap to
+  Land, cgltf as the loader. File placement waits for Bottega, to be settled first.
+- Idle CPU test agreed: it must run with a map open; plan in PLAN.
+- Not built yet; no code changed.
+
 ### 2026-11-18 — DEV.md and a map of the docs (docs only)
 - **`docs/DEV.md`** (new): build (Mac, Linux, AI workspace), core tests and probes, UI
   scripts (running, 1× / 2×, duplicate-ID check, writing tips), the **script language

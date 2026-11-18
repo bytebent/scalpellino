@@ -13,7 +13,8 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 - **Released:** v0.1.0 … v0.9.3. Milestones 0–9 are done (see the milestone sections
   below and the log). Latest: **v0.9.3** (single pieces of a combination with
   Option+click; Multi-Replicate as a non-blocking window). Reported to the user.
-- **Next: milestone 10 — Props**, once the user says go (plan below).
+- **Next:** settle **Bottega** (needed for where props live), then the **idle CPU test**,
+  then **milestone 10 — Props** once the user says go (decisions under "Open questions").
 - **Roadmap (agreed with the user, 2026-11-18):** M10 Props → Random Replicate → Sky Lab
   → M11 Renderer (+ endless ground / water / cloud planes) → M12 Camera Preview (was "Y2K") → M13
   Export. Details under "Roadmap".
@@ -68,6 +69,40 @@ are in [`DEV.md`](DEV.md). One-step-per-release: add `docs/releases/vX.Y.Z.md` a
   both `.glb` and `.mazz`. `.mazz` reading follows Mazzuola's file format, which is final
   at its milestone 1 (Mazzuola's plan still lists "Scalpellino reading .mazz or .glb
   only?" as open: the answer is both).
+- **Props (M10), decided with the user (2026-11-18):**
+  - **Instancing:** each model is loaded once; every copy is drawn from that one mesh, so
+    scattering hundreds (Random Replicate) costs little.
+  - **Lighting:** v1 props get the editor shading plus fog; the rough light preview on
+    props comes later.
+  - **Scale:** per-axis sizes are possible (typed fields and handles), but **uniform by
+    default**, for props **and for primitives** (a change to how primitive handles work
+    now: today Shift scales evenly; to be reversed so even scaling is the default, with a
+    modifier for per-axis; details to settle when building it).
+  - **Shortcut and panel:** Props tool on **Shift+P**; a Props panel next to Textures,
+    searchable by name (thumbnails later).
+  - **Placing:** like a primitive: it is moved around the same way and can be snapped to
+    a surface (Snap to Land), Return creates, Esc cancels.
+  - **Loader:** cgltf (single header, MIT, pinned) in `src/io`, not raylib's `LoadModel`:
+    the core stays graphics-free and headless-testable, and picking and landing need the
+    triangles on the CPU. The user had no preference (technical choice). Also used for the
+    M13 export.
+  - **Waiting on Bottega:** where model files live and how a map refers to them. Settle
+    Bottega first (see "Bottega").
+- **Props (M10), decided without asking (confirm with the user):** static meshes only
+  (animations, skins, cameras, lights ignored); base colour plus optional texture,
+  embedded or external, several materials per model, grey where a texture is missing;
+  alpha opaque and cutout only; metres x 100, Y-up to Z-up, the model's origin is its
+  pivot; saved as a `scal_prop` point entity (path, origin, rotation, scale; unknown keys
+  kept); a missing file shows as a box with a warning and is kept on save; models reload
+  when the window regains focus (no folder watching); 2D views show a rotated bounding
+  box, 3D picking uses triangles; Snap to Land works on props (landing generalised to any
+  object); hiding / visgroups as for primitives (not yet); `.mazz` after `.glb`, behind a
+  loader interface; a small generated `.glb` as test asset; a triangle-budget warning.
+- **Idle CPU test (agreed 2026-11-18):** must run with a map open (terrain, primitives,
+  lights, sky, fog, light preview on), not an empty app. Scripted runs keep the app in
+  continuous-render mode, so it needs a script command that lets the app go idle and then
+  measures the process's CPU time (expect ~0 over 10 s), plus a script using it; then it
+  joins the UI scripts in CI and the per-step checklist in DEV.md.
 - **v0.9.2, decided without asking (confirm with the user):** blend is set per piece
   (selecting the whole combination sets it for all); textures melt over the widest blend
   in the combination; Multi-Replicate's default offset is 4 grid steps along X; Snap to
