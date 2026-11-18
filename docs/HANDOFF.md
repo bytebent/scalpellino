@@ -12,11 +12,11 @@ Read in this order:
 
 ## Where things stand
 
-- Released: v0.1.0 … v0.8.0, then **v0.9.0** (milestone 9: Bryce-style math
-  primitives with combining).
+- Released: v0.1.0 … v0.9.0 (milestone 9: Bryce-style math primitives), v0.9.1 (fix),
+  **v0.9.2** (units in cm, blending primitives, Snap to Land, Multi-Replicate).
 - **Next: milestone 10 — Props** (static models from `.glb` and Mazzuola's `.mazz`, with
   textures, no physics). Wait for the user's go-ahead; they had just received the
-  v0.9.0 report when this was written. Then M11 renderer, M12 Y2K, M13 export.
+  v0.9.2 report when this was written. Then M11 renderer, M12 Y2K, M13 export.
 - Mazzuola (`bytebent/mazzuola`) is the user's companion modeller (design only so far).
   Its models become Scalpellino props.
 
@@ -67,6 +67,7 @@ Read in this order:
 - The editor shows the world only roughly, like Hammer (user's wish): sky, light preview
   and fog are View toggles; the light preview is very rough and never computed while
   off. The sun's direction is typed on the sun, not tied to the sky.
+- Units: 1 unit = 1 cm (user is European); the scale figure is 175 units.
 - Math primitives are their own objects next to brushes, never a replacement: low-poly
   brush shapes stay. Saved maps keep primitives as primitives; only exports mesh them.
 - Make terrain is by picking faces (user: "select any face of a shape"), never by

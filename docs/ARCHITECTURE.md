@@ -253,6 +253,13 @@ are; brush tools never touch primitives). `core/mathprim.hpp`.
   intersect pieces keep only the overlap. Per-ray stretches inside each shape are joined,
   cut and intersected. Clicking selects the whole combination; Properties lists the
   pieces to pick one. Combine / Separate in the Primitives menu or Properties.
+- **Blending (v0.9.2):** a piece's `blend` (units) melts its joint into the rest of the
+  combination: smooth necks between add pieces, soft rims on cuts, soft edges on
+  intersections (polynomial smooth min / max). Blended combinations use distance
+  functions (exact for spheres and rounded cubes, safe underestimates for stretched
+  shapes) and ray marching, in the core (picking, tests) and the shader; colours and
+  textures melt across the joints over the combination's widest blend. Sharp
+  combinations keep the exact path.
 - **Objects:** primitives are objects like lights (`tools/object_edit`): click to select
   (brushes and lights deselected), drag in 2D to move (snapped), rings around the
   selection to turn (15° steps), size handles on a single primitive's faces (opposite
@@ -267,6 +274,20 @@ are; brush tools never touch primitives). `core/mathprim.hpp`.
   size, round, thickness, combo, op, texture, color, texscale; unknown keys kept), so a
   map reopened in Scalpellino keeps them as primitives. Only exports turn them into
   meshes (M13): Godot's own round meshes where they match, fine triangles in `.glb`.
+
+### Snap to Land / Ground and Multi-Replicate (v0.9.2, from Bryce)
+- **Snap to Land** (Cmd+J, Transform menu; `core/landing`): selected primitives drop
+  straight down onto visible brushes (terrain surfaces, not their flat faces), terrain
+  and other primitives; a combination lands as one; objects partly sunk in come up.
+  Rays go down from points on the object's surface and up from brush corners, terrain
+  points and other primitives' surfaces. Brushes themselves are never moved by it (props
+  will land like primitives). **Snap to Ground**: lowest point to a typed height.
+- **Multi-Replicate** (Cmd+Shift+D, Edit menu; `core/replicate`): N copies, each one step
+  further: offset (optionally scaled), turn (X, Y, Z degrees) and scale (%) per copy,
+  about the selection (travelling with the copies), the world origin or a typed point.
+  Brushes only move (they stay on the grid), primitives turn and scale, lights turn.
+  Groups and combinations are copied as new ones. Live preview, Return creates, one undo
+  step.
 
 ### Scale reference
 Toggleable ghost human figure (175 units = 1.75 m tall, blocky, see-through) to judge

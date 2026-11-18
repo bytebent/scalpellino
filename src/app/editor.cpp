@@ -167,6 +167,7 @@ bool Editor::frame(float dt) {
     st.canUndo = doc_.canUndo();
     st.canRedo = doc_.canRedo();
     st.hasSelection = !doc_.selection().empty();
+    st.hasAnything = st.hasSelection || !doc_.lightSelection().empty() || !doc_.primSelection().empty();
     st.selectTool = tool_ == &selectTool_;
     st.blockTool = tool_ == &blockTool_;
     st.blockPreview = st.blockTool && blockTool_.hasPreview();
@@ -276,6 +277,9 @@ bool Editor::frame(float dt) {
     if (m.primKind >= 0) { primTool_.templ.kind = (PrimKind)m.primKind; setTool(&primTool_); }
     if (m.createPrim) primTool_.create(doc_, currentTexture_, &lastBox_);
     if (m.combine) combinePrims();
+    if (m.replicate) openReplicate();
+    if (m.snapLand) snapToLand();
+    if (m.snapGround) askGround_ = true;
     if (m.separate) separatePrims();
     if (m.primOp >= 0) setPrimOp((PrimOp)m.primOp);
     if (m.lightKind >= 0) { lightTool_.templ.kind = (LightKind)m.lightKind; setTool(&lightTool_); }
@@ -344,6 +348,7 @@ bool Editor::frame(float dt) {
     drawShapingDialogs();
     drawTerrainDialogs();
     drawWorldDialogs();
+    drawReplicateDialog();
     drawControlsWindow(&controlsOpen_);
     drawOverlapsWindow();
     closeDialogs_ = false;
@@ -372,7 +377,8 @@ void Editor::handleKeyboard() {
     if (cmd_) {
         if (IsKeyPressed(KEY_Z)) { if (shift_) redo(); else undo(); }
         if (IsKeyPressed(KEY_A)) selectAll();
-        if (IsKeyPressed(KEY_D)) duplicate();
+        if (IsKeyPressed(KEY_D)) { if (shift_) openReplicate(); else duplicate(); }
+        if (IsKeyPressed(KEY_J)) snapToLand();
         if (IsKeyPressed(KEY_T)) {
             if (shift_) { if (tool_ == &vertexTool_ && vertexTool_.selectedCount()) { precisionError_.clear(); askVertexMove_ = true; } }
             else openTransformDialog();
@@ -419,6 +425,23 @@ Scene Editor::buildScene() {
     for (const MathPrim& p : doc_.prims()) s.prims.push_back({p, doc_.primSelection().count(p.id) > 0});
     s.lightPreview = lightPreview_;
     s.ambient = doc_.environment().ambient;
+    if (replicating_) { // Multi-Replicate preview
+        std::vector<Brush> bs;
+        std::set<BrushId> sel = doc_.selection();
+        std::set<std::uint32_t> groups;
+        for (BrushId id : sel) if (const Brush* b = doc_.find(id)) if (b->group) groups.insert(b->group);
+        for (const Brush& b : doc_.brushes()) if (b.group && groups.count(b.group)) sel.insert(b.id);
+        for (BrushId id : sel) if (const Brush* b = doc_.find(id)) bs.push_back(*b);
+        std::vector<MathPrim> ps;
+        for (MathPrimId id : doc_.withCombos(doc_.primSelection())) if (const MathPrim* p = doc_.findPrim(id)) ps.push_back(*p);
+        std::vector<Light> ls;
+        for (LightId id : doc_.lightSelection()) if (const Light* l = doc_.findLight(id)) ls.push_back(*l);
+        for (const ReplicateCopy& c : replicate(bs, ps, ls, repSpec_)) {
+            for (const Brush& b : c.brushes) s.ghosts.push_back(makeSceneBrush(b));
+            for (const MathPrim& p : c.prims) s.pendingPrims.push_back(p);
+            for (const Light& l : c.lights) s.previewLights.push_back(l);
+        }
+    }
     tool_->decorate(doc_, s);
     for (SceneBrush& r : s.replaced)
         for (SceneBrush& b : s.brushes)
@@ -1981,6 +2004,191 @@ void Editor::combinePrims() {
     doc_.apply(doc_.makeModifyPrims(out, "Combine"));
 }
 
+// ------------------------------------------------------------------ v0.9.2: land, replicate
+
+namespace {
+// The selected primitives as objects: a combination is one object.
+std::vector<std::vector<const MathPrim*>> selectedObjects(const Document& doc) {
+    std::vector<std::vector<const MathPrim*>> out;
+    std::set<std::uint32_t> combos;
+    for (MathPrimId id : doc.primSelection()) {
+        const MathPrim* p = doc.findPrim(id);
+        if (!p) continue;
+        if (!p->combo) { out.push_back({p}); continue; }
+        if (combos.insert(p->combo).second) out.push_back(comboMembers(doc.prims(), p->combo));
+    }
+    return out;
+}
+} // namespace
+
+void Editor::snapToLand() {
+    auto objects = selectedObjects(doc_);
+    if (objects.empty()) { landMessage_ = "select primitives to snap to land"; return; }
+    tool_->cancel();
+    // Lowest first, so an object stacked on another selected one lands on its new spot.
+    std::sort(objects.begin(), objects.end(), [](const auto& a, const auto& b) { return objectBottom(a) < objectBottom(b); });
+    std::vector<const Brush*> brushes;
+    for (const Brush& b : doc_.brushes())
+        if (doc_.visible(b)) brushes.push_back(&b);
+    std::vector<MathPrim> work = doc_.prims();
+    std::vector<MathPrim> out;
+    int nothing = 0;
+    for (const auto& obj : objects) {
+        std::set<MathPrimId> ids;
+        for (const MathPrim* p : obj) ids.insert(p->id);
+        std::vector<const MathPrim*> me, others;
+        for (const MathPrim& p : work) (ids.count(p.id) ? me : others).push_back(&p);
+        const auto mv = landingMove(me, brushes, others);
+        if (!mv) { ++nothing; continue; }
+        for (MathPrim& p : work)
+            if (ids.count(p.id)) {
+                p.pos.z = cleanNumber(p.pos.z + *mv, 1e-6);
+                out.push_back(p);
+            }
+    }
+    landMessage_ = nothing ? std::to_string(nothing) + " object(s) had nothing below them" : "";
+    if (!out.empty()) doc_.apply(doc_.makeModifyPrims(out, "Snap to land"));
+}
+
+void Editor::snapToGround(double height) {
+    std::vector<MathPrim> out;
+    for (const auto& obj : selectedObjects(doc_)) {
+        const double dz = height - objectBottom(obj);
+        for (const MathPrim* p : obj) {
+            MathPrim c = *p;
+            c.pos.z = cleanNumber(c.pos.z + dz, 1e-6);
+            out.push_back(c);
+        }
+    }
+    if (out.empty()) return;
+    tool_->cancel();
+    doc_.apply(doc_.makeModifyPrims(out, "Snap to ground"));
+}
+
+void Editor::openReplicate() {
+    if (doc_.selection().empty() && doc_.primSelection().empty() && doc_.lightSelection().empty()) return;
+    tool_->cancel();
+    if (repSpec_.offset == Vec3{100, 0, 0} && grid_.size > 0) repSpec_.offset = {grid_.size * 4, 0, 0};
+    askReplicate_ = true;
+}
+
+bool Editor::applyReplicate(const ReplicateSpec& spec) {
+    // Groups of the selected brushes come along whole.
+    std::set<BrushId> sel = doc_.selection();
+    std::set<std::uint32_t> groups;
+    for (BrushId id : sel) if (const Brush* b = doc_.find(id)) if (b->group) groups.insert(b->group);
+    for (const Brush& b : doc_.brushes()) if (b.group && groups.count(b.group)) sel.insert(b.id);
+    std::vector<Brush> bs;
+    for (BrushId id : sel) if (const Brush* b = doc_.find(id)) bs.push_back(*b);
+    std::vector<MathPrim> ps;
+    for (MathPrimId id : doc_.withCombos(doc_.primSelection())) if (const MathPrim* p = doc_.findPrim(id)) ps.push_back(*p);
+    std::vector<Light> ls;
+    for (LightId id : doc_.lightSelection()) if (const Light* l = doc_.findLight(id)) ls.push_back(*l);
+    const auto copies = replicate(bs, ps, ls, spec);
+    if (copies.empty()) return false;
+    // One command: every copy, each with its own groups and combinations.
+    Command c;
+    c.name = "Multi-Replicate";
+    c.selectionBefore = doc_.selection();
+    c.lightSelectionBefore = doc_.lightSelection();
+    c.primSelectionBefore = doc_.primSelection();
+    c.lightSelectionAfter = std::set<LightId>{};
+    c.primSelectionAfter = std::set<MathPrimId>{};
+    std::uint32_t nextCombo = newComboId(doc_.prims());
+    for (const ReplicateCopy& cp : copies) {
+        std::map<std::uint32_t, std::uint32_t> newGroup, newCombo;
+        for (Brush b : cp.brushes) {
+            b.id = doc_.newId();
+            if (b.group) {
+                auto it = newGroup.find(b.group);
+                if (it == newGroup.end()) {
+                    const GroupId g = doc_.newGroupId();
+                    Group grp;
+                    if (auto gi = doc_.groups().find(b.group); gi != doc_.groups().end()) grp = gi->second;
+                    grp.id = g;
+                    c.groupChanges.push_back({g, std::nullopt, grp});
+                    it = newGroup.emplace(b.group, g).first;
+                }
+                b.group = it->second;
+            }
+            c.selectionAfter.insert(b.id);
+            c.changes.push_back({b.id, std::nullopt, std::move(b)});
+        }
+        for (MathPrim p : cp.prims) {
+            p.id = doc_.newPrimId();
+            if (p.combo) {
+                auto it = newCombo.find(p.combo);
+                if (it == newCombo.end()) it = newCombo.emplace(p.combo, nextCombo++).first;
+                p.combo = it->second;
+            }
+            c.primSelectionAfter->insert(p.id);
+            c.primChanges.push_back({p.id, std::nullopt, std::move(p)});
+        }
+        for (Light l : cp.lights) {
+            l.id = doc_.newLightId();
+            c.lightSelectionAfter->insert(l.id);
+            c.lightChanges.push_back({l.id, std::nullopt, std::move(l)});
+        }
+    }
+    doc_.apply(std::move(c));
+    return true;
+}
+
+void Editor::drawReplicateDialog() {
+    if (askReplicate_) { ImGui::OpenPopup("Multi-Replicate"); askReplicate_ = false; replicating_ = true; }
+    if (askGround_) { ImGui::OpenPopup("Snap to ground"); askGround_ = false; }
+    const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    if (ImGui::BeginPopupModal("Snap to ground", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextUnformatted("Put the selected primitives' lowest point at this height");
+        ImGui::SetNextItemWidth(150);
+        if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+        ImGui::InputDouble("Z (units)", &groundHeight_, 0, 0, "%g");
+        const bool apply = ImGui::Button("Apply (Return)") || ImGui::IsKeyPressed(ImGuiKey_Enter, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false);
+        ImGui::SameLine();
+        const bool cancel = ImGui::Button("Cancel (Esc)") || ImGui::IsKeyPressed(ImGuiKey_Escape, false) || closeDialogs_;
+        if (apply) { snapToGround(groundHeight_); ImGui::CloseCurrentPopup(); }
+        else if (cancel) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    if (ImGui::BeginPopupModal("Multi-Replicate", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ReplicateSpec& r = repSpec_;
+        ImGui::TextUnformatted("Copies of the selection, each one step further than the last");
+        ImGui::SetNextItemWidth(120);
+        if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+        ImGui::InputInt("copies", &r.copies);
+        r.copies = std::clamp(r.copies, 1, 1000);
+        auto vec = [](const char* label, Vec3& v) {
+            double a[3] = {v.x, v.y, v.z};
+            ImGui::SetNextItemWidth(240);
+            ImGui::InputScalarN(label, ImGuiDataType_Double, a, 3, nullptr, nullptr, "%g");
+            v = {a[0], a[1], a[2]};
+        };
+        vec("offset per copy (units)", r.offset);
+        vec("turn per copy (degrees X Y Z)", r.rotate);
+        vec("scale per copy (%)", r.scale);
+        for (int a = 0; a < 3; ++a) r.scale[a] = std::clamp(r.scale[a], 1.0, 1000.0);
+        ImGui::Checkbox("scale the offset too", &r.scaleOffset);
+        ImGui::TextUnformatted("turn and scale about:");
+        ImGui::RadioButton("the selection (moves with the copies)", &repPivot_, 0);
+        ImGui::RadioButton("the world origin", &repPivot_, 1);
+        ImGui::RadioButton("a point", &repPivot_, 2);
+        if (repPivot_ == 2) vec("point", r.point);
+        r.pivot = (ReplicateSpec::Pivot)repPivot_;
+        ImGui::TextDisabled("brushes only move (they stay on the grid); primitives and");
+        ImGui::TextDisabled("lights also turn; primitives also scale");
+        const bool apply = ImGui::Button("Create (Return)") || ImGui::IsKeyPressed(ImGuiKey_Enter, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false);
+        ImGui::SameLine();
+        const bool cancel = ImGui::Button("Cancel (Esc)") || ImGui::IsKeyPressed(ImGuiKey_Escape, false) || closeDialogs_;
+        if (apply) { applyReplicate(r); replicating_ = false; ImGui::CloseCurrentPopup(); }
+        else if (cancel) { replicating_ = false; ImGui::CloseCurrentPopup(); }
+        ImGui::EndPopup();
+    } else if (!scriptPreview_) {
+        replicating_ = false;
+    }
+}
+
 void Editor::setPrimOp(PrimOp op) {
     std::vector<MathPrim> out;
     for (MathPrimId pid : doc_.primSelection())
@@ -2109,6 +2317,8 @@ void Editor::drawPrimPanel() {
         if (ImGui::Button("Separate")) separatePrims();
         ImGui::EndDisabled();
         if (!worldError_.empty()) ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", worldError_.c_str());
+        if (!landMessage_.empty()) ImGui::TextColored(ImVec4(1, 0.6f, 0.3f, 1), "%s", landMessage_.c_str());
+        if (ImGui::SmallButton("Snap to land (Cmd+J)")) snapToLand();
         ImGui::TextDisabled("Delete removes, Cmd+D duplicates");
         ImGui::PopID();
         if (tool_ != &primTool_) return;
@@ -2757,6 +2967,8 @@ void Editor::runPending() {
 //   viewset sky|preview|fog|figure on|off   skydir <path>   figure x y z
 //   tool prim   primset kind <k>|round|thickness|flat on/off|color r g b|texscale   primbox c s [axis]
 //   prim <kind> x y z sx sy sz [rx ry rz]   primedit <key> <value...>   primselect <index...>
+//   snapland   snapground <z>   replicate <n> ox oy oz [rot x y z] [scale x y z] [scaleoffset] [pivot selection|origin|x y z]
+//   replicatepreview on|off
 //   combine   separate   expect prims|primsel <n>   expect primpos|primrot|primsize x y z   expect primop <op>
 //   environment sky <name|none> | ambient r g b | fog on|off | fogcolor r g b | fogrange <start> <end>
 //   bookmark add <name> | go <index>   expect sky <name>   expect bookmarks <n>   expect camera x y z
@@ -3110,6 +3322,30 @@ void Editor::stepScript() {
         std::string w, o; in >> w >> o;
         const MathPrim* p = doc_.primSelection().empty() ? nullptr : doc_.findPrim(*doc_.primSelection().begin());
         if (!p || primOpName(p->op) != o || !p->combo) { std::fprintf(stderr, "script FAIL (command %d): not a '%s' piece of a combination\n", scriptLine_, o.c_str()); ++scriptFailures_; }
+    } else if (cmd == "snapland") {
+        snapToLand();
+    } else if (cmd == "snapground") {
+        double h = 0; in >> h; snapToGround(h);
+    } else if (cmd == "replicate") {
+        // replicate <copies> ox oy oz [rot rx ry rz] [scale sx sy sz] [scaleoffset] [pivot selection|origin|x y z]
+        ReplicateSpec r;
+        in >> r.copies >> r.offset.x >> r.offset.y >> r.offset.z;
+        std::string w;
+        while (in >> w) {
+            if (w == "rot") in >> r.rotate.x >> r.rotate.y >> r.rotate.z;
+            else if (w == "scale") in >> r.scale.x >> r.scale.y >> r.scale.z;
+            else if (w == "scaleoffset") r.scaleOffset = true;
+            else if (w == "pivot") {
+                std::string p; in >> p;
+                if (p == "origin") r.pivot = ReplicateSpec::Pivot::Origin;
+                else if (p != "selection") { r.pivot = ReplicateSpec::Pivot::Point; r.point.x = std::atof(p.c_str()); in >> r.point.y >> r.point.z; }
+            }
+        }
+        repSpec_ = r;
+        applyReplicate(r);
+    } else if (cmd == "replicatepreview") {
+        // replicatepreview on|off: show the dialog's preview with the last spec (screenshots)
+        std::string v; in >> v; replicating_ = scriptPreview_ = v == "on";
     } else if (cmd == "combine") {
         combinePrims();
     } else if (cmd == "separate") {

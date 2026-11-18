@@ -29,6 +29,7 @@ struct MenuState {
     bool primTool = false, primPending = false;
     int primKind = 0;
     size_t primsSelected = 0;
+    bool hasAnything = false;   // brushes, lights or primitives selected
     bool primsInCombo = false;
 };
 
@@ -64,6 +65,7 @@ struct MenuActions {
     bool toolPrim = false, createPrim = false, combine = false, separate = false;
     int primKind = -1;    // PrimKind index; also switches to the primitive tool
     int primOp = -1;      // PrimOp for the selected primitives
+    bool replicate = false, snapLand = false, snapGround = false;
 };
 
 // Draws the menu bar and reports clicked items.

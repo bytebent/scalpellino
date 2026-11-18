@@ -23,8 +23,9 @@ MenuActions drawMenuBar(const MenuState& st) {
         if (ImGui::MenuItem("Undo", "Cmd+Z", false, st.canUndo)) a.undo = true;
         if (ImGui::MenuItem("Redo", "Cmd+Shift+Z", false, st.canRedo)) a.redo = true;
         ImGui::Separator();
-        if (ImGui::MenuItem("Duplicate", "Cmd+D", false, st.hasSelection)) a.duplicate = true;
-        if (ImGui::MenuItem("Delete", "Delete", false, st.hasSelection)) a.del = true;
+        if (ImGui::MenuItem("Duplicate", "Cmd+D", false, st.hasAnything)) a.duplicate = true;
+        if (ImGui::MenuItem("Multi-Replicate...", "Cmd+Shift+D", false, st.hasAnything)) a.replicate = true;
+        if (ImGui::MenuItem("Delete", "Delete", false, st.hasAnything)) a.del = true;
         ImGui::Separator();
         if (ImGui::MenuItem("Select all", "Cmd+A")) a.selectAll = true;
         if (ImGui::MenuItem("Select none", "Esc", false, st.hasSelection)) a.selectNone = true;
@@ -66,6 +67,10 @@ MenuActions drawMenuBar(const MenuState& st) {
     }
     if (ImGui::BeginMenu("Transform")) {
         if (ImGui::MenuItem("Move / Rotate / Scale...", "Cmd+T", false, st.hasSelection)) a.transform = true;
+        ImGui::Separator();
+        if (ImGui::MenuItem("Snap to land", "Cmd+J", false, st.primsSelected > 0)) a.snapLand = true;
+        if (ImGui::MenuItem("Snap to ground...", nullptr, false, st.primsSelected > 0)) a.snapGround = true;
+        ImGui::TextDisabled("drops selected primitives onto what is below them");
         ImGui::Separator();
         static const char* axes[] = {"X", "Y", "Z"};
         for (int ax = 2; ax >= 0; --ax) {
@@ -240,6 +245,9 @@ void drawControlsWindow(bool* open) {
             {"Primitive tool", "Shift+M (Primitives menu): pick sphere, cube, cylinder, cone, torus, capsule or disc in Properties, drag a box in a 2D view, Return creates, Esc cancels"},
             {"Select / move primitives", "click a primitive (Select, Light or Primitive tool; a combination selects whole); drag it in a 2D view; Delete removes, Cmd+D duplicates"},
             {"Turn / size primitives", "drag the rings around the selection (15 degree steps); drag a size handle (opposite face stays, Shift: evenly); or type in Properties"},
+            {"Multi-Replicate", "Cmd+Shift+D (Edit menu): copies, each one step further (offset; primitives and lights also turn, primitives also scale); preview, Return creates"},
+            {"Snap to land / ground", "Cmd+J (Transform menu): drops selected primitives onto the brushes, terrain or primitives below; Snap to ground: onto a typed height"},
+            {"Blend primitives", "Properties, in a combination: blend (units) melts a piece into the others (0 = sharp)"},
             {"Combine primitives", "Primitives menu or Properties: Combine selected; each piece adds, subtracts or intersects; Separate undoes it"},
             {"Light tool", "Shift+L (World menu): pick point / spot / sun and settings in Properties, click in a view to place, Return creates, Esc cancels"},
             {"Select / move lights", "click a light's marker (any tool that selects: Select, Light); drag it in a 2D view; Delete removes, Cmd+D duplicates"},

@@ -420,6 +420,7 @@ void Viewport::render2D(const Grid& grid, const Scene& scene) {
         for (const auto& sl : scene.lights) if (!sl.selected) drawLight(sl.light, false, false);
         for (const auto& sl : scene.lights) if (sl.selected) drawLight(sl.light, true, false);
         if (scene.pendingLight) drawLight(*scene.pendingLight, false, true);
+        for (const Light& l : scene.previewLights) drawLight(l, false, true);
         for (const auto& sl : scene.lights) {
             if (!sl.selected || !sl.light.hasDirection()) continue;
             const int ax = axD();
@@ -869,6 +870,7 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
     };
     for (const auto& sl : scene.lights) drawLight3D(sl.light, sl.selected);
     if (scene.pendingLight) drawLight3D(*scene.pendingLight, false);
+    for (const Light& l : scene.previewLights) drawLight3D(l, false);
     for (const auto& sl : scene.lights) {
         if (!sl.selected || !sl.light.hasDirection()) continue;
         const double r = Scene::kRingPx * worldPerPixel(sl.light.pos);
@@ -925,6 +927,7 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
             DrawRectangleRec({std::floor(c.x - hs), std::floor(c.y - hs), 2 * hs + 1, 2 * hs + 1}, kHandle);
         }
     if (scene.pendingLight) marker3D(*scene.pendingLight, kPreview, 2 * P);
+    for (const Light& l : scene.previewLights) marker3D(l, kPreview, 2 * P);
 
     // Vertex tool: terrain points as small squares (the only handles picked in 3D).
     for (int pass = 0; pass < 2; ++pass)

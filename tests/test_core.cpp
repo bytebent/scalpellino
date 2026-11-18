@@ -11,6 +11,8 @@
 #include "core/terrain.hpp"
 #include "core/sky.hpp"
 #include "core/mathprim.hpp"
+#include "core/landing.hpp"
+#include "core/replicate.hpp"
 #include "io/map_format.hpp"
 #include <cmath>
 #include <random>
@@ -1846,6 +1848,103 @@ void testPrimBlend() {
     CHECK(readMap(writeMap(w), r).ok && r.prims().size() == 1 && near(r.prims()[0].blend, 40));
 }
 
+// Snap to Land and Multi-Replicate (v0.9.2).
+void testLandingReplicate() {
+    auto sphere = [](Vec3 c, double r) {
+        MathPrim p; p.id = 1; p.kind = PrimKind::Sphere; p.pos = c; p.size = {2 * r, 2 * r, 2 * r};
+        return p;
+    };
+    AABB fb; fb.add({-500, -500, -64}); fb.add({500, 500, 0});
+    const Brush floor = makeBox(fb, "a");
+    std::vector<const Brush*> bs{&floor};
+    MathPrim s = sphere({0, 0, 300}, 50);
+    auto m = landingMove({&s}, bs, {});
+    CHECK(m && near(*m, -250, 1e-6));
+    CHECK(near(objectBottom({&s}), 250, 1e-6));
+    MathPrim sunk = sphere({0, 0, 20}, 50);
+    auto up = landingMove({&sunk}, bs, {});
+    CHECK(up && near(*up, 30, 1e-6)); // comes up to rest on top
+    MathPrim away = sphere({5000, 0, 300}, 50);
+    CHECK(!landingMove({&away}, bs, {}));
+    // A 45 degree slope (z = x): the sphere touches it beside its lowest point.
+    AABB wb; wb.add({-300, -300, -300}); wb.add({300, 300, 300});
+    const SplitResult sr = splitBrush(makeBox(wb, "a"), {0, -300, 0}, {0, 300, 0}, {100, 0, 100}, "a");
+    // the half whose top along x = 100 is the slope (z = 100 there)
+    const Brush* slope = sr.front && near(rayHit(*sr.front, {100, 0, 1000}, {0, 0, -1}), 900, 1e-6) ? &*sr.front : &*sr.back;
+    CHECK(near(rayHit(*slope, {100, 0, 1000}, {0, 0, -1}), 900, 1e-6));
+    {
+        MathPrim t = sphere({0, 0, 600}, 50);
+        auto mv = landingMove({&t}, {slope}, {});
+        CHECK(mv.has_value());
+        if (mv) {
+            t.pos.z += *mv;
+            // highest point of the slope under the sphere's footprint decides; touching
+            // the plane z = x (or the top face) means distance >= 50 everywhere and ~50 somewhere
+            double dmin = 1e9;
+            for (const Plane& pl : {Plane{normalize(Vec3{-1, 0, 1}), 0}}) dmin = std::min(dmin, pl.distance(t.pos));
+            CHECK(dmin > 49.5 && dmin < 51.5);
+        }
+    }
+    // Raised terrain under a small sphere.
+    {
+        Brush tb = makeBox(fb, "a");
+        CHECK(makeTerrain(tb, topQuadFace(tb), 3).empty());
+        tb.terrain->heights.assign(tb.terrain->heights.size(), 0);
+        tb.terrain->heights[4 * 9 + 4] = 80; // the middle point
+        MathPrim t = sphere({0, 0, 400}, 10);
+        auto mv = landingMove({&t}, {&tb}, {});
+        CHECK(mv && near(t.pos.z + *mv, 90, 1.0)); // on the peak, not the flat face under it
+    }
+    // On another primitive, and a combination landing as one.
+    {
+        MathPrim base = sphere({0, 0, 50}, 50);
+        base.id = 9;
+        MathPrim t = sphere({0, 0, 500}, 30);
+        auto mv = landingMove({&t}, bs, {&base});
+        CHECK(mv && near(t.pos.z + *mv, 130, 0.5));
+        MathPrim a = sphere({-40, 0, 400}, 40), b = sphere({40, 0, 380}, 40);
+        a.combo = b.combo = 3;
+        b.id = 2;
+        auto mc = landingMove({&a, &b}, bs, {});
+        CHECK(mc && near(b.pos.z + *mc, 40, 0.5)); // the lower piece touches
+    }
+    // Multi-Replicate.
+    ReplicateSpec rs;
+    rs.copies = 3;
+    rs.offset = {100, 0, 0};
+    rs.rotate = {0, 0, 90}; // brushes ignore it
+    AABB cb; cb.add({0, 0, 0}); cb.add({16, 16, 16});
+    auto cs = replicate({makeBox(cb, "a")}, {}, {}, rs);
+    CHECK(cs.size() == 3);
+    for (int i = 0; i < 3; ++i) {
+        const AABB b = cs[i].brushes[0].bounds();
+        CHECK(nearV(b.min, {100.0 * (i + 1), 0, 0}) && nearV(b.size(), {16, 16, 16}));
+    }
+    // A ring of 12 around the origin: the 12th is back where it started.
+    ReplicateSpec ring;
+    ring.copies = 12;
+    ring.offset = {};
+    ring.rotate = {0, 0, 30};
+    ring.pivot = ReplicateSpec::Pivot::Origin;
+    MathPrim cube; cube.kind = PrimKind::Cube; cube.pos = {200, 0, 0};
+    Light l; l.kind = LightKind::Spot; l.pos = {300, 0, 0}; l.pitch = 0; l.yaw = 0;
+    auto rc = replicate({}, {cube}, {l}, ring);
+    CHECK(rc.size() == 12);
+    CHECK(nearV(rc[2].prims[0].pos, {0, 200, 0}, 1e-6) && near(rc[2].prims[0].rot.z, 90));
+    CHECK(nearV(rc[11].prims[0].pos, {200, 0, 0}, 1e-6));
+    CHECK(nearV(rc[2].lights[0].pos, {0, 300, 0}, 1e-6) && near(rc[2].lights[0].yaw, 90));
+    // Scaled steps, offsets scaled too: 100, 50, 25.
+    ReplicateSpec sc;
+    sc.copies = 3;
+    sc.offset = {100, 0, 0};
+    sc.scale = {50, 50, 50};
+    sc.scaleOffset = true;
+    MathPrim sp = sphere({0, 0, 0}, 50);
+    auto rsc = replicate({}, {sp}, {}, sc);
+    CHECK(near(rsc[0].prims[0].pos.x, 100) && near(rsc[1].prims[0].pos.x, 150) && near(rsc[2].prims[0].pos.x, 175));
+    CHECK(near(rsc[2].prims[0].size.x, 100 * 0.125));
+}
+
 int main() {
     testGrid();
     testBoxGeometry();
@@ -1869,6 +1968,7 @@ int main() {
     testSky();
     testMathPrims();
     testPrimBlend();
+    testLandingReplicate();
     testRay();
     testUndo();
     testMakeChange();

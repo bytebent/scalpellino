@@ -65,6 +65,7 @@ struct Scene {
     struct SceneLight { Light light; bool selected = false; };
     std::vector<SceneLight> lights;
     std::optional<Light> pendingLight;   // light tool: where Return will create a light
+    std::vector<Light> previewLights;    // Multi-Replicate preview
 
     // Math primitives (milestone 9): exact shapes in 3D, outlines in 2D.
     struct ScenePrim { MathPrim prim; bool selected = false; };

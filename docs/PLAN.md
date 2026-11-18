@@ -24,9 +24,10 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 - **Roadmap changed with the user (2026-11-18):** M9 math primitives (Bryce-style), M10
   props (`.glb` + `.mazz`, with textures, no physics), then M11 renderer, M12 Y2K, M13
   export.
-- **v0.9.0 = milestone 9 Math primitives** (this step). Report to the user, then wait for
-  the go-ahead on milestone 10.
-- **Next: milestone 10 — Props.**
+- **v0.9.0 = milestone 9 Math primitives**, v0.9.1 fix (conflicting widget IDs).
+- **v0.9.2** (this step): units to 1 cm, blending primitives, Snap to Land / Ground,
+  Multi-Replicate. Report to the user, then wait for the go-ahead on milestone 10.
+- **Next: milestone 10 — Props** (`.glb` first; `.mazz` when Mazzuola's format exists).
 
 ## How to work in this repo
 
@@ -89,7 +90,8 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   combining wanted; saved maps keep them as primitives, only exports make meshes;
   per-axis size allowed; kinds: sphere, cube (rounded), cylinder, cone, torus, capsule,
   disc.
-- **Math primitives, decided without asking (confirm with the user):**
+- **Math primitives, confirmed by the user (2026-11-18):** the choices below are fine.
+- **Math primitives, decided without asking:**
   - A click selects the whole combination; Properties lists the pieces to pick one.
   - Size handles only on a single selected primitive; rings around any selection.
   - A combination can use up to 4 different textures (more fall back to the colour);
@@ -100,7 +102,11 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   both `.glb` and `.mazz`. `.mazz` reading follows Mazzuola's file format, which is final
   at its milestone 1 (Mazzuola's plan still lists "Scalpellino reading .mazz or .glb
   only?" as open: the answer is both).
-- **Primitives extras, later:** hiding primitives / visgroups; the Transform dialog on
+- **v0.9.2, decided without asking (confirm with the user):** blend is set per piece
+  (selecting the whole combination sets it for all); textures melt over the widest blend
+  in the combination; Multi-Replicate's default offset is 4 grid steps along X; Snap to
+  Land handles selected objects lowest first, so stacked ones land on their new spots.
+- **Primitives extras, later:** "align to slope" for Snap to Land; hiding primitives / visgroups; the Transform dialog on
   objects; Bryce's other shapes (pyramid, endless ground plane) if wanted.
 - **World extras, later:** hiding lights / lights in visgroups; moving lights together
   with brushes in one drag; aiming a light at a clicked point; lights in the Transform
@@ -206,6 +212,32 @@ terminal-style render log like Hammer's compile window + log file), 10 Y2K shade
 ## Milestone 1 plan — Brushes (done)
 
 ## Log
+
+### 2026-11-18 — v0.9.2: units in cm, blending, Snap to Land, Multi-Replicate
+- **Units:** 1 unit = 1 cm (user's choice). Scale figure 175 units; fly speed, terrain
+  brush, light reach, fog and spiral-stair defaults in cm; far clip 2 km, sky at 1 km;
+  docs (exports to metres ÷ 100, `.glb` import × 100). Older maps keep their numbers
+  (Transform → scale by 2.54 converts an inch map). Mazzuola's docs still say inches:
+  to change when its repo can be written (read-only here).
+- **Blending primitives** (user's idea): `MathPrim::blend`, `primDistance`,
+  `comboDistance`, `smoothMin/Max`, ray marching for blended combinations (core + shader),
+  colours melt across joints; Properties field; saved as `blend`.
+- **Snap to Land / Ground** (`core/landing`): primitives only (user), onto brushes,
+  terrain (its surface, not the flat face) and other primitives; combinations as one;
+  sunk objects come up. Transform menu, Cmd+J, Properties button; Snap to ground dialog.
+- **Multi-Replicate** (`core/replicate`): brushes offset only (user), primitives turn and
+  scale, lights turn; pivots: selection (travels), origin, point; groups and
+  combinations copied as new ones; dialog with live preview; one command.
+- **Fixed:** Edit → Duplicate / Delete were greyed out with only lights or primitives
+  selected.
+- **Script:** `snapland`, `snapground`, `replicate`, `replicatepreview`, `primedit blend`.
+  New script `v092_blend_land_replicate`.
+- **Tests:** core **4252 checks, 0 failed** (distance = 0 at every kind's exact hits,
+  blended neck, soft rim, landing on flat / sunk / 45° slope / raised terrain / another
+  primitive / as a combination / nothing below, replicate rows, a 12-ring, scaled steps,
+  lights). UI: all 16 scripts pass at 1× and 2×. Idle with a blended combination: 0 CPU
+  ticks over 10 s.
+- **Screenshots:** `m9-05-blend-and-land.png`, `m9-06-replicated-ring.png`.
 
 ### 2026-11-18 — Fix: "conflicting ID" error in Properties (v0.9.1)
 - **Reported by the user** on v0.9.0: Dear ImGui's "2 visible items with conflicting ID"

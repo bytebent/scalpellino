@@ -20,6 +20,8 @@
 #include "tools/prim_tool.hpp"
 #include "render/sky_library.hpp"
 #include "render/lighting.hpp"
+#include "core/replicate.hpp"
+#include "core/landing.hpp"
 #include "render/texture_library.hpp"
 #include <deque>
 #include <memory>
@@ -154,6 +156,18 @@ private:
     void separatePrims();  // selected primitives leave their combinations
     void drawPrimPanel();
     void setPrimOp(PrimOp op);
+    // v0.9.2: Snap to Land / Ground (primitives) and Multi-Replicate
+    void snapToLand();
+    void snapToGround(double height);
+    void openReplicate();
+    void drawReplicateDialog();
+    bool applyReplicate(const ReplicateSpec& spec);
+    ReplicateSpec repSpec_;
+    bool askReplicate_ = false, replicating_ = false, askGround_ = false;
+    bool scriptPreview_ = false; // scripts show the preview without the dialog
+    int repPivot_ = 0;
+    double groundHeight_ = 0;
+    std::string landMessage_;
     MathPrim primBuf_;               // Properties fields for the selected primitives
     std::set<MathPrimId> primBufFor_;
     unsigned long long primBufRev_ = ~0ull;

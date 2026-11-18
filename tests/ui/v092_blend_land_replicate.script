@@ -1,0 +1,76 @@
+# v0.9.2: units in cm (the scale figure is 1.75 m), blended primitives, Snap to Land /
+# Snap to Ground (primitives onto brushes, terrain and other primitives), Multi-Replicate
+# (brushes move only; primitives and lights also turn; a ring around the origin).
+block -600 -600 -40 600 600 0
+block 200 -300 0 400 -100 120
+# -- the scale figure stands 175 units tall
+figure -300 300 0
+# -- two spheres and a capsule melting together
+prim sphere -70 0 300 120 120 120
+prim sphere 70 0 300 120 120 120
+primedit texture Grass_20
+prim capsule 0 0 380 40 40 140 0 90 0
+primedit texture Tile_13
+primselect 0 1 2
+combine
+primselect 1 2
+primedit blend 45
+# -- the whole blob drops onto the floor as one
+primselect 0 1 2
+snapland
+primselect 1
+expect primpos 70 0 60
+undo
+expect primpos 70 0 300
+redo
+# -- a sphere drops onto the block, another onto the first one
+prim sphere 300 -200 600 80 80 80
+snapland
+expect primpos 300 -200 160
+prim sphere 300 -200 900 40 40 40
+snapland
+expect primpos 300 -200 220
+# -- snap to ground: lowest point at z = 500
+snapground 500
+expect primpos 300 -200 520
+undo
+camera -700 -760 520 48 -22
+shot m9-05-blend-and-land.png
+# -- Multi-Replicate: a row of posts (brushes move only, even when asked to turn)
+block -500 400 0 -480 420 160
+expect selected 1
+replicate 5 120 0 0 rot 0 0 45
+expect brushes 8
+expect selected 5
+undo
+expect brushes 3
+expect selected 1
+# -- a ring of 12 cubes around the origin
+tool prim
+primset kind cube
+primbox 450 0 40 40 40 80
+key Return
+replicate 11 0 0 0 rot 0 0 30 pivot origin
+expect prims 17
+expect primsel 11
+primselect 16
+expect primrot 0 0 -30
+# -- lights turn too: a spot copied around the ring
+tool light
+lightset kind spot
+lightset pitch -30
+lightset yaw 0
+lightset pos 300 0 300
+key Return
+replicate 3 0 0 0 rot 0 0 90 pivot origin
+expect lights 4
+expect lightdir -30 90
+tool select
+key Esc
+camera -900 -1000 800 48 -30
+shot m9-06-replicated-ring.png
+# -- preview, as the dialog shows it
+prim sphere -400 -400 50 100 100 100
+replicate 0 0 0 0
+replicatepreview on
+quit
