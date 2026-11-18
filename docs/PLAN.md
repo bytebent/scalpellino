@@ -312,9 +312,15 @@ read and write. Agreed so far:
     has a camera.
   - **Docs still to rewrite to match:** ARCHITECTURE §9 and the roadmap rows for M11 and
     M12 (they describe a viewport mode and a "low-res look"). Not done yet.
-  - **Open:** the camera's settings (field of view, image size chosen at Render?); the
-    roadmap order; whether the shader format (GLSL) still fits. The roadmap below is
-    unchanged until these are settled.
+  - **Camera settings (user):** the camera has many options, with presets: field of view
+    and, among others, the image size. The user decides the image size, both on the
+    camera and in the **render window**, which opens when Render is clicked.
+  - **One active camera (user):** a map can hold several cameras, but only one is
+    **active**; the Camera Preview and Render use only that one. Making another camera
+    active deactivates the old one.
+  - **Open:** the full list of camera options and presets; the roadmap order; whether the
+    shader format (GLSL) still fits. The roadmap below is unchanged until these are
+    settled.
 
 ## Milestone 1 plan — Brushes (done)
 

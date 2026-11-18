@@ -4,6 +4,12 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-18 — Camera options and the active camera (docs only)
+- User: cameras have many options with presets (field of view, image size...); the size
+  is set on the camera and in the render window that opens on Render; a map can hold
+  several cameras with exactly one active, the only one used by the preview and renders.
+  Recorded in PLAN ("Direction"). No code changed.
+
 ### 2026-11-18 — Camera is not a bookmark; the preview updates on request (docs only)
 - User: the camera object has nothing to do with the bookmarks (both stay); the Camera
   Preview is an approximation of the final picture that refreshes only on a keybind or
