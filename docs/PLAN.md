@@ -13,9 +13,9 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 - **Released:** v0.1.0 … v0.9.3. Milestones 0–9 are done (see the milestone sections
   below and the log). Latest: **v0.9.3** (single pieces of a combination with
   Option+click; Multi-Replicate as a non-blocking window). Reported to the user.
-- **Next:** the **idle CPU test**, then **Bottega basics** (folder setting, Rescan, marker
-  file), then **milestone 10 — Props** once the user says go (decisions under "Open
-  questions").
+- **Next:** **Bottega basics** (folder setting, Rescan, marker file), then **milestone 10 —
+  Props** once the user says go (decisions under "Open questions"). The idle CPU test is
+  done (`tests/ui/idle.sh`, see DEV.md).
 - **Roadmap:** M10 Props → Random Replicate → Sky Lab → cameras and Camera Preview →
   Render (Source look, with the material system) → water / cloud planes → camera effects →
   export. The renderer part is a
@@ -100,11 +100,11 @@ are in [`DEV.md`](DEV.md). One-step-per-release: add `docs/releases/vX.Y.Z.md` a
   box, 3D picking uses triangles; Snap to Land works on props (landing generalised to any
   object); hiding / visgroups as for primitives (not yet); `.mazz` after `.glb`, behind a
   loader interface; a small generated `.glb` as test asset; a triangle-budget warning.
-- **Idle CPU test (agreed 2026-11-18):** must run with a map open (terrain, primitives,
-  lights, sky, fog, light preview on), not an empty app. Scripted runs keep the app in
-  continuous-render mode, so it needs a script command that lets the app go idle and then
-  measures the process's CPU time (expect ~0 over 10 s), plus a script using it; then it
-  joins the UI scripts in CI and the per-step checklist in DEV.md.
+- **Idle CPU test (agreed 2026-11-18; done):** `tests/ui/idle.sh` runs with a map open
+  (terrain, primitives, lights, sky, fog, light preview on, map saved and re-opened) and
+  expects 0 CPU ticks over 10 s; a busy control proves the measurement; in CI at 1x and 2x.
+  See DEV.md. (No new script command was needed: a script without `quit` leaves the app
+  idle.)
 - **v0.9.2, decided without asking (confirm with the user):** blend is set per piece
   (selecting the whole combination sets it for all); textures melt over the widest blend
   in the combination; Multi-Replicate's default offset is 4 grid steps along X; Snap to

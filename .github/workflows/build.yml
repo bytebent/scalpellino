@@ -63,6 +63,11 @@ jobs:
         run: tests/ui/run.sh "$PWD/build/Scalpellino" ui-shots
       - name: UI tests at Retina (2x) view scale
         run: SCAL_VIEW_SCALE=2 tests/ui/run.sh "$PWD/build/Scalpellino"
+      - name: Idle CPU check (map open, 1x and 2x) and its busy control
+        run: |
+          tests/ui/idle.sh "$PWD/build/Scalpellino" --control
+          tests/ui/idle.sh "$PWD/build/Scalpellino"
+          SCAL_VIEW_SCALE=2 tests/ui/idle.sh "$PWD/build/Scalpellino"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

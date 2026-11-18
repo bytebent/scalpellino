@@ -1,0 +1,110 @@
+# Idle check: build a map with a bit of everything, save it, open it again (so the idle
+# state is with a loaded map), switch on every View preview and leave things selected.
+# The script deliberately does NOT end with `quit`: the app then goes idle, and
+# tests/ui/idle.sh measures its CPU time. The screenshot is the "ready" signal.
+# -- terrain: a patch, raised and painted
+block -512 -512 -64 512 512 0
+terrain pick
+wpress 1 0 0
+release
+terrain make 16
+tool terrain
+terrainset mode raise
+terrainset radius 200
+terrainset amount 40
+terrainset falloff soft
+wpress 1 -200 0
+wdrag -100 0
+wdrag 0 0
+release
+texture Tile_19
+terrainset mode paint
+terrainset radius 200
+terrainset strength 80
+wpress 1 150 100
+wdrag 250 100
+release
+tool select
+key Esc
+# -- brushes: a wall, a round tower, a dome
+texture Bricks_24
+block -480 480 0 480 512 160
+applytexture
+blockshape cylinder 16
+block 600 -100 0 700 0 200
+applytexture
+blockshape box
+tool curve
+curveshape dome
+curveset segments 12
+curveset rings 3
+wpress 1 -700 -200
+wdrag -572 -72
+release
+key Return
+tool select
+key Esc
+# -- primitives: three spheres melting into one blob, a torus, a cube
+prim sphere -70 0 300 120 120 120
+prim sphere 70 0 300 120 120 120
+primedit texture Grass_20
+prim capsule 0 0 380 40 40 140 0 90 0
+primselect 0 1 2
+combine
+primselect 1 2
+primedit blend 45
+prim torus 300 300 150 160 160 160
+primedit texture Tile_13
+prim cube -300 -300 100 100 100 100
+primedit round 12
+# -- lights: a warm point light, a spot and a sun
+tool light
+lightset kind point
+lightset color 255 170 90
+lightset brightness 300
+lightset range 600
+lightset pos -64 -200 120
+key Return
+lightset kind spot
+lightset color 150 190 255
+lightset brightness 400
+lightset range 900
+lightset pitch -50
+lightset yaw 60
+lightset pos -400 -400 300
+key Return
+lightset kind sun
+lightset color 255 240 220
+lightset brightness 120
+lightset pitch -35
+lightset yaw 135
+lightset pos 0 0 600
+key Return
+tool select
+key Esc
+# -- world: sky, ambient, fog, a bookmark, the scale figure
+environment sky Panorama_Sky_04
+environment ambient 40 40 55
+environment fog on
+environment fogcolor 170 190 220
+environment fogrange 600 3000
+figure -300 300 0
+camera -900 -1000 800 48 -30
+bookmark add Overview
+# -- save, then open the saved map: the idle state is with a loaded map
+save idle-rich.map
+open idle-rich.map
+viewset sky on
+viewset preview on
+viewset fog on
+viewset figure on
+camera -900 -1000 800 48 -30
+# -- the loaded map really has everything (a failed expect prints FAIL and fails the test)
+expect prims 5
+expect lights 3
+expect terrains 1
+expect sky Panorama_Sky_04
+expect bookmarks 1
+# -- leave the primitives selected (rings and size handles drawn)
+primselect 0 1 2
+shot idle-ready.png

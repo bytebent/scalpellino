@@ -4,6 +4,24 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-18 — Idle CPU test
+- **What:** `tests/ui/idle.sh` + `tests/ui/idle/rich_map.script`. The script builds a map
+  with terrain (raised and painted), brushes, a dome, a blended primitive combination, a
+  torus, a cube, three lights, sky, ambient, fog, a bookmark and the figure; saves it and
+  **re-opens the saved map**; switches on sky, light preview, fog and figure; selects the
+  primitives; ends without `quit`. The harness waits for the script's screenshot, then
+  reads the process's CPU time twice, 10 s apart. Pass = 0 ticks.
+- **Finding:** no new app command was needed: a scripted run is busy only while commands
+  are left, so a script without `quit` leaves the app genuinely idle.
+- **Guards:** the script `expect`s its contents and the harness fails on any error the app
+  printed (checked: a wrong expect fails the test); `--control` runs a busy script and
+  must see >= 10 ticks.
+- **Result:** idle 0 ticks over 10 s at 1x and at 2x; control 891 ticks in 5 s. Core tests
+  4252 checks, 0 failed; all 17 UI scripts pass (1x baseline before the change; the app's
+  code is unchanged).
+- CI: the `linux` job runs the control, 1x and 2x. DEV.md: Idle check section rewritten.
+- Also this session: built the app in the workspace (deps cloned at the pinned refs).
+
 ### 2026-11-18 — Camera presets live in Bottega (docs only)
 - User: camera presets are saved in Bottega, `presets/camera_presets`. Recorded in PLAN
   (Bottega layout, camera options) and ARCHITECTURE §7. No code changed.

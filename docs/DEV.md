@@ -115,17 +115,36 @@ inside the view. Lines starting with # are comments.
 ## Idle check
 
 The app must cost ~zero CPU when nothing happens (`src/app/main.cpp` describes the idle
-policy). Earlier steps checked this by hand: open a representative map (terrain,
-primitives, lights, sky, fog), leave it alone for 10 s and expect 0 CPU ticks for the
-process. No script or CI job automates it, and how the ticks were read isn't recorded.
-Open item: automate it.
+policy), and it must hold **with a map open**, not only with an empty app.
+
+- `tests/ui/idle.sh <absolute path to Scalpellino> [seconds]` (Linux, needs Xvfb):
+  starts the app on its own virtual screen with `tests/ui/idle/rich_map.script`, which
+  builds a map with terrain (raised and painted), brushes, a dome, a blended primitive
+  combination, a torus and a cube, three lights, sky, ambient, fog, a bookmark and the
+  scale figure, saves it, **re-opens the saved map**, switches on the sky, light preview,
+  fog and figure, and selects the primitives. The script has no `quit`, so the app goes
+  idle (a scripted run is only "busy" while commands are left). The screenshot at the end
+  is the "ready" signal; the harness waits 3 s more, then reads the process's CPU time
+  (user + system, all threads, from `/proc`) twice, 10 s apart.
+- **Pass = 0 ticks** (1 tick = 10 ms). `IDLE_MAX_TICKS=<n>` raises the allowance if a CI
+  runner proves noisy. Run it at 2x too: `SCAL_VIEW_SCALE=2 tests/ui/idle.sh …`.
+- **The scene is checked:** the script `expect`s its contents, and the harness fails if the
+  app printed any error while building it, so a broken script can't pass vacuously.
+- **Control:** `tests/ui/idle.sh <app> --control` runs a script that keeps the app busy and
+  expects plenty of CPU time (it must see at least 10 ticks), proving the measurement can
+  see CPU use.
+- CI runs all three (control, 1x, 2x) in the `linux` job. Not part of `tests/ui/run.sh`,
+  whose glob only takes scripts directly in `tests/ui/`.
+- To add something heavy to the map (a new object kind, a new preview), add it to
+  `rich_map.script`: a new feature that makes idle cost CPU fails this test.
 
 ## CI
 
 `.github/workflows/build.yml`:
 - **macos:** Intel (`macos-15-intel`): build, core tests, check the bundled textures, ad-hoc
   sign, zip `Scalpellino-intel.zip`.
-- **linux:** build, core tests, UI scripts at 1× and 2×, screenshots as an artifact.
+- **linux:** build, core tests, UI scripts at 1× and 2×, the idle CPU check (control, 1×, 2×),
+  screenshots as an artifact.
 - **release:** after both pass, on pushes to `main`: replaces the "Latest build"
   pre-release, and makes a version release for every `docs/releases/vX.Y.Z.md` that has no
   release yet.
@@ -141,7 +160,7 @@ to use.
 ## Per-step checklist
 
 1. Build, then core tests, then all UI scripts at 1× and 2×.
-2. Idle CPU check (above).
+2. Idle CPU check (above): `tests/ui/idle.sh`, at 1× and 2×.
 3. Screenshots into `docs/screenshots/` (`m<milestone>-<nn>-<what>.png`), mentioned in
    the LOG entry.
 4. `docs/PLAN.md` status, a `docs/LOG.md` entry, release notes if releasing, README and
