@@ -4,6 +4,17 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-18 — One renderer; docs rewritten around renders and cameras (docs only)
+- User: no automatic probe placement, probe quality as presets, and the ray tracer is only
+  a maybe-future expansion (the Source renderer is the one). Recorded in PLAN.
+- **Rewritten to match everything decided today:** ARCHITECTURE intro, §7 (cameras,
+  reflection probes, bookmarks are not cameras), §9 Rendering (editor shows nothing
+  moving; Camera Preview on request; Render window and terminal log; Source look;
+  reflections; materials), §10 (pictures are the output; `.glb` optional and last),
+  roadmap table; PLAN roadmap and status; README intro.
+- **Order of the renderer part is a proposal** (cameras and preview, render, materials,
+  camera effects, export), waiting for the user's confirmation. No code changed.
+
 ### 2026-11-18 — Source renderer first; baked reflections (docs only)
 - User confirmed the Source renderer comes first, and reminded that Hammer / Source 2 bake
   reflections (cubemaps / probes). Recorded in PLAN with the probe proposal marked as

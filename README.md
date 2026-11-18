@@ -1,7 +1,7 @@
 # Scalpellino
 
 A small, fast, Hammer-style brush map editor for macOS, for Half-Life / CS-style levels
-with an optional Y2K render look, exporting `.glb` for other tools and engines.
+where you build a small scene, place a camera and render a picture in a Source / Y2K look.
 
 Personal project. The docs, in the order to read them:
 

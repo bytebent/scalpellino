@@ -1,8 +1,9 @@
 # Scalpellino — Architecture & Design
 
 A small, fast, brush-based 3D map editor in the spirit of Valve's Hammer, for making
-Half-Life / Counter-Strike–style levels with an optional Y2K render look, and exporting
-them as `.glb` for other tools and engines.
+Half-Life / Counter-Strike–style scenes. You build a small scene, place a camera and
+render a picture in a Source / Y2K look. Pictures are the output; other engines are not a
+goal.
 
 Personal tool. Not distributed. Simplicity and speed beat features.
 
@@ -203,7 +204,7 @@ Like Hammer's displacements, with fewer rules.
 
 ### World (milestone 8, done)
 The editor shows only a rough idea of the world, like Hammer did; the real look comes
-from the renderer (M11) and the Camera Preview look (M12).
+from the Camera Preview and the renderer (see §9).
 - **Lights** (`core/world.hpp`, `Document::lights()`): point, spot, sun. Colour (0–255),
   brightness (Hammer-style, 200 = normal), reach (point, spot), direction as pitch/yaw
   (spot, sun; pitch −90 = down), inner/outer angles (spot). A light is a marker in every
@@ -300,8 +301,14 @@ it appears below the top view's centre). Editor-only, never exported.
 - **Math primitives** — exact shapes, combinable (milestone 9).
 - **Props** — static models (`.glb` and Mazzuola's `.mazz`) with their textures; placed,
   turned and sized like primitives. No physics (milestone 10).
+- **Cameras** (planned) — objects placed and aimed like a spot light, with many options
+  and presets (field of view, image size...). A map can hold several; exactly one is
+  **active**, the only one the Camera Preview and Render use.
+- **Reflection probes** (planned) — placed by hand; Render bakes a picture of their
+  surroundings for shiny materials to reflect.
 - **Environment** — sky color/texture, fog, ambient light.
-- **Camera bookmarks** — saved viewpoints for renders. Editor-only.
+- **Camera bookmarks** — saved viewpoints of the editor's 3D view, for moving around.
+  Editor-only, and not the same thing as the camera objects.
 
 Lights are saved as Hammer entities other tools understand: `light`, `light_spot`,
 `light_environment` with `origin`, `_light "r g b brightness"`, `angles` (pitch positive
@@ -331,29 +338,38 @@ That's all. No gameplay entities (doors, triggers, physics, scripting).
 
 ## 9. Rendering
 
+Scalpellino exists to make pictures: you build a small scene and render it from a camera.
+**Nothing moves or animates in the editor**; shaders and heavy effects show in the Camera
+Preview and in renders.
+
 - **2D views:** wireframe, redrawn only on change.
-- **3D modes:** wireframe, flat-color, textured, **Camera Preview** (the Y2K look).
-- **Camera Preview pipeline** (each step toggleable): low-res render target (e.g. 640×480) →
-  nearest-neighbor upscale → distance fog → per-vertex lighting from light entities →
-  chrome / environment maps → bloom → dithering.
-- **Render button:** saves a PNG still at a chosen resolution.
-- **Baked lighting** (shadows, bounce) later, as an explicit on-demand bake.
+- **3D view modes:** wireframe, flat-color, textured, plus the rough light preview, sky and
+  fog toggles (milestone 8). Materials show as a simple placeholder here (planned).
+- **Camera Preview** (planned): a small window showing the active camera's view, only when
+  the map has a camera. An approximation of the final picture, in between a full render
+  and the editor view, heavy stuff and shaders included. Updated **only on a keybind or
+  button**, never live.
+- **Render** (planned): the Render button opens the render window (image size and render
+  options). A terminal-style log shows the steps as they run (baking the lights, building
+  the reflection cubemaps, drawing...); it takes as long as it needs. The result is a PNG
+  saved to `renders/`. Only what the camera sees is drawn (frustum, back faces, nodraw).
+- **The Source look:** the renderer is Source / Half-Life style: fast, on the graphics
+  card, with baked lighting (shadows, bounce) and chunky period looks. Not a ray tracer.
+- **Reflections:** a material chooses: sky only; baked reflection from the nearest
+  probe; live mirror reflection on flat surfaces (water, floors). Probe quality is a
+  render-option preset.
+- **Materials and shaders:** GLSL files with a settings header, dropped into Bottega's
+  `shaders/`; they run in renders and the Camera Preview. Water, clouds and endless
+  planes are materials. Camera effects (dither, palette, bloom) matter least.
+- **Maybe later:** a ray-tracing renderer (Bryce look: real reflections on any shape,
+  bending glass). Not pressing; the Source renderer may be enough.
 
-## 10. Export tiers
+## 10. Output and export
 
-**`.glb` is the export that matters.** The user expects Scalpellino will probably never
-be used with Godot, so Godot must not drive design choices; tiers 1 and 3 stay ideas.
-
-1. **`.map` for func_godot** — geometry + texture names. Materials set up in Godot.
-2. **`.glb`** — geometry, UVs, embedded textures, nearest-filter samplers. Optional baked
-   lighting as vertex colors or lightmap. Works in Godot, Unity, Unreal, Blender.
-3. **Godot scene package** — `.tscn` + textures + the Camera Preview shaders ported to Godot shading
-   language + matching Environment (fog, glow). Opens in Godot looking like the preview.
-4. **Baked-look `.glb`** — for engines where shaders don't transfer: surface effects
-   (lighting, chrome, dither) baked into textures. Camera effects (bloom, fog) can't be
-   baked; the export includes notes on what to enable in the engine.
-
-Plus PNG stills. Turntable animations maybe later.
+**Pictures are the output.** The user probably will never open exports in another editor,
+so export is not a goal now and Godot never drives choices. A `.glb` export (terrain and
+primitives as meshes, nodraw skipped) is possible last, at milestone 13. A walkthrough tool
+would be a separate tool in the far future.
 
 ## 11. Undo
 
@@ -406,10 +422,12 @@ docs/         this file, roadmap
 | 7 | Terrain: grid patches from any picked face (3 or 4 corners), sculpt (raise/lower/smooth/flatten/noise; typed radius/strength), point-by-point editing with the vertex tool, painting up to 8 textures per patch, auto-stitched neighbours, heightmap import; stored in our `.map` | done (v0.7.0, v0.7.1) |
 | 8 | World: lights (point, spot, sun; rotation rings), sky picker (a setting, not a sealed box; panoramas and cube crosses), ambient, fog, rough editor preview (sky, light preview, fog toggles), camera bookmarks, scale figure | done (v0.8.0) |
 | 9 | Math primitives (Bryce-style): sphere, cube (rounded), cylinder, cone, torus, capsule, disc; exact per-pixel drawing; combining (add / subtract / intersect) and blending; single pieces movable; object handles shared with lights; 1 unit = 1 cm; Snap to Land / Ground; Multi-Replicate | done (v0.9.0 … v0.9.3) |
-| 10 | Props: static models (`.glb` first, then `.mazz`) with their textures, placed / turned / sized as objects; Snap to Land; reload when the file changes; no physics | next |
+| 10 | Props: static models (`.glb` first, then `.mazz`) with their textures, from Bottega's `models/`, placed / turned / sized as objects (uniform scale by default), Snap to Land, instanced; no physics. Preceded by the idle CPU test and Bottega basics (folder setting, Rescan, marker file) | next |
 | 10b | Random Replicate (Bryce): random offset / turn / size ranges for props and primitives | |
 | 10c | Sky Lab (Bryce, all of it): generated skies (sun, moon, stars, clouds, atmosphere) with live preview, baked to panoramas; settings kept in the map; tick box to lock the sun to the map's sun light | |
-| 11 | Renderer: PNG renders, only what the camera sees (frustum, back faces, nodraw, optional outside-only), terminal-style render log window (+ log file); endless ground / water / cloud planes | |
-| 12 | Camera Preview (was "Y2K"): shaders (low-res, fog, chrome, bloom, dithering) | |
-| 13 | Export: `.glb`; Godot package only if asked for, terrain as mesh, primitives as meshes; nodraw skipped | |
-| later | `.wad` textures, Lua generators, baked lighting, texture tags | |
+| 11 | Cameras and Camera Preview (proposed order): camera objects (many, one active), options and presets, the on-request preview | |
+| 12 | Render, the Source look (proposed): render window, terminal log, light baking, reflection probes, mirrors, PNG to `renders/` | |
+| 13 | Materials (proposed): GLSL shaders from Bottega's `shaders/`, water and cloud planes, reflection kind per material | |
+| 14 | Camera effects (proposed, lowest priority): dithering, palette, bloom | |
+| 15 | Export: `.glb`, optional and last | |
+| later / maybe | ray-tracing renderer (Bryce look), `.wad` textures, Lua generators, texture tags | |

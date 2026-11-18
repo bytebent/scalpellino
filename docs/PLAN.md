@@ -13,14 +13,14 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 - **Released:** v0.1.0 … v0.9.3. Milestones 0–9 are done (see the milestone sections
   below and the log). Latest: **v0.9.3** (single pieces of a combination with
   Option+click; Multi-Replicate as a non-blocking window). Reported to the user.
-- **Next:** settle what the renderer is and how material shaders fit (see "Direction"),
-  then the **idle CPU test**,
-  then **milestone 10 — Props** once the user says go (decisions under "Open questions").
-- **Roadmap (agreed with the user, 2026-11-18):** M10 Props → Random Replicate → Sky Lab
-  → M11 Renderer (+ endless ground / water / cloud planes) → M12 Camera Preview (was "Y2K") → M13
-  Export. Details under "Roadmap".
+- **Next:** the **idle CPU test**, then **Bottega basics** (folder setting, Rescan, marker
+  file), then **milestone 10 — Props** once the user says go (decisions under "Open
+  questions").
+- **Roadmap:** M10 Props → Random Replicate → Sky Lab → cameras and Camera Preview →
+  Render (Source look) → materials → camera effects → export. The renderer part is a
+  proposal awaiting the user's confirmation. Details under "Roadmap" and "Direction".
 - **Bottega** (shared folder for Mazzuola, Scalpellino and later tools): decided with the
-  user, not built; the shader file format is still open. See "Bottega" below.
+  user, not built (shader format agreed). See "Bottega" below.
 - How the user likes to work: one release per step, short plain reports, ask before
   starting the next milestone (see `HANDOFF.md`).
 
@@ -108,7 +108,7 @@ are in [`DEV.md`](DEV.md). One-step-per-release: add `docs/releases/vX.Y.Z.md` a
   (selecting the whole combination sets it for all); textures melt over the widest blend
   in the combination; Multi-Replicate's default offset is 4 grid steps along X; Snap to
   Land handles selected objects lowest first, so stacked ones land on their new spots.
-- **Bottega:** decided with the user; material shaders' details still open; see its section.
+- **Bottega:** decided with the user; see its section.
 - **Primitives extras, later:** "align to slope" for Snap to Land; hiding primitives / visgroups; the Transform dialog on
   objects; Bryce's other shapes (pyramid, endless ground plane) if wanted.
 - **World extras, later:** hiding lights / lights in visgroups; moving lights together
@@ -217,7 +217,7 @@ handles shared with lights (move, rings, size handles); units changed to 1 unit 
 Snap to Land / Ground, Multi-Replicate (v0.9.2); ImGui ID fix (v0.9.1); single pieces of
 a combination and a non-blocking Multi-Replicate window (v0.9.3).
 
-## Roadmap (agreed order, 2026-11-18)
+## Roadmap (revised 2026-11-18; steps 4 to 8 are a proposal, to confirm)
 
 1. **M10 Props** — static models with their textures, no physics. `.glb` first; `.mazz`
    once Mazzuola's file format is final. Placed, turned and sized like primitives (shared
@@ -239,16 +239,24 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
      sky's sun position to that light. No sun light, no tick box.
    - Generated skies go to Bottega's `skies/` once Bottega exists.
    - Comes after Random Replicate, before the renderer, so renders get good skies.
-4. **M11 Renderer** — PNG renders of what the camera sees, a terminal-style render log
-   (+ log file), renders saved to `renders/` (in Bottega once it exists). Also endless
-   ground, water and cloud planes (Bryce).
-5. **M12 Camera Preview** (renamed from "Y2K preview"; not "Nano-Preview") — the low-res look: small render
-   target, nearest upscale, fog, per-vertex light, chrome, bloom, dithering; each step
-   toggleable.
-6. **M13 Export** — `.glb` (terrain and primitives become meshes; nodraw skipped).
-   **Godot is not a priority** (user: Scalpellino will probably never be used with it):
-   it must not drive design choices; a Godot package only if asked for.
-- **Later:** `.wad` textures, Lua generators, baked lighting, texture tags.
+4. **Cameras and Camera Preview** (proposed order, confirm) — camera objects (many, one
+   active), options and presets (field of view, image size...), and the small preview: an
+   approximation of the final picture, shaders included, updated only on a keybind or
+   button, shown only while the map has a camera.
+5. **Render, the Source look** (proposed) — the render window (image size, options) that
+   opens on Render, a terminal-style log (+ log file), baking the lights (shadows),
+   reflection probes, mirror reflections on flat surfaces, the Source look, a PNG saved to
+   `renders/` (Bottega's once it exists). Only what the camera sees is drawn (frustum,
+   back faces, nodraw).
+6. **Materials** (proposed) — GLSL shaders from Bottega's `shaders/`, water and cloud
+   planes (and endless ground), reflection kind per material. They only show in the
+   preview and renders, so they come after the renderer.
+7. **Camera effects** (proposed, lowest priority per the user) — dithering, palette,
+   bloom and similar.
+8. **Export** — `.glb`, optional and last; the user probably will never use it elsewhere.
+   Godot not a goal.
+- **Later / maybe:** a ray-tracing renderer (Bryce look; real reflections and bending
+  glass), `.wad` textures, Lua generators, texture tags.
 
 ## Bottega (shared folder) — decided with the user, not built
 
@@ -279,8 +287,9 @@ read and write. Agreed so far:
   their relative name and looked up in Bottega first, then the extra folders.
 - **Shader format, agreed with the user (2026-11-18):** GLSL files, one per shader, with a
   few comment lines at the top giving its name, its kind and its settings, so a tool can
-  list a shader and show its settings without running it. **Superseded in part, see
-  "Direction" below: whether GLSL fits depends on what the renderer is.**
+  list a shader and show its settings without running it. Fits the Source renderer (see
+  "Direction"). Priority (user): material shaders, water and clouds matter far more than
+  the camera effects.
 - **Direction, from the user (2026-11-18), corrects earlier assumptions:**
   - **The goal is exporting cool pictures** (renders), not game levels. The user will
     probably never open the `.glb` in another editor; export is not important now. A tool
@@ -320,32 +329,30 @@ read and write. Agreed so far:
   - **One active camera (user):** a map can hold several cameras, but only one is
     **active**; the Camera Preview and Render use only that one. Making another camera
     active deactivates the old one.
-  - **Reflections and renderers (user, 2026-11-18):** the user wants **all three levels
-    of reflection**, chosen per material and by the render options: (1) environment only
-    (sky; the Y2K chrome look), (2) mirror reflections on flat surfaces (water, floors;
-    scene included), (3) real reflections and bending glass on any shape (Bryce look).
-    **Two renderers**, because the user loves the Source look and doesn't want it made
-    with a ray tracer: a **Source-style renderer** (fast, on the graphics card, baked
-    lighting; levels 1 and 2) and a **ray-tracing renderer** (Bryce look; level 3 and
-    the rest). The render options pick which one runs.
-  - **Consequences, proposed (not confirmed):** one scene, one camera, one render window
-    and log for both; a shared ray-casting core (used to bake the lights for the Source
-    renderer and to trace the ray renderer); the Source renderer first, the ray tracer
-    as its own later milestone; the shader format (GLSL, agreed earlier) belongs to the
-    Source renderer; the ray renderer's material form (settings, maybe a script) is open;
-    a material the Source renderer can't do (level 3) falls back to its nearest level.
-  - **Order (user):** the Source renderer is the more important one and comes first; the
-    ray tracer follows later as its own milestone.
+  - **Reflections (user, 2026-11-18):** the user wants several levels of reflection,
+    chosen per material and by the render options: environment only (sky; the Y2K chrome
+    look), baked reflections of the surroundings, and mirror reflections on flat surfaces
+    (water, floors; scene included). Real reflections and bending glass on any shape
+    (the Bryce look) need a ray tracer.
+  - **One renderer (user):** the **Source-style renderer** (fast, on the graphics card,
+    baked lighting) is the important one and comes first. The user loves the Source look
+    and does not want it made with a ray tracer. A **ray-tracing renderer** (Bryce look)
+    is only a **maybe-future expansion, not pressing**; the Source renderer may well be
+    enough.
   - **Baked reflections (user, remembered from Hammer / Source 2):** shiny surfaces can
-    reflect a **baked picture of their surroundings**, as Hammer's `env_cubemap` and
-    Source 2's reflection probes do. Proposed (not confirmed): a **reflection probe**
-    object placed in the map like a light or a camera; during Render, a "building
-    cubemaps" step captures the six views from each probe; shiny materials use the nearest
-    probe (approximate, static, works on any shape, cheap at render time); with no probe
-    they fall back to the sky. Sits between level 1 and level 2.
-  - **Open:** the full list of camera options and presets; the ray renderer's material
-    form; the probe details (placement, resolution); the roadmap order is otherwise
-    unchanged until these are settled.
+    reflect a baked picture of their surroundings, like Hammer's `env_cubemap` and Source
+    2's reflection probes. Reflection **probes are placed by hand** (user: no automatic
+    placement in rooms). During Render a "building cubemaps" step captures the views from
+    each probe; with no probe a shiny surface reflects the sky. Probe quality is a preset
+    (draft / normal / high) in the render options (user: yes). Mirror reflections on flat
+    surfaces are drawn live in the render. Level of detail beyond this is open.
+  - **Shaders:** GLSL files (agreed earlier) fit the Source renderer. They are
+    **drop-in files in Bottega's `shaders/`**, run at render time and in the Camera
+    Preview, and are not live in the editor. A material can choose its reflection kind.
+    Glass that bends the view (refraction) is only approximate in a Source-style
+    renderer; to discuss when materials are planned.
+  - **Open:** the full list of camera options and presets; probe details; the order of the
+    renderer part of the roadmap (proposed below, to confirm).
 
 ## Milestone 1 plan — Brushes (done)
 
