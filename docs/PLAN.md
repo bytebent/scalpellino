@@ -291,10 +291,23 @@ read and write. Agreed so far:
   - **Material shaders, water, clouds and the like matter far more than the Camera
     Preview effects.** Material shaders apply wherever a texture can go: brush faces,
     primitives, props and the endless water / cloud planes.
-  - **Open:** what the renderer is (fast GPU stills vs a slow Bryce-style ray tracer),
-    what the editor shows for a material, and the roadmap order. The roadmap below is
-    unchanged until those are settled. Since materials only show in renders, a Materials
-    milestone cannot come before the renderer.
+  - **How Scalpellino is used (user, 2026-11-18):** the user builds a small 3D scene and
+    renders it to an image from where the **camera** is. The camera is a real **object in
+    the map**, placed and aimed like a spot light. The **small preview** shows the
+    camera's view and exists **only if the map has a camera**. (This is the "Camera
+    Preview".)
+  - **What Render does (user):** a terminal-style window shows the work as it goes
+    ("baking lights... 1 ... 2 ... 10", then the next job, and so on); it takes as long as
+    it needs; the result is a still image saved to `renders/`. The **light baking
+    (shadows) is part of the render**, not a separate step. The look is Source /
+    Half-Life (Hammer era); Bryce is where the tools (primitives, replicate, sky lab,
+    water and cloud planes) come from.
+  - **Docs still to rewrite to match:** ARCHITECTURE §9 and the roadmap rows for M11 and
+    M12 (they describe a viewport mode and a "low-res look"), and the camera-bookmarks
+    entry (a camera object may replace or sit beside the bookmarks). Not done yet.
+  - **Open:** how the camera relates to the existing bookmarks; whether the small preview
+    shows the final look or a rough view; the roadmap order; whether the shader format
+    (GLSL) still fits. The roadmap below is unchanged until these are settled.
 
 ## Milestone 1 plan — Brushes (done)
 

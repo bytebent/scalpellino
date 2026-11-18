@@ -4,6 +4,13 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-18 — How Render and the camera work, in the user's words (docs only)
+- Recorded in PLAN ("Direction"): the camera is an object in the map; the small preview
+  shows its view and only exists with a camera; Render runs as a terminal-style job
+  (including baking the lights) and saves an image; nothing moves in the editor. The old
+  M11 / M12 / ARCHITECTURE §9 wording is flagged as out of date, to be rewritten once the
+  open points are answered. No code changed.
+
 ### 2026-11-18 — Direction corrected: renders are the goal (docs only)
 - User: shaders work at render time and show in the final image; nothing animates in the
   editor; the point is exporting pictures, `.glb` and other editors don't matter now.
