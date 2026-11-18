@@ -4,6 +4,13 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-18 — Direction corrected: renders are the goal (docs only)
+- User: shaders work at render time and show in the final image; nothing animates in the
+  editor; the point is exporting pictures, `.glb` and other editors don't matter now.
+  Recorded in PLAN ("Direction") and HANDOFF. The roadmap order and what the renderer is
+  stay open until discussed; the shader format agreement is marked as dependent on that.
+  No code changed.
+
 ### 2026-11-18 — Shader format agreed; material shaders come first (docs only)
 - Shader format agreed (GLSL with a settings header). User: material shaders, water and
   clouds matter far more than the Camera Preview effects; recorded as a priority, with the

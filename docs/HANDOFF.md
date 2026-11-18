@@ -40,6 +40,8 @@ texture licenses; `releases/` has the notes for each version.
   in PLAN.md instead of stopping, unless everything depends on the answer.
 - Reports: short and plain. Say what changed for them, what was found and fixed, and
   what's next; ask before the next milestone.
+- The goal is **cool pictures** (renders), not game levels: export to other editors is
+  not a goal. Shaders matter at render time, never as live effects in the editor.
 - Is open to better ideas than Hammer's ("without the annoying quirks"), but dislikes
   features being pushed on them.
 - Discusses Scalpellino in other chats too. Discuss a new idea first, then record it in

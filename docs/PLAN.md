@@ -13,8 +13,8 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 - **Released:** v0.1.0 … v0.9.3. Milestones 0–9 are done (see the milestone sections
   below and the log). Latest: **v0.9.3** (single pieces of a combination with
   Option+click; Multi-Replicate as a non-blocking window). Reported to the user.
-- **Next:** settle how material shaders fit (what they apply to, animation vs idle, roadmap
-  order), then the **idle CPU test**,
+- **Next:** settle what the renderer is and how material shaders fit (see "Direction"),
+  then the **idle CPU test**,
   then **milestone 10 — Props** once the user says go (decisions under "Open questions").
 - **Roadmap (agreed with the user, 2026-11-18):** M10 Props → Random Replicate → Sky Lab
   → M11 Renderer (+ endless ground / water / cloud planes) → M12 Camera Preview (was "Y2K") → M13
@@ -277,14 +277,24 @@ read and write. Agreed so far:
     Bottega.
 - **Decided without asking (confirm):** things found in an extra folder are stored by
   their relative name and looked up in Bottega first, then the extra folders.
-- **Shader format, agreed with the user (2026-11-18):** GLSL files (what raylib runs on
-  the Mac), one per shader, with a few comment lines at the top giving its name, its kind
-  and its settings (sliders, colours), so a tool can list a shader and show its settings
-  without running it. **Priority (user): material shaders, water, clouds and the like
-  matter far more than the Camera Preview's screen effects.** So the first kind is
-  surface materials; whole-picture effects (dither, palette, bloom) come after. Still to
-  settle: what a material shader can be applied to, how animation fits the idle rule, and
-  where this sits in the roadmap (not decided yet; the roadmap below is unchanged).
+- **Shader format, agreed with the user (2026-11-18):** GLSL files, one per shader, with a
+  few comment lines at the top giving its name, its kind and its settings, so a tool can
+  list a shader and show its settings without running it. **Superseded in part, see
+  "Direction" below: whether GLSL fits depends on what the renderer is.**
+- **Direction, from the user (2026-11-18), corrects earlier assumptions:**
+  - **The goal is exporting cool pictures** (renders), not game levels. The user will
+    probably never open the `.glb` in another editor; export is not important now. A tool
+    to walk through a map would be a separate tool in the far future.
+  - **Shaders work when the render is made and show in the final image.** Nothing moves or
+    animates in Scalpellino's editor; no "Animate" toggle. (Earlier docs treated shaders
+    as live viewport effects; that was a misunderstanding.)
+  - **Material shaders, water, clouds and the like matter far more than the Camera
+    Preview effects.** Material shaders apply wherever a texture can go: brush faces,
+    primitives, props and the endless water / cloud planes.
+  - **Open:** what the renderer is (fast GPU stills vs a slow Bryce-style ray tracer),
+    what the editor shows for a material, and the roadmap order. The roadmap below is
+    unchanged until those are settled. Since materials only show in renders, a Materials
+    milestone cannot come before the renderer.
 
 ## Milestone 1 plan — Brushes (done)
 
