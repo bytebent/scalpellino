@@ -307,9 +307,11 @@ read and write. Agreed so far:
     around); both stay.
   - **Camera Preview (user):** an approximation of the final picture, in between a full
     render and the normal editor view. It updates **only when asked** (a keybind or a
-    button), never live. Decided without asking (confirm): a quick pass with textures,
-    fog and the existing rough light preview, no baked shadows; shown only while the map
-    has a camera.
+    button), never live, and shows only while the map has a camera. **It approximates the
+    heavy stuff too, shaders included** (user, 2026-11-18). Exactly what is approximated
+    (lights, reflections, water) is settled with the reflections discussion. The normal
+    editor view shows materials as a simple placeholder (colour or texture from the
+    shader's header) (decided without asking, confirm).
   - **Docs still to rewrite to match:** ARCHITECTURE §9 and the roadmap rows for M11 and
     M12 (they describe a viewport mode and a "low-res look"). Not done yet.
   - **Camera settings (user):** the camera has many options, with presets: field of view

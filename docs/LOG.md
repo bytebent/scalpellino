@@ -4,6 +4,11 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-18 — The preview approximates the heavy stuff, shaders included (docs only)
+- User: the Camera Preview should show an approximation of the heavy effects, including
+  shaders (corrects the earlier "no shaders" assumption). Reflections to be discussed
+  next. Recorded in PLAN. No code changed.
+
 ### 2026-11-18 — Camera options and the active camera (docs only)
 - User: cameras have many options with presets (field of view, image size...); the size
   is set on the camera and in the render window that opens on Render; a map can hold
