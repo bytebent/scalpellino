@@ -1,8 +1,9 @@
 # Scalpellino — rules for AI sessions
 
 Read `docs/ARCHITECTURE.md` before changing anything. It is the agreed design.
-Then read `docs/PLAN.md`: current status, how to build, open questions. The log is `docs/LOG.md`.
-New session? Also read `docs/HANDOFF.md` (user preferences, privacy, workspace quirks).
+Then read `docs/PLAN.md`: current status, roadmap, open questions. The log is `docs/LOG.md`.
+Building, testing, CI and releasing: `docs/DEV.md`.
+New session? Also read `docs/HANDOFF.md` (user preferences, privacy, decisions to keep).
 
 ## Keeping records (required)
 - After every step, update `docs/PLAN.md` (status, next steps, parked questions) and add an entry

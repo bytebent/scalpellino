@@ -2945,59 +2945,9 @@ void Editor::runPending() {
 
 // ------------------------------------------------------------------ scripting
 //
-// One command per frame. Views: 0=3d 1=top 2=front 3=side. Coordinates are pixels
-// inside the view. Lines starting with # are comments.
-//   tool select|block       press <view> <x> <y> [shift] [cmd] [alt]
-//   drag <x> <y>            release
-//   key Return|Esc|Delete   undo | redo | selectall
-//   grid <n>                save <path> | open <path>
-//   transform move x y z | transform rotate x|y|z <deg> [origin] | transform scale sx sy sz
-//   rotate90 x|y|z <+1|-1>  flip x|y|z  duplicate  dialog transform|controls  closedialogs
-//   tool vertex   vertexmove dx dy dz   snapgrid   microgrid on|off   rotsnap slopes|15
-//   pivot center|origin|<x y z>   expect ongrid   expect faces <n>
-//   view <1|2|3> <u> <v> [zoom]   (centre a 2D view; zoom = pixels per unit)
-//   layout classic|default   (classic = no right-hand panels; older scripts use it)
-//   wpress <view> <u> <v> [mods] / wdrag <u> <v>   (2D input in world coordinates)
-//   press3d <dx> <dy> [mods]   (3D view click relative to its centre)   drag3d <dx> <dy>
-//   tool texture   texturedir <path>   texture <name>   applytexture   applynodraw   wraparound
-//   rendermode flat|textured
-//   texscale <s>   facefit   facerotate <deg>   facealign world|face
-//   facejustify left|right|top|bottom|center
-//   expect texture <name>   expect pickedfaces <n>   expect current <name>
-//   tool clip   clippoints x y z  x y z  x y z   clipkeep both|front|back   (key Return clips)
-//   carve   hollow <thickness>   expect volume <v>   (sum of all brush volumes, +-0.5)
-//   curveshape arch|ring|curved_wall|spiral_stairs|carve_arch|dome|helix_ramp|straight_stairs
-//   curveset <key> <value>
-//   (keys as stored in the .map: segments, thickness, box, depth, sweep, flat_top...)
-//   editcurve   bakecurve   expect groups <n>
-//   blockshape box|wedge|cylinder|cone|pyramid|sphere [sides]
-//   tool terrain   terrain pick | make <cells> | remove | stitch | heightmap <path> <low> <high>
-//                  (pick = Terrain > Make terrain: clicks then pick faces; make uses the picked
-//                   faces, else changes the grid size of the selected terrain)
-//   vertexraise <d> | vertexheight <h>   (selected terrain points, vertex tool)
-//   expect terrainpoints <n>   expect paintlayers <n>
-//   tool light   lightset|lightedit kind point|spot|sun | color r g b | brightness|range|pitch|yaw|inner|outer <v>
-//                | pos x y z   (lightset = the next light, pos places it; lightedit = selected lights)
-//   expect lights <n>   expect lightsel <n>   expect lightpos x y z   expect lightdir <pitch> <yaw>
-//   viewset sky|preview|fog|figure on|off   skydir <path>   figure x y z
-//   tool prim   primset kind <k>|round|thickness|flat on/off|color r g b|texscale   primbox c s [axis]
-//   prim <kind> x y z sx sy sz [rx ry rz]   primedit <key> <value...>   primselect <index...>
-//   snapland   snapground <z>   replicate <n> ox oy oz [rot x y z] [scale x y z] [scaleoffset] [pivot selection|origin|x y z]
-//   replicatepreview on|off   replicateopen <n> ox oy oz   expect replicating on|off
-//   combine   separate   expect prims|primsel <n>   expect primpos|primrot|primsize x y z   expect primop <op>
-//   environment sky <name|none> | ambient r g b | fog on|off | fogcolor r g b | fogrange <start> <end>
-//   bookmark add <name> | go <index>   expect sky <name>   expect bookmarks <n>   expect camera x y z
-//   terrainset mode <raise|lower|smooth|flatten|noise|paint|erase> | radius|amount|strength <n>
-//              | falloff soft|linear|hard      whover <view> <u> <v> (hover, no button)
-//   camera <x> <y> <z> <yaw> <pitch>   (3D view camera, degrees)
-//   expect terrains <n>   expect terrainheight <x> <y> <z>  (surface below x,y; +-0.5)
-//   hide   hideunselected   showall   visgroup new|show|hide <name>   expect visible <n>
-//   findoverlaps   nextoverlap   expect overlaps <n>   toorigin
-//   block x0 y0 z0 x1 y1 z1 (test setup)   expect bounds minx miny minz maxx maxy maxz
-//   shot <file.png>         quit
-//   expect brushes|selected <n>  |  expect size <x> <y> <z>  (selection bounds, +-0.5)
-//   expect edges   (every brush/preview edge in the 2D views is visible on screen)
-//   A failed expect prints FAIL and makes the exit code 1.
+// One command per frame; lines starting with # are comments. The script language is
+// documented in docs/DEV.md (keep that reference in sync when adding commands).
+// A failed `expect` prints FAIL and makes the exit code 1.
 
 void Editor::loadScript(const std::string& path) {
     std::ifstream f(path);

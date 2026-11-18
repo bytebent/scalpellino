@@ -4,6 +4,19 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-18 — DEV.md and a map of the docs (docs only)
+- **`docs/DEV.md`** (new): build (Mac, Linux, AI workspace), core tests and probes, UI
+  scripts (running, 1× / 2×, duplicate-ID check, writing tips), the **script language
+  reference** (moved out of the comment above `Editor::loadScript`, which now points to
+  DEV.md), command line, idle check, CI, releasing, per-step checklist, workspace quirks.
+- **Moved, not copied:** PLAN's "How to work in this repo" and HANDOFF's "Workspace
+  quirks" and "Habits that worked" are now one-line pointers to DEV.md.
+- **Docs map:** one sentence per doc in HANDOFF's reading order and in the README;
+  CLAUDE.md points to DEV.md; HANDOFF's intro no longer mentions "mistakes".
+- **Found:** the idle CPU check ("0 ticks over 10 s") is a manual probe; nothing automates
+  it and the method wasn't written down. Noted in DEV.md as an open item.
+- No build run: the only code change is a comment in `src/app/editor.cpp`.
+
 ### 2026-11-18 — Docs cleanup (docs only)
 - **Log split:** the log moved out of `PLAN.md` into `LOG.md` (recent) and
   `LOG-archive.md` (2026-11-16 and older, from Milestone 8 back to the skeleton). PLAN keeps

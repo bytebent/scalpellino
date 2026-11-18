@@ -3,8 +3,15 @@
 A small, fast, Hammer-style brush map editor for macOS, for Half-Life / CS-style levels
 with an optional Y2K render look, exporting `.glb` for other tools and engines.
 
-Personal project. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the design and
-[`docs/PLAN.md`](docs/PLAN.md) for current progress.
+Personal project. The docs, in the order to read them:
+
+- [`CLAUDE.md`](CLAUDE.md): the hard rules for AI sessions (privacy, product, engineering).
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): the agreed design: data model, tools, file formats, rendering, roadmap.
+- [`docs/PLAN.md`](docs/PLAN.md): where the project stands: status, roadmap, parked questions.
+- [`docs/DEV.md`](docs/DEV.md): how to build, test, run CI and release.
+- [`docs/HANDOFF.md`](docs/HANDOFF.md): how the user likes to work and decisions to keep (for a new AI session).
+- [`docs/LOG.md`](docs/LOG.md) and [`docs/LOG-archive.md`](docs/LOG-archive.md): what was done, step by step.
+- [`docs/THIRD_PARTY.md`](docs/THIRD_PARTY.md): licenses of dependencies, font and textures.
 
 ## Getting a build
 

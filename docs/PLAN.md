@@ -24,36 +24,9 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 
 ## How to work in this repo
 
-- Build (Mac): `cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j`
-- Tests: `ctest --test-dir build --output-on-failure`
-- Headless screenshot: `Scalpellino --screenshot name.png` (renders a few frames, saves in
-  the current directory, exits). On Linux: `xvfb-run -a -s "-screen 0 1600x1000x24" ...`
-- **AI cloud workspace note:** archive downloads from GitHub are blocked there, so CMake's
-  FetchContent fails. Clone deps with git at the pinned refs (see `cmake/Deps.cmake`) and
-  configure with `-DFETCHCONTENT_SOURCE_DIR_RAYLIB=... -DFETCHCONTENT_SOURCE_DIR_IMGUI=...
-  -DFETCHCONTENT_SOURCE_DIR_RLIMGUI=...`. Linux needs `libxrandr-dev libxinerama-dev
-  libxcursor-dev libxi-dev libgl1-mesa-dev`.
-- **Scripted UI tests:** `tests/ui/*.script`, run by `tests/ui/run.sh <app> [shot-dir]`
-  (Linux + Xvfb; CI job `linux`, at 1x and forced 2x). The script language is documented
-  in `src/app/editor.cpp` above `loadScript`. **Use world coordinates** for 2D input
-  (`wpress <view> <u> <v> [mods]`, `wdrag <u> <v>`, `release`) and `press3d <dx> <dy>`
-  (relative to the 3D view centre) so scripts don't depend on the window layout.
-  (Pixel `press/drag` still exist but broke once when the layout changed.) Default 2D
-  zoom is 0.5 px/unit. Tip: snapped drags shift brushes by up to half a grid cell, so
-  compute brush edges from snapped values before aiming clicks near edges.
-  `printviews` prints each view's origin/size (debugging).
-- CLI: `--open <map>`, `--script <file>`, `--screenshot <png>`. Automated runs never
-  read or write the user's layout settings.
-- Screenshots: every screenshot taken goes in `docs/screenshots/`, named
-  `m<milestone>-<nn>-<what>.png`.
-- Releases: see the "GitHub Releases" entry in `LOG-archive.md`. To cut a version: add
-  `docs/releases/vX.Y.Z.md` and push to `main`; CI creates the tag + release once the
-  builds pass. (AI workspace note: pushing tags and GitHub API writes are blocked there,
-  so this file-driven route is the one to use.)
-- CI: `.github/workflows/build.yml` — macOS Intel (`macos-15-intel`) + Apple Silicon
-  (`macos-15`): build, core tests, ad-hoc sign, zip artifact. Linux: build, core tests,
-  scripted UI tests, screenshots artifact. (GitHub's Mac VMs have no OpenGL, so UI tests
-  can only run on Linux.)
+Build, tests, the UI script language, CLI flags, CI, releasing and the per-step checklist
+are in [`DEV.md`](DEV.md). One-step-per-release: add `docs/releases/vX.Y.Z.md` and push to
+`main`.
 
 ## Pinned dependencies
 

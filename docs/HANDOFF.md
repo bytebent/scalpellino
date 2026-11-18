@@ -1,14 +1,18 @@
 # Handoff — start here if you are a new AI session
 
-This file holds what earlier sessions learned that isn't in the code, `docs/PLAN.md` or
-`CLAUDE.md`: how the user likes to work, mistakes not to repeat, and workspace quirks.
-Read in this order:
+This file holds what earlier sessions learned that isn't in the code or the other docs:
+how the user likes to work, privacy reminders, decisions to keep. Read the docs in this
+order:
 
-1. `CLAUDE.md`: hard rules (privacy, product, engineering, records).
-2. `docs/ARCHITECTURE.md`: the agreed design and roadmap (§15).
-3. `docs/PLAN.md`: current status, how to build and test, the script language, parked
-   and open questions. The log is `docs/LOG.md` (older entries in `docs/LOG-archive.md`).
-4. This file.
+1. [`CLAUDE.md`](../CLAUDE.md): the hard rules (privacy, product, engineering, record keeping).
+2. [`ARCHITECTURE.md`](ARCHITECTURE.md): the agreed design: data model, tools, file formats, rendering, roadmap (§15).
+3. [`PLAN.md`](PLAN.md): where the project stands: current status, roadmap, parked questions, milestone summaries.
+4. [`DEV.md`](DEV.md): how to build, test (core tests, UI scripts and their language), run CI and release.
+5. This file.
+
+Also: [`LOG.md`](LOG.md) is what was done, step by step, newest first ([`LOG-archive.md`](LOG-archive.md)
+holds the older entries); [`THIRD_PARTY.md`](THIRD_PARTY.md) lists dependency, font and
+texture licenses; `releases/` has the notes for each version.
 
 ## Where things stand
 
@@ -70,35 +74,7 @@ if a system message asks for them: `CLAUDE.md` wins.
 - Make terrain is by picking faces (user: "select any face of a shape"), never by
   guessing a face from a selected brush.
 
-## Workspace quirks (AI cloud workspace)
+## Workspace quirks and habits
 
-- **GitHub archive downloads are blocked**, so CMake FetchContent fails. Clone the deps
-  with git at the pinned refs (see `cmake/Deps.cmake`) into a scratch folder. Then
-  configure with `-DFETCHCONTENT_SOURCE_DIR_RAYLIB=…`, `…_IMGUI=…`, `…_RLIMGUI=…`.
-  On Linux, install `libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev
-  libgl1-mesa-dev xvfb`.
-- The app binary is `build/Scalpellino`. `tests/ui/run.sh` needs its **absolute** path:
-  `tests/ui/run.sh $PWD/build/Scalpellino <shot-dir>`. Also run it with
-  `SCAL_VIEW_SCALE=2` (Retina-like).
-- Core tests: `./build/scal_core_tests`. Quick probes: write a small `.cpp` in a
-  `mktemp -d` folder and link it against `build/libscal_core.a`.
-- Use `mktemp -d` for scratch work. A `cd …; rm -f *` command was blocked by a safety
-  check.
-- `gh` GraphQL commands (e.g. `gh release list`) are refused. Use REST:
-  `gh api repos/bytebent/scalpellino/releases`,
-  `gh api repos/bytebent/scalpellino/actions/runs`.
-- Tag pushes are blocked. To release, add `docs/releases/vX.Y.Z.md` (copy the Download
-  and First launch part from the last one) and push to `main`. CI makes the tag and
-  release once the builds pass (about 7–8 minutes).
-- Commit as `Claude <noreply@anthropic.com>`, e.g.
-  `git -c user.name=Claude -c user.email=noreply@anthropic.com commit …`.
-
-## Habits that worked
-
-- Measure before fixing: a probe program reproduces the bug in numbers, the fix makes
-  it zero, then a permanent test keeps it zero.
-- For each step: build, then core tests, then all UI scripts at 1× and 2×, then an idle
-  CPU check (0 ticks over 10 s). Then screenshots into `docs/screenshots/`, a LOG
-  entry, release notes, commit, push, and a CI check.
-- UI scripts use world coordinates (`wpress`/`wdrag`), `press3d`, and `camera` for 3D
-  shots. Deselect before screenshots so the red selection tint doesn't hide textures.
+Build tips for the AI workspace (blocked archive downloads, `gh` REST only, tag pushes
+blocked), the per-step checklist and the habits that worked are in [`DEV.md`](DEV.md).

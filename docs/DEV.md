@@ -1,0 +1,160 @@
+# Scalpellino — Dev tools, build and testing
+
+Everything needed to build, test and release. Rules are in [`../CLAUDE.md`](../CLAUDE.md),
+design in [`ARCHITECTURE.md`](ARCHITECTURE.md), status in [`PLAN.md`](PLAN.md), history in
+[`LOG.md`](LOG.md).
+
+## Build
+
+- **Mac:** `cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j`
+  (CMake 3.24+, Apple command line tools). The app is `build/Scalpellino.app`.
+- **Linux** (CI and the AI workspace): needs `libxrandr-dev libxinerama-dev libxcursor-dev
+  libxi-dev libgl1-mesa-dev xvfb` (CI also installs `libgl1-mesa-dri libxkbcommon-dev`).
+  The binary is `build/Scalpellino`.
+- **Dependencies** (raylib, Dear ImGui, rlImGui) are fetched by CMake at pinned versions,
+  see `cmake/Deps.cmake` and the table in `PLAN.md`. To update one, change the URL and note
+  it in the LOG.
+- **AI workspace:** GitHub archive downloads are blocked, so FetchContent fails. Clone the
+  three deps with git at the pinned refs into a scratch folder and configure with
+  `-DFETCHCONTENT_SOURCE_DIR_RAYLIB=… -DFETCHCONTENT_SOURCE_DIR_IMGUI=…
+  -DFETCHCONTENT_SOURCE_DIR_RLIMGUI=…`.
+
+## Core tests
+
+- `ctest --test-dir build --output-on-failure`, or run `./build/scal_core_tests` directly
+  (`tests/test_core.cpp`; it prints the number of checks and failures).
+- **Probes:** to reproduce a bug in numbers, write a small `.cpp` in a `mktemp -d` folder
+  and link it against `build/libscal_core.a`. Fix, then keep a permanent test.
+- Every generated shape has a no-overlap test; keep that for new shapes.
+
+## Scripted UI tests
+
+- Scripts are `tests/ui/*.script`, run on a virtual screen (Linux + Xvfb) by
+  `tests/ui/run.sh <absolute path to build/Scalpellino> [screenshot-dir]`. Each script runs
+  in a fresh temp folder with a copy of `tests/ui/assets/`. A failed `expect` makes the
+  script, and the run, fail.
+- Run them at 1× and at Retina-like scale: `SCAL_VIEW_SCALE=2 tests/ui/run.sh …`.
+  CI does both. GitHub's Mac VMs have no OpenGL, so UI tests only run on Linux.
+- **Duplicate IDs:** on every scripted frame a check (`src/ui/imgui_checks.cpp`, using
+  Dear ImGui's item hooks, `IMGUI_ENABLE_TEST_ENGINE`) fails the run if two widgets share
+  an ID. ImGui itself only notices while the mouse hovers them. Wrap each Properties
+  section in its own `PushID`.
+- **Writing scripts:** use world coordinates for 2D input (`wpress`, `wdrag`, `release`)
+  and `press3d` / `camera` for the 3D view, so scripts don't depend on the window layout.
+  Default 2D zoom is 0.5 px/unit. Snapped drags move brushes by up to half a grid cell, so
+  compute brush edges from snapped values before aiming clicks near edges. `printviews`
+  prints each view's origin and size. Deselect before screenshots so the red selection
+  tint doesn't hide textures.
+- **The script language** (one command per frame; this is the reference, the code in
+  `Editor::loadScript` is the implementation):
+
+```
+One command per frame. Views: 0=3d 1=top 2=front 3=side. Coordinates are pixels
+inside the view. Lines starting with # are comments.
+  tool select|block       press <view> <x> <y> [shift] [cmd] [alt]
+  drag <x> <y>            release
+  key Return|Esc|Delete   undo | redo | selectall
+  grid <n>                save <path> | open <path>
+  transform move x y z | transform rotate x|y|z <deg> [origin] | transform scale sx sy sz
+  rotate90 x|y|z <+1|-1>  flip x|y|z  duplicate  dialog transform|controls  closedialogs
+  tool vertex   vertexmove dx dy dz   snapgrid   microgrid on|off   rotsnap slopes|15
+  pivot center|origin|<x y z>   expect ongrid   expect faces <n>
+  view <1|2|3> <u> <v> [zoom]   (centre a 2D view; zoom = pixels per unit)
+  layout classic|default   (classic = no right-hand panels; older scripts use it)
+  wpress <view> <u> <v> [mods] / wdrag <u> <v>   (2D input in world coordinates)
+  press3d <dx> <dy> [mods]   (3D view click relative to its centre)   drag3d <dx> <dy>
+  tool texture   texturedir <path>   texture <name>   applytexture   applynodraw   wraparound
+  rendermode flat|textured
+  texscale <s>   facefit   facerotate <deg>   facealign world|face
+  facejustify left|right|top|bottom|center
+  expect texture <name>   expect pickedfaces <n>   expect current <name>
+  tool clip   clippoints x y z  x y z  x y z   clipkeep both|front|back   (key Return clips)
+  carve   hollow <thickness>   expect volume <v>   (sum of all brush volumes, +-0.5)
+  curveshape arch|ring|curved_wall|spiral_stairs|carve_arch|dome|helix_ramp|straight_stairs
+  curveset <key> <value>
+  (keys as stored in the .map: segments, thickness, box, depth, sweep, flat_top...)
+  editcurve   bakecurve   expect groups <n>
+  blockshape box|wedge|cylinder|cone|pyramid|sphere [sides]
+  tool terrain   terrain pick | make <cells> | remove | stitch | heightmap <path> <low> <high>
+                 (pick = Terrain > Make terrain: clicks then pick faces; make uses the picked
+                  faces, else changes the grid size of the selected terrain)
+  vertexraise <d> | vertexheight <h>   (selected terrain points, vertex tool)
+  expect terrainpoints <n>   expect paintlayers <n>
+  tool light   lightset|lightedit kind point|spot|sun | color r g b | brightness|range|pitch|yaw|inner|outer <v>
+               | pos x y z   (lightset = the next light, pos places it; lightedit = selected lights)
+  expect lights <n>   expect lightsel <n>   expect lightpos x y z   expect lightdir <pitch> <yaw>
+  viewset sky|preview|fog|figure on|off   skydir <path>   figure x y z
+  tool prim   primset kind <k>|round|thickness|flat on/off|color r g b|texscale   primbox c s [axis]
+  prim <kind> x y z sx sy sz [rx ry rz]   primedit <key> <value...>   primselect <index...>
+  snapland   snapground <z>   replicate <n> ox oy oz [rot x y z] [scale x y z] [scaleoffset] [pivot selection|origin|x y z]
+  replicatepreview on|off   replicateopen <n> ox oy oz   expect replicating on|off
+  combine   separate   expect prims|primsel <n>   expect primpos|primrot|primsize x y z   expect primop <op>
+  environment sky <name|none> | ambient r g b | fog on|off | fogcolor r g b | fogrange <start> <end>
+  bookmark add <name> | go <index>   expect sky <name>   expect bookmarks <n>   expect camera x y z
+  terrainset mode <raise|lower|smooth|flatten|noise|paint|erase> | radius|amount|strength <n>
+             | falloff soft|linear|hard      whover <view> <u> <v> (hover, no button)
+  camera <x> <y> <z> <yaw> <pitch>   (3D view camera, degrees)
+  expect terrains <n>   expect terrainheight <x> <y> <z>  (surface below x,y; +-0.5)
+  hide   hideunselected   showall   visgroup new|show|hide <name>   expect visible <n>
+  findoverlaps   nextoverlap   expect overlaps <n>   toorigin
+  block x0 y0 z0 x1 y1 z1 (test setup)   expect bounds minx miny minz maxx maxy maxz
+  shot <file.png>         quit
+  expect brushes|selected <n>  |  expect size <x> <y> <z>  (selection bounds, +-0.5)
+  expect edges   (every brush/preview edge in the 2D views is visible on screen)
+  A failed expect prints FAIL and makes the exit code 1.
+```
+
+## Command line
+
+- `--open <map>`: open a map. `--script <file>`: run a script. `--screenshot <png>`:
+  render a few frames, save a PNG in the current folder, exit.
+- Automated runs never read or write the user's layout settings.
+- Linux headless: `xvfb-run -a -s "-screen 0 1600x1000x24" build/Scalpellino --screenshot x.png`.
+- Environment: `SCAL_VIEW_SCALE=<n>` overrides the display scale (tests only).
+
+## Idle check
+
+The app must cost ~zero CPU when nothing happens (`src/app/main.cpp` describes the idle
+policy). Earlier steps checked this by hand: open a representative map (terrain,
+primitives, lights, sky, fog), leave it alone for 10 s and expect 0 CPU ticks for the
+process. No script or CI job automates it, and how the ticks were read isn't recorded.
+Open item: automate it.
+
+## CI
+
+`.github/workflows/build.yml`:
+- **macos:** Intel (`macos-15-intel`): build, core tests, check the bundled textures, ad-hoc
+  sign, zip `Scalpellino-intel.zip`.
+- **linux:** build, core tests, UI scripts at 1× and 2×, screenshots as an artifact.
+- **release:** after both pass, on pushes to `main`: replaces the "Latest build"
+  pre-release, and makes a version release for every `docs/releases/vX.Y.Z.md` that has no
+  release yet.
+- Apple Silicon builds are on demand only: Actions tab → **apple-silicon** → Run workflow.
+
+## Releasing
+
+Add `docs/releases/vX.Y.Z.md` (copy the Download and First launch part from the last one)
+and push to `main`. CI makes the tag and release after the builds pass (about 7–8
+minutes). Tag pushes are blocked in the AI workspace, so this file-driven route is the one
+to use.
+
+## Per-step checklist
+
+1. Build, then core tests, then all UI scripts at 1× and 2×.
+2. Idle CPU check (above).
+3. Screenshots into `docs/screenshots/` (`m<milestone>-<nn>-<what>.png`), mentioned in
+   the LOG entry.
+4. `docs/PLAN.md` status, a `docs/LOG.md` entry, release notes if releasing, README and
+   Help → Controls kept in sync.
+5. Commit as `Claude <noreply@anthropic.com>`, e.g.
+   `git -c user.name=Claude -c user.email=noreply@anthropic.com commit …`. Push, then check
+   CI (`gh api repos/bytebent/scalpellino/actions/runs`).
+
+## Workspace quirks (AI cloud workspace)
+
+- `gh` GraphQL commands (e.g. `gh release list`) are refused. Use REST:
+  `gh api repos/bytebent/scalpellino/releases`,
+  `gh api repos/bytebent/scalpellino/actions/runs`.
+- Use `mktemp -d` for scratch work. A `cd …; rm -f *` command was blocked by a safety check.
+- Measure before fixing: a probe reproduces the bug in numbers, the fix makes it zero, a
+  permanent test keeps it zero.
