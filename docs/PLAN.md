@@ -334,8 +334,18 @@ read and write. Agreed so far:
     as its own later milestone; the shader format (GLSL, agreed earlier) belongs to the
     Source renderer; the ray renderer's material form (settings, maybe a script) is open;
     a material the Source renderer can't do (level 3) falls back to its nearest level.
-  - **Open:** the full list of camera options and presets; the roadmap order; the ray
-    renderer's material form. The roadmap below is unchanged until these are settled.
+  - **Order (user):** the Source renderer is the more important one and comes first; the
+    ray tracer follows later as its own milestone.
+  - **Baked reflections (user, remembered from Hammer / Source 2):** shiny surfaces can
+    reflect a **baked picture of their surroundings**, as Hammer's `env_cubemap` and
+    Source 2's reflection probes do. Proposed (not confirmed): a **reflection probe**
+    object placed in the map like a light or a camera; during Render, a "building
+    cubemaps" step captures the six views from each probe; shiny materials use the nearest
+    probe (approximate, static, works on any shape, cheap at render time); with no probe
+    they fall back to the sky. Sits between level 1 and level 2.
+  - **Open:** the full list of camera options and presets; the ray renderer's material
+    form; the probe details (placement, resolution); the roadmap order is otherwise
+    unchanged until these are settled.
 
 ## Milestone 1 plan — Brushes (done)
 
