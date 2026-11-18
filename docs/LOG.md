@@ -4,6 +4,13 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-18 — No filters for the Source look; materials belong to the renderer (docs only)
+- User: the Source look must not be made with filters; and materials should not come after
+  the render. Recorded: the look comes from how Source renders (baked lightmaps and
+  probes, real textures, fog); the material system is part of the Render milestone, with
+  water / cloud / endless planes as a step after. "Chunky period looks" wording removed
+  from ARCHITECTURE §9; the rule added to CLAUDE.md. No code changed.
+
 ### 2026-11-18 — One renderer; docs rewritten around renders and cameras (docs only)
 - User: no automatic probe placement, probe quality as presets, and the ray tracer is only
   a maybe-future expansion (the Source renderer is the one). Recorded in PLAN.

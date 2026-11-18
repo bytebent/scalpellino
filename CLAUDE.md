@@ -33,6 +33,9 @@ New session? Also read `docs/HANDOFF.md` (user preferences, privacy, decisions t
 - No pixel fonts. UI font is Roboto (embedded).
 - Never commit screenshots the user sends; only our own.
 - Idle must cost ~zero CPU: redraw only on change.
+- The Source look comes from how Source renders (baked lightmaps and probes, real textures,
+  fog), never from filters or post-effects faking it. Shaders and heavy effects show in the
+  Camera Preview and renders only; nothing moves in the editor.
 
 ## Engineering
 - `src/core` must not depend on raylib or ImGui.

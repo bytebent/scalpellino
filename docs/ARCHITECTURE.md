@@ -353,14 +353,18 @@ Preview and in renders.
   options). A terminal-style log shows the steps as they run (baking the lights, building
   the reflection cubemaps, drawing...); it takes as long as it needs. The result is a PNG
   saved to `renders/`. Only what the camera sees is drawn (frustum, back faces, nodraw).
-- **The Source look:** the renderer is Source / Half-Life style: fast, on the graphics
-  card, with baked lighting (shadows, bounce) and chunky period looks. Not a ray tracer.
+- **The Source look** comes from **how Source renders**: fast, on the graphics card, with
+  baked lightmaps (light, shadows, bounce), baked reflection probes, real textures and
+  fog. It is **never faked with filters** laid over the picture (user: that is not the
+  point). Not a ray tracer.
 - **Reflections:** a material chooses: sky only; baked reflection from the nearest
   probe; live mirror reflection on flat surfaces (water, floors). Probe quality is a
   render-option preset.
-- **Materials and shaders:** GLSL files with a settings header, dropped into Bottega's
-  `shaders/`; they run in renders and the Camera Preview. Water, clouds and endless
-  planes are materials. Camera effects (dither, palette, bloom) matter least.
+- **Materials and shaders:** a surface's look is its material (texture, reflection,
+  transparency, shader), built into the renderer from the start. Shaders are GLSL files
+  with a settings header, dropped into Bottega's `shaders/`; they run in renders and the
+  Camera Preview. Water, clouds and endless planes are materials made with it. Optional
+  camera effects (dither, palette, bloom) are separate from the look and matter least.
 - **Maybe later:** a ray-tracing renderer (Bryce look: real reflections on any shape,
   bending glass). Not pressing; the Source renderer may be enough.
 
@@ -426,8 +430,8 @@ docs/         this file, roadmap
 | 10b | Random Replicate (Bryce): random offset / turn / size ranges for props and primitives | |
 | 10c | Sky Lab (Bryce, all of it): generated skies (sun, moon, stars, clouds, atmosphere) with live preview, baked to panoramas; settings kept in the map; tick box to lock the sun to the map's sun light | |
 | 11 | Cameras and Camera Preview (proposed order): camera objects (many, one active), options and presets, the on-request preview | |
-| 12 | Render, the Source look (proposed): render window, terminal log, light baking, reflection probes, mirrors, PNG to `renders/` | |
-| 13 | Materials (proposed): GLSL shaders from Bottega's `shaders/`, water and cloud planes, reflection kind per material | |
+| 12 | Render, the Source look, with materials (proposed): render window, terminal log, light baking, reflection probes, mirrors, the material system (GLSL shaders from Bottega's `shaders/`, reflection kind per material), PNG to `renders/` | |
+| 13 | Water, cloud and endless planes (proposed): materials made with the system above | |
 | 14 | Camera effects (proposed, lowest priority): dithering, palette, bloom | |
 | 15 | Export: `.glb`, optional and last | |
 | later / maybe | ray-tracing renderer (Bryce look), `.wad` textures, Lua generators, texture tags | |

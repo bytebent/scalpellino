@@ -17,7 +17,8 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   file), then **milestone 10 — Props** once the user says go (decisions under "Open
   questions").
 - **Roadmap:** M10 Props → Random Replicate → Sky Lab → cameras and Camera Preview →
-  Render (Source look) → materials → camera effects → export. The renderer part is a
+  Render (Source look, with the material system) → water / cloud planes → camera effects →
+  export. The renderer part is a
   proposal awaiting the user's confirmation. Details under "Roadmap" and "Direction".
 - **Bottega** (shared folder for Mazzuola, Scalpellino and later tools): decided with the
   user, not built (shader format agreed). See "Bottega" below.
@@ -243,14 +244,14 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
    active), options and presets (field of view, image size...), and the small preview: an
    approximation of the final picture, shaders included, updated only on a keybind or
    button, shown only while the map has a camera.
-5. **Render, the Source look** (proposed) — the render window (image size, options) that
-   opens on Render, a terminal-style log (+ log file), baking the lights (shadows),
-   reflection probes, mirror reflections on flat surfaces, the Source look, a PNG saved to
+5. **Render, the Source look, with materials** (proposed) — the render window (image size,
+   options) that opens on Render, a terminal-style log (+ log file), baking the lights
+   (shadows), reflection probes, mirror reflections on flat surfaces, a PNG saved to
    `renders/` (Bottega's once it exists). Only what the camera sees is drawn (frustum,
-   back faces, nodraw).
-6. **Materials** (proposed) — GLSL shaders from Bottega's `shaders/`, water and cloud
-   planes (and endless ground), reflection kind per material. They only show in the
-   preview and renders, so they come after the renderer.
+   back faces, nodraw). **The material system is part of this milestone** (a surface's
+   look is its material): GLSL shaders from Bottega's `shaders/`, reflection kind per
+   material. The Source look comes from how Source renders, never from filters.
+6. **Water, cloud and endless planes** (proposed) — materials made with the system above.
 7. **Camera effects** (proposed, lowest priority per the user) — dithering, palette,
    bloom and similar.
 8. **Export** — `.glb`, optional and last; the user probably will never use it elsewhere.
@@ -334,6 +335,10 @@ read and write. Agreed so far:
     look), baked reflections of the surroundings, and mirror reflections on flat surfaces
     (water, floors; scene included). Real reflections and bending glass on any shape
     (the Bryce look) need a ray tracer.
+  - **No filters (user, firm):** the Source look must come from **how Source renders**
+    (baked lightmaps, baked probes, real textures, fog), **never from filters or
+    post-effects laid over the picture to imitate it**. Camera effects (dither, palette,
+    bloom) are optional extras and not the look.
   - **One renderer (user):** the **Source-style renderer** (fast, on the graphics card,
     baked lighting) is the important one and comes first. The user loves the Source look
     and does not want it made with a ray tracer. A **ray-tracing renderer** (Bryce look)
