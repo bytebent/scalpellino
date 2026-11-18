@@ -234,6 +234,39 @@ from the renderer (M9) and the Y2K shaders (M10).
 - **Camera bookmarks** (World menu): name + 3D camera position/yaw/pitch; go / delete.
   Editor-only, saved with the map, not undone (like visgroups).
 
+### Math primitives (milestone 9, done)
+Bryce-style exact shapes, next to brushes (brushes and low-poly shapes stay as they
+are; brush tools never touch primitives). `core/mathprim.hpp`.
+- **Kinds:** sphere, cube (optional rounded corners in units), cylinder, cone, torus (tube
+  thickness), capsule, disc. Each is a unit shape inside [-1, 1]³ of its own axes, placed
+  by position, rotation (degrees about X, Y, Z: R = Rz·Ry·Rx) and size (full extents
+  along its own axes; any per-axis size, so a sphere can be an ellipsoid).
+- **Drawn exactly:** the 3D view draws each shape's box and a shader finds the true
+  surface per pixel (same maths as the core, which picks and tests), writing depth so
+  brushes and primitives cut into each other. Texture mapped by kind (spherical,
+  cylindrical with planar caps, box, torus angles) × repeats, tinted by a colour, or a
+  flat colour. Light preview and fog are done in the same shader. 2D views show outline
+  wires (lilac; subtract pieces orange, intersect pieces teal).
+- **Combining (Bryce):** primitives with the same combination number form one shape:
+  add pieces join, subtract pieces cut away (the cut shows the cutter's texture),
+  intersect pieces keep only the overlap. Per-ray stretches inside each shape are joined,
+  cut and intersected. Clicking selects the whole combination; Properties lists the
+  pieces to pick one. Combine / Separate in the Primitives menu or Properties.
+- **Objects:** primitives are objects like lights (`tools/object_edit`): click to select
+  (brushes and lights deselected), drag in 2D to move (snapped), rings around the
+  selection to turn (15° steps), size handles on a single primitive's faces (opposite
+  face stays; Shift = evenly about the centre; sizes snap). Typed position, rotation,
+  size, rounding, thickness, texture, colour, repeats in Properties. Delete, Cmd+D
+  (copies of a combination form a new one), undo for all.
+- **Creating:** the Primitive tool (Shift+M, Primitives menu): kind and settings in
+  Properties, drag a box in a 2D view (depth from the last box; drag in another view to
+  set the rest), or type centre and size; Return creates, Esc cancels. A disc lies across
+  the axis of the view it was drawn in.
+- **Files:** saved as our own point entity `scal_primitive` (kind, origin, rotation,
+  size, round, thickness, combo, op, texture, color, texscale; unknown keys kept), so a
+  map reopened in Scalpellino keeps them as primitives. Only exports turn them into
+  meshes (M13): Godot's own round meshes where they match, fine triangles in `.glb`.
+
 ### Scale reference
 Toggleable ghost human figure (72 units tall, blocky, see-through) to judge
 proportions. Its feet position is saved with the map (World → Scale figure position, or
@@ -242,6 +275,9 @@ it appears below the top view's centre). Editor-only, never exported.
 ## 7. Entities (complete list)
 
 - **Lights** — point, spot, sun.
+- **Math primitives** — exact shapes, combinable (milestone 9).
+- **Props** — static models (`.glb` and Mazzuola's `.mazz`) with their textures; placed,
+  turned and sized like primitives. No physics (milestone 10).
 - **Environment** — sky color/texture, fog, ambient light.
 - **Camera bookmarks** — saved viewpoints for renders. Editor-only.
 
@@ -252,7 +288,7 @@ down) + `pitch` (negative down), `_inner_cone` / `_cone`, `_zero_percent_distanc
 worldspawn keys: `_scal_sky`, `_scal_ambient`, `_scal_fog "on r g b start end"`,
 `_scal_cameras "x y z yaw pitch name;…"`, `_scal_figure`.
 
-That's all. No gameplay entities.
+That's all. No gameplay entities (doors, triggers, physics, scripting).
 
 ## 8. File formats
 
@@ -344,7 +380,9 @@ docs/         this file, roadmap
 | 6 | Workflow + shapes: hide/show + visgroups, overlap finder, views to origin, block primitives (wedge, cylinder, cone, pyramid, sphere), more curves (dome, helix ramp, straight stairs, stairs column) | done (v0.6.0) |
 | 7 | Terrain: grid patches from any picked face (3 or 4 corners), sculpt (raise/lower/smooth/flatten/noise; typed radius/strength), point-by-point editing with the vertex tool, painting up to 8 textures per patch, auto-stitched neighbours, heightmap import; stored in our `.map` | done (v0.7.0, v0.7.1) |
 | 8 | World: lights (point, spot, sun; rotation rings), sky picker (a setting, not a sealed box; panoramas and cube crosses), ambient, fog, rough editor preview (sky, light preview, fog toggles), camera bookmarks, scale figure | done (v0.8.0) |
-| 9 | Renderer: PNG renders, only what the camera sees (frustum, back faces, nodraw, optional outside-only), terminal-style render log window (+ log file) | |
-| 10 | Y2K look: shaders (low-res, fog, chrome, bloom, dithering) | |
-| 11 | Export: `.glb`, Godot package, terrain as mesh; nodraw skipped | |
+| 9 | Math primitives (Bryce-style): sphere, cube (rounded), cylinder, cone, torus, capsule, disc; exact per-pixel drawing; combining (add / subtract / intersect); object handles shared with lights | done (v0.9.0) |
+| 10 | Props: static models (`.glb` and `.mazz`) with their textures, placed / turned / sized as objects; reload when the file changes; no physics | |
+| 11 | Renderer: PNG renders, only what the camera sees (frustum, back faces, nodraw, optional outside-only), terminal-style render log window (+ log file) | |
+| 12 | Y2K look: shaders (low-res, fog, chrome, bloom, dithering) | |
+| 13 | Export: `.glb`, Godot package, terrain as mesh, primitives as meshes (Godot's round meshes where they match); nodraw skipped | |
 | later | `.wad` textures, Lua generators, baked lighting, texture tags | |

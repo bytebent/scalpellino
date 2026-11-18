@@ -7,7 +7,7 @@
 //  - the new light's kind, colour, brightness, reach and direction are set in
 //    Properties beforehand (`templ`).
 //  - lights are selected, moved and aimed here as in the select tool (rings).
-#include "tools/light_edit.hpp"
+#include "tools/object_edit.hpp"
 #include "tools/tool.hpp"
 #include <optional>
 
@@ -30,7 +30,7 @@ public:
     bool create(Document& doc);
 
 private:
-    LightEdit lights_;
+    ObjectEdit lights_;
     std::string message_;
 };
 

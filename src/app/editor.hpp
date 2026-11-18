@@ -17,6 +17,7 @@
 #include "tools/curve_tool.hpp"
 #include "tools/terrain_tool.hpp"
 #include "tools/light_tool.hpp"
+#include "tools/prim_tool.hpp"
 #include "render/sky_library.hpp"
 #include "render/lighting.hpp"
 #include "render/texture_library.hpp"
@@ -148,6 +149,15 @@ private:
 
     // World (milestone 8)
     void drawLightPanel();
+    // Math primitives (milestone 9)
+    void combinePrims();   // selected primitives become one combination
+    void separatePrims();  // selected primitives leave their combinations
+    void drawPrimPanel();
+    void setPrimOp(PrimOp op);
+    MathPrim primBuf_;               // Properties fields for the selected primitives
+    std::set<MathPrimId> primBufFor_;
+    unsigned long long primBufRev_ = ~0ull;
+    double primPend_[6] = {0, 0, 0, 64, 64, 64}; // typed centre + size of the pending box
     void drawWorldDialogs();
     // Applies `fn` to every selected light as one undo step (if anything changed).
     template <class Fn> void editLights(const char* name, Fn fn);
@@ -197,6 +207,7 @@ private:
     CurveTool curveTool_;
     TerrainTool terrainTool_;
     LightTool lightTool_;
+    PrimTool primTool_;
     Tool* tool_ = &selectTool_;
 
     int capture_ = -1;          // view that owns the current left-button drag

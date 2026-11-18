@@ -1,0 +1,134 @@
+# Milestone 9: math primitives. Draw a sphere with the primitive tool (top view, then
+# the front view for its height), Return; select, move, turn with a ring, resize with
+# handles (and evenly with Shift); typed boxes for more shapes; combine (a cube with a
+# spherical bite); pick in 3D; delete, undo, duplicate; save + open keeps primitives.
+block -512 -512 -32 512 512 0
+tool prim
+primset kind sphere
+wpress 1 -256 -256
+wdrag -128 -128
+release
+wpress 2 -256 0
+wdrag -128 128
+release
+key Return
+expect prims 1
+expect primsel 1
+expect selected 0
+expect primpos -192 -192 64
+expect primsize 128 128 128
+undo
+expect prims 0
+redo
+expect prims 1
+# -- select tool: click it, drag it (snapped), turn it with the top view's ring
+tool select
+key Esc
+expect primsel 0
+wpress 1 -192 -192
+release
+expect primsel 1
+wpress 1 -192 -192
+wdrag -128 -192
+release
+expect primpos -128 -192 64
+# ring radius: half the box diagonal x 1.05 = 116.4
+wpress 1 -11.6 -192
+wdrag -40 -110
+wdrag -128 -75.6
+release
+expect primrot 0 0 90
+# size handle on its own +X side (now pointing along +Y): drag out by 32
+wpress 1 -128 -128
+wdrag -128 -96
+release
+expect primsize 160 128 128
+expect primpos -128 -176 64
+undo
+expect primsize 128 128 128
+# Shift: evenly, about the centre
+wpress 1 -128 -128 shift
+wdrag -128 -96 shift
+release
+expect primsize 192 192 192
+expect primpos -128 -192 64
+camera -560 -620 300 50 -16
+shot m9-01-sphere-rings-handles.png
+# -- more shapes from typed boxes
+tool prim
+primset kind cylinder
+primbox 128 -192 64 96 96 128
+key Return
+primset kind cube
+primset round 12
+primbox 0 128 48 128 128 96
+key Return
+primset kind sphere
+primbox 48 176 80 96 96 96
+key Return
+primset kind torus
+primset thickness 0.3
+primbox -224 160 32 160 160 48
+key Return
+primset kind cone
+primbox 224 128 64 112 112 128
+key Return
+primset kind capsule
+primbox 256 -64 72 48 48 144
+key Return
+primset kind disc
+primbox -128 -400 96 160 0 160 1
+key Return
+expect prims 8
+# -- combine the rounded cube with the small sphere, which bites into it
+primselect 2 3
+combine
+primselect 3
+primedit op subtract
+expect primop subtract
+primselect 2
+primedit texture Tile_19
+primselect 3
+primedit texture Tile_13
+primedit texscale 3
+tool select
+key Esc
+# a click on the combination (3D) selects all of it
+camera 0 -200 260 90 -40
+press3d 0 0
+release
+expect primsel 2
+camera -620 -640 420 45 -24
+shot m9-02-shapes-and-a-bite.png
+# -- delete, undo, duplicate (the copy is its own combination)
+key Delete
+expect prims 6
+undo
+expect prims 8
+duplicate
+expect prims 10
+expect primsel 2
+undo
+expect prims 8
+# -- light preview on primitives
+tool light
+lightset kind point
+lightset color 255 200 150
+lightset range 700
+lightset brightness 320
+lightset pos -40 -40 260
+key Return
+viewset preview on
+tool select
+key Esc
+shot m9-03-light-preview.png
+viewset preview off
+camera 200 330 170 225 -24
+shot m9-04-close-up.png
+# -- save + open keeps them as primitives
+save m9-prims.map
+open m9-prims.map
+expect prims 8
+primselect 3
+expect primop subtract
+quit

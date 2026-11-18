@@ -19,12 +19,14 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 - **v0.7.1 = terrain fixes** the user asked for after v0.7.0: make terrain from any
   picked face (and triangles), the vertex tool edits terrain point by point, up to 8
   textures per patch. Reported.
-- **v0.8.0 = milestone 8 World** (this step): lights with rotation rings, skies
-  (panoramas + cube crosses), ambient, fog, rough editor preview toggles, camera
-  bookmarks, scale figure; two more built-in textures. Report to the user, then wait
-  for the go-ahead on milestone 9.
-- **Next: milestone 9 — Renderer**: PNG renders of only what the camera sees, a
-  Hammer-style scrolling render log window and a log file.
+- **v0.8.0 = milestone 8 World**: lights with rotation rings, skies, ambient, fog, rough
+  editor preview toggles, camera bookmarks, scale figure. Reported.
+- **Roadmap changed with the user (2026-11-18):** M9 math primitives (Bryce-style), M10
+  props (`.glb` + `.mazz`, with textures, no physics), then M11 renderer, M12 Y2K, M13
+  export.
+- **v0.9.0 = milestone 9 Math primitives** (this step). Report to the user, then wait for
+  the go-ahead on milestone 10.
+- **Next: milestone 10 — Props.**
 
 ## How to work in this repo
 
@@ -82,6 +84,24 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   - Sky, preview, fog and figure toggles are editor settings (not saved in the map);
     the figure's position and the bookmarks are saved in the map.
   - Built-in skies: the three panoramas (the matching cube crosses are the same skies).
+- **Math primitives, decided with the user (2026-11-18):** they sit beside brushes (low-
+  poly shapes stay); objects like lights; brush tools don't touch them; Bryce-style
+  combining wanted; saved maps keep them as primitives, only exports make meshes;
+  per-axis size allowed; kinds: sphere, cube (rounded), cylinder, cone, torus, capsule,
+  disc.
+- **Math primitives, decided without asking (confirm with the user):**
+  - A click selects the whole combination; Properties lists the pieces to pick one.
+  - Size handles only on a single selected primitive; rings around any selection.
+  - A combination can use up to 4 different textures (more fall back to the colour);
+    16 pieces per combination are drawn.
+  - The cut surface of a subtract piece shows that piece's own texture (as in Bryce).
+  - New primitives get the current texture (or "flat colour" in Properties).
+- **Props (M10), from the user:** a prop is a model with its textures; Scalpellino opens
+  both `.glb` and `.mazz`. `.mazz` reading follows Mazzuola's file format, which is final
+  at its milestone 1 (Mazzuola's plan still lists "Scalpellino reading .mazz or .glb
+  only?" as open: the answer is both).
+- **Primitives extras, later:** hiding primitives / visgroups; the Transform dialog on
+  objects; Bryce's other shapes (pyramid, endless ground plane) if wanted.
 - **World extras, later:** hiding lights / lights in visgroups; moving lights together
   with brushes in one drag; aiming a light at a clicked point; lights in the Transform
   dialog.
@@ -186,6 +206,44 @@ terminal-style render log like Hammer's compile window + log file), 10 Y2K shade
 ## Milestone 1 plan — Brushes (done)
 
 ## Log
+
+### 2026-11-18 — Milestone 9: Math primitives (v0.9.0)
+- **Design talk:** the user asked for Bryce-style math primitives and (for M10) static
+  props, after looking at the Mazzuola design. Decisions are in "Open questions".
+  CLAUDE.md product rule changed: static props allowed; still no doors, triggers,
+  physics or scripting.
+- **Core** (`core/mathprim`): `MathPrim` (kind, pos, rot, size, round, thickness, op,
+  combo, texture, colour, repeats, kept keys), rotation matrices and angles (`R = Rz Ry Rx`,
+  half turn reads 180), turning about world axes and a pivot, exact ray stretches per
+  kind (quadrics, slab-clipped; rounded cube by sphere-traced exact distance; torus by
+  sampling + bisection), combining stretches (add / subtract / intersect), picking,
+  bounds, outlines. `Document`: primitives, primitive selection, `PrimChange` commands,
+  `withCombos`. Lights and primitives keep creation order on undo.
+- **File:** `scal_primitive` point entities; byte-identical round trip.
+- **Drawing** (`render/mathprim_render`): one shader per combination over its box (back
+  faces, so it works from inside the box), per-pixel stretches + combining, depth
+  written, texture mapping by kind, editor shading or rough light preview, fog. 2D
+  outlines by role; selected in red; 3D outline for selected ones.
+- **Tools:** `ObjectEdit` replaces `LightEdit` (lights + primitives: pick, move, rings,
+  size handles with Shift = evenly); new Primitive tool (Shift+M): drag a box / typed
+  box, Return / Esc; Select, Light and Primitive tools share object editing.
+- **Editor:** Primitives menu (tool, new kind ×7, create, combine, separate, piece
+  mode), Properties panel (typed transform, rounding, thickness, texture / flat colour,
+  colour, repeats, combination pieces, Combine / Separate), Delete / Cmd+D, Help →
+  Controls, README.
+- **Script:** `tool prim`, `primset`, `primbox`, `prim`, `primedit`, `primselect`,
+  `combine`, `separate`, `expect prims|primsel|primpos|primrot|primsize|primop`. New
+  script `m9_primitives`.
+- **Found and fixed while testing:** undoing a delete put objects back at the end of the
+  list (order changed in the saved file); Shift held only at the press didn't scale
+  evenly; even scaling now follows the mouse (size grows twice the handle's move).
+- **Tests:** core **3649 checks, 0 failed** (every kind's hits incl. rotated and
+  stretched, rounded cube, torus with two stretches, disc from both sides, combining
+  three ways, outlines on the surface, bounds, rotation round trips, document undo,
+  file round trip). UI: all 15 scripts pass at 1× and 2×. Idle with primitives in the
+  map: 0 CPU ticks over 10 s.
+- **Screenshots:** `m9-01-sphere-rings-handles.png`, `m9-02-shapes-and-a-bite.png`,
+  `m9-03-light-preview.png`, `m9-04-close-up.png`.
 
 ### 2026-11-16 — Milestone 8: World (v0.8.0)
 - **Core** (`core/world`, `core/sky`, `core/document`):

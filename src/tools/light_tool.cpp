@@ -27,6 +27,7 @@ void LightTool::press(ToolEnv& env, const Pointer& p) {
     }
     pending = at;
     doc.setLightSelection({});
+    doc.setPrimSelection({});
 }
 
 void LightTool::drag(ToolEnv& env, const Pointer& p) {
@@ -69,8 +70,8 @@ bool LightTool::key(ToolEnv& env, int key) {
     return false;
 }
 
-void LightTool::decorate(const Document&, Scene& scene) const {
-    lights_.decorate(scene);
+void LightTool::decorate(const Document& doc, Scene& scene) const {
+    lights_.decorate(doc, scene);
     if (pending) {
         Light l = templ;
         l.pos = *pending;

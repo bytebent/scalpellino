@@ -4,6 +4,7 @@
 #include "core/document.hpp"
 #include "core/terrain.hpp"
 #include "core/world.hpp"
+#include "core/mathprim.hpp"
 #include <map>
 #include <optional>
 #include <set>
@@ -64,6 +65,21 @@ struct Scene {
     struct SceneLight { Light light; bool selected = false; };
     std::vector<SceneLight> lights;
     std::optional<Light> pendingLight;   // light tool: where Return will create a light
+
+    // Math primitives (milestone 9): exact shapes in 3D, outlines in 2D.
+    struct ScenePrim { MathPrim prim; bool selected = false; };
+    std::vector<ScenePrim> prims;
+    std::vector<MathPrim> pendingPrims;  // primitive tool preview (outlines)
+    // Rings and size handles of the selected primitives (tools that edit objects set it;
+    // views make the rings at least kRingPx across, and show only handles they see side-on).
+    struct PrimGizmo {
+        Vec3 center;
+        double radius = 0;
+        std::vector<std::pair<Vec3, Vec3>> handles; // position, the axis it moves along
+    };
+    std::optional<PrimGizmo> primGizmo;
+    bool lightPreview = false;           // rough light preview on (prims light per pixel)
+    Vec3 ambient;                        // for the preview
     int activeRing = -1;                 // ring being dragged (axis), drawn brighter
     static constexpr double kRingPx = 48; // ring radius on screen (logical pixels)
 

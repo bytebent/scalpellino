@@ -10,6 +10,7 @@
 #include "core/primitives.hpp"
 #include "core/terrain.hpp"
 #include "core/sky.hpp"
+#include "core/mathprim.hpp"
 #include "io/map_format.hpp"
 #include <cmath>
 #include <random>
@@ -1630,6 +1631,147 @@ void testSky() {
     CHECK((near(u, 0) || near(u, 1)) && near(v, 0.75));
 }
 
+// ---- Milestone 9: math primitives
+void testMathPrims() {
+    auto hit = [](const MathPrim& p, Vec3 o, Vec3 d) {
+        auto h = rayHitPrims({p}, o, normalize(d));
+        return h ? h->t : -1.0;
+    };
+    auto prim = [](PrimKind k, Vec3 pos, Vec3 size) {
+        MathPrim p; p.id = 1; p.kind = k; p.pos = pos; p.size = size;
+        return p;
+    };
+    // Rotation: angles -> matrix -> angles, and turning about world axes.
+    for (Vec3 r : {Vec3{10, 20, 30}, Vec3{-45, 60, 170}, Vec3{0, 0, 90}, Vec3{33, -80, -120}}) {
+        const Vec3 back = rotationAngles(rotationMatrix(r));
+        CHECK(nearV(back, r, 1e-6));
+    }
+    MathPrim t = prim(PrimKind::Cube, {100, 0, 0}, {64, 32, 16});
+    rotatePrim(t, 2, 90);
+    CHECK(nearV(t.rot, {0, 0, 90}) && nearV(t.pos, {100, 0, 0}));
+    rotatePrim(t, 2, 90, {0, 0, 0}); // about the origin: moves too
+    CHECK(nearV(t.rot, {0, 0, 180}) && nearV(t.pos, {0, 100, 0}));
+    const AABB tb = primBounds(t);
+    CHECK(near(tb.size().x, 64) && near(tb.size().y, 32));
+    MathPrim r45 = prim(PrimKind::Cube, {}, {64, 64, 64});
+    r45.rot = {0, 0, 45};
+    CHECK(near(primBounds(r45).size().x, 64 * std::sqrt(2.0), 1e-6));
+    CHECK(nearV(primToLocal(t, primToWorld(t, {0.3, -0.2, 0.9})), {0.3, -0.2, 0.9}, 1e-9));
+
+    // Sphere / ellipsoid.
+    MathPrim sp = prim(PrimKind::Sphere, {100, 0, 0}, {64, 64, 64});
+    CHECK(near(hit(sp, {0, 0, 0}, {1, 0, 0}), 68));
+    auto hs = rayHitPrims({sp}, {0, 0, 0}, {1, 0, 0});
+    CHECK(hs && nearV(hs->normal, {-1, 0, 0}) && hs->prim == 1 && hs->picked == 1);
+    sp.size = {128, 64, 64};
+    CHECK(near(hit(sp, {0, 0, 0}, {1, 0, 0}), 36));
+    CHECK(near(hit(sp, {100, 0, 100}, {0, 0, -1}), 68));
+    CHECK(hit(sp, {0, 40, 0}, {1, 0, 0}) < 0); // passes beside it
+    CHECK(hit(sp, {100, 0, 0}, {1, 0, 0}) < 0); // from inside: nothing (like brushes)
+    // Cylinder, cone, capsule, torus, disc.
+    MathPrim cy = prim(PrimKind::Cylinder, {0, 0, 0}, {64, 64, 128});
+    CHECK(near(hit(cy, {0, 0, 200}, {0, 0, -1}), 136));
+    CHECK(near(hit(cy, {-200, 0, 10}, {1, 0, 0}), 168));
+    CHECK(hit(cy, {-200, 0, 70}, {1, 0, 0}) < 0);
+    MathPrim co = prim(PrimKind::Cone, {}, {64, 64, 64});
+    CHECK(near(hit(co, {0, 0, 200}, {0, 0, -1}), 168)); // the tip
+    CHECK(near(hit(co, {-200, 0, 0}, {1, 0, 0}), 200 - 16)); // half way up: radius 16
+    CHECK(near(hit(co, {16.1, 0, -200}, {0, 0, 1}), 200 - 32, 1e-6)); // the base
+    MathPrim ca = prim(PrimKind::Capsule, {}, {32, 32, 128});
+    CHECK(near(hit(ca, {0, 0, 200}, {0, 0, -1}), 136));
+    CHECK(near(hit(ca, {-200, 0, 0}, {1, 0, 0}), 184));
+    CHECK(near(hit(ca, {15.9, 0, 200}, {0, 0, -1}), 200 - (48 + std::sqrt(16.0 * 16 - 15.9 * 15.9)), 1e-6));
+    MathPrim to = prim(PrimKind::Torus, {}, {128, 128, 32});
+    to.thickness = 0.25; // ring radius 48, tube 16
+    CHECK(near(hit(to, {48, 0, 200}, {0, 0, -1}), 184, 1e-6));
+    CHECK(hit(to, {0, 0, 200}, {0, 0, -1}) < 0); // through the hole
+    CHECK(near(hit(to, {-200, 0, 0}, {1, 0, 0}), 136, 1e-6));
+    auto ti = primIntervals(to, {-200, 0, 0}, {1, 0, 0});
+    CHECK(ti.size() == 2); // in and out of the tube twice
+    MathPrim di = prim(PrimKind::Disc, {}, {64, 64, 0});
+    CHECK(near(hit(di, {0, 0, 50}, {0, 0, -1}), 50));
+    auto hd = rayHitPrims({di}, {10, 0, -50}, {0, 0, 1});
+    CHECK(hd && near(hd->t, 50) && nearV(hd->normal, {0, 0, -1})); // seen from below
+    // Cubes, sharp and rounded; rotated.
+    MathPrim cu = prim(PrimKind::Cube, {}, {64, 64, 64});
+    CHECK(near(hit(cu, {-100, 0, 0}, {1, 0, 0}), 68));
+    const Vec3 diag = normalize(Vec3{1, 1, 1});
+    CHECK(near(hit(cu, diag * -100.0, diag), 100 - 32 * std::sqrt(3.0), 1e-6));
+    cu.round = 8;
+    CHECK(near(hit(cu, {-100, 0, 0}, {1, 0, 0}), 68, 1e-4));
+    CHECK(near(hit(cu, diag * -100.0, diag), 100 - (24 * std::sqrt(3.0) + 8), 1e-4));
+    cu.round = 0;
+    cu.rot = {0, 0, 45};
+    CHECK(near(hit(cu, {-100, 0, 0}, {1, 0, 0}), 100 - 32 * std::sqrt(2.0), 1e-6));
+
+    // Combining.
+    MathPrim a = prim(PrimKind::Sphere, {}, {100, 100, 100});
+    a.id = 1; a.combo = 7;
+    MathPrim b = prim(PrimKind::Sphere, {-50, 0, 0}, {60, 60, 60});
+    b.id = 2; b.combo = 7; b.op = PrimOp::Subtract;
+    auto hc = rayHitPrims({a, b}, {-200, 0, 0}, {1, 0, 0});
+    CHECK(hc && near(hc->t, 180) && hc->prim == 2 && hc->picked == 1); // the bite, at x = -20
+    CHECK(hc && nearV(hc->normal, {-1, 0, 0}));                          // facing out of the hole
+    CHECK(near(rayHitPrims({a, b}, {-200, 40, 0}, {1, 0, 0})->t, 200 - 30, 1e-6)); // above the bite
+    b.op = PrimOp::Intersect;
+    auto hi = rayHitPrims({a, b}, {-200, 0, 0}, {1, 0, 0});
+    CHECK(hi && near(hi->t, 150) && hi->prim == 1); // only the overlap: x from -50 to -20
+    b.op = PrimOp::Add;
+    auto hu = rayHitPrims({a, b}, {-200, 0, 0}, {1, 0, 0});
+    CHECK(hu && near(hu->t, 120) && hu->prim == 2);
+    b.combo = 0; // apart again: nearest of two shapes
+    CHECK(near(rayHitPrims({a, b}, {-200, 0, 0}, {1, 0, 0})->t, 120));
+    std::vector<MathPrim> all{a, b};
+    all[1].combo = 7;
+    CHECK(comboMembers(all, 7).size() == 2 && newComboId(all) == 8);
+
+    // Outlines lie on the shape (sphere circles at its radius).
+    for (const Polyline& l : primOutline(sp, 24))
+        for (const Vec3& q : l.pts) CHECK(near(length(primToLocal(sp, q)), 1, 1e-9));
+    CHECK(primOutline(cu).size() == 12);
+
+    // Document: add / modify / delete / combos, undoable.
+    Document d;
+    d.apply(d.makeAddLights({Light{}}, "light"));
+    d.apply(d.makeAddPrims({a, b}, "Create"));
+    CHECK(d.prims().size() == 2 && d.primSelection().size() == 2 && d.lightSelection().empty());
+    const MathPrimId first = d.prims()[0].id;
+    CHECK(d.withCombos({first}).size() == 1);
+    MathPrim m = d.prims()[1];
+    m.combo = 7;
+    d.apply(d.makeModifyPrims({m}, "Combine"));
+    CHECK(d.withCombos({first}).size() == 2);
+    Command del = d.makeDelete({}, "Delete");
+    d.addPrimDeletes(del, {first});
+    d.apply(std::move(del));
+    CHECK(d.prims().size() == 1 && !d.findPrim(first));
+    CHECK(d.undo() && d.prims().size() == 2);
+    CHECK(d.undo() && d.withCombos({first}).size() == 1);
+    CHECK(d.undo() && d.prims().empty() && d.lightSelection().size() == 1);
+
+    // File: kept as primitives (byte-identical round trip).
+    Document w;
+    MathPrim tx = to;
+    tx.id = 0; tx.combo = 3; tx.op = PrimOp::Subtract; tx.texture = "Tile_19"; tx.rot = {10, 0, 45}; tx.texScale = 2;
+    tx.otherKeys = {{"note", "keep me"}};
+    MathPrim rc = cu;
+    rc.id = 0; rc.round = 6; rc.color = {255, 0, 128};
+    w.apply(w.makeAddPrims({tx, rc}, "prims"));
+    const std::string text = writeMap(w);
+    CHECK(text.find("\"classname\" \"scal_primitive\"") != std::string::npos);
+    CHECK(text.find("\"kind\" \"torus\"") != std::string::npos);
+    Document r;
+    CHECK(readMap(text, r).ok);
+    CHECK(r.prims().size() == 2 && r.otherEntities.empty());
+    if (r.prims().size() == 2)
+        for (size_t i = 0; i < 2; ++i) {
+            MathPrim x = r.prims()[i], o = w.prims()[i];
+            x.id = o.id = 0;
+            CHECK(x == o);
+        }
+    CHECK(writeMap(r) == text);
+}
+
 int main() {
     testGrid();
     testBoxGeometry();
@@ -1651,6 +1793,7 @@ int main() {
     testTerrainPoints();
     testWorld();
     testSky();
+    testMathPrims();
     testRay();
     testUndo();
     testMakeChange();

@@ -12,12 +12,13 @@ Read in this order:
 
 ## Where things stand
 
-- Released: v0.1.0 … v0.7.1, then **v0.8.0** (milestone 8, World: lights with rotation
-  rings, skies, ambient, fog, rough preview toggles, camera bookmarks, scale figure).
-- **Next: milestone 9 — Renderer** (PNG renders of only what the camera sees, a
-  Hammer-style scrolling render log window and a log file). Wait for the user's
-  go-ahead; they had just received the v0.8.0 report when this was written.
-- After that: M10 Y2K shaders, M11 export (.glb, Godot).
+- Released: v0.1.0 … v0.8.0, then **v0.9.0** (milestone 9: Bryce-style math
+  primitives with combining).
+- **Next: milestone 10 — Props** (static models from `.glb` and Mazzuola's `.mazz`, with
+  textures, no physics). Wait for the user's go-ahead; they had just received the
+  v0.9.0 report when this was written. Then M11 renderer, M12 Y2K, M13 export.
+- Mazzuola (`bytebent/mazzuola`) is the user's companion modeller (design only so far).
+  Its models become Scalpellino props.
 
 ## The user
 
@@ -62,6 +63,8 @@ Read in this order:
 - The editor shows the world only roughly, like Hammer (user's wish): sky, light preview
   and fog are View toggles; the light preview is very rough and never computed while
   off. The sun's direction is typed on the sun, not tied to the sky.
+- Math primitives are their own objects next to brushes, never a replacement: low-poly
+  brush shapes stay. Saved maps keep primitives as primitives; only exports mesh them.
 - Make terrain is by picking faces (user: "select any face of a shape"), never by
   guessing a face from a selected brush.
 

@@ -39,6 +39,7 @@ MenuActions drawMenuBar(const MenuState& st) {
         if (ImGui::MenuItem("Curve (arch, ring, wall, stairs)", "Shift+C", st.curveTool)) a.toolCurve = true;
         if (ImGui::MenuItem("Terrain (sculpt, paint)", "Shift+G", st.terrainTool)) a.toolTerrain = true;
         if (ImGui::MenuItem("Light", "Shift+L", st.lightTool)) a.toolLight = true;
+        if (ImGui::MenuItem("Math primitive", "Shift+M", st.primTool)) a.toolPrim = true;
         ImGui::Separator();
         if (ImGui::BeginMenu("Clip: keep")) {
             if (ImGui::MenuItem("Both pieces", nullptr, st.clipKeep == 0)) a.clipKeep = 0;
@@ -140,6 +141,23 @@ MenuActions drawMenuBar(const MenuState& st) {
         ImGui::TextDisabled("then Return. Vertex tool: move terrain points.");
         ImGui::EndMenu();
     }
+    if (ImGui::BeginMenu("Primitives")) {
+        if (ImGui::MenuItem("Primitive tool", "Shift+M", st.primTool)) a.toolPrim = true;
+        static const char* kinds[] = {"New sphere", "New cube", "New cylinder", "New cone", "New torus", "New capsule", "New disc"};
+        for (int i = 0; i < 7; ++i)
+            if (ImGui::MenuItem(kinds[i], nullptr, st.primTool && st.primKind == i)) a.primKind = i;
+        if (ImGui::MenuItem("Create primitive", "Return", false, st.primPending)) a.createPrim = true;
+        ImGui::TextDisabled("Primitive tool: drag a box in a 2D view, Return creates");
+        ImGui::Separator();
+        if (ImGui::MenuItem("Combine selected", nullptr, false, st.primsSelected >= 2)) a.combine = true;
+        if (ImGui::MenuItem("Separate selected", nullptr, false, st.primsInCombo)) a.separate = true;
+        static const char* ops[] = {"Selected: add", "Selected: subtract", "Selected: intersect"};
+        for (int i = 0; i < 3; ++i)
+            if (ImGui::MenuItem(ops[i], nullptr, false, st.primsInCombo)) a.primOp = i;
+        ImGui::TextDisabled("In a combination, subtract pieces cut into the add");
+        ImGui::TextDisabled("pieces and intersect pieces keep only the overlap");
+        ImGui::EndMenu();
+    }
     if (ImGui::BeginMenu("World")) {
         if (ImGui::MenuItem("Light tool", "Shift+L", st.lightTool)) a.toolLight = true;
         static const char* kinds[] = {"New point light", "New spot light", "New sun"};
@@ -219,6 +237,10 @@ void drawControlsWindow(bool* open) {
             {"Make terrain", "Terrain menu > Make terrain: click faces in 3D (Shift+click adds) or brushes in 2D (face toward you); Return makes them terrain, Esc stops"},
             {"Terrain points", "Vertex tool on a selected terrain: click a point (Cmd+click adds), drag in the 3D view or a side view; Cmd+Shift+T types a height"},
             {"Terrain tool", "Shift+G: drag over terrain (3D, or a 2D view facing it); mode, radius, amount in Properties; Esc cancels a stroke"},
+            {"Primitive tool", "Shift+M (Primitives menu): pick sphere, cube, cylinder, cone, torus, capsule or disc in Properties, drag a box in a 2D view, Return creates, Esc cancels"},
+            {"Select / move primitives", "click a primitive (Select, Light or Primitive tool; a combination selects whole); drag it in a 2D view; Delete removes, Cmd+D duplicates"},
+            {"Turn / size primitives", "drag the rings around the selection (15 degree steps); drag a size handle (opposite face stays, Shift: evenly); or type in Properties"},
+            {"Combine primitives", "Primitives menu or Properties: Combine selected; each piece adds, subtracts or intersects; Separate undoes it"},
             {"Light tool", "Shift+L (World menu): pick point / spot / sun and settings in Properties, click in a view to place, Return creates, Esc cancels"},
             {"Select / move lights", "click a light's marker (any tool that selects: Select, Light); drag it in a 2D view; Delete removes, Cmd+D duplicates"},
             {"Aim a spot or sun", "drag the rotation rings of the selected light (3D: X red, Y green, Z blue; 2D: the ring around the view's axis), 15 degree steps; or type pitch / yaw"},

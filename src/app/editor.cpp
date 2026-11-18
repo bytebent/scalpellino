@@ -191,6 +191,13 @@ bool Editor::frame(float dt) {
     st.canMakeTerrain = true;
     st.terrainPicking = tool_ == &terrainTool_ && terrainTool_.picking();
     st.lightTool = tool_ == &lightTool_;
+    st.primTool = tool_ == &primTool_;
+    st.primPending = st.primTool && primTool_.hasPending();
+    st.primKind = (int)primTool_.templ.kind;
+    st.primsSelected = doc_.primSelection().size();
+    st.primsInCombo = false;
+    for (MathPrimId id : doc_.primSelection())
+        if (const MathPrim* p = doc_.findPrim(id)) st.primsInCombo = st.primsInCombo || p->combo != 0;
     st.lightPending = st.lightTool && lightTool_.pending.has_value();
     st.lightKind = (int)lightTool_.templ.kind;
     st.lightsSelected = !doc_.lightSelection().empty();
@@ -264,6 +271,12 @@ bool Editor::frame(float dt) {
     if (m.toolCurve) setTool(&curveTool_);
     if (m.toolTerrain) setTool(&terrainTool_);
     if (m.toolLight) setTool(&lightTool_);
+    if (m.toolPrim) setTool(&primTool_);
+    if (m.primKind >= 0) { primTool_.templ.kind = (PrimKind)m.primKind; setTool(&primTool_); }
+    if (m.createPrim) primTool_.create(doc_, currentTexture_, &lastBox_);
+    if (m.combine) combinePrims();
+    if (m.separate) separatePrims();
+    if (m.primOp >= 0) setPrimOp((PrimOp)m.primOp);
     if (m.lightKind >= 0) { lightTool_.templ.kind = (LightKind)m.lightKind; setTool(&lightTool_); }
     if (m.createLight) lightTool_.create(doc_);
     if (m.environment) { worldError_.clear(); envBuf_ = doc_.environment(); askEnvironment_ = true; }
@@ -387,6 +400,7 @@ void Editor::handleKeyboard() {
     if (shift_ && IsKeyPressed(KEY_C)) setTool(&curveTool_);
     if (shift_ && IsKeyPressed(KEY_G)) setTool(&terrainTool_);
     if (shift_ && IsKeyPressed(KEY_L)) setTool(&lightTool_);
+    if (shift_ && IsKeyPressed(KEY_M)) setTool(&primTool_);
     if (IsKeyPressed(KEY_H)) { if (shift_) hideUnselected(); else hideSelected(); }
     if (shift_ && IsKeyPressed(KEY_X)) { if (tool_ == &clipTool_) clipTool_.cycleKeep(); else setTool(&clipTool_); }
     if (shift_ && IsKeyPressed(KEY_T)) applyCurrentTexture();
@@ -401,6 +415,9 @@ Scene Editor::buildScene() {
     // The texture tool works on faces; brush selection tint would compete with it.
     if (tool_ != &textureTool_) s.selected = doc_.selection();
     for (const Light& l : doc_.lights()) s.lights.push_back({l, doc_.lightSelection().count(l.id) > 0});
+    for (const MathPrim& p : doc_.prims()) s.prims.push_back({p, doc_.primSelection().count(p.id) > 0});
+    s.lightPreview = lightPreview_;
+    s.ambient = doc_.environment().ambient;
     tool_->decorate(doc_, s);
     for (SceneBrush& r : s.replaced)
         for (SceneBrush& b : s.brushes)
@@ -579,6 +596,7 @@ void Editor::drawToolsPanel() {
         toolButton(&curveTool_, "Shift+C");
         toolButton(&terrainTool_, "Shift+G");
         toolButton(&lightTool_, "Shift+L");
+        toolButton(&primTool_, "Shift+M");
     }
     ImGui::End();
 }
@@ -705,6 +723,27 @@ void Editor::selectNone() {
 }
 
 void Editor::duplicate() {
+    if (doc_.selection().empty() && !doc_.primSelection().empty()) {
+        tool_->cancel();
+        // Copies keep their combinations together, as new combinations.
+        std::map<std::uint32_t, std::uint32_t> combos;
+        std::uint32_t next = newComboId(doc_.prims());
+        std::vector<MathPrim> copies;
+        for (MathPrimId id : doc_.primSelection())
+            if (const MathPrim* p = doc_.findPrim(id)) {
+                MathPrim c = *p;
+                c.id = 0;
+                c.pos += Vec3{grid_.size, grid_.size, 0};
+                if (c.combo) {
+                    auto it = combos.find(c.combo);
+                    if (it == combos.end()) it = combos.emplace(c.combo, next++).first;
+                    c.combo = it->second;
+                }
+                copies.push_back(std::move(c));
+            }
+        doc_.apply(doc_.makeAddPrims(std::move(copies), "Duplicate primitive"));
+        return;
+    }
     if (doc_.selection().empty() && !doc_.lightSelection().empty()) {
         tool_->cancel();
         std::vector<Light> copies;
@@ -733,10 +772,11 @@ void Editor::duplicate() {
 }
 
 void Editor::deleteSelection() {
-    if (doc_.selection().empty() && doc_.lightSelection().empty()) return;
+    if (doc_.selection().empty() && doc_.lightSelection().empty() && doc_.primSelection().empty()) return;
     tool_->cancel();
     Command c = doc_.makeDelete(doc_.selection(), "Delete");
     doc_.addLightDeletes(c, doc_.lightSelection());
+    doc_.addPrimDeletes(c, doc_.primSelection());
     doc_.apply(std::move(c));
 }
 
@@ -1926,6 +1966,198 @@ void Editor::drawTerrainPanel() {
 
 // ------------------------------------------------------------------ world (milestone 8)
 
+void Editor::combinePrims() {
+    if (doc_.primSelection().size() < 2) { worldError_ = "select two or more primitives to combine"; return; }
+    const std::uint32_t id = newComboId(doc_.prims());
+    std::vector<MathPrim> out;
+    for (MathPrimId pid : doc_.primSelection())
+        if (const MathPrim* p = doc_.findPrim(pid)) {
+            MathPrim c = *p;
+            c.combo = id;
+            out.push_back(c);
+        }
+    tool_->cancel();
+    doc_.apply(doc_.makeModifyPrims(out, "Combine"));
+}
+
+void Editor::setPrimOp(PrimOp op) {
+    std::vector<MathPrim> out;
+    for (MathPrimId pid : doc_.primSelection())
+        if (const MathPrim* p = doc_.findPrim(pid))
+            if (p->combo && p->op != op) {
+                MathPrim c = *p;
+                c.op = op;
+                out.push_back(c);
+            }
+    if (!out.empty()) doc_.apply(doc_.makeModifyPrims(out, "Combine mode"));
+}
+
+void Editor::drawPrimPanel() {
+    static const char* kindNames[] = {"sphere", "cube", "cylinder", "cone", "torus", "capsule", "disc"};
+    auto texturePicker = [&](std::string& tex, bool& changed) {
+        ImGui::Text("texture: %s", tex.empty() ? "(flat colour)" : tex.c_str());
+        if (ImGui::SmallButton("use current texture")) { tex = currentTexture_; changed = true; }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("flat colour")) { tex.clear(); changed = true; }
+    };
+    auto colorEdit = [](Vec3& c) {
+        float f[3] = {(float)(c.x / 255), (float)(c.y / 255), (float)(c.z / 255)};
+        if (ImGui::ColorEdit3("colour", f, ImGuiColorEditFlags_Uint8)) c = {std::round(f[0] * 255), std::round(f[1] * 255), std::round(f[2] * 255)};
+        return ImGui::IsItemDeactivatedAfterEdit();
+    };
+    auto vec3Edit = [](const char* label, Vec3& v) {
+        double a[3] = {v.x, v.y, v.z};
+        ImGui::SetNextItemWidth(220);
+        ImGui::InputScalarN(label, ImGuiDataType_Double, a, 3, nullptr, nullptr, "%g");
+        v = {a[0], a[1], a[2]};
+        return ImGui::IsItemDeactivatedAfterEdit();
+    };
+    const std::set<MathPrimId>& sel = doc_.primSelection();
+    if (!sel.empty()) {
+        if ((sel != primBufFor_ || doc_.revision() != primBufRev_) && !ImGui::IsAnyItemActive()) {
+            if (const MathPrim* p = doc_.findPrim(*sel.begin())) primBuf_ = *p;
+            primBufFor_ = sel;
+            primBufRev_ = doc_.revision();
+        }
+        MathPrim& b = primBuf_;
+        const bool one = sel.size() == 1;
+        std::set<std::uint32_t> combos;
+        for (MathPrimId id : sel) if (const MathPrim* p = doc_.findPrim(id)) combos.insert(p->combo);
+        if (one) ImGui::Text("%s", kindNames[(int)b.kind]);
+        else ImGui::Text("%zu primitives selected", sel.size());
+        // What changed is applied to every selected primitive; place, turn and size only
+        // when a single one is selected.
+        std::vector<std::function<void(MathPrim&)>> fns;
+        const char* what = "Edit primitive";
+        ImGui::PushItemWidth(150);
+        if (one) {
+            if (vec3Edit("position", b.pos)) { const Vec3 v = b.pos; fns.push_back([v](MathPrim& p) { p.pos = v; }); }
+            if (vec3Edit("rotation X Y Z", b.rot)) { const Vec3 v = b.rot; fns.push_back([v](MathPrim& p) { p.rot = v; }); }
+            if (vec3Edit("size", b.size)) {
+                Vec3 v = b.size;
+                for (int a = 0; a < 3; ++a) v[a] = std::max(b.kind == PrimKind::Disc && a == 2 ? 0.0 : 1.0, std::fabs(v[a]));
+                fns.push_back([v](MathPrim& p) { p.size = v; });
+            }
+        }
+        if (b.kind == PrimKind::Cube) {
+            ImGui::InputDouble("rounded corners", &b.round, 0, 0, "%g");
+            if (ImGui::IsItemDeactivatedAfterEdit()) { const double v = std::max(0.0, b.round); fns.push_back([v](MathPrim& p) { if (p.kind == PrimKind::Cube) p.round = v; }); }
+        }
+        if (b.kind == PrimKind::Torus) {
+            ImGui::InputDouble("tube thickness (0.05-0.5)", &b.thickness, 0, 0, "%g");
+            if (ImGui::IsItemDeactivatedAfterEdit()) { const double v = std::clamp(b.thickness, 0.05, 0.5); fns.push_back([v](MathPrim& p) { if (p.kind == PrimKind::Torus) p.thickness = v; }); }
+        }
+        bool texChanged = false;
+        texturePicker(b.texture, texChanged);
+        if (texChanged) { const std::string t = b.texture; fns.push_back([t](MathPrim& p) { p.texture = t; }); }
+        if (colorEdit(b.color)) { const Vec3 c = b.color; fns.push_back([c](MathPrim& p) { p.color = c; }); }
+        ImGui::InputDouble("texture repeats", &b.texScale, 0, 0, "%g");
+        if (ImGui::IsItemDeactivatedAfterEdit()) { const double v = std::clamp(b.texScale, 0.01, 1000.0); fns.push_back([v](MathPrim& p) { p.texScale = v; }); }
+        ImGui::PopItemWidth();
+        if (!fns.empty()) {
+            std::vector<MathPrim> out;
+            for (MathPrimId id : sel)
+                if (const MathPrim* p = doc_.findPrim(id)) {
+                    MathPrim c = *p;
+                    for (auto& f : fns) f(c);
+                    if (c != *p) out.push_back(c);
+                }
+            if (!out.empty()) doc_.apply(doc_.makeModifyPrims(out, what));
+        }
+        ImGui::Separator();
+        // Combining.
+        const bool inCombo = !combos.count(0);
+        if (inCombo && combos.size() == 1) {
+            const auto members = comboMembers(doc_.prims(), *combos.begin());
+            ImGui::Text("combination of %zu", members.size());
+            int op = (int)b.op;
+            if (ImGui::RadioButton("add", one && op == 0)) setPrimOp(PrimOp::Add);
+            ImGui::SameLine();
+            if (ImGui::RadioButton("subtract", one && op == 1)) setPrimOp(PrimOp::Subtract);
+            ImGui::SameLine();
+            if (ImGui::RadioButton("intersect", one && op == 2)) setPrimOp(PrimOp::Intersect);
+            ImGui::TextDisabled("pick one piece:");
+            for (const MathPrim* m : members) {
+                char label[64];
+                std::snprintf(label, sizeof label, "%s (%s)##%u", kindNames[(int)m->kind], primOpName(m->op), m->id);
+                if (ImGui::Selectable(label, one && sel.count(m->id))) doc_.setPrimSelection({m->id});
+            }
+            if (ImGui::SmallButton("whole combination")) doc_.setPrimSelection(doc_.withCombos(sel));
+        }
+        ImGui::BeginDisabled(sel.size() < 2);
+        if (ImGui::Button("Combine")) combinePrims();
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        ImGui::BeginDisabled(!inCombo && combos.size() == 1);
+        if (ImGui::Button("Separate")) separatePrims();
+        ImGui::EndDisabled();
+        if (!worldError_.empty()) ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", worldError_.c_str());
+        ImGui::TextDisabled("Delete removes, Cmd+D duplicates");
+        if (tool_ != &primTool_) return;
+        ImGui::Separator();
+    }
+    PrimTool& t = primTool_;
+    ImGui::TextUnformatted("New primitive");
+    int kind = (int)t.templ.kind;
+    for (int i = 0; i < kPrimKinds; ++i) {
+        if (i % 4) ImGui::SameLine();
+        ImGui::RadioButton(kindNames[i], &kind, i);
+    }
+    t.templ.kind = (PrimKind)kind;
+    ImGui::PushItemWidth(150);
+    if (t.templ.kind == PrimKind::Cube) ImGui::InputDouble("rounded corners", &t.templ.round, 0, 0, "%g");
+    if (t.templ.kind == PrimKind::Torus) {
+        ImGui::InputDouble("tube thickness (0.05-0.5)", &t.templ.thickness, 0, 0, "%g");
+        t.templ.thickness = std::clamp(t.templ.thickness, 0.05, 0.5);
+    }
+    ImGui::Checkbox("flat colour (else the current texture)", &t.flat);
+    colorEdit(t.templ.color);
+    ImGui::InputDouble("texture repeats", &t.templ.texScale, 0, 0, "%g");
+    ImGui::PopItemWidth();
+    if (auto p = t.pending()) {
+        ImGui::TextDisabled("box (centre, size):");
+        double c[3], s[3];
+        // the box as drawn (before a disc is turned to face its view)
+        if (!ImGui::IsAnyItemActive()) {
+            const Vec3 cc = p->pos;
+            const Vec3 ss = primBounds(*p).size();
+            primPend_[0] = cc.x; primPend_[1] = cc.y; primPend_[2] = cc.z;
+            primPend_[3] = ss.x; primPend_[4] = ss.y; primPend_[5] = ss.z;
+        }
+        for (int i = 0; i < 3; ++i) { c[i] = primPend_[i]; s[i] = primPend_[3 + i]; }
+        ImGui::SetNextItemWidth(220);
+        ImGui::InputScalarN("centre", ImGuiDataType_Double, c, 3, nullptr, nullptr, "%g");
+        const bool e1 = ImGui::IsItemDeactivatedAfterEdit();
+        ImGui::SetNextItemWidth(220);
+        ImGui::InputScalarN("box size", ImGuiDataType_Double, s, 3, nullptr, nullptr, "%g");
+        const bool e2 = ImGui::IsItemDeactivatedAfterEdit();
+        for (int i = 0; i < 3; ++i) { primPend_[i] = c[i]; primPend_[3 + i] = std::fabs(s[i]); }
+        if (e1 || e2) {
+            int ax = 2;
+            if (p->kind == PrimKind::Disc) ax = std::fabs(p->rot.y) > 1 ? 0 : std::fabs(p->rot.x) > 1 ? 1 : 2;
+            t.setPending({c[0], c[1], c[2]}, {primPend_[3], primPend_[4], primPend_[5]}, ax);
+        }
+        if (ImGui::Button("Create (Return)")) t.create(doc_, currentTexture_, &lastBox_);
+    } else {
+        ImGui::TextDisabled("drag a box in a 2D view");
+    }
+}
+
+void Editor::separatePrims() {
+    std::vector<MathPrim> out;
+    for (MathPrimId pid : doc_.primSelection())
+        if (const MathPrim* p = doc_.findPrim(pid))
+            if (p->combo) {
+                MathPrim c = *p;
+                c.combo = 0;
+                c.op = PrimOp::Add;
+                out.push_back(c);
+            }
+    if (out.empty()) return;
+    tool_->cancel();
+    doc_.apply(doc_.makeModifyPrims(out, "Separate"));
+}
+
 template <class Fn> void Editor::editLights(const char* name, Fn fn) {
     std::vector<Light> out;
     for (LightId id : doc_.lightSelection())
@@ -2259,6 +2491,11 @@ void Editor::drawFacePanel() {
         ImGui::End();
         return;
     }
+    if (tool_ == &primTool_ || ((tool_ == &selectTool_ || tool_ == &lightTool_) && !doc_.primSelection().empty())) {
+        if (ImGui::Begin("Properties###face", nullptr, ImGuiWindowFlags_NoCollapse)) drawPrimPanel();
+        ImGui::End();
+        return;
+    }
     if (tool_ == &lightTool_ || (tool_ == &selectTool_ && !doc_.lightSelection().empty())) {
         if (ImGui::Begin("Properties###face", nullptr, ImGuiWindowFlags_NoCollapse)) drawLightPanel();
         ImGui::End();
@@ -2353,7 +2590,7 @@ void Editor::openMap(const std::string& path) {
     }
     tool_->cancel();
     doc_.reset(loaded.worldKeys, loaded.brushes(), loaded.otherEntities, loaded.groups(), loaded.visgroups(),
-               WorldData{loaded.lights(), loaded.environment(), loaded.bookmarks(), loaded.figure()});
+               WorldData{loaded.lights(), loaded.environment(), loaded.bookmarks(), loaded.figure(), loaded.prims()});
     path_ = path;
     if (r.skippedBrushes > 0)
         errorText_ = "Opened, but skipped " + std::to_string(r.skippedBrushes) + " invalid brush(es).";
@@ -2493,6 +2730,9 @@ void Editor::runPending() {
 //                | pos x y z   (lightset = the next light, pos places it; lightedit = selected lights)
 //   expect lights <n>   expect lightsel <n>   expect lightpos x y z   expect lightdir <pitch> <yaw>
 //   viewset sky|preview|fog|figure on|off   skydir <path>   figure x y z
+//   tool prim   primset kind <k>|round|thickness|flat on/off|color r g b|texscale   primbox c s [axis]
+//   prim <kind> x y z sx sy sz [rx ry rz]   primedit <key> <value...>   primselect <index...>
+//   combine   separate   expect prims|primsel <n>   expect primpos|primrot|primsize x y z   expect primop <op>
 //   environment sky <name|none> | ambient r g b | fog on|off | fogcolor r g b | fogrange <start> <end>
 //   bookmark add <name> | go <index>   expect sky <name>   expect bookmarks <n>   expect camera x y z
 //   terrainset mode <raise|lower|smooth|flatten|noise|paint|erase> | radius|amount|strength <n>
@@ -2605,7 +2845,7 @@ void Editor::stepScript() {
         std::string t; in >> t;
         setTool(t == "block" ? (Tool*)&blockTool_ : t == "vertex" ? (Tool*)&vertexTool_
               : t == "texture" ? (Tool*)&textureTool_ : t == "clip" ? (Tool*)&clipTool_
-              : t == "curve" ? (Tool*)&curveTool_ : t == "terrain" ? (Tool*)&terrainTool_ : t == "light" ? (Tool*)&lightTool_ : (Tool*)&selectTool_);
+              : t == "curve" ? (Tool*)&curveTool_ : t == "terrain" ? (Tool*)&terrainTool_ : t == "light" ? (Tool*)&lightTool_ : t == "prim" ? (Tool*)&primTool_ : (Tool*)&selectTool_);
     } else if (cmd == "press") {
         int v; float x, y; in >> v >> x >> y;
         std::string mod;
@@ -2776,6 +3016,82 @@ void Editor::stepScript() {
             double p = 0, y = 0; in >> p >> y;
             if (std::fabs(l->pitch - p) > 0.01 || std::fabs(l->yaw - y) > 0.01) { std::fprintf(stderr, "script FAIL (command %d): light pitch %g yaw %g\n", scriptLine_, l->pitch, l->yaw); ++scriptFailures_; }
         }
+    } else if (cmd == "prim") {
+        // prim <kind> x y z  sx sy sz  [rx ry rz]: adds a math primitive (current texture)
+        std::string k; in >> k;
+        MathPrim p;
+        if (auto pk = primKindFromName(k)) p.kind = *pk;
+        in >> p.pos.x >> p.pos.y >> p.pos.z >> p.size.x >> p.size.y >> p.size.z;
+        Vec3 r; if (in >> r.x >> r.y >> r.z) p.rot = r;
+        p.texture = currentTexture_;
+        doc_.apply(doc_.makeAddPrims({p}, "Create primitive"));
+    } else if (cmd == "primedit") {
+        // primedit <key> <value...> on the selected primitives:
+        //   kind k | pos x y z | rot x y z | size x y z | round r | thickness t | op add|subtract|intersect
+        //   | texture <name|none> | color r g b | texscale s
+        std::string k; in >> k;
+        std::string rest; std::getline(in, rest);
+        std::vector<MathPrim> out;
+        for (MathPrimId id : doc_.primSelection())
+            if (const MathPrim* q = doc_.findPrim(id)) {
+                MathPrim p = *q;
+                std::istringstream v(rest);
+                if (k == "kind") { std::string n; v >> n; if (auto pk = primKindFromName(n)) p.kind = *pk; }
+                else if (k == "pos") v >> p.pos.x >> p.pos.y >> p.pos.z;
+                else if (k == "rot") v >> p.rot.x >> p.rot.y >> p.rot.z;
+                else if (k == "size") v >> p.size.x >> p.size.y >> p.size.z;
+                else if (k == "round") v >> p.round;
+                else if (k == "thickness") v >> p.thickness;
+                else if (k == "op") { std::string o; v >> o; p.op = o == "subtract" ? PrimOp::Subtract : o == "intersect" ? PrimOp::Intersect : PrimOp::Add; }
+                else if (k == "texture") { std::string t; v >> t; p.texture = t == "none" ? "" : t; }
+                else if (k == "color") v >> p.color.x >> p.color.y >> p.color.z;
+                else if (k == "texscale") v >> p.texScale;
+                out.push_back(p);
+            }
+        if (!out.empty()) doc_.apply(doc_.makeModifyPrims(out, "Edit primitive"));
+    } else if (cmd == "primset") {
+        // primset kind <k> | round <r> | thickness <t> | flat on|off | color r g b | texscale s: the next primitive
+        std::string k; in >> k;
+        MathPrim& t = primTool_.templ;
+        if (k == "kind") { std::string n; in >> n; if (auto pk = primKindFromName(n)) t.kind = *pk; }
+        else if (k == "round") in >> t.round;
+        else if (k == "thickness") in >> t.thickness;
+        else if (k == "flat") { std::string v; in >> v; primTool_.flat = v == "on"; }
+        else if (k == "color") in >> t.color.x >> t.color.y >> t.color.z;
+        else if (k == "texscale") in >> t.texScale;
+    } else if (cmd == "primbox") {
+        // primbox cx cy cz sx sy sz [view axis]: the pending box, typed
+        Vec3 c, sz; int ax = 2; in >> c.x >> c.y >> c.z >> sz.x >> sz.y >> sz.z; in >> ax;
+        primTool_.setPending(c, sz, ax);
+    } else if (cmd == "expect" && (in.str().find(" primpos ") != std::string::npos || in.str().find(" primrot ") != std::string::npos ||
+                                   in.str().find(" primsize ") != std::string::npos)) {
+        // expect primpos|primrot|primsize x y z: the first selected primitive (+-0.01)
+        std::string w; Vec3 v; in >> w >> v.x >> v.y >> v.z;
+        const MathPrim* p = doc_.primSelection().empty() ? nullptr : doc_.findPrim(*doc_.primSelection().begin());
+        const Vec3 have = !p ? Vec3{} : w == "primpos" ? p->pos : w == "primrot" ? p->rot : p->size;
+        if (!p || length(have - v) > 0.01) {
+            std::fprintf(stderr, "script FAIL (command %d): %s is %g %g %g\n", scriptLine_, w.c_str(), have.x, have.y, have.z);
+            ++scriptFailures_;
+        }
+    } else if (cmd == "expect" && in.str().find(" primop ") != std::string::npos) {
+        std::string w, o; in >> w >> o;
+        const MathPrim* p = doc_.primSelection().empty() ? nullptr : doc_.findPrim(*doc_.primSelection().begin());
+        if (!p || primOpName(p->op) != o || !p->combo) { std::fprintf(stderr, "script FAIL (command %d): not a '%s' piece of a combination\n", scriptLine_, o.c_str()); ++scriptFailures_; }
+    } else if (cmd == "combine") {
+        combinePrims();
+    } else if (cmd == "separate") {
+        separatePrims();
+    } else if (cmd == "primselect") {
+        // primselect <index...>: select primitives by their order in the map (0-based)
+        std::set<MathPrimId> s; size_t i;
+        while (in >> i) if (i < doc_.prims().size()) s.insert(doc_.prims()[i].id);
+        doc_.setPrimSelection(s); doc_.setSelection({}); doc_.setLightSelection({});
+    } else if (cmd == "expect" && in.str().find(" prims ") != std::string::npos) {
+        std::string w; size_t n = 0; in >> w >> n;
+        if (doc_.prims().size() != n) { std::fprintf(stderr, "script FAIL (command %d): expected %zu primitives, got %zu\n", scriptLine_, n, doc_.prims().size()); ++scriptFailures_; }
+    } else if (cmd == "expect" && in.str().find(" primsel ") != std::string::npos) {
+        std::string w; size_t n = 0; in >> w >> n;
+        if (doc_.primSelection().size() != n) { std::fprintf(stderr, "script FAIL (command %d): expected %zu selected primitives, got %zu\n", scriptLine_, n, doc_.primSelection().size()); ++scriptFailures_; }
     } else if (cmd == "viewset") {
         // viewset sky|preview|fog|figure on|off
         std::string k, v; in >> k >> v;

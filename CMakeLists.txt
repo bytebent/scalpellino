@@ -31,7 +31,8 @@ add_library(scal_core STATIC
   src/core/primitives.cpp
   src/core/terrain.cpp
   src/core/world.cpp
-  src/core/sky.cpp)
+  src/core/sky.cpp
+  src/core/mathprim.cpp)
 target_include_directories(scal_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 # File formats. Also graphics-free, so it is tested headless too.
@@ -58,6 +59,7 @@ if(SCAL_BUILD_APP)
     src/render/texture_library.cpp
     src/render/sky_library.cpp
     src/render/lighting.cpp
+    src/render/mathprim_render.cpp
     src/render/viewport.cpp
     src/tools/tool.cpp
     src/tools/select_tool.cpp
@@ -67,8 +69,9 @@ if(SCAL_BUILD_APP)
     src/tools/clip_tool.cpp
     src/tools/curve_tool.cpp
     src/tools/terrain_tool.cpp
-    src/tools/light_edit.cpp
+    src/tools/object_edit.cpp
     src/tools/light_tool.cpp
+    src/tools/prim_tool.cpp
     src/ui/layout.cpp
   )
   if(APPLE)

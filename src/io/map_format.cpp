@@ -112,8 +112,51 @@ KeyValues lightKeys(const Light& l) {
     return kv;
 }
 
+// A math primitive as our own point entity ("scal_primitive"; other tools ignore it).
+KeyValues primKeys(const MathPrim& p) {
+    KeyValues kv;
+    kv.emplace_back("classname", "scal_primitive");
+    kv.emplace_back("kind", primKindName(p.kind));
+    kv.emplace_back("origin", vec(p.pos));
+    kv.emplace_back("rotation", vec(p.rot));
+    kv.emplace_back("size", vec(p.size));
+    if (p.kind == PrimKind::Cube) kv.emplace_back("round", num(p.round));
+    if (p.kind == PrimKind::Torus) kv.emplace_back("thickness", num(p.thickness));
+    if (p.combo) {
+        kv.emplace_back("combo", std::to_string(p.combo));
+        kv.emplace_back("op", primOpName(p.op));
+    }
+    if (!p.texture.empty()) kv.emplace_back("texture", p.texture);
+    kv.emplace_back("color", vec(p.color));
+    kv.emplace_back("texscale", num(p.texScale));
+    for (const auto& k : p.otherKeys) kv.push_back(k);
+    return kv;
+}
+
 bool readVec(const std::string& s, Vec3& v) {
     return std::sscanf(s.c_str(), "%lf %lf %lf", &v.x, &v.y, &v.z) == 3;
+}
+
+bool primFromKeys(const KeyValues& kv, MathPrim& p) {
+    bool ours = false;
+    for (const auto& [k, v] : kv) if (k == "classname" && v == "scal_primitive") ours = true;
+    if (!ours) return false;
+    for (const auto& [k, v] : kv) {
+        if (k == "classname") continue;
+        if (k == "kind") { if (auto pk = primKindFromName(v)) p.kind = *pk; }
+        else if (k == "origin") readVec(v, p.pos);
+        else if (k == "rotation") readVec(v, p.rot);
+        else if (k == "size") readVec(v, p.size);
+        else if (k == "round") p.round = std::atof(v.c_str());
+        else if (k == "thickness") p.thickness = std::atof(v.c_str());
+        else if (k == "combo") p.combo = (std::uint32_t)std::strtoul(v.c_str(), nullptr, 10);
+        else if (k == "op") p.op = v == "subtract" ? PrimOp::Subtract : v == "intersect" ? PrimOp::Intersect : PrimOp::Add;
+        else if (k == "texture") p.texture = v;
+        else if (k == "color") readVec(v, p.color);
+        else if (k == "texscale") p.texScale = std::atof(v.c_str());
+        else p.otherKeys.emplace_back(k, v);
+    }
+    return true;
 }
 
 // Light entity -> Light (false if it isn't one of ours to edit).
@@ -204,6 +247,11 @@ std::string writeMap(const Document& doc) {
     for (const Light& l : doc.lights()) {
         o << "// entity " << e++ << "\n{\n";
         writeKeys(o, lightKeys(l));
+        o << "}\n";
+    }
+    for (const MathPrim& p : doc.prims()) {
+        o << "// entity " << e++ << "\n{\n";
+        writeKeys(o, primKeys(p));
         o << "}\n";
     }
     for (const RawEntity& ent : doc.otherEntities) {
@@ -511,6 +559,8 @@ MapReadResult readMap(const std::string& text, Document& doc) {
                 groups[g.id] = std::move(g);
             } else if (Light l; brushes.empty() && lightFromKeys(keys, l)) {
                 extra.lights.push_back(l);
+            } else if (MathPrim mp; brushes.empty() && primFromKeys(keys, mp)) {
+                extra.prims.push_back(mp);
             } else {
                 others.push_back({std::move(keys), std::move(brushes)});
             }

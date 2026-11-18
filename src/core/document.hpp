@@ -3,6 +3,7 @@
 // selection, and undo history. All edits go through Document::apply(Command).
 #include "core/brush.hpp"
 #include "core/world.hpp"
+#include "core/mathprim.hpp"
 #include <map>
 #include <optional>
 #include <set>
@@ -56,6 +57,13 @@ struct LightChange {
     std::optional<Light> after;
 };
 
+// One math primitive before/after an edit.
+struct PrimChange {
+    MathPrimId id = 0;
+    std::optional<MathPrim> before;
+    std::optional<MathPrim> after;
+};
+
 struct Command {
     std::string name;
     std::vector<BrushChange> changes;
@@ -66,6 +74,8 @@ struct Command {
     // Light selection around the command (unset = left as it is).
     std::optional<std::set<LightId>> lightSelectionBefore, lightSelectionAfter;
     std::optional<Environment> envBefore, envAfter; // set = the command changes the environment
+    std::vector<PrimChange> primChanges;
+    std::optional<std::set<MathPrimId>> primSelectionBefore, primSelectionAfter;
 };
 
 // Everything besides brushes that a loaded map brings (milestone 8).
@@ -74,6 +84,7 @@ struct WorldData {
     Environment env;
     std::vector<CameraBookmark> bookmarks;
     std::optional<Vec3> figure; // scale figure position (editor-only)
+    std::vector<MathPrim> prims;
 };
 
 class Document {
@@ -110,6 +121,15 @@ public:
     LightId newLightId() { return nextLightId_++; }
     const std::set<LightId>& lightSelection() const { return lightSelection_; }
     void setLightSelection(std::set<LightId> s) { lightSelection_ = std::move(s); }
+
+    // Math primitives (milestone 9). Selected on their own like lights.
+    const std::vector<MathPrim>& prims() const { return prims_; }
+    const MathPrim* findPrim(MathPrimId id) const;
+    MathPrimId newPrimId() { return nextPrimId_++; }
+    const std::set<MathPrimId>& primSelection() const { return primSelection_; }
+    void setPrimSelection(std::set<MathPrimId> s) { primSelection_ = std::move(s); }
+    // All members of the combinations the given primitives are in.
+    std::set<MathPrimId> withCombos(const std::set<MathPrimId>& ids) const;
 
     // Environment (sky, ambient, fog): changed through commands (makeEnvironment).
     const Environment& environment() const { return env_; }
@@ -151,6 +171,11 @@ public:
     // Adds deleting these lights to any command (e.g. Delete removes brushes and lights).
     void addLightDeletes(Command& c, const std::set<LightId>& ids) const;
     Command makeEnvironment(const Environment& env, const std::string& name);
+    // Math primitives: new ones get ids and become the primitive selection (brushes and
+    // lights deselected).
+    Command makeAddPrims(std::vector<MathPrim> prims, const std::string& name);
+    Command makeModifyPrims(const std::vector<MathPrim>& modified, const std::string& name);
+    void addPrimDeletes(Command& c, const std::set<MathPrimId>& ids) const;
     // Mixed edit as one undo step (clip, carve, hollow). New brushes get ids. The
     // selection afterwards is `selectAfter` if given, else the old selection minus
     // deleted brushes plus the added ones.
@@ -162,6 +187,7 @@ private:
     void setBrush(BrushId id, const std::optional<Brush>& b);
     void setGroup(GroupId id, const std::optional<Group>& g);
     void setLight(LightId id, const std::optional<Light>& l);
+    void setPrim(MathPrimId id, const std::optional<MathPrim>& p);
     // Adds group removals to `c` for groups that would have no brushes left.
     void pruneEmptyGroups(Command& c) const;
     void bump() { ++revision_; }
@@ -172,6 +198,9 @@ private:
     std::map<GroupId, Group> groups_;
     std::vector<Visgroup> visgroups_;
     GroupId nextGroupId_ = 1;
+    std::vector<MathPrim> prims_;
+    std::set<MathPrimId> primSelection_;
+    MathPrimId nextPrimId_ = 1;
     std::vector<Light> lights_;
     std::set<LightId> lightSelection_;
     LightId nextLightId_ = 1;

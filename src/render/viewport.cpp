@@ -3,6 +3,7 @@
 #include "render/texture_library.hpp"
 #include "core/sky.hpp"
 #include "render/lighting.hpp"
+#include "render/mathprim_render.hpp"
 #include <algorithm>
 #include <cmath>
 
@@ -23,6 +24,9 @@ const Color kHandle    {255, 255, 255, 255};
 const Color kInvalid   {255,  60, 220, 255};
 const Color kPivot     { 80, 230, 255, 255};
 const Color kTerrainPoint{120, 190, 255, 255};
+const Color kPrimLine {200, 170, 255, 255};
+const Color kPrimCut  {255, 150,  80, 255};
+const Color kPrimKeep { 90, 220, 200, 255};
 
 const Color kBg3D      { 22,  22,  26, 255};
 const Color kGround    { 48,  48,  56, 255};
@@ -337,6 +341,43 @@ void Viewport::render2D(const Grid& grid, const Scene& scene) {
             const Vec3 &a = o[i], &e = o[(i + 1) % o.size()];
             segment(phys(a[U], a[V]), phys(e[U], e[V]), thick + 1, kPreview);
         }
+
+    // ---- math primitives: outlines (add: lilac, subtract: orange, intersect: teal)
+    {
+        auto drawPrim = [&](const MathPrim& p, Color c) {
+            for (const Polyline& l : primOutline(p, 64))
+                for (size_t i = 0; i + 1 < l.pts.size() + (l.closed ? 1 : 0); ++i) {
+                    const Vec3 &a = l.pts[i], &b = l.pts[(i + 1) % l.pts.size()];
+                    segment(phys(a[U], a[V]), phys(b[U], b[V]), thick, c);
+                }
+        };
+        for (const auto& sp : scene.prims) {
+            if (sp.selected) continue;
+            const Color c = sp.prim.combo == 0 || sp.prim.op == PrimOp::Add ? kPrimLine
+                            : sp.prim.op == PrimOp::Subtract ? kPrimCut : kPrimKeep;
+            drawPrim(sp.prim, c);
+        }
+        for (const auto& sp : scene.prims) if (sp.selected) drawPrim(sp.prim, kSelected);
+        for (const MathPrim& p : scene.pendingPrims) drawPrim(p, kPreview);
+        // Rings around the selected primitives (the one around this view's axis) and the
+        // size handles seen side-on.
+        if (scene.primGizmo) {
+            const double r = std::max(scene.primGizmo->radius, Scene::kRingPx / zoom_);
+            const auto pts = axisCircle(scene.primGizmo->center, axD(), r, 96);
+            const Color rc = scene.activeRing == axD() ? WHITE : kAxisCol[axD()];
+            for (size_t i = 0; i < pts.size(); ++i) {
+                const Vec3 &a = pts[i], &b = pts[(i + 1) % pts.size()];
+                segment(phys(a[U], a[V]), phys(b[U], b[V]), thick + 1, rc);
+            }
+            const float hs = (float)(3 * P);
+            for (const auto& [pos, ax] : scene.primGizmo->handles) {
+                if (std::hypot(ax[U], ax[V]) < 0.3) continue;
+                const Vector2 c = phys(pos[U], pos[V]);
+                DrawRectangleRec({std::floor(c.x - hs - (float)P), std::floor(c.y - hs - (float)P), 2 * (hs + (float)P) + 1, 2 * (hs + (float)P) + 1}, BLACK);
+                DrawRectangleRec({std::floor(c.x - hs), std::floor(c.y - hs), 2 * hs + 1, 2 * hs + 1}, kHandle);
+            }
+        }
+    }
 
     // ---- scale figure (outline)
     if (scene.figure)
@@ -765,6 +806,35 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
         EndShaderMode();
     }
 
+    // Math primitives: exact surfaces (their own shader, fog and light preview included).
+    if (!scene.prims.empty()) {
+        PrimDrawContext ctx;
+        ctx.camPos = {pos_.x, pos_.y, pos_.z};
+        ctx.textures = scene.textures;
+        ctx.lightPreview = scene.lightPreview;
+        ctx.ambient = scene.ambient;
+        for (const auto& sl : scene.lights) ctx.lights.push_back(sl.light);
+        ctx.fog = scene.fog;
+        ctx.fogColor = scene.fogColor;
+        ctx.fogStart = scene.fogStart;
+        ctx.fogEnd = scene.fogEnd;
+        std::vector<MathPrim> ps;
+        for (const auto& sp : scene.prims) ps.push_back(sp.prim);
+        drawMathPrims3D(ps, ctx);
+    }
+    // Their outlines: selected ones in red, the primitive tool's preview in yellow, and
+    // all of them if the shader can't run.
+    for (const auto& sp : scene.prims) {
+        if (!sp.selected && mathPrimShaderOk()) continue;
+        for (const Polyline& l : primOutline(sp.prim, 48))
+            for (size_t i = 0; i + 1 < l.pts.size() + (l.closed ? 1 : 0); ++i)
+                DrawLine3D(toRl(l.pts[i]), toRl(l.pts[(i + 1) % l.pts.size()]), sp.selected ? kSelected : kPrimLine);
+    }
+    for (const MathPrim& p : scene.pendingPrims)
+        for (const Polyline& l : primOutline(p, 48))
+            for (size_t i = 0; i + 1 < l.pts.size() + (l.closed ? 1 : 0); ++i)
+                DrawLine3D(toRl(l.pts[i]), toRl(l.pts[(i + 1) % l.pts.size()]), kPreview);
+
     // Selection outlines on top (visible through other brushes, like Hammer).
     rlDrawRenderBatchActive();
     rlDisableDepthTest();
@@ -806,6 +876,14 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
             for (size_t i = 0; i < pts.size(); ++i) DrawLine3D(toRl(pts[i]), toRl(pts[(i + 1) % pts.size()]), rc);
         }
     }
+    if (scene.primGizmo) {
+        const double r = std::max(scene.primGizmo->radius, Scene::kRingPx * worldPerPixel(scene.primGizmo->center));
+        for (int ax = 0; ax < 3; ++ax) {
+            const auto pts = axisCircle(scene.primGizmo->center, ax, r, 96);
+            const Color rc = scene.activeRing == ax ? WHITE : kAxisCol[ax];
+            for (size_t i = 0; i < pts.size(); ++i) DrawLine3D(toRl(pts[i]), toRl(pts[(i + 1) % pts.size()]), rc);
+        }
+    }
     if (scene.brushCursor) {
         const auto pts = scene.brushCursor->ring.empty() ? cursorCircle(*scene.brushCursor) : scene.brushCursor->ring;
         for (size_t i = 0; i < pts.size(); ++i) DrawLine3D(toRl(pts[i]), toRl(pts[(i + 1) % pts.size()]), kPreview);
@@ -834,6 +912,16 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
         }
     };
     for (const auto& sl : scene.lights) marker3D(sl.light, sl.selected ? kSelected : BLACK, sl.selected ? 2 * P : P);
+    if (scene.primGizmo)
+        for (const auto& [pos, ax] : scene.primGizmo->handles) {
+            Vector2 c;
+            if (!worldToLocal3D(pos, c)) continue;
+            c.x *= P;
+            c.y *= P;
+            const float hs = 3 * P;
+            DrawRectangleRec({std::floor(c.x - hs - P), std::floor(c.y - hs - P), 2 * (hs + P) + 1, 2 * (hs + P) + 1}, BLACK);
+            DrawRectangleRec({std::floor(c.x - hs), std::floor(c.y - hs), 2 * hs + 1, 2 * hs + 1}, kHandle);
+        }
     if (scene.pendingLight) marker3D(*scene.pendingLight, kPreview, 2 * P);
 
     // Vertex tool: terrain points as small squares (the only handles picked in 3D).

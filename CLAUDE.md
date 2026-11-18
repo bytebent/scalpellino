@@ -19,7 +19,8 @@ New session? Also read `docs/HANDOFF.md` (user preferences, past mistakes, works
 - Scrub paths and usernames from any pasted logs before committing anything derived from them.
 
 ## Product rules
-- No gameplay entities (doors, triggers, props, etc.). Do not add or suggest them.
+- No gameplay entities (doors, triggers, physics, scripting). Do not add or suggest them.
+  Static props (placed models with their textures, no physics) are wanted: milestone 10.
 - Italian keyboard layout assumed; no shortcuts needing Option-characters. Use physical
   key positions for WASD and grid keys.
 - Creation actions (brushes, curve tool) commit on Return, cancel on Esc. Not on mouse release.

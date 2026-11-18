@@ -90,7 +90,10 @@ void Document::setLight(LightId id, const std::optional<Light>& l) {
     auto it = std::find_if(lights_.begin(), lights_.end(), [&](const Light& x) { return x.id == id; });
     if (l) {
         if (it != lights_.end()) *it = *l;
-        else lights_.push_back(*l);
+        else
+            lights_.insert(std::lower_bound(lights_.begin(), lights_.end(), id,
+                                            [](const Light& x, LightId v) { return x.id < v; }),
+                           *l);
         if (id >= nextLightId_) nextLightId_ = id + 1;
     } else if (it != lights_.end()) {
         lights_.erase(it);
@@ -115,9 +118,11 @@ void Document::apply(Command cmd) {
     for (const GroupChange& g : cmd.groupChanges) setGroup(g.id, g.after);
     for (const BrushChange& c : cmd.changes) setBrush(c.id, c.after);
     for (const LightChange& c : cmd.lightChanges) setLight(c.id, c.after);
+    for (const PrimChange& c : cmd.primChanges) setPrim(c.id, c.after);
     if (cmd.envAfter) env_ = *cmd.envAfter;
     selection_ = cmd.selectionAfter;
     if (cmd.lightSelectionAfter) lightSelection_ = *cmd.lightSelectionAfter;
+    if (cmd.primSelectionAfter) primSelection_ = *cmd.primSelectionAfter;
     undo_.push_back(std::move(cmd));
     redo_.clear();
     bump();
@@ -130,9 +135,11 @@ bool Document::undo() {
     for (auto it = cmd.changes.rbegin(); it != cmd.changes.rend(); ++it) setBrush(it->id, it->before);
     for (auto it = cmd.groupChanges.rbegin(); it != cmd.groupChanges.rend(); ++it) setGroup(it->id, it->before);
     for (auto it = cmd.lightChanges.rbegin(); it != cmd.lightChanges.rend(); ++it) setLight(it->id, it->before);
+    for (auto it = cmd.primChanges.rbegin(); it != cmd.primChanges.rend(); ++it) setPrim(it->id, it->before);
     if (cmd.envBefore) env_ = *cmd.envBefore;
     selection_ = cmd.selectionBefore;
     if (cmd.lightSelectionBefore) lightSelection_ = *cmd.lightSelectionBefore;
+    if (cmd.primSelectionBefore) primSelection_ = *cmd.primSelectionBefore;
     redo_.push_back(std::move(cmd));
     bump();
     return true;
@@ -145,9 +152,11 @@ bool Document::redo() {
     for (const GroupChange& g : cmd.groupChanges) setGroup(g.id, g.after);
     for (const BrushChange& c : cmd.changes) setBrush(c.id, c.after);
     for (const LightChange& c : cmd.lightChanges) setLight(c.id, c.after);
+    for (const PrimChange& c : cmd.primChanges) setPrim(c.id, c.after);
     if (cmd.envAfter) env_ = *cmd.envAfter;
     selection_ = cmd.selectionAfter;
     if (cmd.lightSelectionAfter) lightSelection_ = *cmd.lightSelectionAfter;
+    if (cmd.primSelectionAfter) primSelection_ = *cmd.primSelectionAfter;
     undo_.push_back(std::move(cmd));
     bump();
     return true;
@@ -169,6 +178,13 @@ void Document::reset(KeyValues world, std::vector<Brush> brushes, std::vector<Ra
         lights_.push_back(std::move(l));
     }
     env_ = std::move(extra.env);
+    prims_.clear();
+    primSelection_.clear();
+    nextPrimId_ = 1;
+    for (MathPrim& p : extra.prims) {
+        p.id = nextPrimId_++;
+        prims_.push_back(std::move(p));
+    }
     bookmarks_ = std::move(extra.bookmarks);
     figure_ = extra.figure;
     visgroups_ = std::move(visgroups);
@@ -231,6 +247,8 @@ Command Document::makeAddLights(std::vector<Light> lights, const std::string& na
     c.selectionBefore = selection_;
     c.lightSelectionBefore = lightSelection_;
     c.lightSelectionAfter = std::set<LightId>{};
+    c.primSelectionBefore = primSelection_;
+    c.primSelectionAfter = std::set<MathPrimId>{};
     for (Light& l : lights) {
         if (l.id == 0) l.id = newLightId();
         c.lightSelectionAfter->insert(l.id);
@@ -257,6 +275,73 @@ void Document::addLightDeletes(Command& c, const std::set<LightId>& ids) const {
             after.erase(id);
         }
     c.lightSelectionAfter = after;
+}
+
+const MathPrim* Document::findPrim(MathPrimId id) const {
+    for (const MathPrim& p : prims_)
+        if (p.id == id) return &p;
+    return nullptr;
+}
+
+void Document::setPrim(MathPrimId id, const std::optional<MathPrim>& p) {
+    auto it = std::find_if(prims_.begin(), prims_.end(), [&](const MathPrim& x) { return x.id == id; });
+    if (p) {
+        if (it != prims_.end()) *it = *p;
+        else // kept in creation order, so undoing a delete puts it back where it was
+            prims_.insert(std::lower_bound(prims_.begin(), prims_.end(), id,
+                                           [](const MathPrim& x, MathPrimId v) { return x.id < v; }),
+                          *p);
+        if (id >= nextPrimId_) nextPrimId_ = id + 1;
+    } else if (it != prims_.end()) {
+        prims_.erase(it);
+        primSelection_.erase(id);
+    }
+}
+
+std::set<MathPrimId> Document::withCombos(const std::set<MathPrimId>& ids) const {
+    std::set<MathPrimId> out = ids;
+    std::set<std::uint32_t> combos;
+    for (MathPrimId id : ids)
+        if (const MathPrim* p = findPrim(id)) if (p->combo) combos.insert(p->combo);
+    for (const MathPrim& p : prims_)
+        if (p.combo && combos.count(p.combo)) out.insert(p.id);
+    return out;
+}
+
+Command Document::makeAddPrims(std::vector<MathPrim> prims, const std::string& name) {
+    Command c;
+    c.name = name;
+    c.selectionBefore = selection_;
+    c.lightSelectionBefore = lightSelection_;
+    c.lightSelectionAfter = std::set<LightId>{};
+    c.primSelectionBefore = primSelection_;
+    c.primSelectionAfter = std::set<MathPrimId>{};
+    for (MathPrim& p : prims) {
+        if (p.id == 0) p.id = newPrimId();
+        c.primSelectionAfter->insert(p.id);
+        c.primChanges.push_back({p.id, std::nullopt, std::move(p)});
+    }
+    return c;
+}
+
+Command Document::makeModifyPrims(const std::vector<MathPrim>& modified, const std::string& name) {
+    Command c;
+    c.name = name;
+    c.selectionBefore = c.selectionAfter = selection_;
+    for (const MathPrim& p : modified)
+        if (const MathPrim* old = findPrim(p.id)) c.primChanges.push_back({p.id, *old, p});
+    return c;
+}
+
+void Document::addPrimDeletes(Command& c, const std::set<MathPrimId>& ids) const {
+    std::set<MathPrimId> after = c.primSelectionAfter ? *c.primSelectionAfter : primSelection_;
+    if (!c.primSelectionBefore) c.primSelectionBefore = primSelection_;
+    for (MathPrimId id : ids)
+        if (const MathPrim* p = findPrim(id)) {
+            c.primChanges.push_back({id, *p, std::nullopt});
+            after.erase(id);
+        }
+    c.primSelectionAfter = after;
 }
 
 Command Document::makeEnvironment(const Environment& env, const std::string& name) {
