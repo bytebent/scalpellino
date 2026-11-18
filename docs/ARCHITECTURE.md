@@ -304,7 +304,7 @@ it appears below the top view's centre). Editor-only, never exported.
 - **Cameras** (planned) — objects placed and aimed like a spot light, with many options
   and presets: lens (field of view or mm, roll, near / far distance, orthographic mode),
   image size, aim at a point, depth of field and exposure later; the user can save their
-  own presets. Full list in PLAN.md. A map can hold several; exactly one is
+  own presets (saved in Bottega's `presets/camera_presets`). Full list in PLAN.md. A map can hold several; exactly one is
   **active**, the only one the Camera Preview and Render use.
 - **Reflection probes** (planned) — placed by hand; Render bakes a picture of their
   surroundings for shiny materials to reflect.

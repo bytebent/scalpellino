@@ -264,7 +264,8 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
 User's idea (2026-11-18): one folder that Mazzuola, Scalpellino and later texture tools
 read and write. Agreed so far:
 - Layout: `textures/` (the library), `models/` (one folder per model), `maps/`,
-  `palettes/`, `skies/`, `shaders/`, `renders/`. **No `heightmaps/`** (user: a mistake).
+  `palettes/`, `skies/`, `shaders/`, `renders/`, `presets/` (camera presets in
+  `presets/camera_presets`). **No `heightmaps/`** (user: a mistake).
 - `palettes/`: format decided when Mazzuola gets there.
 - `renders/`: the renders Scalpellino makes (M11).
 - `shaders/`: a **drop-in folder**: any shader file put there becomes available, so a
@@ -383,9 +384,9 @@ read and write. Agreed so far:
       **depth of field** (focus distance and blur, a camera effect, so with the optional
       ones, later); **exposure** for when HDR arrives.
     - *Presets:* the user can **save their own presets** (for example a favourite lens
-      plus size). **Where they live is open:** the app's settings, or Bottega so other
-      tools share them (Bottega's folder list has no place for them yet).
-  - **Open:** where camera presets are saved; probe details; the order of the
+      plus size). They live in Bottega, in **`presets/camera_presets`** (user), so other
+      tools share them.
+  - **Open:** probe details; the order of the
     renderer part of the roadmap (proposed below, to confirm).
 
 ## Milestone 1 plan — Brushes (done)

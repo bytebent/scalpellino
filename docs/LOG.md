@@ -4,6 +4,10 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-18 — Camera presets live in Bottega (docs only)
+- User: camera presets are saved in Bottega, `presets/camera_presets`. Recorded in PLAN
+  (Bottega layout, camera options) and ARCHITECTURE §7. No code changed.
+
 ### 2026-11-18 — Camera options settled (docs only)
 - The camera's option list, agreed with the user (lens, roll, near / far, image sizes,
   frame guide, aim at a point, orthographic mode, depth of field later, exposure later,
