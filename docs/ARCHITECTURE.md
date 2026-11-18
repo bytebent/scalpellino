@@ -2,7 +2,7 @@
 
 A small, fast, brush-based 3D map editor in the spirit of Valve's Hammer, for making
 Half-Life / Counter-Strike–style levels with an optional Y2K render look, and exporting
-them to Godot and other engines.
+them as `.glb` for other tools and engines.
 
 Personal tool. Not distributed. Simplicity and speed beat features.
 
@@ -18,8 +18,8 @@ Personal tool. Not distributed. Simplicity and speed beat features.
 4. **Everything is undoable.** Every edit goes through one command path.
 5. **Single-threaded first.** Heavy jobs (light baking) may move to a background thread later.
 6. **No Hammer quirks.** Keep what was good, drop what was clunky (see §6).
-7. **No gameplay objects.** No doors, triggers, props or other game logic entities.
-   The editor makes geometry, lights and looks. Game logic belongs in the game engine.
+7. **No gameplay objects.** No doors, triggers, physics or scripting. The editor makes
+   geometry, lights, static props and looks. Game logic belongs in the game engine.
 
 ## 2. Platform
 
@@ -273,7 +273,7 @@ are; brush tools never touch primitives). `core/mathprim.hpp`.
 - **Files:** saved as our own point entity `scal_primitive` (kind, origin, rotation,
   size, round, thickness, combo, op, texture, color, texscale; unknown keys kept), so a
   map reopened in Scalpellino keeps them as primitives. Only exports turn them into
-  meshes (M13): Godot's own round meshes where they match, fine triangles in `.glb`.
+  meshes (M13): fine triangles in `.glb`.
 
 ### Snap to Land / Ground and Multi-Replicate (v0.9.2, from Bryce)
 - **Snap to Land** (Cmd+J, Transform menu; `core/landing`): selected primitives drop
@@ -319,13 +319,13 @@ That's all. No gameplay entities (doors, triggers, physics, scripting).
   Valve 220 `.map` that other tools can still open. Extra data lives where other tools
   ignore it: `_scal_*` keys, `func_group` entities, and `//@` metadata comment lines inside
   brush blocks. How terrain and other extras go to other apps is decided at the export
-  milestone (likely: terrain as a mesh in `.glb` / the Godot package).
+  milestone (likely: terrain as a mesh in `.glb`).
 - **Native: Valve 220 `.map`.** Plain text, readable by func_godot and TrenchBroom.
   Editor-only data (visgroups, camera bookmarks, curve-generator parameters) stored as
   extra keys other tools ignore.
 - **nodraw:** faces textured `nodraw` (also recognised: `tools/toolsnodraw`, `common/nodraw`)
   are shown in the editor but skipped by every render and export (Camera Preview, PNG
-  renders, `.glb`, Godot package). The `.map` export keeps them, as other tools expect.
+  renders, `.glb`). The `.map` export keeps them, as other tools expect.
 - **Textures:** built-in CC0 textures inside the app + the user's folders of PNG/TGA/JPG/BMP
   (name = file name without extension). Half-Life `.wad` support later.
 
@@ -373,8 +373,8 @@ Fetched automatically by CMake, versions pinned:
 
 ```
 src/core/     brushes, entities, document, commands (no raylib)
-src/io/       map reader/writer, glb export, godot export, textures
-src/render/   viewports, render modes, y2k pipeline, shaders/
+src/io/       map reader/writer, glb import/export, textures
+src/render/   viewports, render modes, camera preview, shaders/
 src/tools/    select, block, clip, vertex, carve, curve, texture, light, camera
 src/ui/       panels, menus, shortcuts
 src/app/      main loop, settings, startup
@@ -411,5 +411,5 @@ docs/         this file, roadmap
 | 10c | Sky Lab (Bryce, all of it): generated skies (sun, moon, stars, clouds, atmosphere) with live preview, baked to panoramas; settings kept in the map; tick box to lock the sun to the map's sun light | |
 | 11 | Renderer: PNG renders, only what the camera sees (frustum, back faces, nodraw, optional outside-only), terminal-style render log window (+ log file); endless ground / water / cloud planes | |
 | 12 | Camera Preview (was "Y2K"): shaders (low-res, fog, chrome, bloom, dithering) | |
-| 13 | Export: `.glb`; Godot package only if asked for, terrain as mesh, primitives as meshes (Godot's round meshes where they match); nodraw skipped | |
+| 13 | Export: `.glb`; Godot package only if asked for, terrain as mesh, primitives as meshes; nodraw skipped | |
 | later | `.wad` textures, Lua generators, baked lighting, texture tags | |

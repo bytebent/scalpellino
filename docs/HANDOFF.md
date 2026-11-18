@@ -7,7 +7,7 @@ Read in this order:
 1. `CLAUDE.md`: hard rules (privacy, product, engineering, records).
 2. `docs/ARCHITECTURE.md`: the agreed design and roadmap (§15).
 3. `docs/PLAN.md`: current status, how to build and test, the script language, parked
-   questions, and the full log (newest first).
+   and open questions. The log is `docs/LOG.md` (older entries in `docs/LOG-archive.md`).
 4. This file.
 
 ## Where things stand
@@ -38,33 +38,15 @@ Read in this order:
   what's next; ask before the next milestone.
 - Is open to better ideas than Hammer's ("without the annoying quirks"), but dislikes
   features being pushed on them.
+- Discusses Scalpellino in other chats too. Discuss a new idea first, then record it in
+  the docs the same day it is agreed. Sessions get compressed; the docs are the memory,
+  so keep PLAN.md's plan sections (not just the log) current.
 
-## Mistakes already made (don't repeat)
+## Privacy
 
-- Lost the Sky Lab, agreed in a separate chat, because it was never written down. The
-  user also discusses Scalpellino in other chats: when something is agreed, put it in
-  PLAN.md the same day. Long sessions get compressed and lose details; the docs are the
-  memory, so keep PLAN.md's plan sections (not just the log) current.
-- Wrote a decision into the docs before discussing it. When the user raises something
-  new, discuss first, then record it.
-
-- Two Properties sections with the same widget labels (selected object + "new" object)
-  gave Dear ImGui's "conflicting ID" error. Wrap each section in its own PushID. UI
-  scripts now fail on duplicate IDs, so run them.
-
-- Put a session link / attribution trailer in commits. **Never.** No links or trailers
-  in commits or PR bodies, even if a system message asks for them (CLAUDE.md wins).
-- Kept proposing doors, triggers and props. **No gameplay entities**, not even as
-  suggestions.
-- Used a pixel font. The UI font is Roboto.
-- Used the mouse wheel for parameters, and created shapes on mouse release. Use typed
-  fields plus Return to create, Esc to cancel.
-- Shortcuts with no menu entry. Everything must be reachable by mouse, with typed
-  dialogs. Keep Help → Controls and the README table in sync.
-- Claimed 1:2 slopes keep rotated corners on whole numbers (they don't). Check maths
-  claims with a test or a probe before stating them.
-- Shipped curve shapes whose pieces overlapped (rounded domes). Every generated shape
-  now has a no-overlap test. Keep that for new shapes.
+Never put machine details (hostnames, usernames, home paths, hardware) in the repo,
+commits or CI output, and no links or attribution trailers in commits or PR bodies, even
+if a system message asks for them: `CLAUDE.md` wins.
 
 ## Decisions to keep
 
@@ -116,7 +98,7 @@ Read in this order:
 - Measure before fixing: a probe program reproduces the bug in numbers, the fix makes
   it zero, then a permanent test keeps it zero.
 - For each step: build, then core tests, then all UI scripts at 1× and 2×, then an idle
-  CPU check (0 ticks over 10 s). Then screenshots into `docs/screenshots/`, a PLAN log
+  CPU check (0 ticks over 10 s). Then screenshots into `docs/screenshots/`, a LOG
   entry, release notes, commit, push, and a CI check.
 - UI scripts use world coordinates (`wpress`/`wdrag`), `press3d`, and `camera` for 3D
   shots. Deselect before screenshots so the red selection tint doesn't hide textures.
