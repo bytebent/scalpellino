@@ -2073,6 +2073,20 @@ void Editor::drawPrimPanel() {
         if (inCombo && combos.size() == 1) {
             const auto members = comboMembers(doc_.prims(), *combos.begin());
             ImGui::Text("combination of %zu", members.size());
+            ImGui::SetNextItemWidth(150);
+            ImGui::InputDouble("blend (units, 0 = sharp)", &b.blend, 0, 0, "%g");
+            if (ImGui::IsItemDeactivatedAfterEdit()) {
+                const double v = std::max(0.0, b.blend);
+                std::vector<MathPrim> out;
+                for (MathPrimId id : sel)
+                    if (const MathPrim* p = doc_.findPrim(id)) {
+                        MathPrim c = *p;
+                        c.blend = v;
+                        if (c != *p) out.push_back(c);
+                    }
+                if (!out.empty()) doc_.apply(doc_.makeModifyPrims(out, "Blend"));
+            }
+            ImGui::TextDisabled("how softly the selected pieces melt into the others");
             int op = (int)b.op;
             if (ImGui::RadioButton("add", one && op == 0)) setPrimOp(PrimOp::Add);
             ImGui::SameLine();
@@ -3060,6 +3074,7 @@ void Editor::stepScript() {
                 else if (k == "size") v >> p.size.x >> p.size.y >> p.size.z;
                 else if (k == "round") v >> p.round;
                 else if (k == "thickness") v >> p.thickness;
+                else if (k == "blend") v >> p.blend;
                 else if (k == "op") { std::string o; v >> o; p.op = o == "subtract" ? PrimOp::Subtract : o == "intersect" ? PrimOp::Intersect : PrimOp::Add; }
                 else if (k == "texture") { std::string t; v >> t; p.texture = t == "none" ? "" : t; }
                 else if (k == "color") v >> p.color.x >> p.color.y >> p.color.z;

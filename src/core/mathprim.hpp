@@ -12,6 +12,10 @@
 // Combining (Bryce): primitives with the same `combo` number form one shape. Add pieces
 // are joined, Subtract pieces are cut away from them, and every Intersect piece keeps
 // only what is inside it. A primitive on its own (combo 0) is just itself.
+// Blending: a piece's `blend` (units) melts its joint into the others: a smooth neck
+// between added pieces, a soft rim around a cut, a soft edge on an intersection.
+// Combinations with any blend are worked out with distance functions (how far a point is
+// from the surface) and ray marching instead of the exact equations; 0 = sharp.
 //
 // No graphics dependencies: ray hits, outlines and bounds here are used for picking,
 // drawing outlines in the 2D views and tests; the 3D view does the same maths per pixel
@@ -43,6 +47,7 @@ struct MathPrim {
     Vec3 size{64, 64, 64};         // full extents along its own axes
     double round = 0;              // cube: corner rounding radius in units
     double thickness = 0.25;       // torus: tube radius as a share of the outer radius (0.05..0.5)
+    double blend = 0;              // in a combination: how far its joint melts in (units)
     PrimOp op = PrimOp::Add;       // only matters in a combination
     std::uint32_t combo = 0;       // 0 = on its own
     std::string texture;           // "" = flat colour
@@ -92,6 +97,16 @@ struct PrimHit {
 std::optional<PrimHit> rayHitPrims(const std::vector<MathPrim>& prims, const Vec3& o, const Vec3& d);
 // The stretches of the ray inside one combination (members listed in any order).
 std::vector<RayInterval> comboIntervals(const std::vector<const MathPrim*>& members, const Vec3& o, const Vec3& d);
+
+// Distance from world point `p` to the primitive's surface (negative inside). Exact for
+// spheres, rounded cubes and plain shapes; for stretched shapes a safe underestimate.
+double primDistance(const MathPrim& prim, const Vec3& p);
+// The same for a combination, blends included.
+double comboDistance(const std::vector<const MathPrim*>& members, const Vec3& p);
+bool comboBlended(const std::vector<const MathPrim*>& members);
+// Smooth minimum / maximum (polynomial, k = blend width; k <= 0 = min / max).
+double smoothMin(double a, double b, double k);
+double smoothMax(double a, double b, double k);
 
 // World bounding box (of the primitive's own box, rotated).
 AABB primBounds(const MathPrim& p);

@@ -37,6 +37,10 @@ uniform vec3 hs[16];
 uniform vec4 param[16];   // x round, y thickness, z capsule cap, w texture repeats
 uniform vec3 pcol[16];
 uniform int slot[16];     // texture slot 0..3, -1 = flat colour
+uniform float pblend[16]; // blend width (units) when joining the combination
+uniform int blended;      // 1 = distance functions + ray marching (some piece blends)
+uniform vec3 boxMin;      // the drawn box (marching starts where the ray enters it)
+uniform vec3 boxMax;
 uniform sampler2D texA;
 uniform sampler2D texB;
 uniform sampler2D texC;
@@ -268,6 +272,92 @@ int cubeR(vec3 o, vec3 d, vec3 h, float r, out Iv a) {
 
 mat3 rotOf(int i) { return mat3(rx[i], ry[i], rz[i]); }
 
+// ---- distance functions (same as core primDistance)
+float dist(int i, vec3 wp) {
+    mat3 R = rotOf(i);
+    vec3 h = hs[i];
+    vec3 p = transpose(R) * (wp - ppos[i]);
+    float hmin = min(h.x, h.y);
+    int k = kind[i];
+    if (k == 0) {
+        float k0 = length(p / h), k1 = length(p / (h * h));
+        return k1 < 1e-9 ? -min(hmin, h.z) : k0 * (k0 - 1.0) / k1;
+    }
+    if (k == 1) return rboxSdf(p, h, param[i].x);
+    if (k == 2) {
+        float dr = (length(p.xy / h.xy) - 1.0) * hmin, dz = abs(p.z) - h.z;
+        return min(max(dr, dz), 0.0) + length(max(vec2(dr, dz), 0.0));
+    }
+    if (k == 3) {
+        vec3 u = p / h;
+        float qx = length(u.xy), qy = u.z;
+        float cax = qx - min(qx, qy < 0.0 ? 1.0 : 0.0), cay = abs(qy) - 1.0;
+        float k2x = -1.0, k2y = 2.0;
+        float t = clamp(((0.0 - qx) * k2x + (1.0 - qy) * k2y) / (k2x * k2x + k2y * k2y), 0.0, 1.0);
+        float cbx = qx + k2x * t, cby = qy - 1.0 + k2y * t;
+        float s = (cbx < 0.0 && cay < 0.0) ? -1.0 : 1.0;
+        return s * sqrt(min(cax * cax + cay * cay, cbx * cbx + cby * cby)) * min(hmin, h.z);
+    }
+    if (k == 4) {
+        float th = param[i].y;
+        vec3 u = vec3(p.xy / h.xy, p.z / h.z * th);
+        float ring = length(u.xy) - (1.0 - th);
+        return (length(vec2(ring, u.z)) - th) * min(hmin, h.z / max(th, 1e-6));
+    }
+    if (k == 5) {
+        float r = hmin;
+        vec3 q = vec3(p.xy * r / h.xy, p.z);
+        float zc = max(0.0, h.z - r);
+        return length(vec3(q.xy, q.z - clamp(q.z, -zc, zc))) - r;
+    }
+    float out_ = max(length(p.xy / h.xy) - 1.0, 0.0) * hmin;
+    return length(vec2(out_, p.z)) - 0.25;
+}
+float smin(float a, float b, float k) {
+    if (k <= 0.0) return min(a, b);
+    float h = max(k - abs(a - b), 0.0) / k;
+    return min(a, b) - h * h * k * 0.25;
+}
+float smax(float a, float b, float k) { return -smin(-a, -b, k); }
+float sceneDist(vec3 p) {
+    float d = 1e20;
+    bool first = true;
+    for (int i = 0; i < count; ++i)
+        if (op[i] == 0) { float di = dist(i, p); d = first ? di : smin(d, di, pblend[i]); first = false; }
+    for (int i = 0; i < count; ++i)
+        if (op[i] == 1) d = smax(d, -dist(i, p), pblend[i]);
+    for (int i = 0; i < count; ++i)
+        if (op[i] == 2) d = smax(d, dist(i, p), pblend[i]);
+    return d;
+}
+
+// ---- a piece's own colour at a point (texture mapped by its kind)
+vec3 pieceBase(int who, vec3 p, vec3 n) {
+    mat3 R = rotOf(who);
+    vec3 lp = transpose(R) * (p - ppos[who]) / hs[who];
+    vec3 ln = transpose(R) * n;
+    vec2 uv;
+    int k = kind[who];
+    if (k == 0) uv = vec2(atan(lp.y, lp.x) / (2.0 * PI) + 0.5, acos(clamp(lp.z, -1.0, 1.0)) / PI);
+    else if (k == 1) {
+        vec3 an = abs(ln);
+        uv = an.z >= an.x && an.z >= an.y ? lp.xy : an.x >= an.y ? lp.yz : lp.xz;
+        uv = uv * 0.5 + 0.5;
+    } else if (k == 4) {
+        float th = param[who].y;
+        uv = vec2(atan(lp.y, lp.x) / (2.0 * PI) + 0.5, atan(lp.z * th, length(lp.xy) - (1.0 - th)) / (2.0 * PI) + 0.5);
+    } else if (k == 6 || ((k == 2 || k == 3) && abs(ln.z) > 0.999)) uv = lp.xy * 0.5 + 0.5;
+    else uv = vec2(atan(lp.y, lp.x) / (2.0 * PI) + 0.5, 0.5 - lp.z * 0.5);
+    uv *= param[who].w;
+    vec3 base = pcol[who] / 255.0;
+    int s = slot[who];
+    if (s == 0) base *= texture(texA, uv).rgb;
+    else if (s == 1) base *= texture(texB, uv).rgb;
+    else if (s == 2) base *= texture(texC, uv).rgb;
+    else if (s == 3) base *= texture(texD, uv).rgb;
+    return base;
+}
+
 // World stretches of member i (up to 2).
 int memberIv(int i, vec3 o, vec3 d, out Iv a, out Iv b) {
     mat3 R = rotOf(i);
@@ -300,6 +390,48 @@ const int MAXI = 8;
 void main() {
     vec3 o = camPos;
     vec3 d = normalize(fragPos - camPos);
+    float best = INF;
+    vec3 n = vec3(0.0);
+    int who = -1;
+    vec3 base = vec3(1.0);
+    if (blended == 1) {
+        // Ray marching through the distance field, from where the ray enters the box.
+        vec3 inv = 1.0 / d;
+        vec3 ta = (boxMin - o) * inv, tb = (boxMax - o) * inv;
+        vec3 tlo = min(ta, tb), thi = max(ta, tb);
+        float t0 = max(max(tlo.x, tlo.y), max(tlo.z, 2.0)), t1 = min(min(thi.x, thi.y), thi.z);
+        if (t0 > t1) discard;
+        float t = t0;
+        float eps = 1e-4 * length(boxMax - boxMin);
+        if (sceneDist(o + d * t) < 0.0) discard; // inside: nothing, like brushes
+        bool hit = false;
+        for (int i = 0; i < 256; ++i) {
+            float dd = sceneDist(o + d * t);
+            if (dd < eps * (1.0 + t * 0.001)) { hit = true; break; }
+            t += max(dd * 0.9, eps * 0.5);
+            if (t > t1) break;
+        }
+        if (!hit) discard;
+        best = t;
+        vec3 p = o + d * t;
+        float e = max(eps * 4.0, 0.01);
+        n = normalize(vec3(sceneDist(p + vec3(e, 0, 0)) - sceneDist(p - vec3(e, 0, 0)),
+                           sceneDist(p + vec3(0, e, 0)) - sceneDist(p - vec3(0, e, 0)),
+                           sceneDist(p + vec3(0, 0, e)) - sceneDist(p - vec3(0, 0, e))));
+        // Colour: the pieces near this point, weighted by how close their own surface is
+        // (within their blend width), so materials melt across the joint too.
+        vec3 sum = vec3(0.0);
+        float wsum = 0.0, nearest = 1e20, kmax = 1e-3;
+        for (int i = 0; i < count; ++i) kmax = max(kmax, pblend[i]);
+        for (int i = 0; i < count; ++i) {
+            float di = abs(dist(i, p));
+            if (di < nearest) { nearest = di; who = i; }
+            float k = kmax;
+            float w = max(0.0, 1.0 - di / k);
+            if (w > 0.0) { w = w * w; sum += pieceBase(i, p, n) * w; wsum += w; }
+        }
+        base = wsum > 0.0 ? sum / wsum : pieceBase(who, p, n);
+    } else {
     Iv cur[MAXI];
     int nc = 0;
     Iv a, b;
@@ -359,40 +491,15 @@ void main() {
         nc = nn;
     }
     // Nearest entry in front of the camera (from inside a solid: nothing, like brushes).
-    float best = INF;
-    vec3 n = vec3(0.0);
-    int who = -1;
     for (int j = 0; j < nc; ++j)
         if (cur[j].t0 >= 2.0 && cur[j].t0 < best) { best = cur[j].t0; n = cur[j].n0; who = cur[j].p0; }
     if (who < 0) discard;
+    if (dot(n, d) > 0.0) n = -n; // discs and cut faces: face the viewer
+    base = pieceBase(who, o + d * best, n);
+    }
     vec3 p = o + d * best;
     vec4 clip = mvp * vec4(p, 1.0);
     gl_FragDepth = clamp(clip.z / clip.w * 0.5 + 0.5, 0.0, 1.0);
-    if (dot(n, d) > 0.0) n = -n; // discs and cut faces: face the viewer
-
-    // Texture coordinates on the hit piece.
-    mat3 R = rotOf(who);
-    vec3 lp = transpose(R) * (p - ppos[who]) / hs[who];
-    vec3 ln = transpose(R) * n;
-    vec2 uv;
-    int k = kind[who];
-    if (k == 0) uv = vec2(atan(lp.y, lp.x) / (2.0 * PI) + 0.5, acos(clamp(lp.z, -1.0, 1.0)) / PI);
-    else if (k == 1) {
-        vec3 an = abs(ln);
-        uv = an.z >= an.x && an.z >= an.y ? lp.xy : an.x >= an.y ? lp.yz : lp.xz;
-        uv = uv * 0.5 + 0.5;
-    } else if (k == 4) {
-        float th = param[who].y;
-        uv = vec2(atan(lp.y, lp.x) / (2.0 * PI) + 0.5, atan(lp.z * th, length(lp.xy) - (1.0 - th)) / (2.0 * PI) + 0.5);
-    } else if (k == 6 || ((k == 2 || k == 3) && abs(ln.z) > 0.999)) uv = lp.xy * 0.5 + 0.5;
-    else uv = vec2(atan(lp.y, lp.x) / (2.0 * PI) + 0.5, 0.5 - lp.z * 0.5);
-    uv *= param[who].w;
-    vec3 base = pcol[who] / 255.0;
-    int s = slot[who];
-    if (s == 0) base *= texture(texA, uv).rgb;
-    else if (s == 1) base *= texture(texB, uv).rgb;
-    else if (s == 2) base *= texture(texC, uv).rgb;
-    else if (s == 3) base *= texture(texD, uv).rgb;
 
     vec3 c;
     if (lightMode == 0) {
@@ -521,7 +628,9 @@ void drawMathPrims3D(const std::vector<MathPrim>& prims, const PrimDrawContext& 
     for (const auto& g : groups) {
         const int n = (int)std::min<size_t>(g.size(), 16);
         int kind[16] = {}, op[16] = {}, slot[16] = {};
-        float pos[48] = {}, rx[48] = {}, ry[48] = {}, rz[48] = {}, hs[48] = {}, prm[64] = {}, col[48] = {};
+        float pos[48] = {}, rx[48] = {}, ry[48] = {}, rz[48] = {}, hs[48] = {}, prm[64] = {}, col[48] = {}, bl[16] = {};
+        int blended = 0;
+        double pad = 0;
         std::vector<std::string> slots;
         AABB box;
         bool anyAdd = false;
@@ -543,6 +652,9 @@ void drawMathPrims3D(const std::vector<MathPrim>& prims, const PrimDrawContext& 
             prm[4 * i + 1] = (float)std::clamp(p.thickness, 0.02, 0.5);
             prm[4 * i + 2] = (float)std::clamp(hmin / std::max(std::fabs(p.size.z) * 0.5, 1e-3), 1e-3, 1.0);
             prm[4 * i + 3] = (float)p.texScale;
+            bl[i] = n > 1 ? (float)std::max(0.0, p.blend) : 0.0f;
+            if (bl[i] > 0) blended = 1;
+            pad = std::max(pad, (double)bl[i]);
             slot[i] = -1;
             if (ctx.textures && !p.texture.empty()) {
                 auto it = std::find(slots.begin(), slots.end(), p.texture);
@@ -558,9 +670,14 @@ void drawMathPrims3D(const std::vector<MathPrim>& prims, const PrimDrawContext& 
         }
         if (!anyAdd) continue;
         // A little bigger, so the box's faces never cut the surface.
-        const Vec3 pad = box.size() * 0.01 + Vec3{1, 1, 1};
-        box.min -= pad;
-        box.max += pad;
+        // (blends can grow the shape by up to their width)
+        const Vec3 grow = box.size() * 0.01 + Vec3{1, 1, 1} * (1 + pad);
+        box.min -= grow;
+        box.max += grow;
+        setI("blended", blended);
+        set3("boxMin", box.min);
+        set3("boxMax", box.max);
+        SetShaderValueV(S.sh, S.at("pblend"), bl, SHADER_UNIFORM_FLOAT, 16);
         setI("count", n);
         SetShaderValueV(S.sh, S.at("kind"), kind, SHADER_UNIFORM_INT, 16);
         SetShaderValueV(S.sh, S.at("op"), op, SHADER_UNIFORM_INT, 16);

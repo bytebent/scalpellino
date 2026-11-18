@@ -1772,6 +1772,80 @@ void testMathPrims() {
     CHECK(writeMap(r) == text);
 }
 
+// Blending primitives (v0.9.2): distance functions and smooth combining.
+void testPrimBlend() {
+    auto prim = [](PrimKind k, Vec3 pos, Vec3 size) {
+        MathPrim p; p.id = 1; p.kind = k; p.pos = pos; p.size = size;
+        return p;
+    };
+    CHECK(near(smoothMin(3, 5, 0), 3) && near(smoothMax(3, 5, 0), 5));
+    CHECK(smoothMin(3, 3, 2) < 3 && smoothMax(3, 3, 2) > 3);
+    CHECK(near(smoothMin(0, 10, 2), 0)); // far apart: no blending
+    MathPrim s = prim(PrimKind::Sphere, {}, {100, 100, 100});
+    CHECK(near(primDistance(s, {200, 0, 0}), 150) && near(primDistance(s, {0, 0, 0}), -50));
+    MathPrim c = prim(PrimKind::Cube, {}, {100, 100, 100});
+    c.round = 10;
+    CHECK(near(primDistance(c, {80, 0, 0}), 30));
+    CHECK(near(primDistance(c, Vec3{1, 1, 1} * 100.0), length(Vec3{60, 60, 60}) - 10, 1e-9));
+    // Every kind: the distance is ~0 where the exact ray hit lands, negative inside,
+    // positive outside (rotated and stretched too).
+    for (int k = 0; k < kPrimKinds; ++k) {
+        MathPrim p = prim((PrimKind)k, {10, -20, 30}, {120, 80, k == (int)PrimKind::Disc ? 0.0 : 100});
+        p.rot = {15, -25, 40};
+        p.round = 8;
+        p.thickness = 0.3;
+        int hits = 0;
+        for (int i = 0; i < 40; ++i) {
+            const double a = i * 0.7, b = i * 1.3;
+            const Vec3 dir = normalize(Vec3{std::cos(a) * std::cos(b * 0.3), std::sin(a) * std::cos(b * 0.3), std::sin(b * 0.3) - 0.2});
+            const Vec3 o = p.pos - dir * 400.0 + Vec3{std::sin(b) * 15, std::cos(a) * 15, 0};
+            auto h = rayHitPrims({p}, o, dir);
+            if (!h) continue;
+            ++hits;
+            const Vec3 q = o + dir * h->t;
+            CHECK(std::fabs(primDistance(p, q)) < (k == (int)PrimKind::Disc ? 0.3 : 0.05));
+            CHECK(primDistance(p, q - dir * 5.0) > 0); // just before: outside
+        }
+        CHECK(hits > 10);
+        if (k != (int)PrimKind::Disc) CHECK(primDistance(p, p.pos) < 0 || k == (int)PrimKind::Torus);
+    }
+    // Two spheres touching at the origin: a sharp union leaves a gap above the contact,
+    // a blended one fills it with a smooth neck.
+    MathPrim a = prim(PrimKind::Sphere, {-50, 0, 0}, {100, 100, 100});
+    MathPrim b = prim(PrimKind::Sphere, {50, 0, 0}, {100, 100, 100});
+    a.id = 1; b.id = 2; a.combo = b.combo = 1;
+    const Vec3 o{0, -300, 20}, dir{0, 1, 0};
+    CHECK(!rayHitPrims({a, b}, o, dir));
+    b.blend = 40;
+    auto hb = rayHitPrims({a, b}, o, dir);
+    CHECK(hb.has_value());
+    if (hb) {
+        CHECK(hb->t > 200 && hb->t < 300);
+        CHECK(std::fabs(hb->normal.x) < 1e-3 && hb->normal.y < -0.5); // symmetric neck, facing the ray
+        CHECK(hb->picked == 1);
+    }
+    // Far from the neck, blending changes nothing.
+    auto far1 = rayHitPrims({a, b}, {-50, -300, 0}, dir);
+    CHECK(far1 && near(far1->t, 250, 0.05));
+    // A blended cut has a soft rim: hits sit between the sharp cut and the uncut surface.
+    MathPrim big = prim(PrimKind::Cube, {}, {200, 200, 200});
+    MathPrim cut = prim(PrimKind::Sphere, {0, 0, 100}, {120, 120, 120});
+    big.id = 1; cut.id = 2; big.combo = cut.combo = 2; cut.op = PrimOp::Subtract;
+    const Vec3 down{0, 0, -1};
+    const double rimX = 62; // just outside the sharp hole (radius 60)
+    auto sharp = rayHitPrims({big, cut}, {rimX, 0, 500}, down);
+    CHECK(sharp && near(sharp->t, 400, 1e-6));
+    cut.blend = 30;
+    auto soft = rayHitPrims({big, cut}, {rimX, 0, 500}, down);
+    CHECK(soft && soft->t > 400.5);
+    // File: blend round trip.
+    Document w;
+    b.id = 0;
+    w.apply(w.makeAddPrims({b}, "p"));
+    Document r;
+    CHECK(readMap(writeMap(w), r).ok && r.prims().size() == 1 && near(r.prims()[0].blend, 40));
+}
+
 int main() {
     testGrid();
     testBoxGeometry();
@@ -1794,6 +1868,7 @@ int main() {
     testWorld();
     testSky();
     testMathPrims();
+    testPrimBlend();
     testRay();
     testUndo();
     testMakeChange();

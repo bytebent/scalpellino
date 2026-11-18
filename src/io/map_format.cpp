@@ -125,6 +125,7 @@ KeyValues primKeys(const MathPrim& p) {
     if (p.combo) {
         kv.emplace_back("combo", std::to_string(p.combo));
         kv.emplace_back("op", primOpName(p.op));
+        if (p.blend > 0) kv.emplace_back("blend", num(p.blend));
     }
     if (!p.texture.empty()) kv.emplace_back("texture", p.texture);
     kv.emplace_back("color", vec(p.color));
@@ -149,6 +150,7 @@ bool primFromKeys(const KeyValues& kv, MathPrim& p) {
         else if (k == "size") readVec(v, p.size);
         else if (k == "round") p.round = std::atof(v.c_str());
         else if (k == "thickness") p.thickness = std::atof(v.c_str());
+        else if (k == "blend") p.blend = std::atof(v.c_str());
         else if (k == "combo") p.combo = (std::uint32_t)std::strtoul(v.c_str(), nullptr, 10);
         else if (k == "op") p.op = v == "subtract" ? PrimOp::Subtract : v == "intersect" ? PrimOp::Intersect : PrimOp::Add;
         else if (k == "texture") p.texture = v;

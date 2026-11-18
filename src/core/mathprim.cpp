@@ -344,7 +344,7 @@ const char* primOpName(PrimOp o) {
 
 bool MathPrim::operator==(const MathPrim& o) const {
     return id == o.id && kind == o.kind && pos == o.pos && rot == o.rot && size == o.size && round == o.round &&
-           thickness == o.thickness && op == o.op && combo == o.combo && texture == o.texture && color == o.color &&
+           thickness == o.thickness && blend == o.blend && op == o.op && combo == o.combo && texture == o.texture && color == o.color &&
            texScale == o.texScale && otherKeys == o.otherKeys;
 }
 
@@ -446,7 +446,146 @@ std::vector<RayInterval> primIntervals(const MathPrim& p, const Vec3& o, const V
     return out;
 }
 
+double smoothMin(double a, double b, double k) {
+    if (k <= 0) return std::min(a, b);
+    const double h = std::max(k - std::fabs(a - b), 0.0) / k;
+    return std::min(a, b) - h * h * k * 0.25;
+}
+
+double smoothMax(double a, double b, double k) { return -smoothMin(-a, -b, k); }
+
+double primDistance(const MathPrim& prim, const Vec3& wp) {
+    const Mat3 R = rotationMatrix(prim.rot);
+    const Vec3 h = halfSize(prim);
+    const Vec3 p = R.transposeMul(wp - prim.pos); // rotated frame, unscaled
+    const double hmin = std::min(h.x, h.y);
+    switch (prim.kind) {
+        case PrimKind::Sphere: { // ellipsoid (exact for a sphere)
+            const Vec3 a{p.x / h.x, p.y / h.y, p.z / h.z};
+            const Vec3 b{p.x / (h.x * h.x), p.y / (h.y * h.y), p.z / (h.z * h.z)};
+            const double k0 = length(a), k1 = length(b);
+            if (k1 < 1e-12) return -std::min({h.x, h.y, h.z});
+            return k0 * (k0 - 1) / k1;
+        }
+        case PrimKind::Cube: return roundBoxSdf(p, h, std::clamp(prim.round, 0.0, std::min({h.x, h.y, h.z})));
+        case PrimKind::Cylinder: {
+            const double dr = (std::hypot(p.x / h.x, p.y / h.y) - 1) * hmin, dz = std::fabs(p.z) - h.z;
+            return std::min(std::max(dr, dz), 0.0) + std::hypot(std::max(dr, 0.0), std::max(dz, 0.0));
+        }
+        case PrimKind::Cone: { // unit shape, then scaled down by the smallest half size
+            const Vec3 u{p.x / h.x, p.y / h.y, p.z / h.z};
+            const double qx = std::hypot(u.x, u.y), qy = u.z;
+            const double r1 = 1, r2 = 0, hh = 1;
+            const double cax = qx - std::min(qx, qy < 0 ? r1 : r2), cay = std::fabs(qy) - hh;
+            const double k2x = r2 - r1, k2y = 2 * hh;
+            const double t = std::clamp(((r2 - qx) * k2x + (hh - qy) * k2y) / (k2x * k2x + k2y * k2y), 0.0, 1.0);
+            const double cbx = qx - r2 + k2x * t, cby = qy - hh + k2y * t;
+            const double s = (cbx < 0 && cay < 0) ? -1 : 1;
+            return s * std::sqrt(std::min(cax * cax + cay * cay, cbx * cbx + cby * cby)) * std::min(hmin, h.z);
+        }
+        case PrimKind::Torus: { // in the torus's own space; z stretching only makes it larger
+            const double th = torusThickness(prim);
+            const Vec3 u{p.x / h.x, p.y / h.y, p.z / h.z * th};
+            const double ring = std::hypot(u.x, u.y) - (1 - th);
+            return (std::hypot(ring, u.z) - th) * std::min(hmin, h.z / std::max(th, 1e-6));
+        }
+        case PrimKind::Capsule: { // squeezed round to the smaller radius: a safe underestimate
+            const double r = hmin;
+            const Vec3 q{p.x * r / h.x, p.y * r / h.y, p.z};
+            const double zc = std::max(0.0, h.z - r);
+            const double cz = std::clamp(q.z, -zc, zc);
+            return length(Vec3{q.x, q.y, q.z - cz}) - r;
+        }
+        case PrimKind::Disc: { // a thin disc (half a unit thick) so it can be found
+            const double out = std::max(std::hypot(p.x / h.x, p.y / h.y) - 1, 0.0) * hmin;
+            return std::hypot(out, p.z) - 0.25;
+        }
+    }
+    return 1e30;
+}
+
+bool comboBlended(const std::vector<const MathPrim*>& members) {
+    if (members.size() < 2) return false;
+    for (const MathPrim* m : members)
+        if (m->blend > 0) return true;
+    return false;
+}
+
+double comboDistance(const std::vector<const MathPrim*>& members, const Vec3& p) {
+    double d = 1e30;
+    bool first = true;
+    for (const MathPrim* m : members)
+        if (m->op == PrimOp::Add || members.size() == 1) {
+            const double di = primDistance(*m, p);
+            d = first ? di : smoothMin(d, di, m->blend);
+            first = false;
+        }
+    if (members.size() == 1) return d;
+    for (const MathPrim* m : members)
+        if (m->op == PrimOp::Subtract) d = smoothMax(d, -primDistance(*m, p), m->blend);
+    for (const MathPrim* m : members)
+        if (m->op == PrimOp::Intersect) d = smoothMax(d, primDistance(*m, p), m->blend);
+    return d;
+}
+
+namespace {
+// Blended combinations: march along the ray from where it enters the pieces' box.
+std::vector<RayInterval> marchCombo(const std::vector<const MathPrim*>& members, const Vec3& o, const Vec3& d) {
+    AABB box;
+    double pad = 1;
+    for (const MathPrim* m : members) {
+        if (m->op == PrimOp::Add) { const AABB b = primBounds(*m); box.add(b.min); box.add(b.max); }
+        pad = std::max(pad, m->blend);
+    }
+    if (!box.valid()) return {};
+    box.min -= Vec3{pad, pad, pad};
+    box.max += Vec3{pad, pad, pad};
+    double t0 = -1e30, t1 = 1e30;
+    for (int a = 0; a < 3; ++a) {
+        if (std::fabs(d[a]) < 1e-12) {
+            if (o[a] < box.min[a] || o[a] > box.max[a]) return {};
+            continue;
+        }
+        double ta = (box.min[a] - o[a]) / d[a], tb = (box.max[a] - o[a]) / d[a];
+        if (ta > tb) std::swap(ta, tb);
+        t0 = std::max(t0, ta);
+        t1 = std::min(t1, tb);
+    }
+    if (t0 > t1 || t1 < 0) return {};
+    double t = std::max(t0, 0.0);
+    const double scale = std::max(1.0, length(box.size()));
+    const double eps = 1e-6 * scale;
+    auto f = [&](double s) { return comboDistance(members, o + d * s); };
+    if (f(t) < 0) return {}; // starts inside: nothing, like the exact path
+    for (int i = 0; i < 2000 && t <= t1; ++i) {
+        const double dist = f(t);
+        if (dist < eps) {
+            const Vec3 p = o + d * t;
+            const double e = 1e-4 * scale;
+            Vec3 n;
+            for (int a = 0; a < 3; ++a) {
+                Vec3 dp;
+                dp[a] = e;
+                n[a] = comboDistance(members, p + dp) - comboDistance(members, p - dp);
+            }
+            n = normalize(n);
+            // Which piece's surface: the nearest one at the hit point.
+            MathPrimId who = members[0]->id;
+            double best = 1e30;
+            for (const MathPrim* m : members) {
+                const double di = std::fabs(primDistance(*m, p));
+                if (di < best) { best = di; who = m->id; }
+            }
+            return {{t, t, n, n, who, who}}; // only the entry is used
+        }
+        t += std::max(dist * 0.9, eps * 0.5);
+    }
+    return {};
+}
+} // namespace
+
 std::vector<RayInterval> comboIntervals(const std::vector<const MathPrim*>& members, const Vec3& o, const Vec3& d) {
+    if (comboBlended(members)) return marchCombo(members, o, d);
     std::vector<RayInterval> add;
     for (const MathPrim* m : members)
         if (m->op == PrimOp::Add || members.size() == 1)
