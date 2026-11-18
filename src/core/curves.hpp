@@ -30,7 +30,7 @@ struct CurveParams {
     // Curved wall: from (u0, v0) to (u1, v1), bent towards control point (cu, cv).
     double cu = 64, cv = 64;
     // Spiral stairs (top view: u = x, v = y, d = z): steps around the box centre.
-    double innerRadius = 16, turnDeg = 360, rise = 16;
+    double innerRadius = 16, turnDeg = 360, rise = 18; // rise: one step, in cm
     int steps = 16;
     bool clockwise = false;
     bool column = false;                    // spiral stairs: centre column (inner radius)

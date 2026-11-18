@@ -105,13 +105,15 @@ std::vector<std::pair<Vec3, Vec3>> lightShape(const Light& l, double len) {
     return segs;
 }
 
-// Scale figure: a blocky person 72 units tall, feet at `at`, facing +X.
+// Scale figure: a blocky person 175 units (cm) tall, feet at `at`, facing +X. The boxes
+// below are laid out on a 72-tall body and scaled up.
 const Color kFigure{120, 220, 255, 255};
 std::vector<AABB> figureBoxes(const Vec3& at) {
+    constexpr double k = 175.0 / 72.0;
     auto box = [&](double x0, double y0, double z0, double x1, double y1, double z1) {
         AABB b;
-        b.add(at + Vec3{x0, y0, z0});
-        b.add(at + Vec3{x1, y1, z1});
+        b.add(at + Vec3{x0, y0, z0} * k);
+        b.add(at + Vec3{x1, y1, z1} * k);
         return b;
     };
     return {
@@ -542,7 +544,7 @@ Camera3D Viewport::camera() const {
 }
 
 void Viewport::pickRay(Vector2 local, Vec3& origin, Vec3& dir) const {
-    rlSetClipPlanes(2.0, 32768.0);
+    rlSetClipPlanes(2.0, 200000.0);
     const Ray r = GetScreenToWorldRayEx(local, camera(), w_, h_);
     origin = {r.position.x, r.position.y, r.position.z};
     dir = normalize(Vec3{r.direction.x, r.direction.y, r.direction.z});
@@ -572,12 +574,12 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
     auto byte = [](double v) { return (unsigned char)std::clamp((int)std::lround(v), 0, 255); };
     const Color fogCol{byte(scene.fogColor.x), byte(scene.fogColor.y), byte(scene.fogColor.z), 255};
     ClearBackground(scene.fog ? fogCol : kBg3D);
-    rlSetClipPlanes(2.0, 32768.0);
+    rlSetClipPlanes(2.0, 200000.0);
     BeginMode3D(camera());
 
     // Sky: a big sphere around the camera, behind everything (no depth writes).
     if (scene.skyTexture) {
-        const double R = 16000;
+        const double R = 100000; // 1 km, inside the far clip (2 km)
         const Vec3 c{pos_.x, pos_.y, pos_.z};
         constexpr int NU = 48, NV = 24;
         rlDrawRenderBatchActive();
@@ -960,7 +962,7 @@ void Viewport::look(Vector2 d) {
 }
 
 void Viewport::fly(float fwd, float rgt, float up, float dt, bool fast) {
-    const float speed = (fast ? 1600.0f : 500.0f) * dt;
+    const float speed = (fast ? 4000.0f : 1250.0f) * dt; // cm per second
     const Vector3 f = forwardFrom(yaw_, pitch_);
     Vector3 r{f.y, -f.x, 0.0f};
     const float rl = std::sqrt(r.x * r.x + r.y * r.y);

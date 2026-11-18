@@ -2404,7 +2404,7 @@ void Editor::drawWorldDialogs() {
 
     ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
     if (ImGui::BeginPopupModal("Scale figure", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::TextUnformatted("Where the 72-unit figure stands (its feet)");
+        ImGui::TextUnformatted("Where the 175-unit (1.75 m) figure stands (its feet)");
         ImGui::SetNextItemWidth(260);
         ImGui::InputScalarN("X Y Z", ImGuiDataType_Double, figureBuf_, 3, nullptr, nullptr, "%g");
         if (ImGui::Button("Under the 3D view's centre")) {

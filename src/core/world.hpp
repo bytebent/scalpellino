@@ -24,7 +24,7 @@ struct Light {
     Vec3 pos;                 // where it is (a sun's marker: anywhere, only its direction counts)
     Vec3 color{255, 255, 255}; // 0..255 per channel (Hammer "_light")
     double brightness = 200;   // Hammer "_light" 4th value; 200 = normal
-    double range = 512;        // reach in units (point, spot): no light past this
+    double range = 1000;       // reach in units (cm; point, spot): no light past this
     double pitch = -90;        // direction (spot, sun): degrees, negative = down
     double yaw = 0;
     double inner = 30;         // spot: full brightness inside this half-angle (degrees)
@@ -46,8 +46,8 @@ void rotateLight(Light& l, int axis, double degrees);
 
 struct Fog {
     Vec3 color{150, 160, 175}; // 0..255
-    double start = 512;        // fully clear up to here
-    double end = 4096;         // fully fogged from here
+    double start = 1000;       // fully clear up to here (units = cm)
+    double end = 10000;        // fully fogged from here
     bool operator==(const Fog& o) const { return color == o.color && start == o.start && end == o.end; }
 };
 

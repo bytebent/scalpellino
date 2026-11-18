@@ -194,7 +194,7 @@ MenuActions drawMenuBar(const MenuState& st) {
         if (ImGui::MenuItem("3D view: sky", nullptr, st.showSky)) a.toggleSky = true;
         if (ImGui::MenuItem("3D view: rough light preview", nullptr, st.lightPreview)) a.toggleLightPreview = true;
         if (ImGui::MenuItem("3D view: fog", nullptr, st.showFog)) a.toggleFog = true;
-        if (ImGui::MenuItem("Scale figure (72 units)", nullptr, st.showFigure)) a.toggleFigure = true;
+        if (ImGui::MenuItem("Scale figure (1.75 m)", nullptr, st.showFigure)) a.toggleFigure = true;
         ImGui::Separator();
         if (ImGui::MenuItem("Reset layout")) a.resetLayout = true;
         ImGui::EndMenu();

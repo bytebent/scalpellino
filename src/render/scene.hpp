@@ -85,7 +85,7 @@ struct Scene {
 
     // Environment preview (3D view only, each switched on in the View menu).
     unsigned skyTexture = 0;             // panorama texture id (0 = no sky drawn)
-    std::optional<Vec3> figure;          // scale figure: feet position (72 units tall)
+    std::optional<Vec3> figure;          // scale figure: feet position (175 units tall)
     // Rough light preview (render/lighting.hpp). Null = normal shading.
     const std::map<BrushId, std::vector<struct LitPoly>>* lighting = nullptr;
     // Fog preview (3D view): colour 0..255, clear up to `fogStart`, full from `fogEnd`.

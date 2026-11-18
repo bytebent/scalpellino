@@ -57,7 +57,7 @@ Everything is also in the menus (File, Edit, Tools, Transform, Texture, Terrain,
 | Lights | Light tool (**Shift+L**, World menu): choose point, spot or sun and its colour, brightness, reach and direction in **Properties**, click in a view to place it, **Return** creates, **Esc** cancels. Click a light's marker to select it (Select or Light tool), drag it in a 2D view to move it, **Delete** removes, **Cmd+D** duplicates |
 | Aim a light | Drag the rotation rings of a selected spot or sun (3D view: X red, Y green, Z blue; a 2D view: the ring around the axis you look along), 15° steps, or type pitch and yaw in **Properties** |
 | Sky, ambient light, fog | World → Environment… (built-in skies, or your own folders of 2:1 panoramas or 4:3 cube crosses) |
-| Editor preview | View menu: 3D view sky (on), rough light preview (off; no shadows, only computed while on), fog (off), scale figure (72 units) |
+| Editor preview | View menu: 3D view sky (on), rough light preview (off; no shadows, only computed while on), fog (off), scale figure (1.75 m) |
 | Camera bookmarks / scale figure position | World menu |
 | Heightmap / stitch / remove terrain | Terrain menu (Import heightmap: grey image, black/white heights typed) |
 | Wrap a texture around a corner | Texture tool: click a face, **Option+Shift+click** the neighbouring face (repeat to go around); or pick several and use **Wrap around** (Face panel / Texture menu) |

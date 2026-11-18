@@ -76,8 +76,9 @@ marks affected brushes dirty → only dirty brushes rebuild geometry/meshes → 
 - **Document** — entities, groups, visgroups, selection, undo stack.
 - **Precision** — doubles in core math, floats for rendering. Vertices snap to grid to
   avoid leaks and micro-gaps.
-- **Units / axes** — Hammer units (1 unit ≈ 1 inch, player ≈ 72 units tall), Z-up in the
-  editor. Exports convert to Y-up and meters with an adjustable scale.
+- **Units / axes** — 1 unit = 1 cm (decided with the user, v0.9.2; before that Hammer's
+  inch), a person ≈ 175 units tall, Z-up in the editor. Exports convert to Y-up metres
+  (÷ 100); imported `.glb` metres × 100.
 
 ## 6. Interaction design
 
@@ -268,7 +269,7 @@ are; brush tools never touch primitives). `core/mathprim.hpp`.
   meshes (M13): Godot's own round meshes where they match, fine triangles in `.glb`.
 
 ### Scale reference
-Toggleable ghost human figure (72 units tall, blocky, see-through) to judge
+Toggleable ghost human figure (175 units = 1.75 m tall, blocky, see-through) to judge
 proportions. Its feet position is saved with the map (World → Scale figure position, or
 it appears below the top view's centre). Editor-only, never exported.
 

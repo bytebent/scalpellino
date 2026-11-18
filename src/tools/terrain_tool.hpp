@@ -38,8 +38,8 @@ public:
     // Options (Properties panel, Terrain menu, script `terrainset`).
     SculptMode mode = SculptMode::Raise;
     Falloff falloff = Falloff::Soft;
-    double radius = 128;   // units, measured along the surface
-    double amount = 8;     // units per dab: raise, lower, noise
+    double radius = 300;   // units (cm), measured along the surface
+    double amount = 20;    // units per dab: raise, lower, noise
     double strength = 50;  // percent per dab: smooth, flatten, paint, erase
     std::string paintTexture = "default";
 
