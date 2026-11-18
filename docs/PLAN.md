@@ -13,7 +13,8 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 - **Released:** v0.1.0 … v0.9.3. Milestones 0–9 are done (see the milestone sections
   below and the log). Latest: **v0.9.3** (single pieces of a combination with
   Option+click; Multi-Replicate as a non-blocking window). Reported to the user.
-- **Next:** the shader format (last open Bottega point), then the **idle CPU test**,
+- **Next:** settle how material shaders fit (what they apply to, animation vs idle, roadmap
+  order), then the **idle CPU test**,
   then **milestone 10 — Props** once the user says go (decisions under "Open questions").
 - **Roadmap (agreed with the user, 2026-11-18):** M10 Props → Random Replicate → Sky Lab
   → M11 Renderer (+ endless ground / water / cloud planes) → M12 Camera Preview (was "Y2K") → M13
@@ -107,7 +108,7 @@ are in [`DEV.md`](DEV.md). One-step-per-release: add `docs/releases/vX.Y.Z.md` a
   (selecting the whole combination sets it for all); textures melt over the widest blend
   in the combination; Multi-Replicate's default offset is 4 grid steps along X; Snap to
   Land handles selected objects lowest first, so stacked ones land on their new spots.
-- **Bottega:** decided with the user except the shader file format; see its section.
+- **Bottega:** decided with the user; material shaders' details still open; see its section.
 - **Primitives extras, later:** "align to slope" for Snap to Land; hiding primitives / visgroups; the Transform dialog on
   objects; Bryce's other shapes (pyramid, endless ground plane) if wanted.
 - **World extras, later:** hiding lights / lights in visgroups; moving lights together
@@ -276,11 +277,14 @@ read and write. Agreed so far:
     Bottega.
 - **Decided without asking (confirm):** things found in an extra folder are stored by
   their relative name and looked up in Bottega first, then the extra folders.
-- **Open: shader format.** Proposal (awaiting the user): GLSL files (what raylib runs on
-  the Mac), one per shader, with a few comment lines at the top giving its name, its
-  kind and its settings (sliders, colours), so a tool can list a shader and show its
-  settings without running it. Kinds: whole-picture effects (dither, palette, bloom;
-  Camera Preview, M12) first; surface materials later if wanted.
+- **Shader format, agreed with the user (2026-11-18):** GLSL files (what raylib runs on
+  the Mac), one per shader, with a few comment lines at the top giving its name, its kind
+  and its settings (sliders, colours), so a tool can list a shader and show its settings
+  without running it. **Priority (user): material shaders, water, clouds and the like
+  matter far more than the Camera Preview's screen effects.** So the first kind is
+  surface materials; whole-picture effects (dither, palette, bloom) come after. Still to
+  settle: what a material shader can be applied to, how animation fits the idle rule, and
+  where this sits in the roadmap (not decided yet; the roadmap below is unchanged).
 
 ## Milestone 1 plan — Brushes (done)
 

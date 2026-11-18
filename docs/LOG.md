@@ -4,6 +4,11 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-18 — Shader format agreed; material shaders come first (docs only)
+- Shader format agreed (GLSL with a settings header). User: material shaders, water and
+  clouds matter far more than the Camera Preview effects; recorded as a priority, with the
+  roadmap order left open until discussed. No code changed.
+
 ### 2026-11-18 — Bottega decided, except the shader format (docs only)
 - Recorded in PLAN ("Bottega"): normal folder set once per tool; maps store paths relative
   to the root; model folders self-contained; **no automatic rescanning, a Rescan command
