@@ -10,26 +10,17 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 
 ## Current status
 
-- Released: v0.1.0 … v0.4.0, **v0.5.0 = milestone 5 Curve tool** + texture wrapping +
-  CI trimmed to Intel/Linux (this step). User asked to report only at v0.5.0.
-- **v0.6.0 = milestone 6 Workflow + shapes**. Reported to the user.
-- **v0.6.1 = fixes** the user reported for v0.6.0: rounded domes overlapped themselves;
-  spheres lagged when resized. Also fixed the spiral stairs column. See log.
-- **v0.7.0 = milestone 7 Terrain**. Reported to the user.
-- **v0.7.1 = terrain fixes** the user asked for after v0.7.0: make terrain from any
-  picked face (and triangles), the vertex tool edits terrain point by point, up to 8
-  textures per patch. Reported.
-- **v0.8.0 = milestone 8 World**: lights with rotation rings, skies, ambient, fog, rough
-  editor preview toggles, camera bookmarks, scale figure. Reported.
-- **Roadmap changed with the user (2026-11-18):** M9 math primitives (Bryce-style), M10
-  props (`.glb` + `.mazz`, with textures, no physics), then M11 renderer, M12 Y2K, M13
-  export.
-- **v0.9.0 = milestone 9 Math primitives**, v0.9.1 fix (conflicting widget IDs).
-- **v0.9.2**: units to 1 cm, blending primitives, Snap to Land / Ground, Multi-Replicate.
-- **v0.9.3** (this step): pieces of a combination move on their own (Option+click);
-  Multi-Replicate is a window, so the views stay free while its preview is up. Report to
-  the user, then wait for the go-ahead on milestone 10.
-- **Next: milestone 10 — Props** (`.glb` first; `.mazz` when Mazzuola's format exists).
+- **Released:** v0.1.0 … v0.9.3. Milestones 0–9 are done (see the milestone sections
+  below and the log). Latest: **v0.9.3** (single pieces of a combination with
+  Option+click; Multi-Replicate as a non-blocking window). Reported to the user.
+- **Next: milestone 10 — Props**, once the user says go (plan below).
+- **Roadmap (agreed with the user, 2026-11-18):** M10 Props → Random Replicate → M11
+  Renderer (+ endless ground / water / cloud planes) → M12 Nano-Preview (was "Y2K") → M13
+  Export. Details under "Roadmap".
+- **Bottega** (shared folder for Mazzuola, Scalpellino and later tools): being discussed,
+  not built. Where it stands is under "Bottega" below.
+- How the user likes to work: one release per step, short plain reports, ask before
+  starting the next milestone (see `HANDOFF.md`).
 
 ## How to work in this repo
 
@@ -108,10 +99,7 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   (selecting the whole combination sets it for all); textures melt over the widest blend
   in the combination; Multi-Replicate's default offset is 4 grid steps along X; Snap to
   Land handles selected objects lowest first, so stacked ones land on their new spots.
-- **Bottega shared folder (user idea, 2026-11-18, discussion only, not built):** one
-  folder that Mazzuola, Scalpellino and later texture tools all read and write
-  (`textures/ models/ maps/ palettes/ heightmaps/ skies/ shaders/ renders/`). Waiting for
-  the user's answer on the points raised in the v0.9.3 report before building anything.
+- **Bottega:** see its own section below (proposals waiting for the user).
 - **Primitives extras, later:** "align to slope" for Snap to Land; hiding primitives / visgroups; the Transform dialog on
   objects; Bryce's other shapes (pyramid, endless ground plane) if wanted.
 - **World extras, later:** hiding lights / lights in visgroups; moving lights together
@@ -138,7 +126,7 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 - **Texture browser, later:** tags, folders/collections, favourites, recently used,
   sorting by size, previews of how a texture tiles (user: "eventually a lot of
   functionality, e.g. tags; for now searchable by name is fine").
-- **Native dialogs are untested on a real Mac by me** (CI compiles them; no GUI there).
+- **Native dialogs are untested on a real Mac by the AI** (CI compiles them; no GUI there).
   Ask the user to try Cmd+O / Cmd+Shift+S / Texture → Add folder → Browse.
 
 - **Vertex tool extras:** edge handles (drag an edge = both its corners), marquee
@@ -148,8 +136,6 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   corners on whole numbers (irrational sin/cos) — build such slopes with the vertex tool.
 
 - **Fly-mode up/down keys:** Q/E for now. User hasn't specified.
-- **File dialogs:** open/save use an in-app path field. Native macOS dialogs planned
-  (milestone 8 or earlier if wanted).
 - **Multi-selection click:** a plain click (no drag) on a brush that is part of a
   multi-selection narrows the selection to that brush; dragging moves the group.
 
@@ -208,16 +194,66 @@ decided at the end.
 6. Heightmap import (PNG -> heights). Undo for strokes (one command per stroke).
 7. Tests: grid maths, stitching, smoothing, round trip; UI scripts.
 
-## Later milestones (agreed order)
+## Milestone 8 — World (done, v0.8.0)
 
-7 Terrain (in our `.map`), 8 World (lights, sky picker setting — not a sealed box, fog,
-camera bookmarks, scale figure), 9 Renderer (PNG, cull what the camera can't see,
-terminal-style render log like Hammer's compile window + log file), 10 Y2K shaders,
-11 Export.
+Delivered: point / spot / sun lights with rotation rings, sky picker (panoramas and cube
+crosses, a setting rather than a sealed box), ambient, fog, rough editor preview with
+View-menu toggles (sky, light preview, fog), camera bookmarks, 175 cm scale figure.
+
+## Milestone 9 — Math primitives (done, v0.9.0 … v0.9.3)
+
+Delivered: Bryce-style sphere, rounded cube, cylinder, cone, torus, capsule, disc drawn
+exactly per pixel; combining (add / subtract / intersect) and blending (v0.9.2); object
+handles shared with lights (move, rings, size handles); units changed to 1 unit = 1 cm,
+Snap to Land / Ground, Multi-Replicate (v0.9.2); ImGui ID fix (v0.9.1); single pieces of
+a combination and a non-blocking Multi-Replicate window (v0.9.3).
+
+## Roadmap (agreed order, 2026-11-18)
+
+1. **M10 Props** — static models with their textures, no physics. `.glb` first; `.mazz`
+   once Mazzuola's file format is final. Placed, turned and sized like primitives (shared
+   object handles), Snap to Land works on them, reload when the file changes. Texture
+   filtering follows Scalpellino's Crisp / Smooth switch.
+2. **Random Replicate** (Bryce) — scatter copies with random offset / turn / size ranges,
+   for props and primitives (brushes: offset only, as with Multi-Replicate).
+3. **M11 Renderer** — PNG renders of what the camera sees, a terminal-style render log
+   (+ log file), renders saved to `renders/` (in Bottega once it exists). Also endless
+   ground, water and cloud planes (Bryce).
+4. **M12 Nano-Preview** (renamed from "Y2K preview") — the low-res look: small render
+   target, nearest upscale, fog, per-vertex light, chrome, bloom, dithering; each step
+   toggleable.
+5. **M13 Export** — `.glb` first (terrain and primitives become meshes; nodraw skipped);
+   Godot package low priority.
+- **Later:** `.wad` textures, Lua generators, baked lighting, texture tags.
+
+## Bottega (shared folder) — discussion, not built
+
+User's idea (2026-11-18): one folder that Mazzuola, Scalpellino and later texture tools
+read and write. Agreed so far:
+- Layout: `textures/` (the library), `models/` (one folder per model), `maps/`,
+  `palettes/`, `skies/`, `shaders/`, `renders/`. **No `heightmaps/`** (user: a mistake).
+- `palettes/`: format decided when Mazzuola gets there.
+- `renders/`: the renders Scalpellino makes (M11).
+- `shaders/`: Scalpellino does use shaders. Proposal (awaiting the user): the built-in
+  ones (primitive drawing, fog, light preview) stay inside the app; `shaders/` holds the
+  shared *look* shaders (Nano-Preview's dither, palette, bloom…) so a model looks the
+  same in Mazzuola as in a Scalpellino map.
+- Proposed, not yet confirmed: Bottega location chosen in each tool's settings; maps
+  store paths relative to the Bottega root; a model folder keeps its own textures (and
+  may also use the shared library); tools rescan when they get focus (no folder watching,
+  idle stays free); a small marker file at the root with a format version.
 
 ## Milestone 1 plan — Brushes (done)
 
 ## Log
+
+### 2026-11-18 — Plan brought up to date (docs only)
+- User pointed out the plan sections lagged behind the log. Rewrote "Current status",
+  added Milestone 8 / 9 sections, replaced the old roadmap (9 Renderer, 10 Y2K, 11
+  Export) with the agreed one, added a "Bottega" section with the user's answers
+  (no `heightmaps/`; palettes decided with Mazzuola; `renders/` = Scalpellino's renders)
+  and the open `shaders/` proposal. ARCHITECTURE: roadmap table and "Y2K preview" →
+  "Nano-Preview".
 
 ### 2026-11-18 — v0.9.3: single pieces of a combination, Multi-Replicate as a window
 - **Pieces on their own:** a plain click still selects the whole combination;
