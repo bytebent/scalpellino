@@ -302,7 +302,9 @@ it appears below the top view's centre). Editor-only, never exported.
 - **Props** — static models (`.glb` and Mazzuola's `.mazz`) with their textures; placed,
   turned and sized like primitives. No physics (milestone 10).
 - **Cameras** (planned) — objects placed and aimed like a spot light, with many options
-  and presets (field of view, image size...). A map can hold several; exactly one is
+  and presets: lens (field of view or mm, roll, near / far distance, orthographic mode),
+  image size, aim at a point, depth of field and exposure later; the user can save their
+  own presets. Full list in PLAN.md. A map can hold several; exactly one is
   **active**, the only one the Camera Preview and Render use.
 - **Reflection probes** (planned) — placed by hand; Render bakes a picture of their
   surroundings for shiny materials to reflect.

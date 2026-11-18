@@ -367,7 +367,25 @@ read and write. Agreed so far:
     9. **rim lighting** (the user added it); 10. bloom and colour correction only as
     optional extras. Skipped: dynamic shadows, particles, motion blur, wrinkle maps (nothing
     moves in Scalpellino) and physical material properties (gameplay).
-  - **Open:** the full list of camera options and presets; probe details; the order of the
+  - **Camera options (user, 2026-11-18: all of it):** aimed like a spot light (rings and
+    typed values), everything typeable.
+    - *Lens and framing:* field of view as degrees or lens length in mm (they convert);
+      lens presets (ultra-wide 14, wide 24, normal 50, portrait 85, telephoto 135 mm);
+      **roll** (a third ring); **near and far distance** (near cuts away what is closer,
+      to look into a room through its wall).
+    - *Image:* size presets (1280x720, 1920x1080, 3840x2160, square, portrait 4:5, 3:2,
+      4:3) plus any typed width x height, set on the camera and in the render window; a
+      **frame guide** showing the picture edges in the Camera Preview.
+    - *Placing:* **aim at a point** (typed or clicked); name, marker colour, active
+      checkbox (activating one deactivates the others); drawn in the views as a little
+      pyramid with its field of view.
+    - *Extras:* **orthographic mode** (no perspective; isometric-style pictures);
+      **depth of field** (focus distance and blur, a camera effect, so with the optional
+      ones, later); **exposure** for when HDR arrives.
+    - *Presets:* the user can **save their own presets** (for example a favourite lens
+      plus size). **Where they live is open:** the app's settings, or Bottega so other
+      tools share them (Bottega's folder list has no place for them yet).
+  - **Open:** where camera presets are saved; probe details; the order of the
     renderer part of the roadmap (proposed below, to confirm).
 
 ## Milestone 1 plan — Brushes (done)
