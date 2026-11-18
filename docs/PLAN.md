@@ -356,6 +356,17 @@ read and write. Agreed so far:
     Preview, and are not live in the editor. A material can choose its reflection kind.
     Glass that bends the view (refraction) is only approximate in a Source-style
     renderer; to discuss when materials are planned.
+  - **Source features to include (user, 2026-11-18; reference: the Valve Developer
+    Community page "Source Engine Features", a feature list, not a method):**
+    1. radiosity lightmaps with several bounces (the render log's "baking lights 1..10");
+    2. a baked light grid so primitives and props pick up the baked light (they are not
+       flat faces, so they can't carry lightmaps; Source does the same for its models);
+    3. reflection probes (cubemaps); 4. water with reflection, refraction and Fresnel;
+    5. materials with specular, emissive, detail textures and multi-texture blending;
+    6. alpha cutouts (foliage, fences); 7. fog; 8. HDR lighting (a later refinement);
+    9. **rim lighting** (the user added it); 10. bloom and colour correction only as
+    optional extras. Skipped: dynamic shadows, particles, motion blur, wrinkle maps (nothing
+    moves in Scalpellino) and physical material properties (gameplay).
   - **Open:** the full list of camera options and presets; probe details; the order of the
     renderer part of the roadmap (proposed below, to confirm).
 

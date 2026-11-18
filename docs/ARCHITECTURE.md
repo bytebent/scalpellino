@@ -357,6 +357,12 @@ Preview and in renders.
   baked lightmaps (light, shadows, bounce), baked reflection probes, real textures and
   fog. It is **never faked with filters** laid over the picture (user: that is not the
   point). Not a ray tracer.
+- **Source features** (user's choice from Source's feature list): radiosity lightmaps with
+  several bounces, a baked light grid for primitives and props, reflection probes, water
+  with reflection / refraction / Fresnel, materials with specular, emissive, detail
+  textures and multi-texture blending, alpha cutouts, fog, rim lighting, HDR lighting as a
+  later refinement. Bloom and colour correction are optional extras. Nothing dynamic
+  (shadows of moving things, particles, motion blur): nothing moves.
 - **Reflections:** a material chooses: sky only; baked reflection from the nearest
   probe; live mirror reflection on flat surfaces (water, floors). Probe quality is a
   render-option preset.

@@ -4,6 +4,13 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-18 — Which Source features the renderer includes (docs only)
+- From the Valve wiki's Source feature list, the user picked: radiosity lightmaps with
+  bounces, a baked light grid for primitives and props, reflection probes, water
+  (reflection / refraction / Fresnel), rich materials, alpha cutouts, fog, rim lighting,
+  HDR later; bloom and colour correction optional. Recorded in PLAN and ARCHITECTURE §9.
+  No code changed.
+
 ### 2026-11-18 — No filters for the Source look; materials belong to the renderer (docs only)
 - User: the Source look must not be made with filters; and materials should not come after
   the render. Recorded: the look comes from how Source renders (baked lightmaps and
