@@ -302,12 +302,19 @@ read and write. Agreed so far:
     (shadows) is part of the render**, not a separate step. The look is Source /
     Half-Life (Hammer era); Bryce is where the tools (primitives, replicate, sky lab,
     water and cloud planes) come from.
+  - **Camera object vs bookmarks (user):** the camera is an object in the map, nothing
+    to do with the camera bookmarks (editor-only saved views of the 3D view for moving
+    around); both stay.
+  - **Camera Preview (user):** an approximation of the final picture, in between a full
+    render and the normal editor view. It updates **only when asked** (a keybind or a
+    button), never live. Decided without asking (confirm): a quick pass with textures,
+    fog and the existing rough light preview, no baked shadows; shown only while the map
+    has a camera.
   - **Docs still to rewrite to match:** ARCHITECTURE §9 and the roadmap rows for M11 and
-    M12 (they describe a viewport mode and a "low-res look"), and the camera-bookmarks
-    entry (a camera object may replace or sit beside the bookmarks). Not done yet.
-  - **Open:** how the camera relates to the existing bookmarks; whether the small preview
-    shows the final look or a rough view; the roadmap order; whether the shader format
-    (GLSL) still fits. The roadmap below is unchanged until these are settled.
+    M12 (they describe a viewport mode and a "low-res look"). Not done yet.
+  - **Open:** the camera's settings (field of view, image size chosen at Render?); the
+    roadmap order; whether the shader format (GLSL) still fits. The roadmap below is
+    unchanged until these are settled.
 
 ## Milestone 1 plan — Brushes (done)
 
