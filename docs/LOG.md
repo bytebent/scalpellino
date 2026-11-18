@@ -4,6 +4,14 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-18 — Bottega decided, except the shader format (docs only)
+- Recorded in PLAN ("Bottega"): normal folder set once per tool; maps store paths relative
+  to the root; model folders self-contained; **no automatic rescanning, a Rescan command
+  (menu, button, shortcut)**; a marker file with a version; existing texture and sky
+  folders stay as extras; `shaders/` is a drop-in folder for any shader.
+- Knock-on: props reload via Rescan (was: on window focus); props live in `models/`.
+- Open: the shader file format (proposal in PLAN). No code changed.
+
 ### 2026-11-18 — Props decisions and the idle test, recorded (docs only)
 - Discussed with the user and recorded in PLAN ("Open questions"): props are instanced,
   v1 lighting = editor shading + fog, uniform scale by default (also for primitives, a

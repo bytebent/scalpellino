@@ -13,13 +13,13 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 - **Released:** v0.1.0 … v0.9.3. Milestones 0–9 are done (see the milestone sections
   below and the log). Latest: **v0.9.3** (single pieces of a combination with
   Option+click; Multi-Replicate as a non-blocking window). Reported to the user.
-- **Next:** settle **Bottega** (needed for where props live), then the **idle CPU test**,
+- **Next:** the shader format (last open Bottega point), then the **idle CPU test**,
   then **milestone 10 — Props** once the user says go (decisions under "Open questions").
 - **Roadmap (agreed with the user, 2026-11-18):** M10 Props → Random Replicate → Sky Lab
   → M11 Renderer (+ endless ground / water / cloud planes) → M12 Camera Preview (was "Y2K") → M13
   Export. Details under "Roadmap".
-- **Bottega** (shared folder for Mazzuola, Scalpellino and later tools): being discussed,
-  not built. Where it stands is under "Bottega" below.
+- **Bottega** (shared folder for Mazzuola, Scalpellino and later tools): decided with the
+  user, not built; the shader file format is still open. See "Bottega" below.
 - How the user likes to work: one release per step, short plain reports, ask before
   starting the next milestone (see `HANDOFF.md`).
 
@@ -86,15 +86,15 @@ are in [`DEV.md`](DEV.md). One-step-per-release: add `docs/releases/vX.Y.Z.md` a
     the core stays graphics-free and headless-testable, and picking and landing need the
     triangles on the CPU. The user had no preference (technical choice). Also used for the
     M13 export.
-  - **Waiting on Bottega:** where model files live and how a map refers to them. Settle
-    Bottega first (see "Bottega").
+  - **Where models live:** in Bottega's `models/`, one self-contained folder per model;
+    a prop stores its relative name (see "Bottega").
 - **Props (M10), decided without asking (confirm with the user):** static meshes only
   (animations, skins, cameras, lights ignored); base colour plus optional texture,
   embedded or external, several materials per model, grey where a texture is missing;
   alpha opaque and cutout only; metres x 100, Y-up to Z-up, the model's origin is its
   pivot; saved as a `scal_prop` point entity (path, origin, rotation, scale; unknown keys
   kept); a missing file shows as a box with a warning and is kept on save; models reload
-  when the window regains focus (no folder watching); 2D views show a rotated bounding
+  through Bottega's Rescan command (no watching, not automatic); 2D views show a rotated bounding
   box, 3D picking uses triangles; Snap to Land works on props (landing generalised to any
   object); hiding / visgroups as for primitives (not yet); `.mazz` after `.glb`, behind a
   loader interface; a small generated `.glb` as test asset; a triangle-budget warning.
@@ -107,7 +107,7 @@ are in [`DEV.md`](DEV.md). One-step-per-release: add `docs/releases/vX.Y.Z.md` a
   (selecting the whole combination sets it for all); textures melt over the widest blend
   in the combination; Multi-Replicate's default offset is 4 grid steps along X; Snap to
   Land handles selected objects lowest first, so stacked ones land on their new spots.
-- **Bottega:** see its own section below (proposals waiting for the user).
+- **Bottega:** decided with the user except the shader file format; see its section.
 - **Primitives extras, later:** "align to slope" for Snap to Land; hiding primitives / visgroups; the Transform dialog on
   objects; Bryce's other shapes (pyramid, endless ground plane) if wanted.
 - **World extras, later:** hiding lights / lights in visgroups; moving lights together
@@ -249,7 +249,7 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
    it must not drive design choices; a Godot package only if asked for.
 - **Later:** `.wad` textures, Lua generators, baked lighting, texture tags.
 
-## Bottega (shared folder) — discussion, not built
+## Bottega (shared folder) — decided with the user, not built
 
 User's idea (2026-11-18): one folder that Mazzuola, Scalpellino and later texture tools
 read and write. Agreed so far:
@@ -257,14 +257,30 @@ read and write. Agreed so far:
   `palettes/`, `skies/`, `shaders/`, `renders/`. **No `heightmaps/`** (user: a mistake).
 - `palettes/`: format decided when Mazzuola gets there.
 - `renders/`: the renders Scalpellino makes (M11).
-- `shaders/`: Scalpellino does use shaders. Proposal (awaiting the user): the built-in
-  ones (primitive drawing, fog, light preview) stay inside the app; `shaders/` holds the
-  shared *look* shaders (Camera Preview's dither, palette, bloom…) so a model looks the
-  same in Mazzuola as in a Scalpellino map.
-- Proposed, not yet confirmed: Bottega location chosen in each tool's settings; maps
-  store paths relative to the Bottega root; a model folder keeps its own textures (and
-  may also use the shared library); tools rescan when they get focus (no folder watching,
-  idle stays free); a small marker file at the root with a format version.
+- `shaders/`: a **drop-in folder**: any shader file put there becomes available, so a
+  future tool that makes shaders, or one that reuses them, just reads and writes it.
+  (User, 2026-11-18: the point is easy import, so this is not only "shared look
+  shaders".) Scalpellino's own internal shaders (primitive drawing, fog, light preview)
+  stay inside the app. **Open:** the shader file format, see below.
+- **Decided with the user (2026-11-18):**
+  - Bottega is a normal folder anywhere; each tool asks once, in its settings, where it
+    is; an empty folder is offered the sub-folders.
+  - Maps store paths relative to the Bottega root (`textures/Bricks_24`, `models/tree`),
+    so moving Bottega doesn't break maps.
+  - A model folder keeps its own textures (self-contained) and may also use the shared
+    `textures/` library.
+  - **No automatic or constant rescanning** (not even on window focus): a **Rescan**
+    command, as a menu entry, a button and a shortcut. Idle stays free.
+  - A small marker file at the root with a format version.
+  - The user's existing texture and sky folders keep working as extra folders beside
+    Bottega.
+- **Decided without asking (confirm):** things found in an extra folder are stored by
+  their relative name and looked up in Bottega first, then the extra folders.
+- **Open: shader format.** Proposal (awaiting the user): GLSL files (what raylib runs on
+  the Mac), one per shader, with a few comment lines at the top giving its name, its
+  kind and its settings (sliders, colours), so a tool can list a shader and show its
+  settings without running it. Kinds: whole-picture effects (dither, palette, bloom;
+  Camera Preview, M12) first; surface materials later if wanted.
 
 ## Milestone 1 plan — Brushes (done)
 
