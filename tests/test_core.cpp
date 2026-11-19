@@ -2908,6 +2908,106 @@ void testSkyLab() {
     CHECK(randomSkyLab(7) != randomSkyLab(8));
 }
 
+
+// Sky Lab clouds (v0.10.5): stored and read back, only above the horizon, more cover
+// gives more cloud, the seed changes the pattern, threads give the same picture.
+void testSkyLabClouds() {
+    SkyLab s;
+    s.used = true;
+    s.stratus = {true, 22, 17, 333, 44, 3};
+    s.cumulus = {true, 61, 80, 90, 0, 8};
+    s.cloudHeight = 70;
+    s.cumulusColor = {10, 20, 30};
+    s.sphericalClouds = true;
+    s.cloudSeed = 4242;
+    s.cloudShadows = true;
+    const SkyLab back = skyLabFromString(skyLabToString(s));
+    CHECK(back == s);
+    CHECK(back.stratus.on && back.stratus.amplitude == 333 && back.cumulus.complexity == 8 && back.cloudSeed == 4242);
+    // Bad layers keep the defaults; values out of range are clamped.
+    const SkyLab bad = skyLabFromString("stratus=1 nan 3 4 5 6;cumulus=1 500 1 9999 -5 20;cloud_height=-3");
+    CHECK(!bad.stratus.on && bad.stratus.cover == SkyLab().stratus.cover);
+    CHECK(bad.cumulus.on && bad.cumulus.cover == 100 && bad.cumulus.frequency == 2 && bad.cumulus.amplitude == 500);
+    CHECK(bad.cumulus.turbulence == 0 && bad.cumulus.complexity == 8 && bad.cloudHeight == 0);
+    // A map from v0.10.4 (no cloud fields) has no clouds.
+    CHECK(!skyLabFromString("mode=soft").cumulus.on && !skyLabFromString("mode=soft").stratus.on);
+
+    const int W = 256, H = 128;
+    SkyLab clear;
+    const std::vector<unsigned char> none = generateSky(clear, W);
+    auto cloudy = [&](double cover, int seed) {
+        SkyLab c;
+        c.cumulus.on = true;
+        c.cumulus.cover = cover;
+        c.cloudSeed = seed;
+        return generateSky(c, W);
+    };
+    auto changed = [&](const std::vector<unsigned char>& img) {
+        int n = 0;
+        for (size_t k = 0; k < img.size(); k += 3)
+            n += std::abs(img[k] - none[k]) + std::abs(img[k + 1] - none[k + 1]) + std::abs(img[k + 2] - none[k + 2]) > 12;
+        return n;
+    };
+    // Layers on with no cover, or the cloud settings changed while the layers are off:
+    // the same as no clouds.
+    CHECK(cloudy(0, 1) == none);
+    {
+        SkyLab off;
+        off.cumulusColor = {255, 0, 0};
+        off.sphericalClouds = true;
+        CHECK(generateSky(off, W) == none);
+    }
+    const std::vector<unsigned char> few = cloudy(20, 1), many = cloudy(70, 1);
+    CHECK(changed(few) > 50);
+    CHECK(changed(many) > changed(few) * 2);
+    // Nothing below the horizon changes.
+    bool groundSame = true;
+    for (size_t k = (size_t)(H / 2) * W * 3; k < many.size(); ++k) groundSame = groundSame && many[k] == none[k];
+    CHECK(groundSame);
+    // The seed: the same seed, the same clouds; another seed, other clouds.
+    CHECK(cloudy(40, 7) == cloudy(40, 7));
+    CHECK(cloudy(40, 7) != cloudy(40, 8));
+    // Threads give exactly the picture rows make one after another.
+    {
+        SkyLab c;
+        c.cumulus.on = c.stratus.on = true;
+        c.sphericalClouds = true;
+        SkyGenerator g(c, W);
+        std::vector<unsigned char> one((size_t)W * H * 3), many2(one.size());
+        g.rows(0, H, one.data());
+        g.rowsParallel(0, H, many2.data(), 3);
+        CHECK(one == many2);
+    }
+    // White by day; dark at night (until the moon); warm at sunset.
+    auto meanCloud = [&](const SkyLab& c) {
+        const std::vector<unsigned char> img = generateSky(c, W);
+        SkyLab clearC = c;
+        clearC.cumulus.on = clearC.stratus.on = false;
+        const std::vector<unsigned char> base = generateSky(clearC, W);
+        double r = 0, g = 0, b = 0;
+        int n = 0;
+        for (size_t k = 0; k < img.size(); k += 3)
+            if (std::abs(img[k] - base[k]) + std::abs(img[k + 1] - base[k + 1]) + std::abs(img[k + 2] - base[k + 2]) > 30) {
+                r += img[k]; g += img[k + 1]; b += img[k + 2]; ++n;
+            }
+        return n ? Vec3{r / n, g / n, b / n} : Vec3{-1, -1, -1};
+    };
+    SkyLab day;
+    day.cumulus.on = true;
+    day.cumulus.cover = 60;
+    const Vec3 dayC = meanCloud(day);
+    // (soft edges let some blue through and the shaded sides are blue-grey, as in Bryce)
+    CHECK(dayC.x > 140 && dayC.z >= dayC.x);
+    SkyLab sunset = day;
+    sunset.sunAltitude = 3;
+    const Vec3 setC = meanCloud(sunset);
+    CHECK(setC.x > setC.z + 20);
+    SkyLab night = day;
+    night.sunAltitude = -25;
+    const Vec3 nightC = meanCloud(night);
+    CHECK(nightC.x < 0 || nightC.x + nightC.y + nightC.z < 60);
+}
+
 int main() {
     testGrid();
     testBoxGeometry();
@@ -2930,6 +3030,7 @@ int main() {
     testWorld();
     testSky();
     testSkyLab();
+    testSkyLabClouds();
     testBottega();
     testMathPrims();
     testPrimBlend();

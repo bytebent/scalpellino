@@ -1,0 +1,42 @@
+# v0.10.5: Sky Lab clouds. Stratus and cumulus in the live preview and baked, the
+# settings saved in the map and read back, the Clouds tab shown.
+bottega make studio
+block -2048 -2048 -32 2048 2048 0
+block 128 -64 0 192 0 256
+tool select
+key Esc
+camera -700 -650 140 42 18
+viewset sky off
+skylab open
+skylabset stratus 1 35 30 90 20 6
+skylabset cumulus 1 45 35 150 30 6
+skylabtab clouds
+expect skylabwindow open 1024
+shot m10c-07-clouds-tab.png
+# -- low sun: the clouds take the sunset's colours
+skylabset sun_azimuth 40
+skylabset sun_altitude 5
+shot m10c-08-sunset-clouds.png
+# -- spherical, lower, a new pattern
+skylabset sun_altitude 40
+skylabset spherical_clouds 1
+skylabset cloud_height 20
+skylabset cloud_seed 7
+shot m10c-09-spherical.png
+skylab ok
+expect skylabwindow closed
+expect skylab stratus 1 35 30 90 20 6
+expect skylab cumulus 1 45 35 150 30 6
+expect skylab spherical_clouds 1
+expect skylab cloud_height 20
+expect skylab cloud_seed 7
+viewset sky on
+camera -700 -650 140 42 40
+shot m10c-10-baked-clouds.png
+# -- saved and opened again
+save clouds-test.map
+open clouds-test.map
+expect skylab cumulus 1 45 35 150 30 6
+expect skylab cloud_seed 7
+expect sky skies/skylab/untitled_1
+quit

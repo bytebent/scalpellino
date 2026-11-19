@@ -128,5 +128,7 @@ expect randomizing on
 # -- and the Sky Lab window open, its live preview drawn as the 3D view's sky
 skylab open
 skylabset sun_altitude 12
+skylabset stratus 1 35 30 90 20 6
+skylabset cumulus 1 45 35 150 30 6
 expect skylabwindow open 1024
 shot idle-ready.png

@@ -256,6 +256,7 @@ private:
     };
     std::unique_ptr<SkyBake> skyBake_;
     std::string skyLabMsg_;
+    int skyLabTab_ = -1; // a tab to open (0 Sun & Moon, 1 Clouds, 2 Atmosphere), for tests
 
     // Overlap finder + navigation
     void findOverlapsNow();

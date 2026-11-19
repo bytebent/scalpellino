@@ -48,6 +48,8 @@ add_library(scal_core STATIC
   src/core/replicate.cpp
   src/core/bottega.cpp)
 target_include_directories(scal_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+find_package(Threads REQUIRED)
+target_link_libraries(scal_core PUBLIC Threads::Threads) # Sky Lab bakes on all threads
 
 # File formats. Also graphics-free, so it is tested headless too.
 add_library(scal_io STATIC

@@ -19,12 +19,12 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   everything, the 3D view's draw call per prop. Reported; the user tested it on their Mac
   and it is fine (2026-11-19). Next session: Sky Lab.
 - **Now: Sky Lab** (the user said go, 2026-11-19; design agreed, see Roadmap item 3).
-  **v0.10.4 is built and pushed** (window, live 3D preview, bake, sky modes, sun, haze
-  band, ground, sun lock, Rebake); its choices made without asking are listed under "Sky
-  Lab v0.10.4, decided without asking" for the user to confirm. Next: report, then
-  v0.10.5 clouds, v0.10.6 night sky and effects (moon, stars, comets, rings, rainbow,
-  Blend with Sun, fog in the sky with base height and thickness, eclipses, presets and
-  Randomize Sky).
+  v0.10.4 (window, live 3D preview, bake, sky modes, sun, haze band, ground, sun lock,
+  Rebake) and **v0.10.5 (clouds) are built and pushed**; the choices made without asking
+  are listed under "Sky Lab v0.10.4 / v0.10.5, decided without asking" for the user to
+  confirm. Next: report, then v0.10.6 night sky and effects (moon, stars, comets, rings,
+  rainbow, Blend with Sun, fog in the sky with base height and thickness, eclipses,
+  presets and Randomize Sky; the moon also lights the clouds at night).
 - **Roadmap:** Sky Lab → cameras and Camera Preview →
   Render (Source look, with the material system) → water / cloud planes → camera effects →
   export. The renderer part is a
@@ -77,6 +77,24 @@ are in [`DEV.md`](DEV.md). One-step-per-release: add `docs/releases/vX.Y.Z.md` a
   - The NASA moon map is in `assets/moon/` (1024x512) already, used from v0.10.6. **Credit
     it as "NASA's Scientific Visualization Studio"** (user, 2026-11-20): THIRD_PARTY.md,
     `assets/moon/CREDIT.txt`, and next to the built-in moon in Sky Lab when it is used.
+- **Sky Lab v0.10.5 (clouds), decided without asking (confirm with the user):**
+  - **Each layer has its own** cover, frequency, amplitude, turbulence and complexity
+    (Bryce moves both layers with one set of sliders). Turbulence and complexity are
+    sliders (Bryce: +/- buttons on the cloud texture; no Deep Texture Editor, as agreed).
+  - **One cloud height** for both: cumulus from 0.6 to 4.6 km, stratus two and a half
+    times higher. As in Bryce it also widens the haze band; the default (35) leaves
+    v0.10.4 skies as they were. Layers follow the planet's curve and fade toward the
+    horizon.
+  - **Pattern seed** with a New pattern button (not in Bryce; Bryce changes the pattern
+    through its texture library).
+  - **Colours:** the lit side takes the sun's light (white at midday, the sunset's colours
+    low down), the shaded side is the cumulus colour times the sky's colour (blue-grey),
+    stratus are thin and bright with a touch of the sky dome colour. Stratus are streaked
+    along one direction set by the seed. **At night clouds are dark shapes** until the
+    moon lights them (v0.10.6).
+  - Cloud shadows and the darker scene under heavy cover are stored for the renderer.
+  - **Bakes use all of the machine's threads** (the core now links threads). 2048 wide
+    with both layers: 0.4 s on 2 threads here; 8192: 5.5 s.
 - **Milestone 8, answered by the user (2026-11-16):** sky in the 3D view toggled from the
   View menu; a very rough light preview, not computed while off; fog on/off, off by
   default; the sun's direction separate from the sky; selected lights get xyz rotation

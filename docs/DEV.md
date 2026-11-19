@@ -100,6 +100,7 @@ inside the view. Lines starting with # are comments.
   combine   separate   expect prims|primsel <n>   expect primpos|primrot|primsize x y z   expect primop <op>
   environment sky <name|none> | ambient r g b | fog on|off | fogcolor r g b | fogrange <start> <end>
   skylab open|apply|ok|cancel|rebake   (apply / ok bake; the next command waits for the bake)
+  skylabtab sun|clouds|atmosphere   (opens that tab of the Sky Lab window)
   skylabset <field> <value...>   (a Sky Lab field as saved in the map: mode darker, sun_altitude 6,
                                   sun_color 255 200 150, lock_sun 1...; ambient r g b)
   expect skylab <field> <value...>   (the map's Sky Lab settings)   expect skyoutofdate yes|no

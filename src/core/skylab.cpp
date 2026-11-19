@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <sstream>
+#include <thread>
 
 namespace scal {
 
@@ -71,6 +72,54 @@ struct Rand {
     double range(double a, double b) { return a + (b - a) * next(); }
 };
 
+// ---- noise for the clouds: gradient noise in 2D, summed over octaves, with each octave
+// faded out where it is finer than a pixel (so far clouds don't flicker into grain).
+double gradNoise(double x, double y, std::uint32_t seed) {
+    const double fx = std::floor(x), fy = std::floor(y);
+    const int ix = (int)fx, iy = (int)fy;
+    const double tx = x - fx, ty = y - fy;
+    // 16 gradient directions round the circle (a table: no sin / cos per sample).
+    static const double kGx[16] = {1, 0.92388, 0.70711, 0.38268, 0, -0.38268, -0.70711, -0.92388, -1, -0.92388, -0.70711, -0.38268, 0, 0.38268, 0.70711, 0.92388};
+    static const double kGy[16] = {0, 0.38268, 0.70711, 0.92388, 1, 0.92388, 0.70711, 0.38268, 0, -0.38268, -0.70711, -0.92388, -1, -0.92388, -0.70711, -0.38268};
+    auto g = [&](int cx, int cy, double dx, double dy) {
+        const std::uint32_t h = hash32((std::uint32_t)cx * 73856093U ^ (std::uint32_t)cy * 19349663U ^ seed) >> 28;
+        return kGx[h] * dx + kGy[h] * dy;
+    };
+    auto fade = [](double t) { return t * t * t * (t * (t * 6 - 15) + 10); };
+    const double u = fade(tx), v = fade(ty);
+    const double a = g(ix, iy, tx, ty), b = g(ix + 1, iy, tx - 1, ty);
+    const double c = g(ix, iy + 1, tx, ty - 1), d = g(ix + 1, iy + 1, tx - 1, ty - 1);
+    return (a + (b - a) * u) + ((c + (d - c) * u) - (a + (b - a) * u)) * v; // about -0.7..0.7
+}
+
+// fBm: `octaves` layers, each twice as fine and half as strong. `footprint` is a pixel's
+// size in noise units; octaves finer than about two pixels fade to nothing.
+double fbm(double x, double y, std::uint32_t seed, int octaves, double footprint) {
+    double sum = 0, amp = 1, norm = 0, f = 1;
+    for (int o = 0; o < octaves; ++o) {
+        const double keep = 1 - smooth(0.25, 0.6, footprint * f);
+        if (keep <= 0) break;
+        sum += gradNoise(x * f + o * 17.31, y * f - o * 9.73, seed + (std::uint32_t)o * 1013U) * amp * keep;
+        norm += amp;
+        amp *= 0.5;
+        f *= 2.03;
+    }
+    return norm > 0 ? sum / norm : 0;
+}
+
+// Cells (distance to the nearest of one random point per cell), for rounder clouds.
+double cells(double x, double y, std::uint32_t seed) {
+    const int ix = (int)std::floor(x), iy = (int)std::floor(y);
+    double best = 9;
+    for (int cy = iy - 1; cy <= iy + 1; ++cy)
+        for (int cx = ix - 1; cx <= ix + 1; ++cx) {
+            const std::uint32_t h = hash32((std::uint32_t)cx * 2654435761U ^ (std::uint32_t)cy * 40503U ^ seed);
+            const double px = cx + (h & 0xffff) / 65536.0, py = cy + (h >> 16) / 65536.0;
+            best = std::min(best, (px - x) * (px - x) + (py - y) * (py - y));
+        }
+    return std::sqrt(best); // 0 at a point, about 0.5..0.8 between them
+}
+
 // ---- atmosphere (Soft / Darker): single scattering through a thin shell around a planet.
 // Units: metres. Rayleigh makes the blue, Mie the glow around the sun and the whiteness
 // low down. The table is computed once per generator.
@@ -129,6 +178,15 @@ void scatter(const Vec3& d, const Vec3& sun, double mieScale, Vec3& outR, Vec3& 
                           ((2 + kG * kG) * std::pow(1 + kG * kG - 2 * kG * mu, 1.5));
     outR = mul(outR, kBetaR) * phaseR;
     outM = outM * (kBetaM * mieScale * phaseM);
+}
+
+// Distance along d (from the eye) to a cloud layer `height` metres up, following the
+// planet's curve so the layers meet the horizon far away instead of running on forever.
+double toLayer(const Vec3& d, double height) {
+    const Vec3 o{0, 0, kR + kEye};
+    const double rr = kR + height;
+    const double b = dot(o, d), c = dot(o, o) - rr * rr;
+    return -b + std::sqrt(std::max(0.0, b * b - c));
 }
 
 // Fraction of sunlight that reaches the ground at the sun's altitude (per channel).
@@ -199,6 +257,16 @@ std::string skyLabToString(const SkyLab& s) {
     put("haze_thickness", num(s.hazeThickness));
     put("haze_base", num(s.hazeBase));
     put("ground_color", col(s.groundColor));
+    auto layer = [&](const SkyLab::CloudLayer& l) {
+        return std::string(l.on ? "1 " : "0 ") + num(l.cover) + " " + num(l.frequency) + " " + num(l.amplitude) + " " + num(l.turbulence) + " " + num(l.complexity);
+    };
+    put("stratus", layer(s.stratus));
+    put("cumulus", layer(s.cumulus));
+    put("cloud_height", num(s.cloudHeight));
+    put("cumulus_color", col(s.cumulusColor));
+    put("spherical_clouds", s.sphericalClouds ? "1" : "0");
+    put("cloud_seed", std::to_string(s.cloudSeed));
+    put("cloud_shadows", s.cloudShadows ? "1" : "0");
     put("shadows", num(s.shadows));
     put("soft_shadows", s.softShadows ? "1" : "0");
     put("shadow_softness", num(s.shadowSoftness));
@@ -245,6 +313,21 @@ SkyLab skyLabFromString(const std::string& text) {
         else if (k == "haze_thickness") { if (readNum(v, d)) s.hazeThickness = d; }
         else if (k == "haze_base") { if (readNum(v, d)) s.hazeBase = d; }
         else if (k == "ground_color") readCol(v, s.groundColor);
+        else if (k == "stratus" || k == "cumulus") {
+            SkyLab::CloudLayer& l = k == "stratus" ? s.stratus : s.cumulus;
+            int on = 0;
+            SkyLab::CloudLayer t = l;
+            if (std::sscanf(v.c_str(), "%d %lf %lf %lf %lf %lf", &on, &t.cover, &t.frequency, &t.amplitude, &t.turbulence, &t.complexity) == 6 &&
+                std::isfinite(t.cover) && std::isfinite(t.frequency) && std::isfinite(t.amplitude) && std::isfinite(t.turbulence) && std::isfinite(t.complexity)) {
+                t.on = on != 0;
+                l = t;
+            }
+        }
+        else if (k == "cloud_height") { if (readNum(v, d)) s.cloudHeight = d; }
+        else if (k == "cumulus_color") readCol(v, s.cumulusColor);
+        else if (k == "spherical_clouds") s.sphericalClouds = v == "1";
+        else if (k == "cloud_seed") { if (readNum(v, d) && std::fabs(d) < 2e9) s.cloudSeed = (int)d; }
+        else if (k == "cloud_shadows") s.cloudShadows = v == "1";
         else if (k == "shadows") { if (readNum(v, d)) s.shadows = d; }
         else if (k == "soft_shadows") s.softShadows = v == "1";
         else if (k == "shadow_softness") { if (readNum(v, d)) s.shadowSoftness = d; }
@@ -275,7 +358,15 @@ void clampSkyLab(SkyLab& s) {
     s.shadowSoftness = std::clamp(s.shadowSoftness, 0.0, 100.0);
     s.sunDiffuse = std::clamp(s.sunDiffuse, -999.0, 999.0);
     s.sunSpecular = std::clamp(s.sunSpecular, -999.0, 999.0);
-    for (Vec3* c : {&s.sunColor, &s.customSky, &s.customGlow, &s.customHorizon, &s.offColor, &s.hazeColor, &s.groundColor, &s.skyDome}) c255(*c);
+    for (Vec3* c : {&s.cumulusColor, &s.sunColor, &s.customSky, &s.customGlow, &s.customHorizon, &s.offColor, &s.hazeColor, &s.groundColor, &s.skyDome}) c255(*c);
+    for (SkyLab::CloudLayer* l : {&s.stratus, &s.cumulus}) {
+        l->cover = std::clamp(l->cover, 0.0, 100.0);
+        l->frequency = std::clamp(l->frequency, 2.0, 150.0);
+        l->amplitude = std::clamp(l->amplitude, 50.0, 500.0);
+        l->turbulence = std::clamp(l->turbulence, 0.0, 100.0);
+        l->complexity = std::clamp(std::round(l->complexity), 1.0, 8.0);
+    }
+    s.cloudHeight = std::clamp(s.cloudHeight, 0.0, 100.0);
     s.bakeSize = s.bakeSize >= 8192 ? 8192 : s.bakeSize >= 4096 ? 4096 : 2048;
 }
 
@@ -327,6 +418,21 @@ SkyLab randomSkyLab(unsigned seed) {
     s.hazeThickness = std::round(r.range(5, 60));
     s.hazeBase = 0;
     s.groundColor = Vec3{std::round(r.range(40, 140)), std::round(r.range(40, 130)), std::round(r.range(30, 110))};
+    auto layer = [&](SkyLab::CloudLayer& l, double onChance) {
+        l.on = r.next() < onChance;
+        l.cover = std::round(r.range(10, 70));
+        l.frequency = std::round(r.range(15, 90));
+        l.amplitude = std::round(r.range(60, 300));
+        l.turbulence = std::round(r.range(0, 70));
+        l.complexity = std::round(r.range(4, 8));
+    };
+    layer(s.stratus, 0.5);
+    layer(s.cumulus, 0.6);
+    s.cloudHeight = std::round(r.range(15, 70));
+    const double g = std::round(r.range(140, 220));
+    s.cumulusColor = Vec3{g, g, std::min(255.0, g + 10)};
+    s.sphericalClouds = r.next() < 0.3;
+    s.cloudSeed = (int)(r.next() * 9999) + 1;
     clampSkyLab(s);
     return s;
 }
@@ -349,6 +455,21 @@ SkyGenerator::SkyGenerator(const SkyLab& s, int width) : s_(s) {
     const bool physical = s_.mode == SkyMode::Soft || s_.mode == SkyMode::Darker;
     offLinear_ = toLinear(s_.offColor);
     groundLinear_ = toLinear(s_.groundColor) * (physical ? dayLevel_ : 1.0);
+    // Clouds: the sunlit side takes the sun's light (red at sunset, dim at night); the
+    // shaded side the sky's own colour mixed with the cumulus colour; stratus a touch of
+    // the sky dome colour (Bryce: stratus respond to sunlight and sky dome colour).
+    {
+        const double m = std::max({sunTransmit_.x, sunTransmit_.y, sunTransmit_.z, 1e-6});
+        // White at midday, the sunset's colours when the sun is low.
+        const double low = 1 - smooth(8 * kDeg, 35 * kDeg, alt);
+        const Vec3 sunTint = lerp(Vec3{1, 1, 1}, sunLight_, 0.5);
+        // At night (until the moon comes) clouds are dark shapes, a shade over the sky.
+        const double night = physical ? std::max(smooth(-12 * kDeg, 6 * kDeg, alt), 0.006) : 1.0;
+        cloudLit_ = physical ? mul(sunTint, lerp(Vec3{1, 1, 1}, sunTransmit_ / m, 0.15 + 0.8 * low)) * night : sunLight_;
+        const Vec3 skyAmb = s_.mode == SkyMode::Custom ? toLinear(s_.customSky) : s_.mode == SkyMode::Off ? toLinear(s_.offColor) : Vec3{0.25, 0.32, 0.45};
+        cloudShade_ = mul(toLinear(s_.cumulusColor), lerp(skyAmb * 1.6, Vec3{1, 1, 1}, 0.45)) * night;
+        stratusTint_ = toLinear(s_.skyDome);
+    }
     // The disk: the sun's colour, reddened low down (Soft / Darker) but kept bright.
     diskColor_ = sunLight_;
     if (physical) diskColor_ = mul(sunLight_, sunTransmit_ / std::max({sunTransmit_.x, sunTransmit_.y, sunTransmit_.z, 1e-6}));
@@ -423,7 +544,8 @@ SkyGenerator::Row SkyGenerator::row(double el, double pixelAngle) const {
     // density how strong it is, base height moves it down or up. Below the horizon it
     // thins out quickly (the ground near the eye is clear).
     if (s_.hazeOn && s_.hazeDensity > 0) {
-        const double width = (1.5 + s_.hazeThickness * 0.35) * kDeg;
+        // Higher clouds widen the band (as in Bryce); 35, the default height, leaves it as is.
+        const double width = (1.5 + s_.hazeThickness * 0.35) * kDeg * (0.5 + s_.cloudHeight / 70.0);
         const double shifted = el - s_.hazeBase * 0.1 * kDeg;
         const double fall = shifted >= 0 ? shifted / width : -shifted / (width * 0.35);
         r.haze = std::clamp(s_.hazeDensity / 100.0 * std::exp(-fall), 0.0, 1.0);
@@ -475,6 +597,8 @@ Vec3 SkyGenerator::pixel(const Row& r, double cosYaw, double sinYaw, double azDi
         sky = Vec3{std::min(sky.x, 1.0), std::min(sky.y, 1.0), std::min(sky.z, 1.0)};
     }
 
+    if (r.el > 0 && (s_.stratus.on || s_.cumulus.on)) sky = clouds(sky, d, cosToSun, pixelAngle);
+
     if (r.haze > 0) sky = lerp(sky, r.hazeColor, r.haze);
     if (r.ground > 0) sky = lerp(sky, groundLinear_, r.ground);
     return sky;
@@ -506,10 +630,98 @@ void SkyGenerator::rows(int y0, int y1, unsigned char* rgb) const {
     }
 }
 
+Vec3 SkyGenerator::clouds(const Vec3& sky, const Vec3& d, double cosToSun, double pixelAngle) const {
+    Vec3 out = sky;
+    // Heights in metres: cumulus 600 m .. 4.6 km, stratus two and a half times higher.
+    const double cumulusH = 600 + s_.cloudHeight * 40, stratusH = cumulusH * 2.5;
+    const Vec3 sunFlat = normalize(Vec3{sunDir_.x, sunDir_.y, 0} + Vec3{1e-9, 0, 0});
+    auto layer = [&](const SkyLab::CloudLayer& l, double height, double scale, std::uint32_t salt, bool thick) {
+        if (!l.on || l.cover <= 0) return;
+        const double t = toLayer(d, height);
+        const double size = scale / l.frequency; // metres per noise unit
+        const std::uint32_t seed = hash32((std::uint32_t)s_.cloudSeed * 7919U + salt);
+        Vec3 p{d.x * t / size, d.y * t / size, 0};
+        if (!thick) {
+            // Stratus are drawn out in streaks along one direction (set by the seed).
+            const double a = (hash32(seed ^ 0x77U) >> 8) * (kPi / 16777216.0);
+            const double u = p.x * std::cos(a) + p.y * std::sin(a), v = -p.x * std::sin(a) + p.y * std::cos(a);
+            p = Vec3{u * 0.3, v, 0};
+        }
+        // A pixel's footprint on the layer, stretched toward the horizon.
+        const double footprint = t * pixelAngle / std::sqrt(std::max(d.z, 0.004)) / size;
+        const int octaves = (int)l.complexity;
+        auto density = [&](double x, double y, double fp) {
+            // Turbulence stirs the pattern (it bends the coordinates by more noise).
+            const double warp = l.turbulence / 100.0 * 1.4;
+            if (warp > 0) {
+                const double wx = fbm(x * 0.7 + 31.7, y * 0.7 - 12.1, seed ^ 0xa5a5U, 3, fp * 0.7);
+                const double wy = fbm(x * 0.7 - 8.3, y * 0.7 + 44.9, seed ^ 0x5a5aU, 3, fp * 0.7);
+                x += wx * warp;
+                y += wy * warp;
+            }
+            double n = 0.5 + 0.5 * fbm(x, y, seed, octaves, fp) / 0.55;
+            // Spherical: rounder, denser clumps (cells blended into the noise).
+            if (s_.sphericalClouds) {
+                const double c = cells(x * 0.45, y * 0.45, seed ^ 0x1234U);
+                const double blob = 1 - smooth(0.0, 0.75, c + (n - 0.5) * 0.5);
+                n = 0.35 * n + 0.75 * blob;
+            }
+            // Cover sets how much passes the threshold; amplitude how hard the edge is.
+            const double threshold = 0.78 - l.cover / 100.0 * 0.56;
+            return std::clamp((n - threshold) * (l.amplitude / 100.0) * 2.2, 0.0, 1.0);
+        };
+        if (std::exp(-t / (height * 25.0)) < 0.004) return;
+        double dens = density(p.x, p.y, footprint);
+        // Far away the pattern averages out; fade the layer into the sky there.
+        const double far = std::exp(-t / (height * 25.0));
+        dens *= far * smooth(0.0, 2.5 * kDeg, std::asin(std::clamp(d.z, -1.0, 1.0)));
+        if (dens <= 0) return;
+        Vec3 col;
+        if (thick) {
+            // Lit where the cloud thins toward the sun, shaded where it thickens.
+            const double step = 0.18;
+            const double toward = density(p.x + sunFlat.x * step, p.y + sunFlat.y * step, footprint);
+            const double sunUp = std::clamp(sunDir_.z * 2 + 0.3, 0.0, 1.0);
+            const double light = std::clamp(0.62 + (dens - toward) * 1.6 * (0.4 + 0.6 * sunUp) - dens * 0.15, 0.0, 1.0);
+            col = lerp(cloudShade_, cloudLit_, light);
+            // A silver lining when looking toward the sun through thin edges.
+            const double rim = std::pow(std::max(0.0, cosToSun), 12) * (1 - dens) * 1.2;
+            col += cloudLit_ * rim;
+            dens = std::min(1.0, dens * 1.15);
+        } else {
+            // Stratus: thin, bright, see-through.
+            col = cloudLit_ * 0.97 + stratusTint_ * 0.2 + cloudShade_ * 0.08;
+            col += cloudLit_ * (std::pow(std::max(0.0, cosToSun), 16) * 0.5);
+            dens *= 0.85;
+        }
+        col = Vec3{std::min(col.x, 1.0), std::min(col.y, 1.0), std::min(col.z, 1.0)};
+        out = lerp(out, col, dens);
+    };
+    layer(s_.stratus, stratusH, 90000, 0x51a7U, false); // higher, behind
+    layer(s_.cumulus, cumulusH, 40000, 0xc0ffU, true);
+    return out;
+}
+
+void SkyGenerator::rowsParallel(int y0, int y1, unsigned char* rgb, int threads) const {
+    if (threads <= 0) threads = (int)std::max(1u, std::thread::hardware_concurrency());
+    y0 = std::max(0, y0);
+    y1 = std::min(y1, h_);
+    const int n = y1 - y0;
+    threads = std::max(1, std::min(threads, n / 4));
+    if (threads == 1) { rows(y0, y1, rgb); return; }
+    // Rows interleaved in small bands so every thread gets some sky and some ground.
+    std::vector<std::thread> pool;
+    for (int k = 0; k < threads; ++k)
+        pool.emplace_back([=] {
+            for (int y = y0 + k * 4; y < y1; y += threads * 4) rows(y, std::min(y + 4, y1), rgb);
+        });
+    for (std::thread& t : pool) t.join();
+}
+
 std::vector<unsigned char> generateSky(const SkyLab& s, int width) {
     SkyGenerator g(s, width);
     std::vector<unsigned char> out((size_t)g.width() * g.height() * 3);
-    g.rows(0, g.height(), out.data());
+    g.rowsParallel(0, g.height(), out.data());
     return out;
 }
 

@@ -236,7 +236,7 @@ from the Camera Preview and the renderer (see §9).
 - **Camera bookmarks** (World menu): name + 3D camera position/yaw/pitch; go / delete.
   Editor-only, saved with the map, not undone (like visgroups).
 
-### Sky Lab (milestone 10c, in progress: v0.10.4 built; from Bryce)
+### Sky Lab (milestone 10c, in progress: v0.10.4 and v0.10.5 built; from Bryce)
 Makes skies instead of only loading images. Agreed with the user 2026-11-19; full list in
 PLAN.md (Roadmap item 3).
 - **Settings** (`core/skylab.hpp`): everything Bryce's Sky Lab has, saved in the map as the
@@ -246,7 +246,9 @@ PLAN.md (Roadmap item 3).
   haze on objects, IBL) are stored for the renderer (M12).
 - **Generation** in the core (no graphics): a pure function of the settings and the image
   size, giving an RGB panorama in the layout of `core/sky.hpp` (middle faces +X). Below the
-  horizon the haze colour fades to a ground colour.
+  horizon the haze colour fades to a ground colour. Clouds are two layers of noise on
+  shells over the planet (stratus above cumulus), each octave faded where it is finer
+  than a pixel. Rows can be made on several threads; the result is the same.
 - **Baking:** Apply writes the panorama as a PNG to Bottega's `skies/` (Sky Lab asks for a
   Bottega if none is set) and sets the map's sky to it; one undo step. A missing PNG is
   rebaked from the map's settings.

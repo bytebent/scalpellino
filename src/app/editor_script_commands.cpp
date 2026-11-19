@@ -425,6 +425,11 @@ void Editor::registerScriptCommands() {
         } else if (op == "cancel") closeSkyLab();
         else if (op == "rebake") rebakeSky();
     });
+    add({"skylabtab"}, [this](const std::string&, std::istringstream& in) {
+        // skylabtab sun|clouds|atmosphere
+        std::string t; in >> t;
+        skyLabTab_ = t == "clouds" ? 1 : t == "atmosphere" ? 2 : 0;
+    });
     add({"skylabset"}, [this](const std::string&, std::istringstream& in) {
         // skylabset <field> <value...>: a field as saved in the map (sun_altitude 10,
         // mode darker, sun_color 255 200 150...); "ambient r g b" sets the ambient field

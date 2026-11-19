@@ -48,6 +48,23 @@ struct SkyLab {
 
     Vec3 groundColor{96, 92, 84};   // below the horizon (the haze fades into it)
 
+    // Clouds (v0.10.5): two layers of noise on the sky, stratus high and thin, cumulus
+    // lower and thick (as in Bryce). Each layer: cover 0..100 (how much sky), frequency
+    // 2..150 (smaller formations as it rises), amplitude 50..500 (soft and faint to dense
+    // and hard-edged), turbulence 0..100 (stirred, denser pattern), complexity 1..8
+    // (detail, the noise's octaves). Off by default, so older skies stay as they were.
+    struct CloudLayer {
+        bool on = false;
+        double cover = 40, frequency = 40, amplitude = 120, turbulence = 25, complexity = 6;
+    };
+    CloudLayer stratus{false, 35, 30, 90, 20, 6};
+    CloudLayer cumulus{false, 40, 35, 150, 30, 6};
+    double cloudHeight = 35;        // 0..100: higher = smaller, further clouds and a wider haze band
+    Vec3 cumulusColor{178, 182, 192};
+    bool sphericalClouds = false;   // rounder, denser clouds
+    int cloudSeed = 1;              // another number, another pattern
+    bool cloudShadows = false;      // stored for the renderer (clouds shading the ground)
+
     // Scene lighting, stored for the renderer (M12); not used by the sky picture.
     double shadows = 80;            // 0..100 shadow strength
     bool softShadows = false;
@@ -90,6 +107,8 @@ public:
     int height() const { return h_; }
     // Writes rows [y0, y1) into `rgb` (the whole image, w*h*3 bytes).
     void rows(int y0, int y1, unsigned char* rgb) const;
+    // The same, split over `threads` threads (0 = as many as the machine has).
+    void rowsParallel(int y0, int y1, unsigned char* rgb, int threads = 0) const;
     // Linear-light colour (before tone mapping and dithering) in direction `dir`, for tests.
     Vec3 radiance(const Vec3& dir) const;
 
@@ -99,6 +118,9 @@ private:
     // Display colour 0..1 (linear) of one pixel.
     Vec3 pixel(const Row& r, double cosYaw, double sinYaw, double azDiff, double pixelAngle) const;
     Vec3 atmosphere(double elevation, double azDiff) const; // tone-mapped sky, linear 0..1
+    // Clouds over `sky` in direction d (unit, above the horizon).
+    Vec3 clouds(const Vec3& sky, const Vec3& d, double cosToSun, double pixelAngle) const;
+    Vec3 cloudLit_, cloudShade_, stratusTint_; // cloud colours, linear
     SkyLab s_;
     int w_, h_;
     Vec3 sunDir_;
@@ -115,6 +137,7 @@ private:
     int lutE_ = 0, lutA_ = 0;
 };
 
+// The whole panorama, made on all of the machine's threads.
 std::vector<unsigned char> generateSky(const SkyLab& s, int width);
 
 } // namespace scal

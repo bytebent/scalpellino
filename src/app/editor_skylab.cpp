@@ -200,8 +200,8 @@ void Editor::stepSkyBake() {
     // A slice per frame (about 40 ms) so the window can show progress.
     const auto t0 = std::chrono::steady_clock::now();
     while (b.row < b.gen->height()) {
-        const int n = std::min(16, b.gen->height() - b.row);
-        b.gen->rows(b.row, b.row + n, b.rgb.data());
+        const int n = std::min(64, b.gen->height() - b.row);
+        b.gen->rowsParallel(b.row, b.row + n, b.rgb.data());
         b.row += n;
         if (std::chrono::steady_clock::now() - t0 > std::chrono::milliseconds(40)) break;
     }
@@ -286,7 +286,11 @@ void Editor::drawSkyLabWindow() {
         }
 
         if (ImGui::BeginTabBar("##skylabtabs")) {
-            if (ImGui::BeginTabItem("Sun & Moon")) {
+            // A tab asked for (tests: skylabtab) is opened once.
+            const int askedTab = skyLabTab_;
+            skyLabTab_ = -1;
+            auto tabFlags = [askedTab](int which) { return askedTab == which ? ImGuiTabItemFlags_SetSelected : 0; };
+            if (ImGui::BeginTabItem("Sun & Moon", nullptr, tabFlags(0))) {
                 ImGui::BeginGroup();
                 sunCompass(s.sunAzimuth, s.sunAltitude);
                 ImGui::EndGroup();
@@ -330,11 +334,39 @@ void Editor::drawSkyLabWindow() {
                 }
                 ImGui::EndTabItem();
             }
-            if (ImGui::BeginTabItem("Clouds")) {
-                ImGui::TextDisabled("Cumulus and stratus clouds come in v0.10.5.");
+            if (ImGui::BeginTabItem("Clouds", nullptr, tabFlags(1))) {
+                // Stratus above, cumulus below, as Bryce arranges them.
+                auto layer = [&](const char* name, SkyLab::CloudLayer& l, const char* what) {
+                    ImGui::PushID(name);
+                    ImGui::Checkbox(name, &l.on);
+                    ImGui::SameLine();
+                    ImGui::TextDisabled("%s", what);
+                    ImGui::BeginDisabled(!l.on);
+                    slider("cover", l.cover, 0, 100);
+                    slider("frequency (smaller formations)", l.frequency, 2, 150);
+                    slider("amplitude (harder edges)", l.amplitude, 50, 500);
+                    slider("turbulence", l.turbulence, 0, 100);
+                    slider("complexity (detail)", l.complexity, 1, 8);
+                    ImGui::EndDisabled();
+                    ImGui::PopID();
+                };
+                layer("Stratus clouds", s.stratus, "high, thin, wispy");
+                ImGui::Spacing();
+                layer("Cumulus clouds", s.cumulus, "lower, thick, fluffy");
+                ImGui::BeginDisabled(!s.cumulus.on);
+                colour("cumulus colour", s.cumulusColor);
+                ImGui::EndDisabled();
+                ImGui::Separator();
+                slider("cloud height (also widens the haze)", s.cloudHeight, 0, 100);
+                ImGui::Checkbox("spherical clouds (rounder, denser)", &s.sphericalClouds);
+                ImGui::SetNextItemWidth(90);
+                ImGui::InputInt("pattern seed", &s.cloudSeed, 0);
+                ImGui::SameLine();
+                if (ImGui::Button("New pattern")) s.cloudSeed = s.cloudSeed % 9999 + 1;
+                ImGui::Checkbox("clouds cast shadows (stored; used by renders later)", &s.cloudShadows);
                 ImGui::EndTabItem();
             }
-            if (ImGui::BeginTabItem("Atmosphere")) {
+            if (ImGui::BeginTabItem("Atmosphere", nullptr, tabFlags(2))) {
                 ImGui::Checkbox("haze", &s.hazeOn);
                 ImGui::BeginDisabled(!s.hazeOn);
                 colour("haze colour", s.hazeColor);
