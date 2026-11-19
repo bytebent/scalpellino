@@ -236,7 +236,7 @@ from the Camera Preview and the renderer (see §9).
 - **Camera bookmarks** (World menu): name + 3D camera position/yaw/pitch; go / delete.
   Editor-only, saved with the map, not undone (like visgroups).
 
-### Sky Lab (milestone 10c, in progress; from Bryce)
+### Sky Lab (milestone 10c, in progress: v0.10.4 built; from Bryce)
 Makes skies instead of only loading images. Agreed with the user 2026-11-19; full list in
 PLAN.md (Roadmap item 3).
 - **Settings** (`core/skylab.hpp`): everything Bryce's Sky Lab has, saved in the map as the

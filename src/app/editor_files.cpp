@@ -156,6 +156,8 @@ void Editor::drawBottegaDialog() {
 
 void Editor::newMap() {
     tool_->cancel();
+    closeSkyLab();
+    skyBake_.reset();
     doc_.reset({{"classname", "worldspawn"}, {"mapversion", "220"}}, {}, {});
     path_.clear();
 }
@@ -168,9 +170,14 @@ void Editor::openMap(const std::string& path) {
         return;
     }
     tool_->cancel();
+    closeSkyLab();
+    skyBake_.reset();
     doc_.reset(loaded.worldKeys, loaded.brushes(), loaded.otherEntities, loaded.groups(), loaded.visgroups(),
                WorldData{loaded.lights(), loaded.environment(), loaded.bookmarks(), loaded.figure(), loaded.prims(), loaded.props()});
     path_ = path;
+    // A Sky Lab sky whose PNG is gone (another machine, a moved Bottega) is made again
+    // from the settings in the map.
+    if (skyFileMissing() && bottega::usable(bottegaCheck_)) rebakeSky();
     if (r.skippedBrushes > 0)
         errorText_ = "Opened, but skipped " + std::to_string(r.skippedBrushes) + " invalid brush(es).";
 }

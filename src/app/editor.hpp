@@ -6,7 +6,7 @@
 // input, scene, views), editor_edit.cpp (commands, transform, carve, curves),
 // editor_visibility.cpp, editor_surfaces.cpp (textures, terrain), editor_objects.cpp
 // (primitives, props, landing), editor_replicate.cpp, editor_world.cpp (lights, sky,
-// bookmarks), editor_files.cpp (files, settings, Bottega), editor_script.cpp (test
+// bookmarks), editor_skylab.cpp (Sky Lab), editor_files.cpp (files, settings, Bottega), editor_script.cpp (test
 // scripts). Shared helpers: editor_util.hpp; member templates: editor_templates.hpp.
 #include <functional>
 #include <map>
@@ -223,6 +223,39 @@ private:
     double figureBuf_[3] = {0, 0, 0};
     char bookmarkName_[64] = "";
     std::string worldError_;
+
+    // Sky Lab (milestone 10c): editor_skylab.cpp
+    void openSkyLab();
+    void closeSkyLab();
+    void drawSkyLabWindow();
+    void updateSkyLabPreview(bool dragging); // makes the live preview when the settings changed
+    // Bakes `settings` to the Bottega as `name` (over several frames), then records it as
+    // one undo step (with the sun light, if locked). False (and a message) without a Bottega.
+    bool startSkyBake(const SkyLab& settings, const std::string& name, bool closeAfter);
+    void stepSkyBake();
+    void rebakeSky();               // the map's settings again (sun from the light if locked)
+    bool skyOutOfDate() const;      // locked, and the sun light has turned since the bake
+    bool skyFileMissing() const;    // the map has Sky Lab settings but its PNG is gone
+    bool skyLabNeedsFrame() const;
+    const Light* mapSunLight() const;
+    std::string skyLabBakeName() const; // "skies/skylab/<map name>"
+    bool skyLabOpen_ = false, skyLabFocus_ = false;
+    SkyLab skyLabBuf_;               // the settings being edited
+    Vec3 skyLabAmbient_;             // the environment's ambient, edited in Sky Lab
+    Texture2D skyLabTex_{};          // the live preview (also the 3D view's sky while open)
+    SkyLab skyLabPreviewOf_;
+    int skyLabPreviewW_ = 0;
+    unsigned long long skyLabPreviews_ = 0; // how many previews were made (tests)
+    struct SkyBake {
+        std::unique_ptr<SkyGenerator> gen;
+        std::vector<unsigned char> rgb;
+        int row = 0;
+        SkyLab settings;
+        std::string name;
+        bool closeAfter = false;
+    };
+    std::unique_ptr<SkyBake> skyBake_;
+    std::string skyLabMsg_;
 
     // Overlap finder + navigation
     void findOverlapsNow();

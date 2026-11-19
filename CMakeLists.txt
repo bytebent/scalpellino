@@ -40,6 +40,7 @@ add_library(scal_core STATIC
   src/core/terrain.cpp
   src/core/world.cpp
   src/core/sky.cpp
+  src/core/skylab.cpp
   src/core/mathprim.cpp
   src/core/model.cpp
   src/core/prop.cpp
@@ -80,6 +81,7 @@ if(SCAL_BUILD_APP)
     src/app/editor_surfaces.cpp
     src/app/editor_visibility.cpp
     src/app/editor_world.cpp
+    src/app/editor_skylab.cpp
     src/app/settings.cpp
     src/render/scene.cpp
     src/render/texture_library.cpp

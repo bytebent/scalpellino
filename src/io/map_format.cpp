@@ -83,7 +83,7 @@ void writeKeys(std::ostringstream& o, const KeyValues& kv) {
 
 namespace {
 // Milestone 8 keys in worldspawn (other tools ignore "_scal_*").
-const char* const kWorldExtras[] = {"_scal_visgroups", "_scal_sky", "_scal_ambient", "_scal_fog", "_scal_cameras", "_scal_figure"};
+const char* const kWorldExtras[] = {"_scal_visgroups", "_scal_sky", "_scal_ambient", "_scal_fog", "_scal_cameras", "_scal_figure", "_scal_skylab"};
 bool isWorldExtra(const std::string& k) {
     for (const char* e : kWorldExtras) if (k == e) return true;
     return false;
@@ -247,6 +247,7 @@ std::string writeMap(const Document& doc) {
     if (env.ambient != defaults.ambient) world.emplace_back("_scal_ambient", vec(env.ambient));
     if (env.fogOn || !(env.fog == defaults.fog))
         world.emplace_back("_scal_fog", std::string(env.fogOn ? "1 " : "0 ") + vec(env.fog.color) + " " + num(env.fog.start) + " " + num(env.fog.end));
+    if (env.skylab.used) world.emplace_back("_scal_skylab", skyLabToString(env.skylab));
     if (!doc.bookmarks().empty()) {
         // x y z yaw pitch name;...
         std::string cams;
@@ -653,6 +654,7 @@ MapReadResult readMap(const std::string& text, Document& doc) {
         const std::string& k = it->first;
         const std::string& v = it->second;
         if (k == "_scal_sky") extra.env.sky = v;
+        else if (k == "_scal_skylab") extra.env.skylab = skyLabFromString(v);
         else if (k == "_scal_ambient") readVec(v, extra.env.ambient);
         else if (k == "_scal_fog") {
             int on = 0;

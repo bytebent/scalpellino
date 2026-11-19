@@ -4,6 +4,39 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-19 — Sky Lab, step 1 (v0.10.4)
+- **Design agreed with the user** from the Bryce 7 guide's Sky Lab chapter (recorded in
+  PLAN.md Roadmap item 3 and ARCHITECTURE §6 "Sky Lab"; commit before the code).
+- **Core** (`src/core/skylab.*`): all v0.10.4 settings plus the scene-lighting ones stored
+  for the renderer; `_scal_skylab` text form (unknown fields kept, bad numbers keep the
+  default, values clamped); the sun lock's angle conversions; Randomize (seeded); the
+  generator: a table of the sky from single scattering (Rayleigh + Mie) per sky, a colour
+  grade per mode, Custom (three colours) and Off (one colour), the sun's disk (size,
+  horizon illusion, rim, reddening low down), the haze band, the ground below the horizon,
+  a small dither. Row by row so a bake can show progress. 2048x1024 in 0.16 s, 8192x4096
+  in 2.2 s here (first version: 0.6 s and 9.7 s; per-row and per-column work moved out of
+  the pixel loop, an sRGB table).
+- **Editor** (`src/app/editor_skylab.cpp`): World > Sky Lab... (a window that doesn't block),
+  the panorama strip, tabs, a sun compass, sliders with typed fields; the 3D view shows the
+  preview while open (256 wide while dragging, 1024 on release, nothing while idle); Apply /
+  OK bake over several frames with a progress bar into the Bottega's `skies/skylab/`, then
+  one undo step (environment + the sun light when locked); no Bottega: a message and a
+  button to set one; World > Rebake Sky Lab sky when the locked light has turned or the PNG
+  is missing; a missing PNG is baked again when the map is opened.
+- **Tests:** core 4521 checks, 0 failed (was 4482; new `testSkyLab`: text form, map round
+  trip, lock angles, sun at the brightest pixel, ground colour, night, Darker, Off exact,
+  Custom colours, disk size, seeds). UI 23 of 23 at 1x and 2x: new `v104_skylab` (preview
+  with the View sky off, Apply / Cancel / OK, undo steps, lock turning the light, out of
+  date, Rebake, undo / redo, save and open, a missing PNG made again, no Bottega); four
+  wrong expectations checked to fail. Idle 0 ticks at 1x and 2x with the Sky Lab window
+  open (added to `rich_map.script`); control 900 ticks.
+- **Screenshots:** `docs/screenshots/m10c-01-skylab-default.png`, `m10c-02-sunset-preview.png`,
+  `m10c-03-darker-baked.png`, `m10c-04-custom.png`, `m10c-05-atmosphere-off.png`,
+  `m10c-06-no-bottega.png`.
+- **Also:** the user's NASA moon map added as `assets/moon/moon_lroc_color.jpg` (1024x512,
+  for v0.10.6); THIRD_PARTY.md updated (and its split table joined).
+- **Next:** report; v0.10.5 clouds.
+
 ### 2026-11-19 — Editor split, prop benchmark, faster props (v0.10.3)
 - **Asked by the user** before Sky Lab: split `editor.cpp` (both steps), a prop benchmark
   for our own use, target hundreds to thousands of props.

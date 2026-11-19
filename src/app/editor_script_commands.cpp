@@ -416,6 +416,25 @@ void Editor::registerScriptCommands() {
         else if (k == "fogrange") in >> e.fog.start >> e.fog.end;
         if (e != doc_.environment()) doc_.apply(doc_.makeEnvironment(e, "Environment"));
     });
+    add({"skylab"}, [this](const std::string&, std::istringstream& in) {
+        // skylab open | apply | ok | cancel | rebake
+        std::string op; in >> op;
+        if (op == "open") openSkyLab();
+        else if (op == "apply" || op == "ok") {
+            if (!startSkyBake(skyLabBuf_, skyLabBakeName(), op == "ok")) { std::fprintf(stderr, "script FAIL (command %d): %s\n", scriptLine_, skyLabMsg_.c_str()); ++scriptFailures_; }
+        } else if (op == "cancel") closeSkyLab();
+        else if (op == "rebake") rebakeSky();
+    });
+    add({"skylabset"}, [this](const std::string&, std::istringstream& in) {
+        // skylabset <field> <value...>: a field as saved in the map (sun_altitude 10,
+        // mode darker, sun_color 255 200 150...); "ambient r g b" sets the ambient field
+        std::string k, v; in >> k; std::getline(in >> std::ws, v);
+        if (k == "ambient") { std::istringstream a(v); a >> skyLabAmbient_.x >> skyLabAmbient_.y >> skyLabAmbient_.z; return; }
+        const bool was = skyLabBuf_.lockSun;
+        skyLabBuf_ = skyLabFromString(skyLabToString(skyLabBuf_) + ";" + k + "=" + v);
+        if (skyLabBuf_.lockSun && !was)
+            if (const Light* sun = mapSunLight()) sunFromLightAngles(sun->pitch, sun->yaw, skyLabBuf_.sunAzimuth, skyLabBuf_.sunAltitude);
+    });
     add({"bottega"}, [this](const std::string&, std::istringstream& in) {
         // bottega <path> | make <path> | none  (in memory only: tests never touch user settings)
         std::string op; in >> op;

@@ -189,6 +189,7 @@ bool Editor::frame(float dt) {
     st.lightKind = (int)lightTool_.templ.kind;
     st.lightsSelected = !doc_.lightSelection().empty();
     st.showSky = showSky_;
+    st.canRebakeSky = !skyBake_ && (skyOutOfDate() || skyFileMissing());
     st.primsShown = doc_.primsShown();
     st.propsShown = doc_.propsShown();
     st.lightPreview = lightPreview_;
@@ -274,6 +275,8 @@ bool Editor::frame(float dt) {
     if (m.primOp >= 0) setPrimOp((PrimOp)m.primOp);
     if (m.lightKind >= 0) { lightTool_.templ.kind = (LightKind)m.lightKind; setTool(&lightTool_); }
     if (m.createLight) lightTool_.create(doc_);
+    if (m.skyLab) { if (skyLabOpen_) skyLabFocus_ = true; else openSkyLab(); }
+    if (m.rebakeSky) rebakeSky();
     if (m.environment) { worldError_.clear(); envBuf_ = doc_.environment(); askEnvironment_ = true; }
     if (m.bookmarks) { worldError_.clear(); askBookmarks_ = true; }
     if (m.figurePos) {
@@ -343,6 +346,8 @@ bool Editor::frame(float dt) {
     drawWorldDialogs();
     drawReplicateDialog();
     drawRandomReplicateWindow();
+    drawSkyLabWindow();
+    stepSkyBake();
     drawBottegaDialog();
     drawControlsWindow(&controlsOpen_);
     drawOverlapsWindow();
@@ -356,7 +361,7 @@ bool Editor::frame(float dt) {
 
     runNativeDialog();
     updateTitle();
-    return flying_ || rmbLook_ || !script_.empty() || !opt_.screenshot.empty();
+    return flying_ || rmbLook_ || !script_.empty() || !opt_.screenshot.empty() || skyLabNeedsFrame();
 }
 
 void Editor::handleKeyboard() {
@@ -462,7 +467,8 @@ Scene Editor::buildScene() {
     s.replaced.clear();
     if (pivotMode_ != 0) s.pivot = pivotPoint();
     if (textured3D_) s.textures = &textures_;
-    if (showSky_ && !doc_.environment().sky.empty())
+    if (skyLabOpen_ && skyLabTex_.id) s.skyTexture = skyLabTex_.id; // Sky Lab's live preview
+    else if (showSky_ && !doc_.environment().sky.empty())
         if (const Texture2D* t = skies_.get(doc_.environment().sky)) s.skyTexture = t->id;
     if (showFigure_) s.figure = doc_.figure() ? *doc_.figure() : Vec3{};
     if (lightPreview_) s.lighting = &lighting_.get(doc_, cache_.get(doc_));

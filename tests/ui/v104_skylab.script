@@ -1,0 +1,109 @@
+# v0.10.4: Sky Lab. The window, the live preview in the 3D view (even with the View
+# menu's sky off), Apply / OK / Cancel, baking into the Bottega, the settings in the map,
+# the sun lock (Apply turns the light; a turned light makes the sky out of date; Rebake),
+# one undo step, a missing PNG made again when the map is opened, no Bottega.
+bottega make studio
+block -2048 -2048 -32 2048 2048 0
+block 128 -64 0 192 0 256
+block -320 -128 0 -192 0 96
+tool select
+key Esc
+camera -700 -650 140 42 4
+viewset sky off
+expect undos 3
+# -- the default sky, shown in the 3D view while the window is open
+skylab open
+expect skylabwindow open 1024
+shot m10c-01-skylab-default.png
+# -- a low sun ahead of the camera
+skylabset sun_azimuth 40
+skylabset sun_altitude 6
+skylabset horizon_illusion 60
+skylabset disk_size 4
+shot m10c-02-sunset-preview.png
+# -- Apply bakes into the Bottega and makes it the map's sky (one undo step); the window stays
+skylab apply
+expect skylabwindow open
+expect sky skies/skylab/untitled_1
+expect skylab sun_altitude 6
+expect skylab horizon_illusion 60
+expect undos 4
+# -- Cancel drops what changed since
+skylabset mode darker
+skylab cancel
+expect skylabwindow closed
+expect skylab mode soft
+# -- OK applies and closes; the same file is baked again
+skylab open
+skylabset mode darker
+skylab ok
+expect skylabwindow closed
+expect skylab mode darker
+expect sky skies/skylab/untitled_1
+expect undos 5
+viewset sky on
+shot m10c-03-darker-baked.png
+# -- custom and atmosphere off
+skylab open
+skylabset mode custom
+skylabset custom_sky 40 20 90
+skylabset custom_glow 255 120 60
+skylabset custom_horizon 255 170 120
+shot m10c-04-custom.png
+skylabset mode off
+skylabset off_color 20 24 32
+skylabset haze_density 40
+shot m10c-05-atmosphere-off.png
+skylab cancel
+# -- a sun light: locking puts the sky's sun on it; Apply turns the light with the sky
+tool light
+lightset kind sun
+lightset pitch -20
+lightset yaw 220
+lightset pos 0 0 600
+key Return
+tool select
+expect lights 1
+skylab open
+skylabset lock_sun 1
+skylabset mode soft
+skylabset sun_altitude 30
+skylab apply
+expect skylab lock_sun 1
+expect skylab sun_azimuth 40
+expect skylab sun_altitude 30
+expect lightdir -30 220
+expect skyoutofdate no
+expect undos 7
+skylab cancel
+# -- turning the light makes the sky out of date; Rebake fixes it (sky only)
+lightedit pitch -12
+expect skyoutofdate yes
+skylab rebake
+expect skyoutofdate no
+expect skylab sun_altitude 12
+expect lightdir -12 220
+expect undos 9
+undo
+expect skyoutofdate yes
+redo
+expect skyoutofdate no
+# -- saved and opened again: the settings come back
+save skylab-test.map
+open skylab-test.map
+expect skylab sun_altitude 12
+expect skylab mode soft
+expect skylab lock_sun 1
+expect sky skies/skylab/untitled_1
+# -- in an empty Bottega the PNG is missing: opening the map makes it again
+bottega make studio2
+open skylab-test.map
+expect sky skies/skylab/untitled_1
+expect skylab sun_altitude 12
+expect undos 0
+# -- no Bottega: Sky Lab says so
+bottega none
+skylab open
+shot m10c-06-no-bottega.png
+skylab cancel
+quit

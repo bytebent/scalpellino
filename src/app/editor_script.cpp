@@ -129,6 +129,7 @@ void Editor::stepScript() {
         ++scriptFailures_;
     }
     if (warmup_ > 0) { --warmup_; return; } // let views get their sizes first
+    if (skyBake_) return; // a Sky Lab bake finishes before the next command
     std::istringstream in(script_.front());
     script_.pop_front();
     std::string cmd;

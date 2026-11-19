@@ -21,7 +21,8 @@ texture licenses; `releases/` has the notes for each version.
   (single pieces of a combination via Option+click; Multi-Replicate as a non-blocking
   window), v0.9.4 (Bottega basics), v0.10.0 (props), v0.10.1 (Random Replicate),
   v0.10.2 (landing fixes, 3D rectangle select, show / hide primitives and props, review
-  fixes), **v0.10.3** (editor split by topic, prop benchmark, faster landing and drawing).
+  fixes), v0.10.3 (editor split by topic, prop benchmark, faster landing and drawing),
+  **v0.10.4** (Sky Lab, step 1: sky modes, sun, haze, ground, bake, sun lock).
 - **Milestone 10 — Props is done (v0.10.0):** `.glb` models from Bottega's `models/`; `.mazz`
   waits for Mazzuola's final format. The user confirmed the choices made while building it
   (2026-11-19), including even scaling as the default for primitives too.

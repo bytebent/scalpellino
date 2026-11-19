@@ -189,6 +189,8 @@ MenuActions drawMenuBar(const MenuState& st) {
         ImGui::TextDisabled("drag a selected light's rings to aim it");
         ImGui::Separator();
         if (ImGui::MenuItem("Environment (sky, ambient, fog)...")) a.environment = true;
+        if (ImGui::MenuItem("Sky Lab...")) a.skyLab = true;
+        if (ImGui::MenuItem("Rebake Sky Lab sky", nullptr, false, st.canRebakeSky)) a.rebakeSky = true;
         if (ImGui::MenuItem("Camera bookmarks...")) a.bookmarks = true;
         if (ImGui::MenuItem("Scale figure position...")) a.figurePos = true;
         ImGui::EndMenu();
@@ -277,6 +279,7 @@ void drawControlsWindow(bool* open) {
             {"Select / move lights", "click a light's marker (any tool that selects: Select, Light); drag it in a 2D view; Delete removes, Cmd+D duplicates"},
             {"Aim a spot or sun", "drag the rotation rings of the selected light (3D: X red, Y green, Z blue; 2D: the ring around the view's axis), 15 degree steps; or type pitch / yaw"},
             {"Sky, ambient, fog", "World > Environment (sky folders too: 2:1 panoramas or 4:3 cube crosses)"},
+            {"Sky Lab", "World > Sky Lab: make a sky (sky mode, sun, haze, ground); the 3D view shows it while the window is open; Apply bakes it into the Bottega's skies/skylab and sets it as the map's sky (one undo step), OK applies and closes, Cancel (Esc) drops the changes. With a sun light in the map, tick the lock to keep the sky's sun on it; if the light turns later, World > Rebake Sky Lab sky"},
             {"Show sky / light preview / fog / figure", "View menu (3D view: sky, rough light preview, fog; scale figure)"},
             {"Camera bookmarks / figure position", "World menu"},
             {"Paint textures", "Terrain tool, Paint mode: paints the current texture (up to 8 per patch); painting the face's own texture uncovers it"},

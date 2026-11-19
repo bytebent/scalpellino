@@ -26,6 +26,7 @@ struct MenuState {
     bool lightTool = false, lightPending = false, lightsSelected = false;
     int lightKind = 0;
     bool showSky = true, lightPreview = false, showFog = false, showFigure = false;
+    bool canRebakeSky = false; // Sky Lab: the sky is out of date or its file is missing
     bool primsShown = true, propsShown = true;
     bool primTool = false, primPending = false;
     int primKind = 0;
@@ -63,6 +64,7 @@ struct MenuActions {
     bool toolTerrain = false, makeTerrain = false, terrainGrid = false, removeTerrain = false, heightmap = false, stitchTerrain = false;
     int terrainMode = -1; // SculptMode index; also switches to the terrain tool
     bool toolLight = false, createLight = false, environment = false, bookmarks = false, figurePos = false;
+    bool skyLab = false, rebakeSky = false;
     int lightKind = -1;   // LightKind index; also switches to the light tool
     bool toggleSky = false, toggleLightPreview = false, toggleFog = false, toggleFigure = false;
     bool togglePrims = false, toggleProps = false;

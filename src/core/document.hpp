@@ -173,6 +173,7 @@ public:
     bool undo();
     bool redo();
     bool canUndo() const { return !undo_.empty(); }
+    size_t undoCount() const { return undo_.size(); }
     bool canRedo() const { return !redo_.empty(); }
     const std::string& undoName() const;
 

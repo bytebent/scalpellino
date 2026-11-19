@@ -6,6 +6,7 @@
 // other tools see them. Directions are Hammer-style pitch/yaw in degrees: yaw turns
 // around +Z from +X, pitch is negative when pointing down (as in the "pitch" key).
 #include "core/math.hpp"
+#include "core/skylab.hpp"
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -57,8 +58,9 @@ struct Environment {
     Vec3 ambient{40, 40, 48};   // 0..255: light everywhere, even where no light reaches
     bool fogOn = false;         // the map has fog (the editor shows it only on request)
     Fog fog;
+    SkyLab skylab;              // Sky Lab settings (milestone 10c; `used` = the map has them)
     bool operator==(const Environment& o) const {
-        return sky == o.sky && ambient == o.ambient && fogOn == o.fogOn && fog == o.fog;
+        return sky == o.sky && ambient == o.ambient && fogOn == o.fogOn && fog == o.fog && skylab == o.skylab;
     }
     bool operator!=(const Environment& o) const { return !(*this == o); }
 };

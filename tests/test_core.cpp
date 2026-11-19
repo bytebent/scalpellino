@@ -10,6 +10,7 @@
 #include "core/primitives.hpp"
 #include "core/terrain.hpp"
 #include "core/sky.hpp"
+#include "core/skylab.hpp"
 #include "core/mathprim.hpp"
 #include "core/landing.hpp"
 #include "core/replicate.hpp"
@@ -2765,6 +2766,148 @@ static void testProps() {
     testLandSelection();
 }
 
+
+// Sky Lab (v0.10.4): settings as text and in the map, the sun lock's angles, and the
+// generated panorama (where the sun is, what is below the horizon, the plain modes).
+void testSkyLab() {
+    // Text form: everything comes back; unknown fields are kept; bad numbers keep the
+    // default; values out of range are clamped.
+    SkyLab s;
+    s.used = true;
+    s.mode = SkyMode::Darker;
+    s.sunAzimuth = 123.5;
+    s.sunAltitude = -4;
+    s.sunColor = {250, 200, 150};
+    s.hazeOn = false;
+    s.lockSun = true;
+    s.bakeSize = 4096;
+    s.otherFields.emplace_back("cloud_cover", "40");
+    const SkyLab back = skyLabFromString(skyLabToString(s));
+    CHECK(back == s);
+    CHECK(back.otherFields.size() == 1 && back.otherFields[0].second == "40");
+    const SkyLab bad = skyLabFromString("sun_altitude=nan;disk_size=abc;glow_intensity=500;sun_azimuth=-30;bake_size=3000;mode=weird");
+    CHECK(bad.sunAltitude == SkyLab().sunAltitude);
+    CHECK(bad.diskSize == SkyLab().diskSize);
+    CHECK(bad.glowIntensity == 100);
+    CHECK(near(bad.sunAzimuth, 330));
+    CHECK(bad.bakeSize == 2048);
+    CHECK(bad.mode == SkyMode::Soft);
+    CHECK(bad.used);
+
+    // In the map: written only when used; read back the same.
+    {
+        Document d;
+        Environment env = d.environment();
+        CHECK(writeMap(d).find("_scal_skylab") == std::string::npos);
+        env.skylab = s;
+        env.sky = "skies/skylab/test";
+        d.apply(d.makeEnvironment(env, "Sky Lab"));
+        const std::string text = writeMap(d);
+        CHECK(text.find("_scal_skylab") != std::string::npos);
+        Document d2;
+        CHECK(readMap(text, d2).ok);
+        CHECK(d2.environment() == env);
+        CHECK(writeMap(d2) == text);
+    }
+
+    // Sun lock: the sky's sun is where the light comes from.
+    double az = 0, alt = 0, pitch = 0, yaw = 0;
+    sunFromLightAngles(-35, 240, az, alt);
+    CHECK(near(az, 60) && near(alt, 35));
+    lightAnglesFromSun(60, 35, pitch, yaw);
+    CHECK(near(pitch, -35) && near(yaw, 240));
+    SkyLab lit;
+    lit.sunAzimuth = 60;
+    lit.sunAltitude = 35;
+    const Vec3 toSun = skyLabSunDirection(lit), lightDir = lightDirection(pitch, yaw);
+    CHECK(near(toSun.x, -lightDir.x) && near(toSun.y, -lightDir.y) && near(toSun.z, -lightDir.z));
+    sunFromLightAngles(-90, 0, az, alt);
+    CHECK(near(alt, 90));
+
+    // The panorama: size; the same settings give the same bytes; rows made in pieces
+    // equal the whole.
+    const int W = 256, H = 128;
+    SkyLab day;
+    const std::vector<unsigned char> a = generateSky(day, W);
+    CHECK((int)a.size() == W * H * 3);
+    CHECK(generateSky(day, W) == a);
+    {
+        SkyGenerator g(day, W);
+        std::vector<unsigned char> pieces(a.size());
+        g.rows(0, 50, pieces.data());
+        g.rows(50, H, pieces.data());
+        CHECK(pieces == a);
+    }
+    auto px = [&](const std::vector<unsigned char>& img, const Vec3& dir, int c) {
+        double u = 0, v = 0;
+        skyUV(dir, u, v);
+        const int i = std::min(W - 1, (int)(u * W)), j = std::min(H - 1, (int)(v * H));
+        return (int)img[((size_t)j * W + i) * 3 + c];
+    };
+    auto lum = [&](const std::vector<unsigned char>& img, const Vec3& dir) { return px(img, dir, 0) + px(img, dir, 1) + px(img, dir, 2); };
+    // The brightest pixel is the sun (where the panorama puts the sun's direction).
+    {
+        int best = -1;
+        size_t bestAt = 0;
+        for (size_t k = 0; k < a.size(); k += 3) {
+            const int l = a[k] + a[k + 1] + a[k + 2];
+            if (l > best) { best = l; bestAt = k / 3; }
+        }
+        double u = 0, v = 0;
+        skyUV(skyLabSunDirection(day), u, v);
+        const int si = (int)(u * W), sj = (int)(v * H);
+        const int bi = (int)(bestAt % W), bj = (int)(bestAt / W);
+        CHECK(std::abs(bi - si) <= 2 && std::abs(bj - sj) <= 2);
+        CHECK(best >= 3 * 245);
+    }
+    // A day sky is blue overhead; below the horizon it is the ground colour.
+    CHECK(px(a, {0, 0, 1}, 2) > px(a, {0, 0, 1}, 0) + 30);
+    for (int c = 0; c < 3; ++c) CHECK(std::abs(px(a, {0.3, 0.2, -1}, c) - (int)day.groundColor[c]) <= 3);
+    // Night is darker than day; Darker is darker than Soft.
+    SkyLab night = day;
+    night.sunAltitude = -20;
+    CHECK(lum(generateSky(night, W), {0, 0, 1}) * 4 < lum(a, {0, 0, 1}));
+    SkyLab darker = day;
+    darker.mode = SkyMode::Darker;
+    CHECK(lum(generateSky(darker, W), {-1, 0, 1}) < lum(a, {-1, 0, 1}));
+    // Off: one plain colour all round (no haze, no disk).
+    SkyLab off = day;
+    off.mode = SkyMode::Off;
+    off.offColor = {10, 200, 30};
+    off.hazeOn = false;
+    off.sunVisible = false;
+    const std::vector<unsigned char> o = generateSky(off, W);
+    bool plain = true;
+    for (size_t k = 0; k < o.size(); k += 3) plain = plain && o[k] == 10 && o[k + 1] == 200 && o[k + 2] == 30;
+    CHECK(plain);
+    // Custom: the sky colour overhead, the horizon colour at the horizon (away from the sun).
+    SkyLab custom = day;
+    custom.mode = SkyMode::Custom;
+    custom.hazeOn = false;
+    custom.glowIntensity = 0;
+    const std::vector<unsigned char> cu = generateSky(custom, W);
+    for (int c = 0; c < 3; ++c) CHECK(std::abs(px(cu, {0, 0, 1}, c) - (int)custom.customSky[c]) <= 3);
+    for (int c = 0; c < 3; ++c) CHECK(std::abs(px(cu, {-1, -0.3, 0.004}, c) - (int)custom.customHorizon[c]) <= 12);
+    // The disk follows its size: twice the size, about four times the pixels.
+    auto diskPixels = [&](double size) {
+        SkyLab k = custom;
+        k.customSky = k.customHorizon = {0, 0, 0};
+        k.sunColor = {255, 255, 255};
+        k.diskIntensity = 100;
+        k.diskSize = size;
+        k.sunAltitude = 0.0001 + 40;
+        const std::vector<unsigned char> img = generateSky(k, 1024);
+        int n = 0;
+        for (size_t q = 0; q < img.size(); q += 3) n += img[q] > 128;
+        return n;
+    };
+    const int small = diskPixels(4), big = diskPixels(8);
+    CHECK(small > 20 && big > small * 3 && big < small * 5);
+    // Randomize: the same seed, the same sky; another seed, another sky.
+    CHECK(randomSkyLab(7) == randomSkyLab(7));
+    CHECK(randomSkyLab(7) != randomSkyLab(8));
+}
+
 int main() {
     testGrid();
     testBoxGeometry();
@@ -2786,6 +2929,7 @@ int main() {
     testTerrainPoints();
     testWorld();
     testSky();
+    testSkyLab();
     testBottega();
     testMathPrims();
     testPrimBlend();

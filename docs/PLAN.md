@@ -19,8 +19,12 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   everything, the 3D view's draw call per prop. Reported; the user tested it on their Mac
   and it is fine (2026-11-19). Next session: Sky Lab.
 - **Now: Sky Lab** (the user said go, 2026-11-19; design agreed, see Roadmap item 3).
-  Building v0.10.4 (window, live 3D preview, bake, sky modes, sun, haze band, sun lock),
-  then v0.10.5 clouds, v0.10.6 night sky and effects.
+  **v0.10.4 is built and pushed** (window, live 3D preview, bake, sky modes, sun, haze
+  band, ground, sun lock, Rebake); its choices made without asking are listed under "Sky
+  Lab v0.10.4, decided without asking" for the user to confirm. Next: report, then
+  v0.10.5 clouds, v0.10.6 night sky and effects (moon, stars, comets, rings, rainbow,
+  Blend with Sun, fog in the sky with base height and thickness, eclipses, presets and
+  Randomize Sky).
 - **Roadmap:** Sky Lab → cameras and Camera Preview →
   Render (Source look, with the material system) → water / cloud planes → camera effects →
   export. The renderer part is a
@@ -47,6 +51,30 @@ are in [`DEV.md`](DEV.md). One-step-per-release: add `docs/releases/vX.Y.Z.md` a
 
 ## Open questions (parked)
 
+- **Sky Lab v0.10.4, decided without asking (confirm with the user):**
+  - **Lock on by default:** the first time Sky Lab opens in a map with a sun light, the
+    lock is ticked and the sky's sun starts on the light (untick to separate them).
+  - **Names of baked skies:** a saved map's sky is `skies/skylab/<map name>`; an unsaved
+    map gets the first free `skies/skylab/untitled_<n>` and keeps it, so two unsaved maps
+    never share a file. Applying again overwrites the map's own file.
+  - **Directions:** azimuth is measured like a light's yaw (0 = +X, counterclockwise seen
+    from above); the compass disc is drawn like the top view (+Y up); the inner ring is
+    the horizon, the edge 30 degrees below it.
+  - **Units:** disk size in degrees across (default 2.5; Bryce has a 0..100 slider),
+    horizon illusion in % larger at the horizon; the other values 0..100 as in Bryce.
+  - **Fields:** a slider and a typed field side by side for every value (like Bryce); no
+    shortcut, World menu only (World > Sky Lab..., World > Rebake Sky Lab sky).
+  - **Atmosphere off** is one plain colour all round (no ground colour), as Bryce uses it
+    for plain backgrounds; haze still shows if left on (Bryce: set haze to 0).
+  - **Ambient** can also be edited in Sky Lab (Scene lighting); it is the same value as
+    World > Environment's.
+  - **A missing PNG** (another machine, a new Bottega) is baked again when the map is
+    opened, if a Bottega is set; that is no undo step and doesn't mark the map changed.
+  - **Sky colours:** Soft and Darker come from a small light-scattering model of the air
+    (a table per sky), then a colour grade toward Bryce's clean blue (Soft paler, Darker
+    deeper). A tiny fixed dither stops banding in the 8-bit PNG.
+  - **Presets and Randomize Sky** were agreed but not scheduled: they come with v0.10.6.
+  - The NASA moon map is in `assets/moon/` (1024x512) already, used from v0.10.6.
 - **Milestone 8, answered by the user (2026-11-16):** sky in the 3D view toggled from the
   View menu; a very rough light preview, not computed while off; fog on/off, off by
   default; the sun's direction separate from the sky; selected lights get xyz rotation

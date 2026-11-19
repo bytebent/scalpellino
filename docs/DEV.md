@@ -99,6 +99,11 @@ inside the view. Lines starting with # are comments.
   expect hasmodel [not] <name>
   combine   separate   expect prims|primsel <n>   expect primpos|primrot|primsize x y z   expect primop <op>
   environment sky <name|none> | ambient r g b | fog on|off | fogcolor r g b | fogrange <start> <end>
+  skylab open|apply|ok|cancel|rebake   (apply / ok bake; the next command waits for the bake)
+  skylabset <field> <value...>   (a Sky Lab field as saved in the map: mode darker, sun_altitude 6,
+                                  sun_color 255 200 150, lock_sun 1...; ambient r g b)
+  expect skylab <field> <value...>   (the map's Sky Lab settings)   expect skyoutofdate yes|no
+  expect skylabwindow open|closed [<preview width>]   expect undos <n>   (undo steps)
   bookmark add <name> | go <index>   expect sky <name>   expect bookmarks <n>   expect camera x y z
   bottega none | <path> | make <path>   rescan   bottegadialog   (in memory only; make = create + use)
   expect bottega ready|empty|notbottega|missing|newer|damaged|none
@@ -136,7 +141,7 @@ policy), and it must hold **with a map open**, not only with an empty app.
   combination, a torus and a cube, three lights, sky, ambient, fog, a bookmark and the
   scale figure, saves it, **re-opens the saved map**, switches on the sky, light preview,
   fog and figure, selects the primitives and props, and leaves the Random Replicate window
-  open with its preview. The script has no `quit`, so the app goes
+  open with its preview and the Sky Lab window open with its live preview. The script has no `quit`, so the app goes
   idle (a scripted run is only "busy" while commands are left). The screenshot at the end
   is the "ready" signal; the harness waits 3 s more, then reads the process's CPU time
   (user + system, all threads, from `/proc`) twice, 10 s apart.

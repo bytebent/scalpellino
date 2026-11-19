@@ -143,6 +143,31 @@ void Editor::registerScriptExpects() {
             ++scriptFailures_;
         }
     });
+    add({"skylab"}, [this](const std::string&, std::istringstream& in) {
+        // expect skylab <field> <value...>: a field of the map's Sky Lab settings, as saved
+        std::string w, k, v; in >> w >> k; std::getline(in >> std::ws, v);
+        const std::string text = ";" + skyLabToString(doc_.environment().skylab) + ";";
+        if (!doc_.environment().skylab.used || text.find(";" + k + "=" + v + ";") == std::string::npos) {
+            std::fprintf(stderr, "script FAIL (command %d): skylab %s is not %s (%s)\n", scriptLine_, k.c_str(), v.c_str(), text.c_str());
+            ++scriptFailures_;
+        }
+    });
+    add({"skylabwindow"}, [this](const std::string&, std::istringstream& in) {
+        // expect skylabwindow open|closed [<preview width>]
+        std::string w, st; int width = -1; in >> w >> st >> width;
+        const bool bad = (st == "open") != skyLabOpen_ || (width >= 0 && skyLabPreviewW_ != width);
+        if (bad) { std::fprintf(stderr, "script FAIL (command %d): Sky Lab window %s, preview %d wide\n", scriptLine_, skyLabOpen_ ? "open" : "closed", skyLabPreviewW_); ++scriptFailures_; }
+    });
+    add({"skyoutofdate"}, [this](const std::string&, std::istringstream& in) {
+        // expect skyoutofdate yes|no
+        std::string w, v; in >> w >> v;
+        if ((v == "yes") != skyOutOfDate()) { std::fprintf(stderr, "script FAIL (command %d): sky out of date: %s\n", scriptLine_, skyOutOfDate() ? "yes" : "no"); ++scriptFailures_; }
+    });
+    add({"undos"}, [this](const std::string&, std::istringstream& in) {
+        // expect undos <n>: how many steps undo can go back
+        std::string w; size_t n = 0; in >> w >> n;
+        if (doc_.undoCount() != n) { std::fprintf(stderr, "script FAIL (command %d): %zu undo steps, expected %zu\n", scriptLine_, doc_.undoCount(), n); ++scriptFailures_; }
+    });
     add({"bookmarks"}, [this](const std::string&, std::istringstream& in) {
         std::string w; size_t n = 0; in >> w >> n;
         if (doc_.bookmarks().size() != n) { std::fprintf(stderr, "script FAIL (command %d): expected %zu bookmarks, got %zu\n", scriptLine_, n, doc_.bookmarks().size()); ++scriptFailures_; }
