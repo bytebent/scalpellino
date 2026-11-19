@@ -2469,12 +2469,88 @@ static void testPropsReplicate() {
     CHECK(replicate({}, {}, {}, ReplicateSpec{}, {}).empty());
 }
 
+// Random Replicate (v0.11.0).
+static void testRandomReplicate() {
+    MathPrim ball; ball.kind = PrimKind::Sphere; ball.pos = {0, 0, 100}; ball.size = {50, 50, 50};
+    RandomReplicateSpec r;
+    r.copies = 200;
+    r.spread = {400, 300, 0};
+    r.turn = {0, 0, 180};
+    r.sizeMin = 50; r.sizeMax = 150;
+    r.seed = 7;
+    auto a = randomReplicate({}, {ball}, {}, r);
+    CHECK(a.size() == 200);
+    // Inside the ranges, both sides used, height kept (no Z spread), sizes even per copy.
+    double minX = 1e9, maxX = -1e9, minS = 1e9, maxS = -1e9, sumX = 0;
+    bool inside = true, even = true, sameZ = true;
+    for (const ReplicateCopy& c : a) {
+        const MathPrim& p = c.prims[0];
+        const Vec3 off = p.pos - ball.pos;
+        inside = inside && std::fabs(off.x) <= 400 && std::fabs(off.y) <= 300 && std::fabs(p.rot.z) <= 180 + 1e-9 &&
+                 p.rot.x == 0 && p.rot.y == 0 && p.size.x >= 25 - 1e-9 && p.size.x <= 75 + 1e-9;
+        even = even && near(p.size.x, p.size.y) && near(p.size.y, p.size.z);
+        sameZ = sameZ && p.pos.z == 100;
+        minX = std::min(minX, off.x); maxX = std::max(maxX, off.x); sumX += off.x;
+        minS = std::min(minS, p.size.x); maxS = std::max(maxS, p.size.x);
+    }
+    CHECK(inside && even && sameZ);
+    CHECK(minX < -300 && maxX > 300 && std::fabs(sumX / 200) < 60); // spread over the whole range
+    CHECK(minS < 35 && maxS > 65);
+    // Same seed, same copies; another seed, other copies.
+    auto b = randomReplicate({}, {ball}, {}, r);
+    CHECK(nearV(b[17].prims[0].pos, a[17].prims[0].pos, 0) && b[17].prims[0].rot.z == a[17].prims[0].rot.z);
+    RandomReplicateSpec r2 = r; r2.seed = 8;
+    auto c2 = randomReplicate({}, {ball}, {}, r2);
+    CHECK(!nearV(c2[0].prims[0].pos, a[0].prims[0].pos, 1e-6));
+    // Fewer copies keep the same first copies; changing the turn range keeps the offsets.
+    RandomReplicateSpec few = r; few.copies = 5; few.turn = {0, 0, 10};
+    auto f = randomReplicate({}, {ball}, {}, few);
+    CHECK(f.size() == 5 && nearV(f[4].prims[0].pos, a[4].prims[0].pos, 0) && near(f[4].prims[0].size.x, a[4].prims[0].size.x));
+    CHECK(std::fabs(f[4].prims[0].rot.z) <= 10 + 1e-9);
+    // Pinned numbers: the scatter for a seed must not change between versions or machines.
+    RandomReplicateSpec pin; pin.copies = 1; pin.seed = 1; pin.spread = {1000, 1000, 1000}; pin.turn = {};
+    pin.sizeMin = pin.sizeMax = 100;
+    const Vec3 p0 = randomReplicate({}, {ball}, {}, pin)[0].prims[0].pos;
+    CHECK(nearV(p0, Vec3{-565.021531, 369.860594, -4.740958}, 1e-4));
+    // Uneven sizes: each axis its own.
+    RandomReplicateSpec un = r; un.uniform = false;
+    auto u = randomReplicate({}, {ball}, {}, un);
+    bool anyUneven = false;
+    for (const ReplicateCopy& c : u) anyUneven = anyUneven || !near(c.prims[0].size.x, c.prims[0].size.y, 1e-6);
+    CHECK(anyUneven);
+    // Brushes only move, by whole grid steps; their size stays.
+    AABB cb; cb.add({0, 0, 0}); cb.add({64, 64, 64});
+    RandomReplicateSpec br = r; br.brushGrid = 16; br.spread = {400, 400, 400};
+    bool onGrid = true;
+    for (const ReplicateCopy& c : randomReplicate({makeBox(cb, "a")}, {}, {}, br)) {
+        const AABB bb = c.brushes[0].bounds();
+        for (int k = 0; k < 3; ++k) onGrid = onGrid && near(std::fmod(std::fabs(bb.min[k]), 16.0), 0);
+        onGrid = onGrid && nearV(bb.size(), {64, 64, 64});
+    }
+    CHECK(onGrid);
+    // The selection turns as one piece about its centre: two props stay 200 apart.
+    RandomReplicateSpec two; two.copies = 20; two.sizeMin = two.sizeMax = 100; two.turn = {0, 0, 180};
+    bool apart = true;
+    for (const ReplicateCopy& c : randomReplicate({}, {}, {}, two, {makeProp("m", {-100, 0, 0}), makeProp("m", {100, 0, 0})}))
+        apart = apart && c.props.size() == 2 && near(length(c.props[0].pos - c.props[1].pos), 200, 1e-6) &&
+                near(c.props[0].rot.z, c.props[1].rot.z);
+    CHECK(apart);
+    // Lights come along and turn; nothing selected or no copies gives nothing.
+    Light l; l.kind = LightKind::Spot; l.pos = {0, 0, 0}; l.pitch = 0; l.yaw = 0;
+    auto lc = randomReplicate({}, {}, {l}, two);
+    CHECK(lc.size() == 20 && lc[3].lights.size() == 1 && lc[3].lights[0].yaw != 0);
+    CHECK(randomReplicate({}, {}, {}, r).empty());
+    RandomReplicateSpec none = r; none.copies = 0;
+    CHECK(randomReplicate({}, {ball}, {}, none).empty());
+}
+
 static void testProps() {
     testPropsLoad();
     testPropsStore();
     testPropsGeometry();
     testPropsDocument();
     testPropsReplicate();
+    testRandomReplicate();
 }
 
 int main() {
