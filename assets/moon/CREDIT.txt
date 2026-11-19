@@ -1,0 +1,2 @@
+moon_lroc_color.jpg: colour map of the Moon, scaled to 1024x512.
+Credit: NASA's Scientific Visualization Studio

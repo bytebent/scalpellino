@@ -22,7 +22,7 @@ All are fetched at build time at pinned versions (see `cmake/Deps.cmake`).
 | `assets/textures/Tile_19.png`, `assets/textures/Bricks_24.png`, `assets/textures/Tile_13.png`, `assets/textures/Grass_20.png` | Screaming Brain Studios (provided by the project owner) | CC0 1.0 / public domain — see `assets/textures/LICENSE-ScreamingBrainStudios.txt` |
 | `assets/skies/Panorama_Sky_04.png`, `Panorama_Sky_15.png`, `Panorama_Sky_21.png` | Screaming Brain Studios (provided by the project owner) | CC0 1.0 / public domain — see `assets/skies/LICENSE-ScreamingBrainStudios.txt` |
 | `tests/ui/assets/skies/Cubemap_Sky_21.png` (test only, scaled down) | Screaming Brain Studios (provided by the project owner) | CC0 1.0 / public domain |
-| `assets/moon/moon_lroc_color.jpg` (scaled to 1024x512) | NASA's Scientific Visualization Studio, CGI Moon Kit: the colour map of the Moon from the Lunar Reconnaissance Orbiter Camera (provided by the project owner) | NASA material, not copyrighted in the United States; credit: NASA's Scientific Visualization Studio |
+| `assets/moon/moon_lroc_color.jpg` (colour map of the Moon, scaled to 1024x512) | NASA's Scientific Visualization Studio (provided by the project owner) | NASA material, not copyrighted in the United States. Credit: **NASA's Scientific Visualization Studio** — see `assets/moon/CREDIT.txt` |
 
 `assets/textures/nodraw.png` is our own (CC0), text set in Roboto. The moon map is not
 used yet (Sky Lab's moon, v0.10.6).

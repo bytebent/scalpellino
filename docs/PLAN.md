@@ -74,7 +74,9 @@ are in [`DEV.md`](DEV.md). One-step-per-release: add `docs/releases/vX.Y.Z.md` a
     (a table per sky), then a colour grade toward Bryce's clean blue (Soft paler, Darker
     deeper). A tiny fixed dither stops banding in the 8-bit PNG.
   - **Presets and Randomize Sky** were agreed but not scheduled: they come with v0.10.6.
-  - The NASA moon map is in `assets/moon/` (1024x512) already, used from v0.10.6.
+  - The NASA moon map is in `assets/moon/` (1024x512) already, used from v0.10.6. **Credit
+    it as "NASA's Scientific Visualization Studio"** (user, 2026-11-20): THIRD_PARTY.md,
+    `assets/moon/CREDIT.txt`, and next to the built-in moon in Sky Lab when it is used.
 - **Milestone 8, answered by the user (2026-11-16):** sky in the 3D view toggled from the
   View menu; a very rough light preview, not computed while off; fog on/off, off by
   default; the sun's direction separate from the sky; selected lights get xyz rotation
