@@ -1,0 +1,277 @@
+// Editor (part of the class, split by topic; see editor.hpp): the test-script checks,
+// "expect <what> ...", one entry per <what>. A failed check prints "script FAIL" and
+// makes the run fail.
+#include "app/editor.hpp"
+#include "io/map_format.hpp"
+#include "core/hull.hpp"
+#include "core/texture.hpp"
+#include "core/csg.hpp"
+#include "core/curves.hpp"
+#include "app/settings.hpp"
+#include "platform/file_dialog.hpp"
+#include "ui/layout.hpp"
+#include "ui/imgui_checks.hpp"
+
+#include "imgui.h"
+#include "rlImGui.h"
+
+#include <cstdio>
+#include <cstdlib>
+#include <cmath>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
+#include <algorithm>
+#include <cctype>
+#include "app/editor_util.hpp"
+#include "app/editor_templates.hpp"
+
+namespace scal {
+
+using namespace editor_util;
+
+void Editor::registerScriptExpects() {
+    auto add = [this](std::initializer_list<const char*> names, ScriptFn fn) {
+        for (const char* n : names) scriptExpects_[n] = fn;
+    };
+    add({"overlaps"}, [this](const std::string&, std::istringstream& in) {
+        std::string w; size_t n = 0; in >> w >> n;
+        if (overlaps_.size() != n) { std::fprintf(stderr, "script FAIL (command %d): expected %zu overlaps, got %zu\n", scriptLine_, n, overlaps_.size()); ++scriptFailures_; }
+    });
+    add({"bottoms"}, [this](const std::string&, std::istringstream& in) {
+        // expect bottoms <z>: every selected primitive object and prop has its lowest point at z
+        std::string w; double z = 0; in >> w >> z;
+        int bad = 0;
+        for (const auto& obj : selectedObjects(doc_)) bad += std::fabs(objectBottom(obj) - z) > 0.05;
+        for (PropId id : doc_.propSelection())
+            if (const Prop* q = doc_.findProp(id)) bad += std::fabs(propBottom(*q, models_.find(q->model)) - z) > 0.05;
+        if (bad) { std::fprintf(stderr, "script FAIL (command %d): %d selected object(s) not resting at z %g\n", scriptLine_, bad, z); ++scriptFailures_; }
+    });
+    add({"visible"}, [this](const std::string&, std::istringstream& in) {
+        std::string w; size_t n = 0; in >> w >> n;
+        size_t got = 0;
+        for (const Brush& b : doc_.brushes()) got += doc_.visible(b);
+        if (got != n) { std::fprintf(stderr, "script FAIL (command %d): expected %zu visible brushes, got %zu\n", scriptLine_, n, got); ++scriptFailures_; }
+    });
+    add({"lights"}, [this](const std::string&, std::istringstream& in) {
+        std::string w; size_t n = 0; in >> w >> n;
+        if (doc_.lights().size() != n) { std::fprintf(stderr, "script FAIL (command %d): expected %zu lights, got %zu\n", scriptLine_, n, doc_.lights().size()); ++scriptFailures_; }
+    });
+    add({"lightsel"}, [this](const std::string&, std::istringstream& in) {
+        std::string w; size_t n = 0; in >> w >> n;
+        if (doc_.lightSelection().size() != n) { std::fprintf(stderr, "script FAIL (command %d): expected %zu selected lights, got %zu\n", scriptLine_, n, doc_.lightSelection().size()); ++scriptFailures_; }
+    });
+    add({"lightpos", "lightdir"}, [this](const std::string&, std::istringstream& in) {
+        // expect lightpos x y z (+-0.5) | expect lightdir pitch yaw (+-0.01): the first selected light
+        std::string w; in >> w;
+        const Light* l = doc_.lightSelection().empty() ? nullptr : doc_.findLight(*doc_.lightSelection().begin());
+        if (!l) { std::fprintf(stderr, "script FAIL (command %d): no light selected\n", scriptLine_); ++scriptFailures_; }
+        else if (w == "lightpos") {
+            Vec3 v; in >> v.x >> v.y >> v.z;
+            if (length(l->pos - v) > 0.5) { std::fprintf(stderr, "script FAIL (command %d): light at %g %g %g\n", scriptLine_, l->pos.x, l->pos.y, l->pos.z); ++scriptFailures_; }
+        } else {
+            double p = 0, y = 0; in >> p >> y;
+            if (std::fabs(l->pitch - p) > 0.01 || std::fabs(l->yaw - y) > 0.01) { std::fprintf(stderr, "script FAIL (command %d): light pitch %g yaw %g\n", scriptLine_, l->pitch, l->yaw); ++scriptFailures_; }
+        }
+    });
+    add({"primpos", "primrot", "primsize"}, [this](const std::string&, std::istringstream& in) {
+        // expect primpos|primrot|primsize x y z: the first selected primitive (+-0.01)
+        std::string w; Vec3 v; in >> w >> v.x >> v.y >> v.z;
+        const MathPrim* p = doc_.primSelection().empty() ? nullptr : doc_.findPrim(*doc_.primSelection().begin());
+        const Vec3 have = !p ? Vec3{} : w == "primpos" ? p->pos : w == "primrot" ? p->rot : p->size;
+        if (!p || length(have - v) > 0.01) {
+            std::fprintf(stderr, "script FAIL (command %d): %s is %g %g %g\n", scriptLine_, w.c_str(), have.x, have.y, have.z);
+            ++scriptFailures_;
+        }
+    });
+    add({"primop"}, [this](const std::string&, std::istringstream& in) {
+        std::string w, o; in >> w >> o;
+        const MathPrim* p = doc_.primSelection().empty() ? nullptr : doc_.findPrim(*doc_.primSelection().begin());
+        if (!p || primOpName(p->op) != o || !p->combo) { std::fprintf(stderr, "script FAIL (command %d): not a '%s' piece of a combination\n", scriptLine_, o.c_str()); ++scriptFailures_; }
+    });
+    add({"replicating"}, [this](const std::string&, std::istringstream& in) {
+        std::string w, v; in >> w >> v;
+        if (replicating_ != (v == "on")) { std::fprintf(stderr, "script FAIL (command %d): Multi-Replicate window is %s\n", scriptLine_, replicating_ ? "open" : "closed"); ++scriptFailures_; }
+    });
+    add({"randomizing"}, [this](const std::string&, std::istringstream& in) {
+        std::string w, v; in >> w >> v;
+        if (randomizing_ != (v == "on")) { std::fprintf(stderr, "script FAIL (command %d): Random Replicate window is %s\n", scriptLine_, randomizing_ ? "open" : "closed"); ++scriptFailures_; }
+    });
+    add({"prims"}, [this](const std::string&, std::istringstream& in) {
+        std::string w; size_t n = 0; in >> w >> n;
+        if (doc_.prims().size() != n) { std::fprintf(stderr, "script FAIL (command %d): expected %zu primitives, got %zu\n", scriptLine_, n, doc_.prims().size()); ++scriptFailures_; }
+    });
+    add({"primsel"}, [this](const std::string&, std::istringstream& in) {
+        std::string w; size_t n = 0; in >> w >> n;
+        if (doc_.primSelection().size() != n) { std::fprintf(stderr, "script FAIL (command %d): expected %zu selected primitives, got %zu\n", scriptLine_, n, doc_.primSelection().size()); ++scriptFailures_; }
+    });
+    add({"props"}, [this](const std::string&, std::istringstream& in) {
+        std::string w; size_t n = 0; in >> w >> n;
+        if (doc_.props().size() != n) { std::fprintf(stderr, "script FAIL (command %d): expected %zu props, got %zu\n", scriptLine_, n, doc_.props().size()); ++scriptFailures_; }
+    });
+    add({"propsel"}, [this](const std::string&, std::istringstream& in) {
+        std::string w; size_t n = 0; in >> w >> n;
+        if (doc_.propSelection().size() != n) { std::fprintf(stderr, "script FAIL (command %d): expected %zu selected props, got %zu\n", scriptLine_, n, doc_.propSelection().size()); ++scriptFailures_; }
+    });
+    add({"proppos", "proprot", "propscale", "propmodel"}, [this](const std::string&, std::istringstream& in) {
+        // expect proppos|proprot|propscale x y z   |   expect propmodel <name>   (first selected prop)
+        std::string w; in >> w;
+        const Prop* q = doc_.propSelection().empty() ? nullptr : doc_.findProp(*doc_.propSelection().begin());
+        if (!q) { std::fprintf(stderr, "script FAIL (command %d): no prop selected\n", scriptLine_); ++scriptFailures_; }
+        else if (w == "propmodel") {
+            std::string m; in >> m;
+            if (q->model != m) { std::fprintf(stderr, "script FAIL (command %d): prop model %s\n", scriptLine_, q->model.c_str()); ++scriptFailures_; }
+        } else {
+            Vec3 v; in >> v.x >> v.y >> v.z;
+            const Vec3 got = w == "proppos" ? q->pos : w == "proprot" ? q->rot : q->scale;
+            if (length(got - v) > (w == "propscale" ? 0.001 : 0.5)) { std::fprintf(stderr, "script FAIL (command %d): %s is %g %g %g\n", scriptLine_, w.c_str(), got.x, got.y, got.z); ++scriptFailures_; }
+        }
+    });
+    add({"hasmodel"}, [this](const std::string&, std::istringstream& in) {
+        // expect hasmodel <name> | expect hasmodel not <name>
+        std::string w, m; in >> w >> m;
+        bool want = true;
+        if (m == "not") { want = false; in >> m; }
+        if (models_.store().exists(m) != want) { std::fprintf(stderr, "script FAIL (command %d): model %s%s\n", scriptLine_, want ? "" : "not ", m.c_str()); ++scriptFailures_; }
+    });
+    add({"sky"}, [this](const std::string&, std::istringstream& in) {
+        // expect sky <name>: the environment's sky, and that it loads
+        std::string w, n; in >> w >> n;
+        if (doc_.environment().sky != n || !skies_.get(n)) {
+            std::fprintf(stderr, "script FAIL (command %d): sky is '%s' (%s)\n", scriptLine_, doc_.environment().sky.c_str(), skies_.problem(n).c_str());
+            ++scriptFailures_;
+        }
+    });
+    add({"bookmarks"}, [this](const std::string&, std::istringstream& in) {
+        std::string w; size_t n = 0; in >> w >> n;
+        if (doc_.bookmarks().size() != n) { std::fprintf(stderr, "script FAIL (command %d): expected %zu bookmarks, got %zu\n", scriptLine_, n, doc_.bookmarks().size()); ++scriptFailures_; }
+    });
+    add({"camera"}, [this](const std::string&, std::istringstream& in) {
+        // expect camera x y z: the 3D view's camera position (+-0.5)
+        std::string w; Vec3 v; in >> w >> v.x >> v.y >> v.z;
+        const Vector3 c = views_[0]->cameraPos();
+        if (length(Vec3{c.x, c.y, c.z} - v) > 0.5) { std::fprintf(stderr, "script FAIL (command %d): camera at %g %g %g\n", scriptLine_, c.x, c.y, c.z); ++scriptFailures_; }
+    });
+    add({"terrains"}, [this](const std::string&, std::istringstream& in) {
+        std::string w; size_t n = 0; in >> w >> n;
+        size_t have = 0;
+        for (const Brush& b : doc_.brushes()) if (terrainValid(b)) ++have;
+        if (have != n) { std::fprintf(stderr, "script FAIL (command %d): expected %zu terrains, got %zu\n", scriptLine_, n, have); ++scriptFailures_; }
+    });
+    add({"terrainheight"}, [this](const std::string&, std::istringstream& in) {
+        // expect terrainheight <x> <y> <z>: the terrain surface straight below x,y is at z (+-0.5)
+        std::string w; double x = 0, y = 0, z = 0; in >> w >> x >> y >> z;
+        double best = -1e300;
+        for (const Brush& b : doc_.brushes()) {
+            const double t = rayHitTerrain(b, {x, y, 1e6}, {0, 0, -1});
+            if (t >= 0) best = std::max(best, 1e6 - t);
+        }
+        if (std::fabs(best - z) > 0.5) { std::fprintf(stderr, "script FAIL (command %d): terrain at %g %g is %g, expected %g\n", scriptLine_, x, y, best, z); ++scriptFailures_; }
+    });
+    add({"bounds"}, [this](const std::string&, std::istringstream& in) {
+        std::string w; Vec3 mn, mx; in >> w >> mn.x >> mn.y >> mn.z >> mx.x >> mx.y >> mx.z;
+        const AABB b = doc_.selectionBounds();
+        if (!b.valid() || length(b.min - mn) > 0.5 || length(b.max - mx) > 0.5) {
+            std::fprintf(stderr, "script FAIL (command %d): selection bounds %g %g %g .. %g %g %g\n", scriptLine_, b.min.x, b.min.y, b.min.z, b.max.x, b.max.y, b.max.z);
+            ++scriptFailures_;
+        }
+    });
+    add({"groups"}, [this](const std::string&, std::istringstream& in) {
+        std::string w; size_t n = 0; in >> w >> n;
+        if (doc_.groups().size() != n) { std::fprintf(stderr, "script FAIL (command %d): expected %zu groups, got %zu\n", scriptLine_, n, doc_.groups().size()); ++scriptFailures_; }
+    });
+    add({"volume"}, [this](const std::string&, std::istringstream& in) {
+        std::string w; double want = 0; in >> w >> want;
+        double got = 0;
+        for (const Brush& b : doc_.brushes()) got += brushVolume(b);
+        if (std::fabs(got - want) > 0.5) { std::fprintf(stderr, "script FAIL (command %d): total volume %g, expected %g\n", scriptLine_, got, want); ++scriptFailures_; }
+    });
+    add({"texture"}, [this](const std::string&, std::istringstream& in) {
+        std::string w, name; in >> w >> name;
+        int bad = 0, n = 0;
+        if (tool_ == &textureTool_) {
+            for (const FaceRef& fr : textureTool_.faces(doc_)) { ++n; if (doc_.find(fr.first)->faces[fr.second].texture != name) ++bad; }
+        } else {
+            for (BrushId id : doc_.selection()) if (const Brush* b = doc_.find(id)) for (const Face& f : b->faces) { ++n; if (f.texture != name) ++bad; }
+        }
+        if (bad || n == 0) { std::fprintf(stderr, "script FAIL (command %d): %d of %d faces are not '%s'\n", scriptLine_, bad, n, name.c_str()); ++scriptFailures_; }
+    });
+    add({"pickedfaces"}, [this](const std::string&, std::istringstream& in) {
+        std::string w; size_t n = 0; in >> w >> n;
+        const size_t got = textureTool_.faces(doc_).size();
+        if (got != n) { std::fprintf(stderr, "script FAIL (command %d): expected %zu picked faces, got %zu\n", scriptLine_, n, got); ++scriptFailures_; }
+    });
+    add({"current"}, [this](const std::string&, std::istringstream& in) {
+        std::string w, name; in >> w >> name;
+        if (currentTexture_ != name) { std::fprintf(stderr, "script FAIL (command %d): current texture is '%s', expected '%s'\n", scriptLine_, currentTexture_.c_str(), name.c_str()); ++scriptFailures_; }
+    });
+    add({"terrainpoints"}, [this](const std::string&, std::istringstream& in) {
+        std::string w; size_t n = 0; in >> w >> n;
+        if (vertexTool_.terrainPointCount() != n) {
+            std::fprintf(stderr, "script FAIL (command %d): expected %zu terrain points selected, got %zu\n", scriptLine_, n, vertexTool_.terrainPointCount());
+            ++scriptFailures_;
+        }
+    });
+    add({"paintlayers"}, [this](const std::string&, std::istringstream& in) {
+        // expect paintlayers <n>: painted textures, counted over every terrain patch
+        std::string w; size_t n = 0; in >> w >> n;
+        size_t have = 0;
+        for (const Brush& b : doc_.brushes()) if (b.terrain) have += b.terrain->layers.size();
+        if (have != n) { std::fprintf(stderr, "script FAIL (command %d): expected %zu painted textures, got %zu\n", scriptLine_, n, have); ++scriptFailures_; }
+    });
+    add({"ongrid"}, [this](const std::string&, std::istringstream&) {
+        for (BrushId id : doc_.selection())
+            if (const Brush* b = doc_.find(id); b && !brushOnGrid(*b, grid_.size)) {
+                std::fprintf(stderr, "script FAIL (command %d): brush %u not on grid %g\n", scriptLine_, id, grid_.size);
+                ++scriptFailures_;
+            }
+    });
+    add({"faces"}, [this](const std::string&, std::istringstream& in) {
+        std::string w; size_t n = 0; in >> w >> n;
+        size_t got = 0;
+        for (BrushId id : doc_.selection()) if (const Brush* b = doc_.find(id)) got += b->faces.size();
+        if (got != n) { std::fprintf(stderr, "script FAIL (command %d): expected %zu faces, got %zu\n", scriptLine_, n, got); ++scriptFailures_; }
+    });
+    add({"size"}, [this](const std::string&, std::istringstream& in) {
+        double x = 0, y = 0, z = 0; std::string what; in >> what >> x >> y >> z;
+        const Vec3 s = doc_.selectionBounds().size();
+        if (std::fabs(s.x - x) > 0.5 || std::fabs(s.y - y) > 0.5 || std::fabs(s.z - z) > 0.5) {
+            std::fprintf(stderr, "script FAIL (command %d): expected selection size %g %g %g, got %g %g %g\n",
+                         scriptLine_, x, y, z, s.x, s.y, s.z);
+            ++scriptFailures_;
+        }
+    });
+    add({"edges"}, [this](const std::string&, std::istringstream&) {
+        edgeCheck_ = true;
+    });
+    add({"bottega"}, [this](const std::string&, std::istringstream& in) {
+        // expect bottega ready|empty|notbottega|missing|newer|damaged|none
+        std::string w, state; in >> w >> state;
+        using S = bottega::State;
+        const S s = bottegaCheck_.state;
+        const bool ok = (state == "ready" && s == S::Ready) || (state == "empty" && s == S::Empty) ||
+                        (state == "notbottega" && s == S::NotBottega) || (state == "missing" && s == S::MissingFolder) ||
+                        (state == "newer" && s == S::NewerVersion) || (state == "damaged" && s == S::Damaged) ||
+                        (state == "none" && s == S::NoPath);
+        if (!ok) { std::fprintf(stderr, "script FAIL (command %d): expected Bottega state %s\n", scriptLine_, state.c_str()); ++scriptFailures_; }
+    });
+    add({"hastexture", "hassky"}, [this](const std::string&, std::istringstream& in) {
+        // expect hastexture <name> | expect hassky <name>; add "not" before the name to expect it absent
+        std::string w, name; in >> w >> name;
+        bool want = true;
+        if (name == "not") { want = false; in >> name; }
+        const bool has = w == "hastexture" ? textures_.exists(name) : skies_.exists(name);
+        if (has != want) { std::fprintf(stderr, "script FAIL (command %d): %s %s%s\n", scriptLine_, w.c_str(), want ? "" : "not ", name.c_str()); ++scriptFailures_; }
+    });
+    add({""}, [this](const std::string&, std::istringstream& in) {
+        std::string what; size_t n = 0; in >> what >> n;
+        const size_t got = what == "selected" ? doc_.selection().size() : doc_.brushes().size();
+        if (got != n) {
+            std::fprintf(stderr, "script FAIL (command %d): expected %zu %s, got %zu\n", scriptLine_, n, what.c_str(), got);
+            ++scriptFailures_;
+        }
+    });
+}
+
+} // namespace scal

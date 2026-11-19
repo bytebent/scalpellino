@@ -8,6 +8,9 @@
 // (primitives, props, landing), editor_replicate.cpp, editor_world.cpp (lights, sky,
 // bookmarks), editor_files.cpp (files, settings, Bottega), editor_script.cpp (test
 // scripts). Shared helpers: editor_util.hpp; member templates: editor_templates.hpp.
+#include <functional>
+#include <map>
+#include <sstream>
 #include "core/bottega.hpp"
 #include "imgui.h"
 #include "core/document.hpp"
@@ -237,6 +240,13 @@ private:
 
     // ---- scripting
     void loadScript(const std::string& path);
+    // Test scripts: one table entry per command (editor_script_commands.cpp) and per
+    // "expect <what>" check (editor_script_expects.cpp), filled on first use.
+    using ScriptFn = std::function<void(const std::string& cmd, std::istringstream& in)>;
+    void registerScriptCommands();
+    void registerScriptExpects();
+    std::map<std::string, ScriptFn> scriptCommands_, scriptExpects_;
+    int scriptDragView_ = -1; // the view a scripted press / drag happens in
     void stepScript();
 
     EditorOptions opt_;

@@ -74,6 +74,8 @@ if(SCAL_BUILD_APP)
     src/app/editor_objects.cpp
     src/app/editor_replicate.cpp
     src/app/editor_script.cpp
+    src/app/editor_script_commands.cpp
+    src/app/editor_script_expects.cpp
     src/app/editor_surfaces.cpp
     src/app/editor_visibility.cpp
     src/app/editor_world.cpp
