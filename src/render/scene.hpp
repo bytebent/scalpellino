@@ -41,6 +41,9 @@ struct Scene {
     std::optional<AABB> previewBox; // block tool: brush about to be created
     std::vector<SceneBrush> ghosts; // brushes being dragged (drawn on top, selected style)
     bool hideSelected = false;      // hide originals while their ghosts are dragged (move)
+    // Select tool: the rectangle being dragged in one view (logical pixels).
+    struct SelectRect { const void* view = nullptr; float ax = 0, ay = 0, bx = 0, by = 0; };
+    std::optional<SelectRect> selectRect;
     std::vector<SceneBrush> invalidGhosts; // vertex edits that are not valid solids (magenta)
     bool invalid = false;
     struct VertexHandle { Vec3 pos; bool selected; bool terrain = false; };

@@ -2259,9 +2259,27 @@ static void testPropsStore() {
     CHECK(st.exists("models/new") && st.generation() == gen + 1);
     CHECK(st.find("models/new") != nullptr);
 
+    CHECK(st.clashes().empty());
+
+    // Two files with the same name (v0.10.2): the first in name order keeps it, the other
+    // is listed (not silently hidden).
+    writeFile(fs::path(root) / "models/Stone Wall.glb", cube);
+    writeFile(fs::path(root) / "models/Stone_Wall.glb", cube);
+    writeFile(fs::path(root) / "models/pack/a.gltf", "{}");
+    st.rescan();
+    CHECK(st.exists("models/Stone_Wall") && st.fileOf("models/Stone_Wall").find("Stone Wall.glb") != std::string::npos);
+    CHECK(st.clashes().size() == 2);
+    bool namesBoth = false, namesExt = false;
+    for (const std::string& c : st.clashes()) {
+        namesBoth = namesBoth || (c.find("models/Stone_Wall.glb") != std::string::npos && c.find("models/Stone Wall.glb") != std::string::npos);
+        namesExt = namesExt || c.find("models/pack/a.gltf") != std::string::npos;
+        CHECK(c.find(base.string()) == std::string::npos); // paths inside the Bottega only
+    }
+    CHECK(namesBoth && namesExt);
+
     // No Bottega: nothing found.
     st.setBottegaRoot("");
-    CHECK(st.names().empty() && st.find("models/crate") == nullptr);
+    CHECK(st.names().empty() && st.find("models/crate") == nullptr && st.clashes().empty());
     fs::remove_all(base);
 }
 
@@ -2544,6 +2562,159 @@ static void testRandomReplicate() {
     CHECK(randomReplicate({}, {ball}, {}, none).empty());
 }
 
+// Snap to Land fixes (v0.10.2): only what is below the object's middle counts, and props
+// rest on their mesh, not on their box corners.
+static void testLandingStacks() {
+    AABB fb; fb.add({-500, -500, -64}); fb.add({500, 500, 0});
+    const Brush floor = makeBox(fb, "a");
+    // A sphere under a shelf lands on the floor, not on the shelf.
+    AABB sb; sb.add({-100, -100, 200}); sb.add({100, 100, 216});
+    const Brush shelf = makeBox(sb, "a");
+    MathPrim s; s.id = 1; s.kind = PrimKind::Sphere; s.pos = {0, 0, 100}; s.size = {60, 60, 60};
+    auto m = landingMove({&s}, {&floor, &shelf}, {});
+    CHECK(m && near(s.pos.z + *m, 30, 1e-3));
+    // ... and one dropped from above the shelf lands on it.
+    MathPrim hi = s; hi.pos.z = 500;
+    m = landingMove({&hi}, {&floor, &shelf}, {});
+    CHECK(m && near(hi.pos.z + *m, 246, 1e-3));
+    // Overlapping a crate-like neighbour (flat top above its middle): the floating one
+    // drops to the floor beside it instead of climbing on top of it.
+    MathPrim nb; nb.id = 2; nb.kind = PrimKind::Cube; nb.pos = {40, 0, 30}; nb.size = {60, 60, 60};
+    MathPrim fl = s; fl.pos = {0, 0, 50};
+    m = landingMove({&fl}, {&floor}, {&nb});
+    CHECK(m && near(fl.pos.z + *m, 30, 1e-3));
+    // A wall beside it (its bottom corners under the sphere's footprint) is not a floor.
+    AABB wb; wb.add({20, -200, 0}); wb.add({40, 200, 400});
+    const Brush wall = makeBox(wb, "a");
+    MathPrim bw = s; bw.pos = {0, 0, 150};
+    m = landingMove({&bw}, {&floor, &wall}, {});
+    CHECK(m && near(bw.pos.z + *m, 30, 1e-3));
+    // Still comes up when sunk in less than half way.
+    MathPrim sunk = s; sunk.pos.z = 10;
+    m = landingMove({&sunk}, {&floor}, {});
+    CHECK(m && near(*m, 20, 1e-3));
+
+    // A diamond-shaped prop (|x|+|y|+|z| <= 50) over a step: its slanted underside touches
+    // the step's edge; its box corners (in the air) must not hold it up.
+    Model dia;
+    ModelMesh mesh;
+    const float v[6][3] = {{50, 0, 0}, {-50, 0, 0}, {0, 50, 0}, {0, -50, 0}, {0, 0, 50}, {0, 0, -50}};
+    for (auto& q : v) for (float c : q) mesh.pos.push_back(c);
+    const std::uint32_t tris[8][3] = {{0, 2, 4}, {2, 1, 4}, {1, 3, 4}, {3, 0, 4}, {2, 0, 5}, {1, 2, 5}, {3, 1, 5}, {0, 3, 5}};
+    for (auto& t : tris) for (std::uint32_t i : t) mesh.index.push_back(i);
+    dia.meshes.push_back(mesh);
+    dia.bounds.add({-50, -50, -50});
+    dia.bounds.add({50, 50, 50});
+    AABB stb; stb.add({30, -500, 0}); stb.add({500, 500, 40});
+    const Brush step = makeBox(stb, "a");
+    Prop d = makeProp("dia", {0, 0, 300});
+    auto pm = propLandingMove({&d, &dia}, {&floor, &step}, {}, {});
+    CHECK(pm && near(d.pos.z + *pm, 60, 2.5)); // 90 when its box corners counted
+    bool onMesh = true;
+    for (const Vec3& q : propSurfacePoints(d, &dia))
+        onMesh = onMesh && std::fabs(q.x - d.pos.x) + std::fabs(q.y - d.pos.y) + std::fabs(q.z - d.pos.z) <= 50 + 1e-3;
+    CHECK(onMesh);
+}
+
+// v0.10.2: "unsaved" follows the history (undo back to the saved state = saved), and the
+// View options that hide all primitives / props.
+static void testDirtyAndShown() {
+    Document doc;
+    CHECK(!doc.dirty());
+    MathPrim p; p.kind = PrimKind::Sphere; p.size = {10, 10, 10};
+    doc.apply(doc.makeAddPrims({p}, "Add"));
+    CHECK(doc.dirty());
+    doc.markSaved();
+    CHECK(!doc.dirty());
+    MathPrim moved = doc.prims()[0];
+    moved.pos.x = 50;
+    doc.apply(doc.makeModifyPrims({moved}, "Move"));
+    CHECK(doc.dirty());
+    CHECK(doc.undo() && !doc.dirty());       // back to what was saved
+    CHECK(doc.redo() && doc.dirty());
+    CHECK(doc.undo() && doc.undo() && doc.dirty()); // before the save
+    CHECK(doc.redo() && !doc.dirty());
+    moved.pos.x = 70;
+    doc.apply(doc.makeModifyPrims({moved}, "Move")); 
+    CHECK(doc.undo() && !doc.dirty());
+    doc.setFigure(Vec3{1, 2, 3});             // not undoable: a change until saved
+    CHECK(doc.dirty());
+    doc.markSaved();
+    CHECK(!doc.dirty());
+
+    // Hiding drops them from the selection; adding new ones shows them again.
+    doc.setPrimSelection({doc.prims()[0].id});
+    doc.setPrimsShown(false);
+    CHECK(!doc.primsShown() && doc.primSelection().empty());
+    doc.apply(doc.makeAddPrims({p}, "Add"));
+    CHECK(doc.primsShown());
+    Prop q; q.model = "m";
+    doc.apply(doc.makeAddProps({q}, "Add"));
+    doc.setPropSelection({doc.props()[0].id});
+    doc.setPropsShown(false);
+    CHECK(!doc.propsShown() && doc.propSelection().empty());
+    doc.apply(doc.makeAddProps({q}, "Add"));
+    CHECK(doc.propsShown());
+}
+
+// v0.10.2: NaN and infinity in a .map are refused like other bad numbers.
+static void testMapBadNumbers() {
+    auto swapFirst = [](std::string text, const std::string& from, const std::string& to) {
+        const size_t at = text.find(from);
+        CHECK(at != std::string::npos);
+        if (at != std::string::npos) text.replace(at, from.size(), to);
+        return text;
+    };
+    Document d;
+    AABB bb; bb.add({0, 0, 0}); bb.add({64, 64, 64});
+    d.apply(d.makeAdd({makeBox(bb, "a")}, "Add"));
+    MathPrim p; p.kind = PrimKind::Cube; p.pos = {1, 2, 3}; p.size = {10, 10, 10}; p.round = 2;
+    d.apply(d.makeAddPrims({p}, "Add"));
+    Light l; l.kind = LightKind::Point; l.pos = {5, 6, 7};
+    d.apply(d.makeAddLights({l}, "Add"));
+    const std::string good = writeMap(d);
+    Document e;
+    CHECK(readMap(good, e).ok);
+    for (const char* bad : {"nan", "inf", "-inf", "NaN", "INFINITY"}) {
+        // In a brush: the file is refused.
+        Document f;
+        const size_t at = good.find("( ");
+        std::string t = good;
+        const size_t numEnd = t.find(' ', at + 2);
+        t.replace(at + 2, numEnd - (at + 2), bad);
+        const MapReadResult r = readMap(t, f);
+        CHECK(!r.ok && r.error.find("bad number") != std::string::npos);
+        // In an object's keys: the value is ignored, the rest loads.
+        Document g;
+        std::string k = swapFirst(good, "\"origin\" \"1 2 3\"", std::string("\"origin\" \"") + bad + " 2 3\"");
+        k = swapFirst(k, "\"round\" \"2\"", std::string("\"round\" \"") + bad + "\"");
+        k = swapFirst(k, "\"origin\" \"5 6 7\"", std::string("\"origin\" \"5 ") + bad + " 7\"");
+        CHECK(readMap(k, g).ok && g.prims().size() == 1 && g.lights().size() == 1);
+        if (g.prims().size() == 1 && g.lights().size() == 1) {
+            const MathPrim& q = g.prims()[0];
+            CHECK(std::isfinite(q.pos.x) && std::isfinite(q.round) && std::isfinite(g.lights()[0].pos.y));
+        }
+    }
+    // In terrain heights: the file is refused.
+    Document td;
+    AABB fb; fb.add({0, 0, -64}); fb.add({256, 256, 0});
+    Brush tb = makeBox(fb, "a");
+    CHECK(makeTerrain(tb, topQuadFace(tb), 3).empty());
+    td.apply(td.makeAdd({tb}, "Add"));
+    const std::string tgood = writeMap(td);
+    Document tg;
+    CHECK(readMap(tgood, tg).ok);
+    const size_t th = tgood.find("//@ th ");
+    CHECK(th != std::string::npos);
+    if (th != std::string::npos) {
+        std::string t = tgood;
+        const size_t numEnd = t.find(' ', th + 7);
+        t.replace(th + 7, numEnd - (th + 7), "inf");
+        Document tf;
+        CHECK(!readMap(t, tf).ok);
+    }
+}
+
 static void testProps() {
     testPropsLoad();
     testPropsStore();
@@ -2551,6 +2722,9 @@ static void testProps() {
     testPropsDocument();
     testPropsReplicate();
     testRandomReplicate();
+    testLandingStacks();
+    testDirtyAndShown();
+    testMapBadNumbers();
 }
 
 int main() {

@@ -35,7 +35,7 @@ Everything is also in the menus (File, Edit, Tools, Transform, Texture, Terrain,
 |---|---|
 | Select / Block / Vertex / Texture / Clip / Curve / Terrain tool | **Shift+S** / **Shift+B** / **Shift+V** / **Shift+A** / **Shift+X** / **Shift+C** / **Shift+G** |
 | Draw a block | Block tool: drag in a 2D view, adjust handles in any 2D view, **Return** creates, **Esc** cancels; shape (box, wedge, cylinder, cone, pyramid, sphere) and sides in the **Properties** panel |
-| Select | click a brush (2D or 3D); **Cmd+click** adds/removes; **Cmd+A** all; **Esc** none |
+| Select | click a brush (2D or 3D); **Cmd+click** adds/removes; **Cmd+A** all; **Esc** none. In the 3D view, **drag a rectangle** to select everything wholly inside it (brushes, primitives, props, lights); **Cmd+drag** adds |
 | Move / resize | drag a selection / drag its handles or edges (snaps to the grid) |
 | Clone | **Shift+drag** a selection, or **Cmd+D** (Duplicate) |
 | Rotate by dragging | **Option+drag** a corner handle (15° steps, add **Shift** for free rotation) |
@@ -62,7 +62,7 @@ Everything is also in the menus (File, Edit, Tools, Transform, Texture, Terrain,
 | Edit primitives | Click to select (Select, Light or Primitive tool), drag in a 2D view to move, drag the rings to turn (15° steps), drag a size handle (scales evenly; Shift: one axis), or type in **Properties**. **Delete**, **Cmd+D** |
 | Props (models) | **Shift+P** (Props menu): put `.glb` models in the Bottega's `models` folder (File → Bottega folder..., then Rescan), pick one in the **Props** panel (search by name), click a surface in 3D or a spot in a 2D view, **Return** places it, **Esc** cancels. Select, move, turn, scale (even; Shift: one axis), **Delete**, **Cmd+D**, Snap to land and Multi-Replicate work on props too; type exact values in **Properties** |
 | Blend primitives | **Properties**, in a combination: blend (units) melts a piece smoothly into the others (0 = sharp) |
-| Snap to land / ground | **Cmd+J** (Transform menu): selected primitives and props drop onto the brushes, terrain, primitives or props below; Snap to ground: onto a typed height |
+| Snap to land / ground | **Cmd+J** (Transform menu): selected primitives and props drop onto the brushes, terrain, primitives or props below them (not onto a shelf above or a neighbour beside them); several selected ones land on each other only if they were stacked to begin with; Snap to ground: onto a typed height |
 | Multi-Replicate | **Cmd+Shift+D** (Edit menu): copies, each one step further: offset, turn and scale per copy (brushes only move; props turn and scale like primitives); the preview stays while you look around the views; **Return** creates, **Esc** cancels |
 | Random Replicate | **Cmd+Shift+R** (Edit menu): copies scattered around the selection, each with a random offset, turn and size inside typed ranges (brushes only move, by whole grid steps while snapping is on); **New seed** shakes them up, the same seed gives the same copies; **Return** creates, **Esc** cancels. The copies stay selected, so **Cmd+J** drops them onto the land |
 | Combine primitives | Primitives menu or **Properties**: Combine selected; each piece adds, subtracts or intersects (Bryce-style); Separate |
@@ -87,6 +87,7 @@ Everything is also in the menus (File, Edit, Tools, Transform, Texture, Terrain,
 | Center 2D views on selection | **Cmd+E** |
 | Back to the origin | **Cmd+0** (all views), or the **origin** button in a view's corner |
 | Hide selected / hide others / show all | **H** / **Shift+H** / **Cmd+U** |
+| Show / hide all primitives or props | **View → Show primitives**, **View → Show props**: hidden ones can't be clicked, selected or landed on; **Cmd+U** or adding a new one shows them again |
 | Visgroups | **Visgroups** tab next to Textures: name groups of brushes, show/hide them with a checkbox |
 | Find brushes that cut into each other | **Cmd+Shift+O** — a list; **Next / Prev** jump the camera to each pair |
 | Fly mode in 3D view (toggle) | **Z** while hovering the 3D view; **Esc** also exits |

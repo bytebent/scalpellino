@@ -1,4 +1,7 @@
 #include "tools/select_tool.hpp"
+#include "core/hull.hpp"
+#include "core/landing.hpp"
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 
@@ -9,9 +12,78 @@ constexpr double kRotStep = kPi / 12; // 15 degrees
 
 namespace scal {
 
+void SelectTool::beginRect(const Document& doc, const Pointer& p, bool add) {
+    rectArmed_ = true;
+    rectOn_ = false;
+    rectAdd_ = add;
+    rectView_ = p.view;
+    rectA_ = rectB_ = p.local;
+    (void)doc;
+}
+
+void SelectTool::applyRect(ToolEnv& env) {
+    Document& doc = env.doc;
+    const Viewport& vp = *rectView_;
+    const float x0 = std::min(rectA_.x, rectB_.x), x1 = std::max(rectA_.x, rectB_.x);
+    const float y0 = std::min(rectA_.y, rectB_.y), y1 = std::max(rectA_.y, rectB_.y);
+    auto inside = [&](const Vec3& w) {
+        Vector2 s;
+        return vp.project(w, s) && s.x >= x0 && s.x <= x1 && s.y >= y0 && s.y <= y1;
+    };
+    auto allInside = [&](const std::vector<Vec3>& pts) {
+        if (pts.empty()) return false;
+        for (const Vec3& q : pts) if (!inside(q)) return false;
+        return true;
+    };
+    // Wholly inside: so a floor or terrain under everything isn't swept up with it.
+    std::set<BrushId> bs;
+    for (const Brush& b : doc.brushes())
+        if (doc.visible(b) && allInside(brushVertices(b))) bs.insert(b.id);
+    bs = doc.expandToGroups(bs);
+    std::set<MathPrimId> ps;
+    if (doc.primsShown()) {
+        std::set<MathPrimId> seen;
+        for (const MathPrim& m : doc.prims()) {
+            if (seen.count(m.id)) continue;
+            const std::set<MathPrimId> whole = doc.withCombos({m.id}); // a combination as one
+            seen.insert(whole.begin(), whole.end());
+            std::vector<const MathPrim*> ptrs;
+            for (MathPrimId id : whole) if (const MathPrim* q = doc.findPrim(id)) ptrs.push_back(q);
+            if (allInside(objectSurfaceSamples(ptrs, 12, 6))) ps.insert(whole.begin(), whole.end());
+        }
+    }
+    std::set<PropId> qs;
+    if (doc.propsShown())
+        for (const Prop& q : doc.props())
+            if (allInside(propSurfacePoints(q, findModelOf(env.models, q.model), 200))) qs.insert(q.id);
+    std::set<LightId> ls;
+    for (const Light& l : doc.lights())
+        if (inside(l.pos)) ls.insert(l.id);
+    if (rectAdd_) {
+        bs.insert(sel0_.begin(), sel0_.end());
+        ps.insert(prim0_.begin(), prim0_.end());
+        qs.insert(prop0_.begin(), prop0_.end());
+        ls.insert(light0_.begin(), light0_.end());
+    }
+    doc.setSelection(bs);
+    doc.setPrimSelection(ps);
+    doc.setPropSelection(qs);
+    doc.setLightSelection(ls);
+}
+
 void SelectTool::press(ToolEnv& env, const Pointer& p) {
     Document& doc = env.doc;
-    if (lights_.press(env, p)) return;
+    if (!p.view->is2D()) {
+        // What was selected before this click (Cmd+drag adds the rectangle to it).
+        sel0_ = doc.selection();
+        prim0_ = doc.primSelection();
+        prop0_ = doc.propSelection();
+        light0_ = doc.lightSelection();
+    }
+    if (lights_.press(env, p)) {
+        if (!p.view->is2D() && !lights_.active()) beginRect(doc, p, env.cmd); // a click, not a handle or ring
+        return;
+    }
     if (!env.cmd) { doc.setLightSelection({}); doc.setPrimSelection({}); doc.setPropSelection({}); } // a plain click elsewhere drops objects
     if (!p.view->is2D()) {
         const BrushId id = pick3D(doc, *p.view, p.local);
@@ -22,6 +94,7 @@ void SelectTool::press(ToolEnv& env, const Pointer& p) {
             else sel.insert(hit.begin(), hit.end());
         } else sel = hit;
         doc.setSelection(sel);
+        beginRect(doc, p, env.cmd);
         return;
     }
 
@@ -99,6 +172,12 @@ void SelectTool::updateGhosts(const Document& doc) {
 }
 
 void SelectTool::drag(ToolEnv& env, const Pointer& p) {
+    if (rectArmed_) {
+        if (p.view != rectView_) return;
+        rectB_ = p.local;
+        if (!rectOn_ && std::hypot(rectB_.x - rectA_.x, rectB_.y - rectA_.y) >= 4) rectOn_ = true;
+        return;
+    }
     if (lights_.active()) { lights_.drag(env, p); return; }
     if (mode_ == Mode::Idle || p.view != view_) return;
     if (mode_ == Mode::Rotating) {
@@ -121,6 +200,11 @@ void SelectTool::drag(ToolEnv& env, const Pointer& p) {
 }
 
 void SelectTool::release(ToolEnv& env, const Pointer&) {
+    if (rectArmed_) {
+        if (rectOn_) applyRect(env);
+        rectArmed_ = rectOn_ = false;
+        return;
+    }
     if (lights_.active()) { lights_.release(env); return; }
     if (mode_ == Mode::Idle) return;
     const bool changed = mode_ == Mode::Rotating ? rotAngle_ != 0
@@ -143,6 +227,14 @@ void SelectTool::release(ToolEnv& env, const Pointer&) {
 
 bool SelectTool::key(ToolEnv& env, int key) {
     Document& doc = env.doc;
+    if (key == KEY_ESCAPE && rectArmed_) { // drop the rectangle: the selection is as before the press
+        doc.setSelection(sel0_);
+        doc.setPrimSelection(prim0_);
+        doc.setPropSelection(prop0_);
+        doc.setLightSelection(light0_);
+        cancel();
+        return true;
+    }
     if (key == KEY_ESCAPE) {
         if (mode_ != Mode::Idle || lights_.active()) cancel();
         else { doc.setSelection({}); doc.setLightSelection({}); doc.setPrimSelection({}); doc.setPropSelection({}); }
@@ -163,6 +255,7 @@ bool SelectTool::key(ToolEnv& env, int key) {
 
 void SelectTool::decorate(const Document& doc, Scene& scene) const {
     lights_.decorate(doc, scene);
+    if (rectOn_) scene.selectRect = Scene::SelectRect{rectView_, rectA_.x, rectA_.y, rectB_.x, rectB_.y};
     if (mode_ != Mode::Idle && !ghosts_.empty()) {
         for (const Brush& g : ghosts_) scene.ghosts.push_back(makeSceneBrush(g));
         scene.hideSelected = !clone_;
@@ -173,6 +266,7 @@ void SelectTool::decorate(const Document& doc, Scene& scene) const {
 }
 
 const char* SelectTool::hint() const {
+    if (rectOn_) return "release to select what is wholly inside the rectangle (Cmd: add), Esc cancels";
     if (const char* h = lights_.hint()) return h;
     switch (mode_) {
         case Mode::Moving:   return clone_ ? "cloning - release to place" : "moving - release to place, Esc cancels";
@@ -180,12 +274,13 @@ const char* SelectTool::hint() const {
         case Mode::Rotating:
             std::snprintf(hintBuf_, sizeof hintBuf_, "rotating %.0f deg - Shift: free, Esc cancels", rotAngle_ * 180 / kPi);
             return hintBuf_;
-        default:             return "click: select   Cmd+click: add/remove   drag: move   Shift+drag: clone   Option+drag corner: rotate   Option+click: one piece   Del: delete";
+        default:             return "click: select   Cmd+click: add/remove   drag in 3D: rectangle   drag: move   Shift+drag: clone   Option+drag corner: rotate   Option+click: one piece   Del: delete";
     }
 }
 
 void SelectTool::cancel() {
     lights_.cancel();
+    rectArmed_ = rectOn_ = false;
     mode_ = Mode::Idle;
     view_ = nullptr;
     ghosts_.clear();

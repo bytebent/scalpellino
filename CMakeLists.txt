@@ -1,5 +1,13 @@
 cmake_minimum_required(VERSION 3.24)
-project(Scalpellino VERSION 0.0.1 LANGUAGES C CXX)
+# The version comes from the newest release notes (docs/releases/vX.Y.Z.md), which every
+# release adds anyway: one place, nothing to bump by hand. It ends up in the Mac app's
+# Info.plist.
+file(GLOB _scal_notes CONFIGURE_DEPENDS RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}/docs/releases" "${CMAKE_CURRENT_SOURCE_DIR}/docs/releases/v*.md")
+list(TRANSFORM _scal_notes REPLACE "^v([0-9]+\\.[0-9]+\\.[0-9]+)\\.md$" "\\1")
+list(FILTER _scal_notes INCLUDE REGEX "^[0-9]+\\.[0-9]+\\.[0-9]+$")
+list(SORT _scal_notes COMPARE NATURAL ORDER DESCENDING)
+list(GET _scal_notes 0 SCAL_VERSION)
+project(Scalpellino VERSION ${SCAL_VERSION} LANGUAGES C CXX)
 # Objective-C++ (native macOS file dialogs). Must be enabled here, at the top level,
 # before any dependency is added — enabling it later breaks CMake's generator.
 if(APPLE)

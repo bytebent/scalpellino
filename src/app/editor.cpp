@@ -223,6 +223,8 @@ bool Editor::frame(float dt) {
     st.lightKind = (int)lightTool_.templ.kind;
     st.lightsSelected = !doc_.lightSelection().empty();
     st.showSky = showSky_;
+    st.primsShown = doc_.primsShown();
+    st.propsShown = doc_.propsShown();
     st.lightPreview = lightPreview_;
     st.showFog = showFog_;
     st.showFigure = showFigure_;
@@ -314,6 +316,8 @@ bool Editor::frame(float dt) {
         askFigure_ = true;
     }
     if (m.toggleSky) showSky_ = !showSky_;
+    if (m.togglePrims) { tool_->cancel(); doc_.setPrimsShown(!doc_.primsShown()); }
+    if (m.toggleProps) { tool_->cancel(); doc_.setPropsShown(!doc_.propsShown()); }
     if (m.toggleLightPreview) { lightPreview_ = !lightPreview_; if (!lightPreview_) lighting_.clear(); }
     if (m.toggleFog) showFog_ = !showFog_;
     if (m.toggleFigure) {
@@ -450,8 +454,9 @@ Scene Editor::buildScene() {
     // The texture tool works on faces; brush selection tint would compete with it.
     if (tool_ != &textureTool_) s.selected = doc_.selection();
     for (const Light& l : doc_.lights()) s.lights.push_back({l, doc_.lightSelection().count(l.id) > 0});
-    for (const MathPrim& p : doc_.prims()) s.prims.push_back({p, doc_.primSelection().count(p.id) > 0});
-    for (const Prop& p : doc_.props()) {
+    if (doc_.primsShown())
+        for (const MathPrim& p : doc_.prims()) s.prims.push_back({p, doc_.primSelection().count(p.id) > 0});
+    if (doc_.propsShown()) for (const Prop& p : doc_.props()) {
         Scene::SceneProp sp;
         sp.prop = p;
         sp.selected = doc_.propSelection().count(p.id) > 0;
@@ -1325,6 +1330,8 @@ void Editor::showAll() {
     bool changed = false;
     for (Visgroup& v : vg) if (!v.visible) { v.visible = true; changed = true; }
     if (changed) doc_.setVisgroups(vg);
+    doc_.setPrimsShown(true); // View > Show primitives / props are part of "everything"
+    doc_.setPropsShown(true);
 }
 
 void Editor::setVisgroupVisible(std::uint32_t id, bool visible) {
@@ -1369,6 +1376,16 @@ void Editor::drawPropsPanel() {
         if (ImGui::Button("Rescan")) rescanBottega();
         ImGui::SameLine();
         ImGui::TextDisabled("%zu models", names.size());
+        const auto& clashes = models_.store().clashes();
+        if (!clashes.empty()) {
+            // Two files with the same model name: the first keeps it, the rest are listed.
+            ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "%zu file(s) left out: name already used (hover)", clashes.size());
+            if (ImGui::IsItemHovered()) {
+                std::string tip = "Rename these so each model has its own name, then Rescan:";
+                for (const std::string& c : clashes) tip += "\n" + c;
+                ImGui::SetTooltip("%s", tip.c_str());
+            }
+        }
     }
     ImGui::End();
 }
@@ -2299,53 +2316,106 @@ void Editor::snapToLand() {
     auto objects = selectedObjects(doc_);
     if (objects.empty() && doc_.propSelection().empty()) { landMessage_ = "select primitives or props to snap to land"; return; }
     tool_->cancel();
-    // Lowest first, so an object stacked on another selected one lands on its new spot.
-    std::sort(objects.begin(), objects.end(), [](const auto& a, const auto& b) { return objectBottom(a) < objectBottom(b); });
+    // Several selected objects land lowest first. One lands on another selected object only
+    // if it started entirely above it (a stack stays a stack); selected objects that
+    // overlap side by side, like scattered copies, all go down to what is below them
+    // instead of piling up on each other (v0.10.2).
+    struct Item {
+        bool isProp = false;
+        std::set<MathPrimId> prims; // the primitive object's pieces
+        PropId prop = 0;
+        double bottom = 0, top = 0;  // where it started
+        bool landed = false;
+    };
+    std::vector<Item> items;
+    std::set<MathPrimId> selPrims;
+    for (const auto& obj : objects) {
+        Item it;
+        AABB b;
+        for (const MathPrim* p : obj) {
+            it.prims.insert(p->id);
+            selPrims.insert(p->id);
+            const AABB pb = primBounds(*p);
+            b.add(pb.min);
+            b.add(pb.max);
+        }
+        it.bottom = objectBottom(obj);
+        it.top = b.max.z;
+        items.push_back(std::move(it));
+    }
+    for (PropId id : doc_.propSelection())
+        if (const Prop* q = doc_.findProp(id)) {
+            Item it;
+            it.isProp = true;
+            it.prop = id;
+            const Model* mdl = models_.find(q->model);
+            it.bottom = propBottom(*q, mdl);
+            it.top = propBounds(*q, mdl).max.z;
+            items.push_back(std::move(it));
+        }
+    std::stable_sort(items.begin(), items.end(), [](const Item& a, const Item& b) { return a.bottom < b.bottom; });
+
     std::vector<const Brush*> brushes;
     for (const Brush& b : doc_.brushes())
         if (doc_.visible(b)) brushes.push_back(&b);
     std::vector<MathPrim> work = doc_.prims();
-    std::vector<MathPrim> out;
-    int nothing = 0;
-    for (const auto& obj : objects) {
-        std::set<MathPrimId> ids;
-        for (const MathPrim* p : obj) ids.insert(p->id);
-        std::vector<const MathPrim*> me, others;
-        for (const MathPrim& p : work) (ids.count(p.id) ? me : others).push_back(&p);
-        const auto mv = landingMove(me, brushes, others);
-        if (!mv) { ++nothing; continue; }
-        for (MathPrim& p : work)
-            if (ids.count(p.id)) {
-                p.pos.z = cleanNumber(p.pos.z + *mv, 1e-6);
-                out.push_back(p);
-            }
-    }
-    // Props land after the primitives, each on what is below it (including the props already landed).
     std::vector<Prop> propsWork = doc_.props();
-    std::vector<Prop> propsOut;
-    {
-        std::vector<PropId> ids(doc_.propSelection().begin(), doc_.propSelection().end());
-        auto bottomOf = [&](PropId id) {
-            for (const Prop& q : propsWork) if (q.id == id) return propBottom(q, models_.find(q.model));
-            return 0.0;
-        };
-        std::sort(ids.begin(), ids.end(), [&](PropId a, PropId b) { return bottomOf(a) < bottomOf(b); });
-        for (PropId id : ids) {
-            Prop* me = nullptr;
-            std::vector<PropRef> others;
-            for (Prop& q : propsWork) {
-                if (q.id == id) me = &q;
-                else others.push_back({&q, models_.find(q.model)});
+    std::set<MathPrimId> movedPrims;
+    std::set<PropId> movedProps;
+    std::map<MathPrimId, const Item*> primItem;
+    std::map<PropId, const Item*> propItem;
+    for (const Item& it : items) {
+        if (it.isProp) propItem[it.prop] = &it;
+        else for (MathPrimId id : it.prims) primItem[id] = &it;
+    }
+    // Whether `other` is something `me` may land on.
+    auto counts = [](const Item& me, const Item* other) {
+        if (!other) return true;                      // not selected
+        if (other == &me) return false;
+        return other->landed && other->top <= me.bottom + 1e-6; // selected: only if it started below
+    };
+    int nothing = 0;
+    for (Item& it : items) {
+        std::vector<const MathPrim*> me, otherPrims;
+        for (const MathPrim& p : work) {
+            if (it.prims.count(p.id)) me.push_back(&p);
+            else if (doc_.primsShown()) { // hidden ones are not landed on
+                auto f = primItem.find(p.id);
+                if (counts(it, f == primItem.end() ? nullptr : f->second)) otherPrims.push_back(&p);
             }
-            if (!me) continue;
-            std::vector<const MathPrim*> prims;
-            for (const MathPrim& m : work) prims.push_back(&m);
-            const auto mv = propLandingMove({me, models_.find(me->model)}, brushes, prims, others);
-            if (!mv) { ++nothing; continue; }
-            me->pos.z = cleanNumber(me->pos.z + *mv, 1e-6);
-            propsOut.push_back(*me);
+        }
+        std::vector<PropRef> otherProps;
+        Prop* myProp = nullptr;
+        for (Prop& q : propsWork) {
+            if (it.isProp && q.id == it.prop) { myProp = &q; continue; }
+            if (!doc_.propsShown()) continue; // hidden ones are not landed on
+            auto f = propItem.find(q.id);
+            if (counts(it, f == propItem.end() ? nullptr : f->second)) otherProps.push_back({&q, models_.find(q.model)});
+        }
+        std::optional<double> mv;
+        if (it.isProp) {
+            if (!myProp) continue;
+            mv = propLandingMove({myProp, models_.find(myProp->model)}, brushes, otherPrims, otherProps);
+        } else {
+            mv = landingMove(me, brushes, otherPrims, otherProps);
+        }
+        it.landed = true;
+        if (!mv) { ++nothing; continue; }
+        if (it.isProp) {
+            myProp->pos.z = cleanNumber(myProp->pos.z + *mv, 1e-6);
+            movedProps.insert(it.prop);
+        } else {
+            for (MathPrim& p : work)
+                if (it.prims.count(p.id)) {
+                    p.pos.z = cleanNumber(p.pos.z + *mv, 1e-6);
+                    movedPrims.insert(p.id);
+                }
         }
     }
+    std::vector<MathPrim> out;
+    for (const MathPrim& p : work) if (movedPrims.count(p.id)) out.push_back(p);
+    std::vector<Prop> propsOut;
+    for (const Prop& q : propsWork) if (movedProps.count(q.id)) propsOut.push_back(q);
     landMessage_ = nothing ? std::to_string(nothing) + " object(s) had nothing below them" : "";
     if (out.empty() && propsOut.empty()) return;
     Command c = out.empty() ? doc_.makeModifyProps(propsOut, "Snap to land") : doc_.makeModifyPrims(out, "Snap to land");
@@ -3575,6 +3645,14 @@ void Editor::stepScript() {
         } else {
             for (const Visgroup& v : doc_.visgroups()) if (v.name == name) setVisgroupVisible(v.id, op == "show");
         }
+    } else if (cmd == "expect" && in.str().find(" bottoms ") != std::string::npos) {
+        // expect bottoms <z>: every selected primitive object and prop has its lowest point at z
+        std::string w; double z = 0; in >> w >> z;
+        int bad = 0;
+        for (const auto& obj : selectedObjects(doc_)) bad += std::fabs(objectBottom(obj) - z) > 0.05;
+        for (PropId id : doc_.propSelection())
+            if (const Prop* q = doc_.findProp(id)) bad += std::fabs(propBottom(*q, models_.find(q->model)) - z) > 0.05;
+        if (bad) { std::fprintf(stderr, "script FAIL (command %d): %d selected object(s) not resting at z %g\n", scriptLine_, bad, z); ++scriptFailures_; }
     } else if (cmd == "expect" && in.str().find(" visible ") != std::string::npos) {
         std::string w; size_t n = 0; in >> w >> n;
         size_t got = 0;
@@ -3832,13 +3910,15 @@ void Editor::stepScript() {
         if (m == "not") { want = false; in >> m; }
         if (models_.store().exists(m) != want) { std::fprintf(stderr, "script FAIL (command %d): model %s%s\n", scriptLine_, want ? "" : "not ", m.c_str()); ++scriptFailures_; }
     } else if (cmd == "viewset") {
-        // viewset sky|preview|fog|figure on|off
+        // viewset sky|preview|fog|figure|prims|props on|off
         std::string k, v; in >> k >> v;
         const bool on = v == "on";
         if (k == "sky") showSky_ = on;
         else if (k == "preview") { lightPreview_ = on; if (!on) lighting_.clear(); }
         else if (k == "fog") showFog_ = on;
         else if (k == "figure") showFigure_ = on;
+        else if (k == "prims") { tool_->cancel(); doc_.setPrimsShown(on); }
+        else if (k == "props") { tool_->cancel(); doc_.setPropsShown(on); }
     } else if (cmd == "environment") {
         // environment sky <name|none> | ambient r g b | fog on|off | fogcolor r g b | fogrange <start> <end>
         std::string k; in >> k;

@@ -10,10 +10,11 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 
 ## Current status
 
-- **Released:** v0.1.0 … v0.10.0. Milestones 0–10 are done (see the milestone sections
-  below and the log); the user confirmed M10's choices (2026-11-19). **Random Replicate
-  is built and pushed as v0.10.1.** Report it to the user, then ask before the next
-  milestone.
+- **Released:** v0.1.0 … v0.10.1. Milestones 0–10 and Random Replicate are done (see the
+  milestone sections below and the log); the user confirmed M10's and Random Replicate's
+  choices (2026-11-19). **v0.10.2 is built and pushed**: Snap to Land fixed for things on
+  top of each other, rectangle select in the 3D view, View → Show primitives / Show props,
+  and the checked points of an outside review (below). Report it, then ask before Sky Lab.
 - **Next:** **Sky Lab** once the user says go (ask them to attach the Bryce guide PDF
   again first). Bottega basics and the idle CPU test (`tests/ui/idle.sh`, see DEV.md) are done.
 - **Roadmap:** Sky Lab → cameras and Camera Preview →
@@ -123,7 +124,29 @@ are in [`DEV.md`](DEV.md). One-step-per-release: add `docs/releases/vX.Y.Z.md` a
     editor shading, alpha cutout and fog in one shader; light preview on props later.
   - Triangle budget per model: 200000; a prop whose model is above it shows a "heavy
     model" warning in Properties (it is still drawn).
-- **Random Replicate (v0.10.1), decided without asking (confirm with the user):**
+- **v0.10.2, decided without asking (confirm with the user):**
+  - **Snap to Land, what counts as below:** surfaces under the object's middle height.
+    So it ignores a shelf over it and a neighbour it overlaps, and comes up out of what
+    it is sunk into only up to half its height (sunk deeper, it goes down).
+  - **Several selected objects:** one lands on another selected object only if it started
+    entirely above it (stacks stay stacks; scattered copies all reach the ground).
+  - **Rectangle select:** 3D view only (the 2D views could get it too: ask); selects what is
+    *wholly* inside (so the floor isn't swept up); Cmd+drag adds; a drag that starts on a
+    selected object's ring or size handle still turns / sizes it.
+  - **Show primitives / props:** View menu tick boxes, no shortcut; not saved in the map;
+    Cmd+U and adding a new one show them again.
+  - **Model name clashes:** the first file in name order keeps the name, the others are
+    listed in the Props panel (keys are not changed, so existing maps still find their models).
+- **Outside review (another AI, at v0.10.1), checked 2026-11-19:**
+  - Fixed in v0.10.2 (each with tests that failed before): NaN / infinity accepted in
+    `.map` numbers; props landing on their box corners; "unsaved" after undoing back to the
+    saved state; model name clashes silently hiding a file; project version 0.0.1 (now taken
+    from the newest release notes).
+  - **Parked (valid, not bugs):** split `src/app/editor.cpp` (~4,300 lines) into smaller
+    modules step by step; measure drawing of many props (each prop is one draw call per
+    mesh; meshes are shared) on the Mac before considering GPU instancing. Ask the user
+    when to do these.
+- **Random Replicate (v0.10.1), decided without asking; confirmed by the user (2026-11-19):**
   - **Shortcut Cmd+Shift+R** (Edit menu); Cmd+R stays Rescan.
   - **The selection is one piece:** each copy of the whole selection gets one offset, turn
     and size, about the selection's centre (as in Bryce), not each object on its own.

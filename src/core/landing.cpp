@@ -47,9 +47,6 @@ AABB boundsOf(const std::vector<const MathPrim*>& ps) {
     return b;
 }
 
-bool overlapsXY(const AABB& a, const AABB& b) {
-    return a.min.x <= b.max.x && a.max.x >= b.min.x && a.min.y <= b.max.y && a.max.y >= b.min.y;
-}
 } // namespace
 
 std::vector<Vec3> objectSurfaceSamples(const std::vector<const MathPrim*>& object, int around, int up) {
@@ -116,61 +113,91 @@ struct Subject {
 std::optional<double> land(const Subject& sub, const std::vector<const Brush*>& brushes,
                            const std::vector<const MathPrim*>& otherPrims, const std::vector<PropRef>& props) {
     const AABB ob = sub.bounds;
-    // Lift it clear of everything under its footprint first, so an object that is partly
-    // sunk in comes up to rest on top.
-    double top = -1e300;
-    for (const Brush* b : brushes) {
-        const AABB bb = b->bounds();
-        if (overlapsXY(bb, ob)) top = std::max(top, bb.max.z);
-        if (auto g = terrainGrid(*b))
-            for (const Vec3& p : g->pos) top = std::max(top, p.z);
-    }
-    std::vector<MathPrim> others;
-    for (const MathPrim* p : otherPrims) {
-        others.push_back(*p);
-        const AABB pb = primBounds(*p);
-        if (overlapsXY(pb, ob)) top = std::max(top, pb.max.z);
-    }
-    for (const PropRef& r : props) {
-        const AABB pb = propBounds(*r.prop, r.model);
-        if (overlapsXY(pb, ob)) top = std::max(top, pb.max.z);
-    }
-    if (top == -1e300) return std::nullopt;
-    const double lift = std::max(0.0, top - ob.min.z) + 1;
+    // What counts as "below": surfaces under the object's middle height. So it drops onto
+    // the first thing beneath it, comes up out of what it is sunk into (up to half its
+    // height), and ignores what is beside or above it: a neighbour it overlaps, a shelf or
+    // roof over it (v0.10.2; before, anything overlapping its footprint lifted it on top).
+    const double mid = (ob.min.z + ob.max.z) * 0.5;
+    const double eps = 1e-6 * std::max(1.0, length(ob.size()));
+    const double lift = mid - ob.min.z + 1;
     sub.lift(lift);
     AABB rb = ob;
     rb.min.z += lift;
     rb.max.z += lift;
 
+    // Other primitives one shape at a time (a combination as a whole), so each is judged
+    // by its own surface under the ray.
+    std::vector<std::vector<MathPrim>> shapes;
+    {
+        std::map<std::uint32_t, std::size_t> comboAt;
+        for (const MathPrim* p : otherPrims) {
+            if (p->combo) {
+                auto it = comboAt.find(p->combo);
+                if (it == comboAt.end()) {
+                    comboAt[p->combo] = shapes.size();
+                    shapes.push_back({*p});
+                } else {
+                    shapes[it->second].push_back(*p);
+                }
+            } else {
+                shapes.push_back({*p});
+            }
+        }
+    }
+    std::vector<AABB> shapeBox;
+    for (const auto& sh : shapes) {
+        AABB b;
+        for (const MathPrim& m : sh) { const AABB pb = primBounds(m); b.add(pb.min); b.add(pb.max); }
+        shapeBox.push_back(b);
+    }
+
     const Vec3 down{0, 0, -1};
     double best = 1e300;
+    auto take = [&](const Vec3& q, double t) {
+        if (t >= 0 && q.z - t <= mid + eps) best = std::min(best, t);
+    };
     // Downward from the object's surface.
     for (const Vec3& q : sub.surface()) {
-        for (const Brush* b : brushes) {
-            const double t = hitBrush(*b, q, down);
-            if (t >= 0) best = std::min(best, t);
+        for (const Brush* b : brushes) take(q, hitBrush(*b, q, down));
+        for (std::size_t k = 0; k < shapes.size(); ++k) {
+            if (q.x < shapeBox[k].min.x || q.x > shapeBox[k].max.x || q.y < shapeBox[k].min.y || q.y > shapeBox[k].max.y) continue;
+            if (auto h = rayHitPrims(shapes[k], q, down)) take(q, h->t);
         }
-        if (!others.empty())
-            if (auto h = rayHitPrims(others, q, down)) best = std::min(best, h->t);
         for (const PropRef& r : props)
-            if (auto h = rayHitProp(*r.prop, r.model, q, down)) best = std::min(best, h->t);
+            if (auto h = rayHitProp(*r.prop, r.model, q, down)) take(q, h->t);
     }
     // Upward from what sticks up under it (corners of brushes, terrain points, the tops of
-    // other primitives and props), so peaks between the samples count too.
-    auto upFrom = [&](const Vec3& v) {
+    // other primitives and props), so peaks between the samples count too. Only points on
+    // a top surface count (a straight-down ray from just above meets that surface there):
+    // the bottom corners of a wall beside the object are nothing to rest on.
+    const double probe = 1e-3 * std::max(1.0, length(ob.size()));
+    auto onTop = [&](const Vec3& v, auto&& hitDown) {
+        const double t = hitDown(v + Vec3{0, 0, probe});
+        return t >= 0 && std::fabs(t - probe) <= probe * 0.5;
+    };
+    auto upFrom = [&](const Vec3& v, auto&& hitDown) {
+        if (v.z > mid + eps) return;
         if (v.x < rb.min.x || v.x > rb.max.x || v.y < rb.min.y || v.y > rb.max.y) return;
+        if (!onTop(v, hitDown)) return;
         if (auto t = sub.upHit(v)) best = std::min(best, *t);
     };
     for (const Brush* b : brushes) {
+        auto hb = [&](const Vec3& o) { return hitBrush(*b, o, down); };
         if (b->terrain && terrainValid(*b)) {
-            if (auto g = terrainGrid(*b)) for (const Vec3& p : g->pos) upFrom(p);
+            if (auto g = terrainGrid(*b)) for (const Vec3& p : g->pos) upFrom(p, hb);
         }
-        for (const Vec3& v : brushVertices(*b)) upFrom(v);
+        for (const Vec3& v : brushVertices(*b)) upFrom(v, hb);
     }
-    for (const MathPrim* p : otherPrims)
-        for (const Vec3& v : objectSurfaceSamples({p}, 16, 8)) upFrom(v);
-    for (const PropRef& r : props)
-        for (const Vec3& v : propSurfacePoints(*r.prop, r.model, 1500)) upFrom(v);
+    for (std::size_t k = 0; k < shapes.size(); ++k) {
+        auto hs = [&](const Vec3& o) { auto h = rayHitPrims(shapes[k], o, down); return h ? h->t : -1.0; };
+        std::vector<const MathPrim*> ptrs;
+        for (const MathPrim& m : shapes[k]) ptrs.push_back(&m);
+        for (const Vec3& v : objectSurfaceSamples(ptrs, 16, 8)) upFrom(v, hs);
+    }
+    for (const PropRef& r : props) {
+        auto hp = [&](const Vec3& o) { auto h = rayHitProp(*r.prop, r.model, o, down); return h ? h->t : -1.0; };
+        for (const Vec3& v : propSurfacePoints(*r.prop, r.model, 1500)) upFrom(v, hp);
+    }
     if (best >= 1e300) return std::nullopt;
     return lift - best;
 }

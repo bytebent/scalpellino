@@ -36,6 +36,10 @@ public:
     const Model* find(const std::string& name);
     // Why `name` has no model ("" if it has one or hasn't been tried): not found, damaged...
     std::string problem(const std::string& name) const;
+    // Files left out because another file already has their name (e.g. "Stone Wall.glb"
+    // and "Stone_Wall.glb", or "tree.glb" and "tree.gltf"): one line each, paths inside
+    // the Bottega. The first in name order keeps the name (v0.10.2).
+    const std::vector<std::string>& clashes() const { return clashes_; }
     // Increases on every rescan, so caches know their pointers are stale.
     unsigned generation() const { return generation_; }
     ModelFinder finder() { return [this](const std::string& n) { return find(n); }; }
@@ -46,10 +50,12 @@ private:
     std::vector<std::string> names_;
     std::map<std::string, std::unique_ptr<Model>> loaded_;
     std::map<std::string, std::string> problems_;
+    std::vector<std::string> clashes_;
     unsigned generation_ = 0;
 };
 
-// The models under `<root>/models`, as name -> file (see the rules above).
-std::map<std::string, std::string> scanModelFiles(const std::string& root);
+// The models under `<root>/models`, as name -> file (see the rules above). Files whose
+// name is already taken are left out and listed in `clashes` (if given).
+std::map<std::string, std::string> scanModelFiles(const std::string& root, std::vector<std::string>* clashes = nullptr);
 
 } // namespace scal

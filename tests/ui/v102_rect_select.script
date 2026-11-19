@@ -1,0 +1,76 @@
+# v0.10.2: rectangle select in the 3D view, and View > Show primitives / Show props.
+bottega make studio
+copy assets/models/crate.glb studio/models/Crate.glb
+rescan
+block -1200 -1200 -40 1200 1200 0
+key Esc
+block -100 -100 0 -36 -36 64
+key Esc
+prop models/Crate -300 0 0
+prop models/Crate 0 0 0
+prop models/Crate 300 0 0
+prim sphere 0 300 60 120 120 120
+primselect
+propselect none
+viewset prims on
+camera 0 -900 650 90 -35
+# -- drag a rectangle around the middle: the three crates, the sphere and the small
+#    block are wholly inside; the big floor is not
+press3d -230 -110
+drag3d 230 130
+shot m10-04-rectangle-select.png
+release
+expect propsel 3
+expect primsel 1
+expect selected 1
+# -- a smaller one around the middle crate only replaces the selection
+press3d 36 14
+drag3d -36 -58
+release
+expect propsel 1
+expect primsel 0
+expect selected 0
+# -- Cmd+drag adds
+press3d -230 -110 cmd
+drag3d 230 130
+release
+expect propsel 3
+expect primsel 1
+# -- Esc during the drag keeps the selection from before
+propselect none
+primselect
+press3d -230 -110
+drag3d 230 130
+key Escape
+release
+expect propsel 0
+# -- hidden props and primitives are never swept up, and hiding drops them from the selection
+press3d -230 -110
+drag3d 230 130
+release
+expect propsel 3
+viewset props off
+expect propsel 0
+press3d -230 -110
+drag3d 230 130
+release
+expect propsel 0
+expect primsel 1
+viewset prims off
+expect primsel 0
+shot m10-05-props-and-primitives-hidden.png
+# -- a click where a hidden crate is picks nothing of it
+press3d 0 0
+release
+expect propsel 0
+# -- Show all brings them back; a new prop shows props again
+viewset prims off
+key Esc
+showall
+viewset props off
+prop models/Crate 600 0 0
+press3d -230 -110
+drag3d 230 130
+release
+expect propsel 4
+quit

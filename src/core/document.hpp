@@ -86,6 +86,7 @@ struct Command {
     std::optional<std::set<MathPrimId>> primSelectionBefore, primSelectionAfter;
     std::vector<PropChange> propChanges;
     std::optional<std::set<PropId>> propSelectionBefore, propSelectionAfter;
+    std::uint64_t serial = 0; // set by Document::apply: which edit this is (for "saved?")
 };
 
 // Everything besides brushes that a loaded map brings (milestone 8).
@@ -117,7 +118,7 @@ public:
 
     // Visibility.
     const std::vector<Visgroup>& visgroups() const { return visgroups_; }
-    void setVisgroups(std::vector<Visgroup> v) { visgroups_ = std::move(v); bump(); }
+    void setVisgroups(std::vector<Visgroup> v) { visgroups_ = std::move(v); sideEdit(); }
     std::uint32_t newVisgroupId() const;
     bool visible(const Brush& b) const;
     bool visible(BrushId id) const { const Brush* b = find(id); return b && visible(*b); }
@@ -149,14 +150,22 @@ public:
     const std::set<PropId>& propSelection() const { return propSelection_; }
     void setPropSelection(std::set<PropId> s) { propSelection_ = std::move(s); }
 
+    // View options (v0.10.2): all primitives / all props shown or hidden. Hidden ones are
+    // not drawn, picked, selected or landed on; hiding drops them from the selection.
+    // Not saved and not undone; adding new ones shows them again.
+    bool primsShown() const { return primsShown_; }
+    bool propsShown() const { return propsShown_; }
+    void setPrimsShown(bool on);
+    void setPropsShown(bool on);
+
     // Environment (sky, ambient, fog): changed through commands (makeEnvironment).
     const Environment& environment() const { return env_; }
     // Camera bookmarks and the scale figure: editor-only, saved with the map, not undone
     // (like visgroups).
     const std::vector<CameraBookmark>& bookmarks() const { return bookmarks_; }
-    void setBookmarks(std::vector<CameraBookmark> b) { bookmarks_ = std::move(b); bump(); }
+    void setBookmarks(std::vector<CameraBookmark> b) { bookmarks_ = std::move(b); sideEdit(); }
     const std::optional<Vec3>& figure() const { return figure_; }
-    void setFigure(std::optional<Vec3> f) { figure_ = f; bump(); }
+    void setFigure(std::optional<Vec3> f) { figure_ = f; sideEdit(); }
     AABB selectionBounds() const;
 
     // Applies a command and records it for undo. Clears redo.
@@ -167,9 +176,11 @@ public:
     bool canRedo() const { return !redo_.empty(); }
     const std::string& undoName() const;
 
-    // Changes since last save.
-    bool dirty() const { return revision_ != savedRevision_; }
-    void markSaved() { savedRevision_ = revision_; }
+    // Changes since last save: undoing back to the saved state counts as no change
+    // (v0.10.2). Visgroups, bookmarks and the figure aren't undoable: changing them stays
+    // a change until the next save.
+    bool dirty() const { return sideEdits_ || historyTop() != savedSerial_; }
+    void markSaved() { savedSerial_ = historyTop(); sideEdits_ = false; }
     // Increments on every change (renderers use it to know when to rebuild).
     unsigned long long revision() const { return revision_; }
 
@@ -214,6 +225,8 @@ private:
     // Adds group removals to `c` for groups that would have no brushes left.
     void pruneEmptyGroups(Command& c) const;
     void bump() { ++revision_; }
+    void sideEdit() { bump(); sideEdits_ = true; }
+    std::uint64_t historyTop() const { return undo_.empty() ? 0 : undo_.back().serial; }
 
     std::vector<Brush> brushes_;
     std::set<BrushId> selection_;
@@ -234,7 +247,10 @@ private:
     std::vector<CameraBookmark> bookmarks_;
     std::optional<Vec3> figure_;
     std::vector<Command> undo_, redo_;
-    unsigned long long revision_ = 0, savedRevision_ = 0;
+    unsigned long long revision_ = 0;
+    std::uint64_t nextSerial_ = 0, savedSerial_ = 0;
+    bool sideEdits_ = false;
+    bool primsShown_ = true, propsShown_ = true;
 };
 
 } // namespace scal

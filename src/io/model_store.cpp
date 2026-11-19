@@ -24,7 +24,17 @@ std::string cleanName(std::string s) {
     return s;
 }
 
-void scanFolder(const std::string& root, const fs::path& dir, bool isRoot, std::map<std::string, std::string>& out, int depth) {
+void scanFolder(const std::string& root, const fs::path& dir, bool isRoot, std::map<std::string, std::string>& out, int depth,
+                std::vector<std::string>* clashes) {
+    auto add = [&](const std::string& k, const fs::path& f) {
+        if (k.empty()) return;
+        auto [it, fresh] = out.emplace(k, f.string());
+        if (!fresh && clashes) {
+            const fs::path base(root);
+            clashes->push_back(f.lexically_relative(base).generic_string() + " is left out: \"" + k + "\" is already " +
+                               fs::path(it->second).lexically_relative(base).generic_string());
+        }
+    };
     std::error_code ec;
     std::vector<fs::path> files, dirs;
     for (const fs::directory_entry& e : fs::directory_iterator(dir, ec)) {
@@ -44,27 +54,23 @@ void scanFolder(const std::string& root, const fs::path& dir, bool isRoot, std::
         if (own) {
             // The folder's name as the key (not through keyFor, which would cut a dot-extension
             // off a folder called "tree.v2").
-            const std::string k = cleanName(dir.lexically_relative(fs::path(root)).generic_string());
-            if (!k.empty()) out.emplace(k, own->string());
+            add(cleanName(dir.lexically_relative(fs::path(root)).generic_string()), *own);
         } else {
-            for (const fs::path& f : files) {
-                const std::string k = bottega::keyFor(root, f.string());
-                if (!k.empty()) out.emplace(k, f.string());
-            }
+            for (const fs::path& f : files) add(bottega::keyFor(root, f.string()), f);
         }
     }
     if (depth >= 8) return;
-    for (const fs::path& d : dirs) scanFolder(root, d, false, out, depth + 1);
+    for (const fs::path& d : dirs) scanFolder(root, d, false, out, depth + 1, clashes);
 }
 } // namespace
 
-std::map<std::string, std::string> scanModelFiles(const std::string& root) {
+std::map<std::string, std::string> scanModelFiles(const std::string& root, std::vector<std::string>* clashes) {
     std::map<std::string, std::string> out;
     if (root.empty()) return out;
     std::error_code ec;
     const fs::path models = fs::path(root) / "models";
     if (!fs::is_directory(models, ec)) return out;
-    scanFolder(root, models, true, out, 0);
+    scanFolder(root, models, true, out, 0, clashes);
     return out;
 }
 
@@ -74,7 +80,8 @@ void ModelStore::setBottegaRoot(const std::string& root) {
 }
 
 void ModelStore::rescan() {
-    files_ = scanModelFiles(root_);
+    clashes_.clear();
+    files_ = scanModelFiles(root_, &clashes_);
     names_.clear();
     for (const auto& [n, f] : files_) names_.push_back(n);
     loaded_.clear();

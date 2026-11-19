@@ -306,6 +306,13 @@ Static models next to brushes, lights and primitives. `core/model.hpp`, `core/pr
   Rays go down from points on the object's surface and up from brush corners, terrain
   points and other primitives' surfaces. Brushes themselves are never moved by it (props
   will land like primitives). **Snap to Ground**: lowest point to a typed height.
+  v0.10.2: only surfaces below the object's middle height count as "below" (so it drops
+  to the first thing beneath it, comes up out of what it is sunk into up to half its
+  height, and ignores a shelf over it or a neighbour it overlaps), and upward rays only
+  start from top surfaces. Several selected objects land lowest first; one lands on
+  another selected object only if it started entirely above it. Props rest on points of
+  their mesh (vertices, the lowest ones, and points across their faces), never on their
+  box corners.
 - **Multi-Replicate** (Cmd+Shift+D, Edit menu; `core/replicate`): N copies, each one step
   further: offset (optionally scaled), turn (X, Y, Z degrees) and scale (%) per copy,
   about the selection (travelling with the copies), the world origin or a typed point.
@@ -324,6 +331,20 @@ Static models next to brushes, lights and primitives. `core/model.hpp`, `core/pr
   wider turn range does not move the offsets. Same window behaviour as Multi-Replicate
   (only one of the two open at a time); the copies stay selected, so Snap to Land drops
   them onto the land.
+
+### Selecting and showing (v0.10.2)
+- **Rectangle select in the 3D view** (Select tool): a drag that doesn't start on a handle
+  or ring draws a rectangle; on release everything that lies wholly inside it is
+  selected: visible brushes (all corners; groups whole), primitives (points on their
+  surface; combinations whole), props (points on their mesh) and lights (their position).
+  Wholly inside, so the floor or terrain under everything isn't swept up. Cmd+drag adds;
+  Esc during the drag keeps the selection from before the press.
+- **View → Show primitives / Show props**: view options kept in the Document (not saved,
+  not undone). Hidden ones are not drawn, picked, selected or landed on; hiding drops them
+  from the selection; Show all (Cmd+U) and adding new ones show them again.
+- **Unsaved changes** follow the undo history: each command gets a serial number, and
+  the map is unsaved when the newest command isn't the one it was saved at (or a
+  visgroup, bookmark or the figure, which aren't undoable, changed since the save).
 
 ### Scale reference
 Toggleable ghost human figure (175 units = 1.75 m tall, blocky, see-through) to judge

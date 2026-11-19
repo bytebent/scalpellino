@@ -205,6 +205,8 @@ MenuActions drawMenuBar(const MenuState& st) {
         if (ImGui::MenuItem("Hide selected", "H", false, st.hasSelection)) a.hideSelected = true;
         if (ImGui::MenuItem("Hide unselected", "Shift+H", false, st.hasSelection)) a.hideUnselected = true;
         if (ImGui::MenuItem("Show all", "Cmd+U")) a.showAll = true;
+        if (ImGui::MenuItem("Show primitives", nullptr, st.primsShown)) a.togglePrims = true;
+        if (ImGui::MenuItem("Show props", nullptr, st.propsShown)) a.toggleProps = true;
         ImGui::TextDisabled("Visgroups: the tab next to Textures");
         ImGui::Separator();
         if (ImGui::MenuItem("Center 2D views on selection", "Cmd+E", false, st.hasSelection)) a.centerViews = true;
@@ -236,7 +238,7 @@ void drawControlsWindow(bool* open) {
             {"Bottega (shared folder)", "File > Bottega folder... picks it; Cmd+R (File menu) rescans it: textures, skies. Never automatic"},
             {"Select tool / Block tool", "Shift+S / Shift+B"},
             {"Draw a block", "Block tool: drag in a 2D view; Return creates, Esc cancels"},
-            {"Select", "click (2D or 3D); Cmd+click adds/removes; Cmd+A all; Esc none"},
+            {"Select", "click (2D or 3D); Cmd+click adds/removes; Cmd+A all; Esc none. 3D view: drag a rectangle to select everything wholly inside it; Cmd+drag adds"},
             {"Move / resize", "drag the selection / its handles or edges"},
             {"Clone", "Shift+drag the selection, or Cmd+D"},
             {"Rotate by dragging", "Option+drag a corner handle (15\xC2\xB0 steps, +Shift free)"},
@@ -266,8 +268,9 @@ void drawControlsWindow(bool* open) {
             {"One piece of a combination", "Option+click it (or pick it in Properties), then drag, turn or size it alone"},
             {"Turn / size primitives", "drag the rings around the selection (15 degree steps); drag a size handle (scales evenly; Shift: one axis, opposite face stays); or type in Properties"},
             {"Multi-Replicate", "Cmd+Shift+D (Edit menu): copies, each one step further (offset; primitives, props and lights also turn, primitives and props also scale); the preview stays while you look around the views; Return creates, Esc cancels"},
+            {"Show / hide all primitives or props", "View > Show primitives, View > Show props (tick boxes). Hidden ones can't be clicked, selected or landed on; Show all (Cmd+U) and adding a new one show them again"},
             {"Random Replicate", "Cmd+Shift+R (Edit menu): copies scattered around the selection, each with a random offset, turn and size inside typed ranges (brushes only move, by whole grid steps while snapping is on); New seed shakes them up, the same seed gives the same copies; Return creates, Esc cancels. The copies stay selected: Cmd+J drops them onto the land"},
-            {"Snap to land / ground", "Cmd+J (Transform menu): drops selected primitives and props onto the brushes, terrain, primitives or props below; Snap to ground: onto a typed height"},
+            {"Snap to land / ground", "Cmd+J (Transform menu): drops selected primitives and props onto the brushes, terrain, primitives or props below them (not onto a shelf above or a neighbour beside them); several selected ones land on each other only if they were stacked to begin with; Snap to ground: onto a typed height"},
             {"Blend primitives", "Properties, in a combination: blend (units) melts a piece into the others (0 = sharp)"},
             {"Combine primitives", "Primitives menu or Properties: Combine selected; each piece adds, subtracts or intersects; Separate undoes it"},
             {"Light tool", "Shift+L (World menu): pick point / spot / sun and settings in Properties, click in a view to place, Return creates, Esc cancels"},

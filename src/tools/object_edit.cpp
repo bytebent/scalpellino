@@ -105,7 +105,7 @@ double polyArea(const std::vector<Vector2>& h) {
 } // namespace
 
 PropId pickProp(const Document& doc, const Viewport& vp, Vector2 local, const ModelFinder* models, double* dist) {
-    if (doc.props().empty()) return 0;
+    if (doc.props().empty() || !doc.propsShown()) return 0;
     if (!vp.is2D()) {
         Vec3 o, d;
         vp.pickRay(local, o, d);
@@ -159,7 +159,7 @@ LightId pickLight(const Document& doc, const Viewport& vp, Vector2 local) {
 
 MathPrimId pickPrim(const Document& doc, const Viewport& vp, Vector2 local, double* dist, MathPrimId* piece,
                     bool outlinesFirst) {
-    if (doc.prims().empty()) return 0;
+    if (doc.prims().empty() || !doc.primsShown()) return 0;
     auto firstOf = [&](const MathPrim& p) {
         MathPrimId first = p.id;
         if (p.combo)

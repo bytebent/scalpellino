@@ -1,0 +1,45 @@
+# v0.10.2: Snap to Land with things on top of each other. A deliberate stack stays a
+# stack; overlapping objects side by side land beside each other; a shelf above or a wall
+# beside is not what an object lands on.
+bottega make studio
+copy assets/models/crate.glb studio/models/Crate.glb
+rescan
+block -1200 -1200 -40 1200 1200 0
+# -- a stack: one crate above another, both selected: the upper one lands on the lower one
+prop models/Crate 0 0 300
+prop models/Crate 20 10 900
+propselect 0 1
+snapland
+propselect 0
+expect bottoms 0
+propselect 1
+expect bottoms 100
+# -- two crates overlapping side by side in the air: both reach the floor
+prop models/Crate 600 0 250
+prop models/Crate 640 30 260
+propselect 2 3
+snapland
+expect bottoms 0
+# -- under a shelf: lands on the floor, not on the shelf
+propselect none
+key Esc
+block -700 -100 400 -400 200 416
+key Esc
+prop models/Crate -550 50 200
+propselect 4
+snapland
+expect bottoms 0
+# -- from above the shelf: lands on it
+prop models/Crate -550 50 900
+propselect 5
+snapland
+expect bottoms 416
+# -- a primitive beside a wall that it overlaps: down to the floor
+propselect none
+block 300 -700 0 316 -300 500
+key Esc
+prim sphere 300 -500 200 80 80 80
+primselect 0
+snapland
+expect bottoms 0
+quit

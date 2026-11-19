@@ -39,18 +39,43 @@ AABB propBounds(const Prop& p, const Model* m) {
 }
 
 std::vector<Vec3> propSurfacePoints(const Prop& p, const Model* m, size_t limit) {
-    std::vector<Vec3> out;
     if (!m || m->meshes.empty()) return propCorners(p, nullptr);
-    size_t total = 0;
-    for (const ModelMesh& mesh : m->meshes) total += mesh.vertices();
-    const size_t stride = std::max<size_t>(1, total / std::max<size_t>(limit, 1));
-    size_t n = 0;
+    // Points on the model itself (v0.10.2: no longer the box corners, which are often in
+    // the air beside a round or turned model): an even spread of vertices, plus the lowest
+    // ones and the extremes along each axis, which decide where it rests.
+    std::vector<Vec3> all;
     for (const ModelMesh& mesh : m->meshes)
-        for (size_t i = 0; i < mesh.vertices(); ++i, ++n)
-            if (n % stride == 0)
-                out.push_back(propToWorld(p, {mesh.pos[3 * i], mesh.pos[3 * i + 1], mesh.pos[3 * i + 2]}));
-    // The corners of the box too, so thin or sparse models still have their extremes.
-    for (const Vec3& c : propCorners(p, m)) out.push_back(c);
+        for (size_t i = 0; i < mesh.vertices(); ++i)
+            all.push_back(propToWorld(p, {mesh.pos[3 * i], mesh.pos[3 * i + 1], mesh.pos[3 * i + 2]}));
+    std::vector<Vec3> out;
+    if (all.empty()) return out;
+    const size_t stride = std::max<size_t>(1, all.size() / std::max<size_t>(limit, 1));
+    for (size_t i = 0; i < all.size(); i += stride) out.push_back(all[i]);
+    // Low-poly models: points across the faces too, so a big flat face resting on an edge
+    // below it is felt between its corners.
+    size_t tris = 0;
+    for (const ModelMesh& mesh : m->meshes) tris += mesh.triangles();
+    const int n = tris ? (int)std::sqrt(2.0 * (double)limit / (double)tris) : 0;
+    if (n >= 3) {
+        size_t base = 0;
+        for (const ModelMesh& mesh : m->meshes) {
+            for (size_t t = 0; t + 2 < mesh.index.size(); t += 3) {
+                const Vec3 a = all[base + mesh.index[t]], b = all[base + mesh.index[t + 1]], c = all[base + mesh.index[t + 2]];
+                for (int i = 0; i <= n; ++i) // edges included: that is where ridges are
+                    for (int j = 0; i + j <= n; ++j)
+                        out.push_back(a + (b - a) * ((double)i / n) + (c - a) * ((double)j / n));
+            }
+            base += mesh.vertices();
+        }
+    }
+    for (int a = 0; a < 3; ++a) {
+        auto [lo, hi] = std::minmax_element(all.begin(), all.end(), [a](const Vec3& u, const Vec3& v) { return u[a] < v[a]; });
+        out.push_back(*lo);
+        out.push_back(*hi);
+    }
+    const size_t lowest = std::min<size_t>(64, all.size());
+    std::partial_sort(all.begin(), all.begin() + (std::ptrdiff_t)lowest, all.end(), [](const Vec3& u, const Vec3& v) { return u.z < v.z; });
+    out.insert(out.end(), all.begin(), all.begin() + (std::ptrdiff_t)lowest);
     return out;
 }
 

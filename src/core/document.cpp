@@ -125,8 +125,26 @@ void Document::apply(Command cmd) {
     if (cmd.lightSelectionAfter) lightSelection_ = *cmd.lightSelectionAfter;
     if (cmd.primSelectionAfter) primSelection_ = *cmd.primSelectionAfter;
     if (cmd.propSelectionAfter) propSelection_ = *cmd.propSelectionAfter;
+    cmd.serial = ++nextSerial_;
+    // New primitives or props show them again if they were hidden.
+    for (const PrimChange& c : cmd.primChanges) if (c.after && !c.before) primsShown_ = true;
+    for (const PropChange& c : cmd.propChanges) if (c.after && !c.before) propsShown_ = true;
     undo_.push_back(std::move(cmd));
     redo_.clear();
+    bump();
+}
+
+void Document::setPrimsShown(bool on) {
+    if (on == primsShown_) return;
+    primsShown_ = on;
+    if (!on) primSelection_.clear();
+    bump();
+}
+
+void Document::setPropsShown(bool on) {
+    if (on == propsShown_) return;
+    propsShown_ = on;
+    if (!on) propSelection_.clear();
     bump();
 }
 
@@ -215,7 +233,8 @@ void Document::reset(KeyValues world, std::vector<Brush> brushes, std::vector<Ra
     undo_.clear();
     redo_.clear();
     bump();
-    savedRevision_ = revision_;
+    savedSerial_ = historyTop();
+    sideEdits_ = false;
 }
 
 Command Document::makeAdd(std::vector<Brush> brushes, const std::string& name) {

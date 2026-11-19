@@ -26,6 +26,7 @@ struct MenuState {
     bool lightTool = false, lightPending = false, lightsSelected = false;
     int lightKind = 0;
     bool showSky = true, lightPreview = false, showFog = false, showFigure = false;
+    bool primsShown = true, propsShown = true;
     bool primTool = false, primPending = false;
     int primKind = 0;
     size_t primsSelected = 0;
@@ -64,6 +65,7 @@ struct MenuActions {
     bool toolLight = false, createLight = false, environment = false, bookmarks = false, figurePos = false;
     int lightKind = -1;   // LightKind index; also switches to the light tool
     bool toggleSky = false, toggleLightPreview = false, toggleFog = false, toggleFigure = false;
+    bool togglePrims = false, toggleProps = false;
     bool toolPrim = false, createPrim = false, combine = false, separate = false;
     int primKind = -1;    // PrimKind index; also switches to the primitive tool
     int primOp = -1;      // PrimOp for the selected primitives

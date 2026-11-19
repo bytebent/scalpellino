@@ -2,6 +2,7 @@
 #include "core/terrain.hpp"
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -147,8 +148,22 @@ KeyValues propKeys(const Prop& p) {
     return kv;
 }
 
+// Numbers from a file: NaN and infinity (which strtod accepts) are refused like any
+// other bad number (v0.10.2), so a broken file can't put them into the map.
+bool finite3(double a, double b, double c) { return std::isfinite(a) && std::isfinite(b) && std::isfinite(c); }
+
 bool readVec(const std::string& s, Vec3& v) {
-    return std::sscanf(s.c_str(), "%lf %lf %lf", &v.x, &v.y, &v.z) == 3;
+    Vec3 r;
+    if (std::sscanf(s.c_str(), "%lf %lf %lf", &r.x, &r.y, &r.z) != 3 || !finite3(r.x, r.y, r.z)) return false;
+    v = r;
+    return true;
+}
+
+// The number in `s`, or `keep` if it isn't a finite number.
+double numOr(const std::string& s, double keep) {
+    char* end = nullptr;
+    const double v = std::strtod(s.c_str(), &end);
+    return end != s.c_str() && std::isfinite(v) ? v : keep;
 }
 
 bool primFromKeys(const KeyValues& kv, MathPrim& p) {
@@ -161,14 +176,14 @@ bool primFromKeys(const KeyValues& kv, MathPrim& p) {
         else if (k == "origin") readVec(v, p.pos);
         else if (k == "rotation") readVec(v, p.rot);
         else if (k == "size") readVec(v, p.size);
-        else if (k == "round") p.round = std::atof(v.c_str());
-        else if (k == "thickness") p.thickness = std::atof(v.c_str());
-        else if (k == "blend") p.blend = std::atof(v.c_str());
+        else if (k == "round") p.round = numOr(v, p.round);
+        else if (k == "thickness") p.thickness = numOr(v, p.thickness);
+        else if (k == "blend") p.blend = numOr(v, p.blend);
         else if (k == "combo") p.combo = (std::uint32_t)std::strtoul(v.c_str(), nullptr, 10);
         else if (k == "op") p.op = v == "subtract" ? PrimOp::Subtract : v == "intersect" ? PrimOp::Intersect : PrimOp::Add;
         else if (k == "texture") p.texture = v;
         else if (k == "color") readVec(v, p.color);
-        else if (k == "texscale") p.texScale = std::atof(v.c_str());
+        else if (k == "texscale") p.texScale = numOr(v, p.texScale);
         else p.otherKeys.emplace_back(k, v);
     }
     return true;
@@ -203,15 +218,15 @@ bool lightFromKeys(const KeyValues& kv, Light& l) {
         else if (k == "_light") {
             double r = 255, g = 255, b = 255, br = 200;
             const int n = std::sscanf(v.c_str(), "%lf %lf %lf %lf", &r, &g, &b, &br);
-            if (n >= 3) l.color = {r, g, b};
-            if (n >= 4) l.brightness = br;
-        } else if (k == "pitch") { l.pitch = std::atof(v.c_str()); havePitch = true; }
+            if (n >= 3 && finite3(r, g, b)) l.color = {r, g, b};
+            if (n >= 4 && std::isfinite(br)) l.brightness = br;
+        } else if (k == "pitch") { l.pitch = numOr(v, l.pitch); havePitch = true; }
         else if (k == "angles") {
             Vec3 a;
             if (readVec(v, a)) { if (!havePitch) l.pitch = -a.x; l.yaw = a.y; }
-        } else if (k == "_inner_cone") l.inner = std::atof(v.c_str());
-        else if (k == "_cone") l.outer = std::atof(v.c_str());
-        else if (k == "_zero_percent_distance") l.range = std::atof(v.c_str());
+        } else if (k == "_inner_cone") l.inner = numOr(v, l.inner);
+        else if (k == "_cone") l.outer = numOr(v, l.outer);
+        else if (k == "_zero_percent_distance") l.range = numOr(v, l.range);
         else if (k != "classname") l.otherKeys.emplace_back(k, v);
     }
     return true;
@@ -393,7 +408,7 @@ public:
         if (t.kind != Token::Word) fail(t, "expected a number");
         char* end = nullptr;
         const double v = std::strtod(t.text.c_str(), &end);
-        if (end == t.text.c_str() || *end != '\0') fail(t, "bad number '" + t.text + "'");
+        if (end == t.text.c_str() || *end != '\0' || !std::isfinite(v)) fail(t, "bad number '" + t.text + "'");
         return v;
     }
 
@@ -452,6 +467,12 @@ public:
             const size_t nn = (size_t)tr.size() * tr.size();
             if (tr.power < kMinTerrainPower || tr.power > kMaxTerrainPower || tr.heights.size() != nn)
                 fail(lex_.peek(), "terrain data is incomplete");
+            auto allFinite = [](const std::vector<double>& v) {
+                return std::all_of(v.begin(), v.end(), [](double x) { return std::isfinite(x); });
+            };
+            if (!allFinite(tr.heights) || !finite3(tr.start.x, tr.start.y, tr.start.z)) fail(lex_.peek(), "terrain data has a bad number");
+            for (const TerrainLayer& l : tr.layers)
+                if (!allFinite(l.alpha)) fail(lex_.peek(), "terrain blend data has a bad number");
             // Files from v0.7.0 had "tex2=" and blend rows with no "tl" line; a blend
             // without a texture name can't be shown, so it is dropped.
             tr.layers.erase(std::remove_if(tr.layers.begin(), tr.layers.end(),
@@ -483,7 +504,11 @@ public:
             if (first == "ta" && b.terrain->layers.empty()) b.terrain->layers.push_back({}); // old file, no tex2
             std::vector<double>& v = first == "th" ? b.terrain->heights : b.terrain->layers.back().alpha;
             std::string w;
-            while (in >> w) v.push_back(std::strtod(w.c_str(), nullptr));
+            while (in >> w) {
+                const double x = std::strtod(w.c_str(), nullptr);
+                if (!std::isfinite(x)) { v.push_back(std::nan("")); continue; } // refused below
+                v.push_back(x);
+            }
             return;
         }
         if (first == "terrain") {
@@ -632,7 +657,8 @@ MapReadResult readMap(const std::string& text, Document& doc) {
         else if (k == "_scal_fog") {
             int on = 0;
             Fog f;
-            if (std::sscanf(v.c_str(), "%d %lf %lf %lf %lf %lf", &on, &f.color.x, &f.color.y, &f.color.z, &f.start, &f.end) == 6) {
+            if (std::sscanf(v.c_str(), "%d %lf %lf %lf %lf %lf", &on, &f.color.x, &f.color.y, &f.color.z, &f.start, &f.end) == 6 &&
+                finite3(f.color.x, f.color.y, f.color.z) && std::isfinite(f.start) && std::isfinite(f.end)) {
                 extra.env.fogOn = on != 0;
                 extra.env.fog = f;
             }
@@ -642,7 +668,8 @@ MapReadResult readMap(const std::string& text, Document& doc) {
             while (std::getline(in, entry, ';')) {
                 CameraBookmark c;
                 int used = 0;
-                if (std::sscanf(entry.c_str(), "%lf %lf %lf %lf %lf %n", &c.pos.x, &c.pos.y, &c.pos.z, &c.yaw, &c.pitch, &used) >= 5) {
+                if (std::sscanf(entry.c_str(), "%lf %lf %lf %lf %lf %n", &c.pos.x, &c.pos.y, &c.pos.z, &c.yaw, &c.pitch, &used) >= 5 &&
+                    finite3(c.pos.x, c.pos.y, c.pos.z) && std::isfinite(c.yaw) && std::isfinite(c.pitch)) {
                     c.name = entry.substr((size_t)used);
                     extra.bookmarks.push_back(c);
                 }

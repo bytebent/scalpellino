@@ -59,9 +59,11 @@ bool PropTool::placeAt(ToolEnv& env, const Pointer& p) {
         const double t = rayHit(b, o, d);
         if (t >= 0) best = std::min(best, t);
     }
-    if (auto h = rayHitPrims(env.doc.prims(), o, d)) best = std::min(best, h->t);
+    if (env.doc.primsShown())
+        if (auto h = rayHitPrims(env.doc.prims(), o, d)) best = std::min(best, h->t);
     ModelFinder none;
-    if (auto h = rayHitProps(env.doc.props(), env.models ? *env.models : none, o, d)) best = std::min(best, h->t);
+    if (env.doc.propsShown())
+        if (auto h = rayHitProps(env.doc.props(), env.models ? *env.models : none, o, d)) best = std::min(best, h->t);
     if (best >= 1e300 && d.z < -1e-9 && o.z > 0) best = -o.z / d.z; // the ground at z = 0
     if (best >= 1e300) {
         message_ = "nothing there to put it on: click a surface, or use a 2D view";

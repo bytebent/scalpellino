@@ -83,7 +83,7 @@ inside the view. Lines starting with # are comments.
   tool light   lightset|lightedit kind point|spot|sun | color r g b | brightness|range|pitch|yaw|inner|outer <v>
                | pos x y z   (lightset = the next light, pos places it; lightedit = selected lights)
   expect lights <n>   expect lightsel <n>   expect lightpos x y z   expect lightdir <pitch> <yaw>
-  viewset sky|preview|fog|figure on|off   skydir <path>   figure x y z
+  viewset sky|preview|fog|figure|prims|props on|off   skydir <path>   figure x y z
   tool prim   primset kind <k>|round|thickness|flat on/off|color r g b|texscale   primbox c s [axis]
   prim <kind> x y z sx sy sz [rx ry rz]   primedit <key> <value...>   primselect <index...>
   snapland   snapground <z>   replicate <n> ox oy oz [rot x y z] [scale x y z] [scaleoffset] [pivot selection|origin|x y z]
@@ -91,6 +91,8 @@ inside the view. Lines starting with # are comments.
   randreplicate <n> sx sy sz [turn x y z] [size <min%> <max%>] [uneven] [seed <n>]
     (offsets up to +-s per axis)   randreplicateopen <same arguments> (opens the window)
   randreplicatepreview on|off   expect randomizing on|off
+  expect bottoms <z>   (every selected primitive object and prop rests with its lowest point at z)
+  press3d / drag3d / release also draw the 3D rectangle select (Select tool)
   tool props   propset model <name>|rot x y z|scale s   prop <model> x y z [rx ry rz] [scale]
   propselect all|none|<index...>   propedit pos x y z|rot x y z|scale s|scale x y z|model <name>
   expect props|propsel <n>   expect proppos|proprot|propscale x y z   expect propmodel <name>
@@ -168,6 +170,8 @@ Add `docs/releases/vX.Y.Z.md` (copy the Download and First launch part from the 
 and push to `main`. CI makes the tag and release after the builds pass (about 7–8
 minutes). Tag pushes are blocked in the AI workspace, so this file-driven route is the one
 to use.
+The app's version (in the Mac app's Info.plist) is taken from the newest of these files
+by CMake, so there is nothing else to bump.
 
 ## Per-step checklist
 

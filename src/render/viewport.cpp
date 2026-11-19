@@ -984,6 +984,13 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
         }
     if (scene.pendingLight) marker3D(*scene.pendingLight, kPreview, 2 * P);
     for (const Light& l : scene.previewLights) marker3D(l, kPreview, 2 * P);
+    if (scene.selectRect && scene.selectRect->view == this) { // rectangle select
+        const Vector2 a{scene.selectRect->ax, scene.selectRect->ay}, b{scene.selectRect->bx, scene.selectRect->by};
+        const Rectangle r{std::floor(std::min(a.x, b.x) * P), std::floor(std::min(a.y, b.y) * P),
+                          std::floor(std::fabs(b.x - a.x) * P), std::floor(std::fabs(b.y - a.y) * P)};
+        DrawRectangleRec(r, Fade(kSelected, 0.12f));
+        DrawRectangleLinesEx(r, std::max(1.0f, P), kSelected);
+    }
 
     // Vertex tool: terrain points as small squares (the only handles picked in 3D).
     for (int pass = 0; pass < 2; ++pass)

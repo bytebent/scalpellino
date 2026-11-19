@@ -4,6 +4,37 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-19 — Landing fixes, 3D rectangle select, show / hide (v0.10.2)
+- **Asked by the user:** Snap to Land went wrong with things on top of each other; a
+  rectangle select in the 3D view; a View option to hide all props and all primitives;
+  check review notes from another AI.
+- **Snap to Land:** before, an object was first lifted above everything whose box
+  overlapped its footprint, so it climbed onto a neighbour it overlapped, a shelf above it,
+  or a selected copy not landed yet. Now only surfaces under its middle height count
+  (per ray, per obstacle), upward rays start only from top surfaces, and several selected
+  objects land on each other only if one started entirely above the other (editor). Props
+  rest on mesh points (vertices, the 64 lowest, axis extremes, points across faces and
+  edges for low-poly models), not their box corners (the review's point).
+- **Rectangle select** (Select tool, 3D view): wholly-inside rule, Cmd adds, Esc restores;
+  drawn by the viewport from `Scene::selectRect`.
+- **Show primitives / Show props** (View menu): `Document::setPrimsShown` /
+  `setPropsShown`; respected by the scene, picking, the prop tool's surface ray and Snap
+  to Land; Show all and new objects show them again.
+- **Review notes checked:** NaN / inf in `.map` (fixed: brushes and terrain data refuse
+  the file, entity keys keep their default); landing on box corners (fixed, above);
+  unsaved after undo (fixed: commands get serials, `dirty()` compares the history top);
+  model name clashes (fixed: listed in the Props panel); version 0.0.1 (fixed: CMake reads
+  the newest `docs/releases` file); editor.cpp size and prop instancing: parked in PLAN.md.
+- **Tests:** core 4475 checks, 0 failed (was 4412). New core tests failed on the old code
+  first: landing (5 failures), map numbers (11). UI 22 of 22 at 1x and 2x: new
+  `v102_landing` (stack stays, overlapping crates reach the floor, shelf, wall) and
+  `v102_rect_select` (rectangle, Cmd adds, Esc, hidden never picked, Show all);
+  `v101_random_replicate` now checks all 40 scattered crates rest on the floor after
+  Cmd+J (16 didn't before the editor change). Idle 0 ticks at 1x and 2x.
+- **Screenshots:** `docs/screenshots/m10-04-rectangle-select.png`,
+  `docs/screenshots/m10-05-props-and-primitives-hidden.png`.
+- **Next:** report; Sky Lab once the user says go.
+
 ### 2026-11-19 — Random Replicate (v0.10.1)
 - **Before:** checked the v0.10.0 commit (made by another model by mistake): builds, core
   4397 / 0 failed, UI 19 / 19 at 1x and 2x, idle 0 ticks, privacy rules kept. The user

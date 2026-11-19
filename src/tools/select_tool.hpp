@@ -4,6 +4,8 @@
 // (15-degree steps; add Shift for free rotation). Delete removes, Esc deselects.
 // Lights: click a marker to select it, drag it (2D) to move, drag a ring to aim it
 // (see tools/light_edit.hpp).
+// 3D view (v0.10.2): drag a rectangle to select everything that lies wholly inside it
+// (brushes, primitives, props, lights; hidden ones never); Cmd+drag adds to the selection.
 #include "tools/object_edit.hpp"
 #include "tools/tool.hpp"
 #include <optional>
@@ -24,6 +26,8 @@ public:
 private:
     enum class Mode { Idle, Moving, Resizing, Rotating };
     void updateGhosts(const Document& doc);
+    void beginRect(const Document& doc, const Pointer& p, bool add);
+    void applyRect(ToolEnv& env);
 
     Mode mode_ = Mode::Idle;
     ObjectEdit lights_;
@@ -38,6 +42,14 @@ private:
     Vec3 rotCenter_, rotAxis_;
     double rotStart_ = 0, rotAngle_ = 0;
     mutable char hintBuf_[96] = "";
+    // 3D rectangle select: armed on press, drawn once the mouse has moved a few pixels.
+    bool rectArmed_ = false, rectOn_ = false, rectAdd_ = false;
+    const Viewport* rectView_ = nullptr;
+    Vector2 rectA_{}, rectB_{};
+    std::set<BrushId> sel0_;
+    std::set<MathPrimId> prim0_;
+    std::set<PropId> prop0_;
+    std::set<LightId> light0_;
 };
 
 } // namespace scal
