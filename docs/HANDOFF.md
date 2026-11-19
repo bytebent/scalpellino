@@ -34,6 +34,8 @@ texture licenses; `releases/` has the notes for each version.
   test-script commands are tables (`editor_script_commands.cpp`, `..._expects.cpp`).
   The prop benchmark (`tests/bench/run.sh`, DEV.md) is for us: run it after changes to
   props, landing or drawing, and compare with the table in DEV.md.
+- **v0.10.3 checked by the user on their Mac (2026-11-19):** manual tests fine, so the
+  instanced prop drawing works on a real GPU (CI Macs have none).
 - **Next: Sky Lab** once the user says go (ask for the Bryce guide PDF first). Then cameras
   and Camera Preview, the renderer, export (see PLAN.md "Roadmap").
 - Mazzuola (`bytebent/mazzuola`) is the user's companion modeller (design only so far).

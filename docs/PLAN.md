@@ -16,7 +16,8 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   before Sky Lab): `editor.cpp` split by topic (step 1: code moved unchanged; step 2:
   script commands as tables, selection landing in the core), a prop benchmark (DEV.md
   "Benchmark"), and what it showed: Snap to Land among many props, 2D views drawing
-  everything, the 3D view's draw call per prop. Report it, then ask before Sky Lab.
+  everything, the 3D view's draw call per prop. Reported; the user tested it on their Mac
+  and it is fine (2026-11-19). Next session: Sky Lab.
 - **Next:** **Sky Lab** once the user says go (ask them to attach the Bryce guide PDF
   again first). Bottega basics and the idle CPU test (`tests/ui/idle.sh`, see DEV.md) are done.
 - **Roadmap:** Sky Lab → cameras and Camera Preview →
