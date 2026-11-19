@@ -36,8 +36,10 @@ texture licenses; `releases/` has the notes for each version.
   props, landing or drawing, and compare with the table in DEV.md.
 - **v0.10.3 checked by the user on their Mac (2026-11-19):** manual tests fine, so the
   instanced prop drawing works on a real GPU (CI Macs have none).
-- **Next: Sky Lab** once the user says go (ask for the Bryce guide PDF first). Then cameras
-  and Camera Preview, the renderer, export (see PLAN.md "Roadmap").
+- **Now: Sky Lab** (design agreed 2026-11-19, PLAN.md Roadmap item 3; three releases
+  v0.10.4–v0.10.6). The Bryce guide PDF is the user's; ask them to attach it again if a
+  later session needs it (Sky Lab is its PDF pages 786–938; printed page = PDF page − 31).
+  Then cameras and Camera Preview, the renderer, export (see PLAN.md "Roadmap").
 - Mazzuola (`bytebent/mazzuola`) is the user's companion modeller (design only so far).
   Its models become Scalpellino props.
 

@@ -18,8 +18,9 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   "Benchmark"), and what it showed: Snap to Land among many props, 2D views drawing
   everything, the 3D view's draw call per prop. Reported; the user tested it on their Mac
   and it is fine (2026-11-19). Next session: Sky Lab.
-- **Next:** **Sky Lab** once the user says go (ask them to attach the Bryce guide PDF
-  again first). Bottega basics and the idle CPU test (`tests/ui/idle.sh`, see DEV.md) are done.
+- **Now: Sky Lab** (the user said go, 2026-11-19; design agreed, see Roadmap item 3).
+  Building v0.10.4 (window, live 3D preview, bake, sky modes, sun, haze band, sun lock),
+  then v0.10.5 clouds, v0.10.6 night sky and effects.
 - **Roadmap:** Sky Lab → cameras and Camera Preview →
   Render (Source look, with the material system) → water / cloud planes → camera effects →
   export. The renderer part is a
@@ -314,6 +315,62 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
      sky's sun position to that light. No sun light, no tick box.
    - Generated skies go to Bottega's `skies/` once Bottega exists.
    - Comes after Random Replicate, before the renderer, so renders get good skies.
+   - **Design agreed with the user (2026-11-19)**, from the Bryce 7 Artist Guide's Sky Lab
+     chapter (Sun & Moon, Cloud Cover, Atmosphere, IBL tabs; the Sky & Fog palette's sky
+     modes, memory dots and Randomize):
+     - **The split:** Sky Lab has every control and all of them are saved in the map.
+       What is part of the sky *picture* is baked now: sky modes (Soft, Darker, Custom,
+       Atmosphere Off) and sun-dependent colours; sun and moon (position, disk, glow, size,
+       horizon illusion, colour, rings); moon phase, earthshine, edge softness, texture;
+       stars (random with a seed, or Earth's sky from the Yale Bright Star Catalogue),
+       comets; cumulus and stratus clouds (cover, height, frequency, amplitude, colour,
+       turbulence, complexity, spherical); the haze band, fog in the sky, rainbow, Blend
+       with Sun. What lights the *scene* is stored now and used by the renderer (M12):
+       shadow strength and softness, sun diffuse and specular, sky dome colour, ambient
+       (the existing setting), cloud shadows, colour perspective, Volumetric World, fog
+       and haze on objects, IBL (the baked sky lighting the scene).
+     - **Left out:** cloud motion (speed, direction, turbulence over time), Link Clouds to
+       View, Fixed Cloud Plane (animation-only or meaningless for one baked picture). Link
+       Sun to View is parked until cameras (M11). No Deep Texture Editor: clouds get typed
+       noise settings.
+     - **Window:** World > Sky Lab..., a window that doesn't block the editor (like
+       Multi-Replicate), tabs Sun & Moon / Clouds / Atmosphere, every value typeable, a
+       small compass disc to drag the sun, a flat strip of the whole panorama. **The 3D
+       view is the live preview** while the window is open (its sky shows even if the View
+       toggle is off, and goes back when the window closes): computed at about 256x128
+       while a value is dragged, once at about 1024x512 on release, nothing while idle.
+       Apply bakes and is one undo step; OK applies and closes; Cancel drops the changes.
+     - **Generation** in `src/core` on the CPU (testable headless, the same everywhere).
+       Bake 2048x1024 by default, 4096 and 8192 as options, with a progress bar. 8-bit
+       PNG; HDR waits for the renderer. Sky colours: a simple scattering model tuned
+       toward Bryce's soft blue look (not physically exact).
+     - **Saving:** the settings as the worldspawn key `_scal_skylab`; the PNG in Bottega's
+       `skies/`. The settings decide the picture, so a missing PNG is rebaked from the map.
+       **No Bottega set: Sky Lab asks for one** (user).
+     - **Below the horizon:** the haze colour fades to a ground colour the user picks.
+     - **Sun lock** (only if the map has a sun light): with it ticked, moving the sun in
+       Sky Lab turns the sun light too (one undo step); turning the sun light later marks
+       the sky "out of date" with a **Rebake** button (Sky Lab and World menu), never an
+       automatic rebake.
+     - **The moon moves freely** (not Bryce's always-opposite-the-sun); its phase is a
+       slider. **Eclipses** wanted (user); see below.
+     - **Fog:** one fog shared by Environment and Sky Lab: today's distance fog plus Bryce's
+       base height and thickness (fog lying in valleys); the editor's rough fog stays
+       distance-only.
+     - **Presets:** Bryce's saved-sky slots and Randomize Sky, presets in Bottega's
+       `presets/skies`.
+     - **Moon texture:** the user's NASA colour moon map (LROC, 2:1), shipped at 1024x512 as
+       the built-in moon, wrapped on a ball so phases fall on the real shape. The user's own
+       image: square = a photo of the face, 2:1 = a map; bigger is scaled to 1024 wide.
+     - **Releases:** v0.10.4 window, preview, bake, sky modes, sun, haze band, sun lock;
+       v0.10.5 clouds; v0.10.6 moon, stars, comets, rings, rainbow, Blend with Sun, fog in
+       the sky, eclipses.
+   - **Eclipses, decided without asking (told the user, confirm):** solar: the moon is
+     always drawn in front of the sun; the covered share darkens the sky and the glow; fully
+     covered gives a corona (strength, size) and lets stars show; a smaller moon leaves a
+     ring; a "Move moon onto sun" button; the moon's face is dark (earthshine only) during
+     a solar eclipse whatever the phase. Lunar: an amount slider (0..1) and a colour (copper
+     red), Earth's round shadow moving across the disk.
 4. **Cameras and Camera Preview** (proposed order, confirm) — camera objects (many, one
    active), options and presets (field of view, image size...), and the small preview: an
    approximation of the final picture, shaders included, updated only on a keybind or

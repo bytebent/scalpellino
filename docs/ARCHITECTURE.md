@@ -236,6 +236,28 @@ from the Camera Preview and the renderer (see §9).
 - **Camera bookmarks** (World menu): name + 3D camera position/yaw/pitch; go / delete.
   Editor-only, saved with the map, not undone (like visgroups).
 
+### Sky Lab (milestone 10c, in progress; from Bryce)
+Makes skies instead of only loading images. Agreed with the user 2026-11-19; full list in
+PLAN.md (Roadmap item 3).
+- **Settings** (`core/skylab.hpp`): everything Bryce's Sky Lab has, saved in the map as the
+  worldspawn key `_scal_skylab` (unknown fields kept). The parts that make up the sky
+  *picture* are generated now; the parts that light the *scene* (shadows, sun diffuse /
+  specular, sky dome colour, cloud shadows, colour perspective, Volumetric World, fog and
+  haze on objects, IBL) are stored for the renderer (M12).
+- **Generation** in the core (no graphics): a pure function of the settings and the image
+  size, giving an RGB panorama in the layout of `core/sky.hpp` (middle faces +X). Below the
+  horizon the haze colour fades to a ground colour.
+- **Baking:** Apply writes the panorama as a PNG to Bottega's `skies/` (Sky Lab asks for a
+  Bottega if none is set) and sets the map's sky to it; one undo step. A missing PNG is
+  rebaked from the map's settings.
+- **Live preview:** while the window is open the 3D view shows the generated sky (small
+  while dragging, ~1024x512 on release); nothing is computed while idle.
+- **Sun lock:** with a sun light in the map, a tick box ties the sky's sun to it: moving
+  the sun in Sky Lab turns the light (same undo step); turning the light marks the baked
+  sky out of date, with a Rebake command. Directions: the sky's sun is where the light
+  comes *from* (azimuth = light yaw + 180, altitude = −light pitch).
+- **The moon moves freely**; phase is a slider; solar and lunar eclipses (PLAN.md).
+
 ### Math primitives (milestone 9, done)
 Bryce-style exact shapes, next to brushes (brushes and low-poly shapes stay as they
 are; brush tools never touch primitives). `core/mathprim.hpp`.
@@ -379,7 +401,8 @@ Lights are saved as Hammer entities other tools understand: `light`, `light_spot
 down) + `pitch` (negative down), `_inner_cone` / `_cone`, `_zero_percent_distance`
 (reach). Keys we don't use are kept. Environment, bookmarks and the scale figure are
 worldspawn keys: `_scal_sky`, `_scal_ambient`, `_scal_fog "on r g b start end"`,
-`_scal_cameras "x y z yaw pitch name;…"`, `_scal_figure`.
+`_scal_cameras "x y z yaw pitch name;…"`, `_scal_figure`, `_scal_skylab` (Sky Lab
+settings, `name=value` pairs separated by `;`).
 
 That's all. No gameplay entities (doors, triggers, physics, scripting).
 
@@ -514,7 +537,7 @@ docs/         this file, roadmap
 | 9 | Math primitives (Bryce-style): sphere, cube (rounded), cylinder, cone, torus, capsule, disc; exact per-pixel drawing; combining (add / subtract / intersect) and blending; single pieces movable; object handles shared with lights; 1 unit = 1 cm; Snap to Land / Ground; Multi-Replicate | done (v0.9.0 … v0.9.3) |
 | 10 | Props: static models (`.glb` first, then `.mazz`) with their textures, from Bottega's `models/`, placed / turned / sized as objects (uniform scale by default), Snap to Land, instanced; no physics. Preceded by the idle CPU test and Bottega basics (folder setting, Rescan, marker file) | done (v0.10.0; `.mazz` later) |
 | 10b | Random Replicate (Bryce): random offset / turn / size ranges for props and primitives | done (v0.10.1) |
-| 10c | Sky Lab (Bryce, all of it): generated skies (sun, moon, stars, clouds, atmosphere) with live preview, baked to panoramas; settings kept in the map; tick box to lock the sun to the map's sun light | |
+| 10c | Sky Lab (Bryce, all of it): generated skies (sun, moon, stars, clouds, atmosphere) with live preview in the 3D view, baked to panoramas in Bottega's `skies/`; settings kept in the map; tick box to lock the sun to the map's sun light; eclipses. Steps: v0.10.4 window / bake / sky modes / sun / haze / lock, v0.10.5 clouds, v0.10.6 night sky and effects | in progress |
 | 11 | Cameras and Camera Preview (proposed order): camera objects (many, one active), options and presets, the on-request preview | |
 | 12 | Render, the Source look, with materials (proposed): render window, terminal log, light baking, reflection probes, mirrors, the material system (GLSL shaders from Bottega's `shaders/`, reflection kind per material), PNG to `renders/` | |
 | 13 | Water, cloud and endless planes (proposed): materials made with the system above | |
