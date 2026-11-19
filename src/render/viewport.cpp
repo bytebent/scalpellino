@@ -277,6 +277,11 @@ void Viewport::render2D(const Grid& grid, const Scene& scene) {
     const double uMax = panU_ + hw / zoom_;
     const double vMin = panV_ - hh / zoom_;
     const double vMax = panV_ + hh / zoom_;
+    // Whether a world box shows in this view at all (v0.10.3: things off screen are skipped).
+    auto inView = [&](const AABB& b) {
+        const int Uax = axU(), Vax = axV();
+        return b.max[Uax] >= uMin && b.min[Uax] <= uMax && b.max[Vax] >= vMin && b.min[Vax] <= vMax;
+    };
 
     if (uMin < uMax && vMin < vMax) {
         const double top = sy(vMax), bottom = sy(vMin);
@@ -318,6 +323,7 @@ void Viewport::render2D(const Grid& grid, const Scene& scene) {
     // ---- brushes: edges of every face polygon, projected.
     const int U = axU(), V = axV();
     auto drawBrush = [&](const SceneBrush& b, Color c) {
+        if (!inView(b.bounds)) return;
         for (const Polygon& p : b.polys) {
             const size_t n = p.verts.size();
             for (size_t i = 0; i < n; ++i) {
@@ -350,6 +356,7 @@ void Viewport::render2D(const Grid& grid, const Scene& scene) {
     // ---- math primitives: outlines (add: lilac, subtract: orange, intersect: teal)
     {
         auto drawPrim = [&](const MathPrim& p, Color c) {
+            if (!inView(primBounds(p))) return;
             for (const Polyline& l : primOutline(p, 64))
                 for (size_t i = 0; i + 1 < l.pts.size() + (l.closed ? 1 : 0); ++i) {
                     const Vec3 &a = l.pts[i], &b = l.pts[(i + 1) % l.pts.size()];
@@ -370,6 +377,11 @@ void Viewport::render2D(const Grid& grid, const Scene& scene) {
             for (int i = 0; i < 8; ++i)
                 k.push_back(propToWorld(sp.prop, {i & 1 ? sp.local.max.x : sp.local.min.x, i & 2 ? sp.local.max.y : sp.local.min.y,
                                                    i & 4 ? sp.local.max.z : sp.local.min.z}));
+            {
+                AABB kb;
+                for (const Vec3& q : k) kb.add(q);
+                if (!inView(kb)) return;
+            }
             for (int i = 0; i < 8; ++i)
                 for (int b = 0; b < 3; ++b)
                     if (!(i & (1 << b))) {

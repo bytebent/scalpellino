@@ -289,10 +289,16 @@ Static models next to brushes, lights and primitives. `core/model.hpp`, `core/pr
   with several files the one named like the folder is; else each file is its own model;
   loose files are models. Spaces become `_`. `.mazz` will be a second reader behind
   `ModelStore` once Mazzuola's format is final.
-- **Drawing:** a model is uploaded once (mesh chunks of at most 65535 vertices); every prop is
-  one draw with its own matrix. Editor shading, alpha cutout and fog in one shader; no
-  light preview yet. 2D views show the turned bounding box and an origin cross; 3D picking
-  uses the triangles.
+- **Drawing:** a model is uploaded once (mesh chunks of at most 65535 vertices). Since
+  v0.10.3 the props in view are grouped by model and each mesh chunk is drawn once for
+  all of them (GPU instancing: each prop's matrix is an instance attribute); a plain
+  one-call-per-prop shader is the fallback if a GPU refuses the instanced one. Props
+  outside the 3D view's frustum are skipped; 2D views skip brushes, primitives and props
+  outside the view. Editor shading, alpha cutout and fog in one shader; no light preview
+  yet. 2D views show the turned bounding box and an origin cross; 3D picking uses the
+  triangles. Snap to Land only tests obstacles under the landing object's footprint.
+- **Benchmark** (development tool, `tests/bench/run.sh`, see DEV.md): fills a map with
+  props and times scene building, 3D / 2D drawing, picking and Snap to Land.
 - **Editing:** the shared object handles (rings, size handles; even scaling by default,
   Shift for one axis), Snap to Land / Ground (landing works on any "subject": lifted copies
   and ray tests on triangles), Duplicate, Delete, Multi-Replicate. All through commands.

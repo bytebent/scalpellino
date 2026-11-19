@@ -602,6 +602,24 @@ void Editor::registerScriptCommands() {
     add({"quit"}, [this](const std::string&, std::istringstream&) {
         exit_ = true;
     });
+    add({"bench"}, [this](const std::string&, std::istringstream& in) {
+        // bench props <count> <model> [spacing] | bench clear (removes every prop)
+        std::string what; in >> what;
+        if (what == "props") {
+            int n = 100; std::string model; double spacing = 150;
+            in >> n >> model;
+            if (!(in >> spacing)) spacing = 150;
+            benchProps(n, model, spacing);
+        } else if (what == "clear") {
+            std::set<PropId> all;
+            for (const Prop& p : doc_.props()) all.insert(p.id);
+            Command c;
+            c.name = "Bench clear";
+            c.selectionBefore = c.selectionAfter = doc_.selection();
+            doc_.addPropDeletes(c, all);
+            doc_.apply(std::move(c));
+        }
+    });
 }
 
 } // namespace scal

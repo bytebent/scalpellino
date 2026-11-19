@@ -46,6 +46,8 @@ public:
     // Draws every prop whose model can be shown (missing ones are left to the outline
     // drawing). Needs the GL context, inside the 3D view's camera mode.
     void draw(const std::vector<Prop>& props, const PropDrawContext& ctx);
+    // How many props the last draw() skipped as outside the view (for the benchmark).
+    size_t culled() const { return culled_; }
     // False if the GPU refused the shader (then props show only as outlines).
     bool shaderOk();
     void unloadAll();
@@ -67,12 +69,24 @@ private:
     void initShader();
 
     ModelStore store_;
+    size_t culled_ = 0;
     std::map<std::string, Gpu> gpu_;
     bool smooth_ = false;
-    Shader shader_{};
+    // The prop shader, twice: instanced (one draw call per model mesh for all its props,
+    // v0.10.3) and plain (one call per prop), the fallback if a GPU refuses the first.
+    struct ShaderSet {
+        Shader shader{};
+        Material material{};
+        bool ok = false;
+        int locHasTex = -1, locCutoff = -1, locCam = -1, locFogOn = -1, locFogColor = -1, locFogRange = -1;
+    };
+    bool loadShaderSet(ShaderSet& s, const char* vs);
+    ShaderSet plain_, inst_;
     bool shaderTried_ = false, shaderOk_ = false;
-    Material material_{};
-    int locHasTex_ = -1, locCutoff_ = -1, locCam_ = -1, locFogOn_ = -1, locFogColor_ = -1, locFogRange_ = -1;
+    size_t drawCalls_ = 0;
+public:
+    // Draw calls made by the last draw() (for the benchmark).
+    size_t drawCalls() const { return drawCalls_; }
 };
 
 } // namespace scal

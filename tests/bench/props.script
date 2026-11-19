@@ -1,0 +1,17 @@
+# Prop benchmark (development tool, not a test): see docs/DEV.md "Benchmark".
+bottega make studio
+copy assets/models/crate.glb studio/models/crate.glb
+copy rock.glb studio/models/rock.glb
+rescan
+block -20000 -20000 -64 20000 20000 0
+key Esc
+bench props 500 models/crate
+bench clear
+bench props 2000 models/crate
+bench clear
+bench props 5000 models/crate
+bench clear
+bench props 300 models/rock 250
+bench clear
+bench props 1000 models/rock 250
+quit

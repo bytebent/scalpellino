@@ -152,6 +152,35 @@ policy), and it must hold **with a map open**, not only with an empty app.
 - To add something heavy to the map (a new object kind, a new preview), add it to
   `rich_map.script`: a new feature that makes idle cost CPU fails this test.
 
+## Benchmark
+
+A development tool, not a test: `tests/bench/run.sh build/Scalpellino` (Linux + Xvfb,
+about 1.5 minutes). It makes a heavy model (`tests/bench/make_model.py`, a 5000-triangle
+rock), runs `tests/bench/props.script` and prints one line per size: 500 / 2000 / 5000
+crates and 300 / 1000 rocks. Each line has the time to build the scene, draw the 3D view
+from above one corner (everything in view) and close up (most props behind or beside the
+camera, so skipped), draw a 2D view, pick with 40 clicks, and Snap to Land 50 lifted props
+among all the others, plus how many props were skipped and how many draw calls were made.
+
+The OpenGL here is software (llvmpipe), so the numbers compare versions; they are not what
+a real GPU does (the rock rows are almost all software rasterising). Script command:
+`bench props <count> <model> [spacing]`, `bench clear`.
+
+Switches for comparing drawing paths (both used to check v0.10.3's screenshots match):
+`SCAL_PROPS_PLAIN=1` draws props one call each (the fallback), `SCAL_NO_CULL=1` draws every
+prop even outside the 3D view.
+
+Numbers (v0.10.3; before in brackets, v0.10.2):
+
+| | 500 crates | 2000 crates | 5000 crates | 1000 rocks |
+|---|---|---|---|---|
+| Snap to Land, 50 props | 16 ms (5 s) | 40 ms (22 s) | 90 ms (56 s) | 46 ms (15 s) |
+| 3D view, all in view | 5 ms (8) | 9 ms (15) | 15–18 ms (31) | 490 ms (490) |
+| 3D view, close up | 4 ms | 7 ms | 10 ms | 260 ms |
+| 2D view | 4 ms (8) | 4–7 ms (24) | 5 ms (43) | 3 ms (12) |
+| pick (per click) | 0.04 ms | 0.2 ms | 0.4 ms | 0.1 ms |
+| scene build | 0.02 ms | 0.1 ms | 0.4 ms | 0.05 ms |
+
 ## CI
 
 `.github/workflows/build.yml`:

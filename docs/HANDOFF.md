@@ -20,7 +20,8 @@ texture licenses; `releases/` has the notes for each version.
   v0.9.2 (units in cm, blending primitives, Snap to Land, Multi-Replicate), v0.9.3
   (single pieces of a combination via Option+click; Multi-Replicate as a non-blocking
   window), v0.9.4 (Bottega basics), v0.10.0 (props), v0.10.1 (Random Replicate),
-  **v0.10.2** (landing fixes, 3D rectangle select, show / hide primitives and props, review fixes).
+  v0.10.2 (landing fixes, 3D rectangle select, show / hide primitives and props, review
+  fixes), **v0.10.3** (editor split by topic, prop benchmark, faster landing and drawing).
 - **Milestone 10 — Props is done (v0.10.0):** `.glb` models from Bottega's `models/`; `.mazz`
   waits for Mazzuola's final format. The user confirmed the choices made while building it
   (2026-11-19), including even scaling as the default for primitives too.
@@ -29,6 +30,10 @@ texture licenses; `releases/` has the notes for each version.
   without asking") for the user to confirm. The user sometimes passes on review notes
   from another AI: check each against the code before acting (PLAN.md lists what was
   fixed and what is parked).
+- **The Editor class is spread over `src/app/editor*.cpp` by topic** (list in editor.hpp);
+  test-script commands are tables (`editor_script_commands.cpp`, `..._expects.cpp`).
+  The prop benchmark (`tests/bench/run.sh`, DEV.md) is for us: run it after changes to
+  props, landing or drawing, and compare with the table in DEV.md.
 - **Next: Sky Lab** once the user says go (ask for the Bryce guide PDF first). Then cameras
   and Camera Preview, the renderer, export (see PLAN.md "Roadmap").
 - Mazzuola (`bytebent/mazzuola`) is the user's companion modeller (design only so far).

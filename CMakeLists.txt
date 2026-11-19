@@ -70,6 +70,7 @@ if(SCAL_BUILD_APP)
     src/app/main.cpp
     src/app/editor.cpp
     src/app/editor_edit.cpp
+    src/app/editor_bench.cpp
     src/app/editor_files.cpp
     src/app/editor_objects.cpp
     src/app/editor_replicate.cpp

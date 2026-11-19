@@ -111,9 +111,27 @@ struct Subject {
     std::function<std::optional<double>(const Vec3&)> upHit;
 };
 
-std::optional<double> land(const Subject& sub, const std::vector<const Brush*>& brushes,
-                           const std::vector<const MathPrim*>& otherPrims, const std::vector<PropRef>& props) {
+std::optional<double> land(const Subject& sub, const std::vector<const Brush*>& allBrushes,
+                           const std::vector<const MathPrim*>& allPrims, const std::vector<PropRef>& allProps) {
     const AABB ob = sub.bounds;
+    // Only what is under the object's footprint can hold it up (v0.10.3: before, every
+    // obstacle in the map was tested, so landing among thousands of props took minutes).
+    auto under = [&](const AABB& b) {
+        return b.min.x <= ob.max.x && b.max.x >= ob.min.x && b.min.y <= ob.max.y && b.max.y >= ob.min.y;
+    };
+    std::vector<const Brush*> brushes;
+    for (const Brush* b : allBrushes) if (under(b->bounds())) brushes.push_back(b);
+    std::vector<PropRef> props;
+    for (const PropRef& r : allProps) if (under(propBounds(*r.prop, r.model))) props.push_back(r);
+    // Primitives: whole combinations, kept if any piece is under it (a subtracted piece
+    // elsewhere still shapes the combination).
+    std::vector<const MathPrim*> otherPrims;
+    {
+        std::set<std::uint32_t> combosUnder;
+        for (const MathPrim* p : allPrims) if (under(primBounds(*p))) combosUnder.insert(p->combo ? p->combo : 0);
+        for (const MathPrim* p : allPrims)
+            if (p->combo ? combosUnder.count(p->combo) > 0 : under(primBounds(*p))) otherPrims.push_back(p);
+    }
     // What counts as "below": surfaces under the object's middle height. So it drops onto
     // the first thing beneath it, comes up out of what it is sunk into (up to half its
     // height), and ignores what is beside or above it: a neighbour it overlaps, a shelf or

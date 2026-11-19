@@ -4,6 +4,28 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-19 — Editor split, prop benchmark, faster props (v0.10.3)
+- **Asked by the user** before Sky Lab: split `editor.cpp` (both steps), a prop benchmark
+  for our own use, target hundreds to thousands of props.
+- **Split, step 1:** the 110 Editor functions moved unchanged by a script into nine files
+  by topic (the largest now ~750 lines); every original line checked present exactly
+  once; shared helpers in `editor_util.hpp`, member templates in `editor_templates.hpp`.
+- **Split, step 2:** the 666-line `stepScript` if-chain (127 branches) became tables:
+  `editor_script_commands.cpp` (91 commands) and `editor_script_expects.cpp` (36 checks,
+  keyed by the word after "expect"; all 402 expect lines in the scripts reach the same
+  check as before; a must-fail script still fails). Selection landing moved into the
+  core as `landSelection` with its own test.
+- **Benchmark** (`tests/bench/`): found Snap to Land testing every obstacle in the map (50
+  props among 5000: 56 s), 2D views drawing everything off screen, and one 3D draw call
+  per prop. **Fixed:** landing only tests what is under the footprint (56 s -> 90 ms);
+  2D views skip what is off screen (43 -> 5 ms); 3D frustum culling and GPU instancing
+  (5000 crates: 31 -> 15 ms, 4909 draw calls -> 1). Table in DEV.md.
+- **Checked:** screenshots with culling off are identical; instanced vs one-call-per-prop
+  differ in 1–6 edge pixels (rounding); 2D views identical to v0.10.2's screenshots.
+- **Tests:** core 4482 checks, 0 failed. UI 22 of 22 at 1x and 2x, and 22 of 22 with the
+  fallback drawing path (`SCAL_PROPS_PLAIN=1`). Idle 0 ticks at 1x and 2x.
+- **Next:** report; Sky Lab once the user says go.
+
 ### 2026-11-19 — Landing fixes, 3D rectangle select, show / hide (v0.10.2)
 - **Asked by the user:** Snap to Land went wrong with things on top of each other; a
   rectangle select in the 3D view; a View option to hide all props and all primitives;

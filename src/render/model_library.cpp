@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <cstdlib>
 
 namespace scal {
 
@@ -25,6 +26,25 @@ void main() {
     nrm = normalize(mat3(matNormal) * vertexNormal);
     wpos = (matModel * vec4(vertexPosition, 1.0)).xyz;
     gl_Position = mvp * vec4(vertexPosition, 1.0);
+})";
+
+// The same for many props of one model in one draw call: each prop's transform comes in
+// as an instance attribute; `mvp` is then view x projection only.
+const char* kVSInstanced = R"(#version 330
+in vec3 vertexPosition;
+in vec2 vertexTexCoord;
+in vec3 vertexNormal;
+in mat4 instanceTransform;
+uniform mat4 mvp;
+out vec2 uv;
+out vec3 nrm;
+out vec3 wpos;
+void main() {
+    uv = vertexTexCoord;
+    nrm = normalize(transpose(inverse(mat3(instanceTransform))) * vertexNormal);
+    vec4 w = instanceTransform * vec4(vertexPosition, 1.0);
+    wpos = w.xyz;
+    gl_Position = mvp * w;
 })";
 
 // The editor's own shading (same as brushes) plus the fog preview.
@@ -60,6 +80,24 @@ void main() {
 
 unsigned char byteOf(double v) { return (unsigned char)std::clamp((int)std::lround(v), 0, 255); }
 
+// raylib's matrices as m0..m15, and raylib's MatrixMultiply (its formula, written out
+// here: raymath.h itself doesn't build warning-free with our flags).
+void toArray(const Matrix& m, float a[16]) {
+    const float v[16] = {m.m0, m.m1, m.m2, m.m3, m.m4, m.m5, m.m6, m.m7, m.m8, m.m9, m.m10, m.m11, m.m12, m.m13, m.m14, m.m15};
+    for (int i = 0; i < 16; ++i) a[i] = v[i];
+}
+void multiply(const Matrix& left, const Matrix& right, float out[16]) {
+    float a[16], b[16];
+    toArray(left, a);
+    toArray(right, b);
+    for (int r = 0; r < 4; ++r)
+        for (int c = 0; c < 4; ++c) {
+            float s = 0;
+            for (int k = 0; k < 4; ++k) s += a[4 * r + k] * b[4 * k + c];
+            out[4 * r + c] = s;
+        }
+}
+
 Matrix propMatrix(const Prop& p) {
     const Mat3 R = rotationMatrix(p.rot);
     const Vec3 c0 = R.col[0] * p.scale.x, c1 = R.col[1] * p.scale.y, c2 = R.col[2] * p.scale.z;
@@ -93,20 +131,29 @@ bool decodeTexture(const ModelMaterial& mat, Texture2D& out) {
 
 ModelLibrary::~ModelLibrary() = default; // GL resources are freed by unloadAll() while the window is still open
 
+bool ModelLibrary::loadShaderSet(ShaderSet& s, const char* vs) {
+    s.shader = LoadShaderFromMemory(vs, kFS);
+    s.ok = s.shader.id != 0 && s.shader.id != rlGetShaderIdDefault();
+    if (!s.ok) return false;
+    s.locHasTex = GetShaderLocation(s.shader, "hasTex");
+    s.locCutoff = GetShaderLocation(s.shader, "cutoff");
+    s.locCam = GetShaderLocation(s.shader, "camPos");
+    s.locFogOn = GetShaderLocation(s.shader, "fogOn");
+    s.locFogColor = GetShaderLocation(s.shader, "fogColor");
+    s.locFogRange = GetShaderLocation(s.shader, "fogRange");
+    s.material = LoadMaterialDefault(); // its maps are reused for every draw
+    s.material.shader = s.shader;
+    return true;
+}
+
 void ModelLibrary::initShader() {
     if (shaderTried_) return;
     shaderTried_ = true;
-    shader_ = LoadShaderFromMemory(kVS, kFS);
-    shaderOk_ = shader_.id != 0 && shader_.id != rlGetShaderIdDefault();
-    if (!shaderOk_) return;
-    locHasTex_ = GetShaderLocation(shader_, "hasTex");
-    locCutoff_ = GetShaderLocation(shader_, "cutoff");
-    locCam_ = GetShaderLocation(shader_, "camPos");
-    locFogOn_ = GetShaderLocation(shader_, "fogOn");
-    locFogColor_ = GetShaderLocation(shader_, "fogColor");
-    locFogRange_ = GetShaderLocation(shader_, "fogRange");
-    material_ = LoadMaterialDefault(); // its maps are reused for every draw
-    material_.shader = shader_;
+    loadShaderSet(plain_, kVS);
+    // Instanced only if the GPU takes it and raylib found its instance attribute.
+    if (loadShaderSet(inst_, kVSInstanced) && inst_.shader.locs[SHADER_LOC_VERTEX_INSTANCETRANSFORM] < 0) inst_.ok = false;
+    if (std::getenv("SCAL_PROPS_PLAIN")) inst_.ok = false; // testing: compare with the plain path
+    shaderOk_ = plain_.ok || inst_.ok;
 }
 
 bool ModelLibrary::shaderOk() {
@@ -189,37 +236,89 @@ ModelLibrary::Gpu* ModelLibrary::gpuFor(const std::string& name) {
 }
 
 void ModelLibrary::draw(const std::vector<Prop>& props, const PropDrawContext& ctx) {
+    drawCalls_ = 0;
+    culled_ = 0;
     if (props.empty()) return;
     initShader();
     if (!shaderOk_) return;
+    ShaderSet& sh = inst_.ok ? inst_ : plain_;
     rlDrawRenderBatchActive();
     rlDisableBackfaceCulling(); // two-sided: foliage planes and mirrored copies show from both sides
-    auto setI = [&](int loc, int v) { SetShaderValue(shader_, loc, &v, SHADER_UNIFORM_INT); };
+    auto setI = [&](int loc, int v) { SetShaderValue(sh.shader, loc, &v, SHADER_UNIFORM_INT); };
     auto set3 = [&](int loc, double x, double y, double z) {
         const float f[3] = {(float)x, (float)y, (float)z};
-        SetShaderValue(shader_, loc, f, SHADER_UNIFORM_VEC3);
+        SetShaderValue(sh.shader, loc, f, SHADER_UNIFORM_VEC3);
     };
-    set3(locCam_, ctx.camPos.x, ctx.camPos.y, ctx.camPos.z);
-    setI(locFogOn_, ctx.fog ? 1 : 0);
-    set3(locFogColor_, ctx.fogColor.x / 255, ctx.fogColor.y / 255, ctx.fogColor.z / 255);
+    set3(sh.locCam, ctx.camPos.x, ctx.camPos.y, ctx.camPos.z);
+    setI(sh.locFogOn, ctx.fog ? 1 : 0);
+    set3(sh.locFogColor, ctx.fogColor.x / 255, ctx.fogColor.y / 255, ctx.fogColor.z / 255);
     {
         const float fr[2] = {(float)ctx.fogStart, (float)ctx.fogEnd};
-        SetShaderValue(shader_, locFogRange_, fr, SHADER_UNIFORM_VEC2);
+        SetShaderValue(sh.shader, sh.locFogRange, fr, SHADER_UNIFORM_VEC2);
     }
+    // The view frustum from the camera's matrices (Gribb / Hartmann): props wholly
+    // outside it are skipped (v0.10.3).
+    float m[16]; // m[i] = raylib's m<i>
+    multiply(rlGetMatrixModelview(), rlGetMatrixProjection(), m);
+    const float rows[4][4] = {{m[0], m[4], m[8], m[12]}, {m[1], m[5], m[9], m[13]},
+                              {m[2], m[6], m[10], m[14]}, {m[3], m[7], m[11], m[15]}};
+    float planes[6][4];
+    for (int k = 0; k < 6; ++k) {
+        const float sgn = (k % 2 == 0) ? 1.0f : -1.0f;
+        const float* r = rows[k / 2];
+        float len = 0;
+        for (int c = 0; c < 4; ++c) planes[k][c] = rows[3][c] + sgn * r[c];
+        for (int c = 0; c < 3; ++c) len += planes[k][c] * planes[k][c];
+        len = std::sqrt(len);
+        if (len > 0) for (int c = 0; c < 4; ++c) planes[k][c] /= len;
+    }
+    static const bool noCull = std::getenv("SCAL_NO_CULL") != nullptr; // testing: compare with culling off
+    auto visible = [&](const AABB& b) {
+        if (noCull) return true;
+        const Vec3 c = b.center();
+        const double r = length(b.size()) * 0.5;
+        for (const auto& pl : planes)
+            if (pl[0] * c.x + pl[1] * c.y + pl[2] * c.z + pl[3] < -r) return false;
+        return true;
+    };
+    // The visible props, by model (in the order the models first appear).
+    std::vector<std::pair<Gpu*, std::vector<Matrix>>> groups;
+    std::map<Gpu*, size_t> groupOf;
+    // Props of one model usually come one after another (copies, scatters): look the
+    // model up again only when the name changes.
+    const std::string* lastName = nullptr;
+    Gpu* g = nullptr;
+    const Model* model = nullptr;
     for (const Prop& p : props) {
-        Gpu* g = gpuFor(p.model);
+        if (!lastName || p.model != *lastName) {
+            lastName = &p.model;
+            g = gpuFor(p.model);
+            model = g ? store_.find(p.model) : nullptr;
+        }
         if (!g) continue;
-        const Matrix m = propMatrix(p);
+        if (!visible(propBounds(p, model))) { ++culled_; continue; }
+        auto it = groupOf.find(g);
+        if (it == groupOf.end()) {
+            it = groupOf.emplace(g, groups.size()).first;
+            groups.push_back({g, {}});
+        }
+        groups[it->second].second.push_back(propMatrix(p));
+    }
+    for (auto& [g, mats] : groups)
         for (const Chunk& c : g->chunks) {
             const size_t mi = (size_t)c.material;
             if (mi >= g->tint.size()) continue;
-            material_.maps[MATERIAL_MAP_DIFFUSE].texture = g->textured[mi] ? g->textures[mi] : Texture2D{};
-            material_.maps[MATERIAL_MAP_DIFFUSE].color = g->tint[mi];
-            setI(locHasTex_, g->textured[mi] ? 1 : 0);
-            SetShaderValue(shader_, locCutoff_, &g->cutoff[mi], SHADER_UNIFORM_FLOAT);
-            DrawMesh(c.mesh, material_, m);
+            sh.material.maps[MATERIAL_MAP_DIFFUSE].texture = g->textured[mi] ? g->textures[mi] : Texture2D{};
+            sh.material.maps[MATERIAL_MAP_DIFFUSE].color = g->tint[mi];
+            setI(sh.locHasTex, g->textured[mi] ? 1 : 0);
+            SetShaderValue(sh.shader, sh.locCutoff, &g->cutoff[mi], SHADER_UNIFORM_FLOAT);
+            if (&sh == &inst_) {
+                DrawMeshInstanced(c.mesh, sh.material, mats.data(), (int)mats.size());
+                ++drawCalls_;
+            } else {
+                for (const Matrix& mm : mats) { DrawMesh(c.mesh, sh.material, mm); ++drawCalls_; }
+            }
         }
-    }
     rlEnableBackfaceCulling();
 }
 

@@ -244,6 +244,8 @@ private:
     // "expect <what>" check (editor_script_expects.cpp), filled on first use.
     using ScriptFn = std::function<void(const std::string& cmd, std::istringstream& in)>;
     void registerScriptCommands();
+    // Development: fill the map with props and time scene, drawing, picking, landing.
+    void benchProps(int count, const std::string& model, double spacing);
     void registerScriptExpects();
     std::map<std::string, ScriptFn> scriptCommands_, scriptExpects_;
     int scriptDragView_ = -1; // the view a scripted press / drag happens in

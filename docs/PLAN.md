@@ -10,11 +10,13 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 
 ## Current status
 
-- **Released:** v0.1.0 … v0.10.1. Milestones 0–10 and Random Replicate are done (see the
-  milestone sections below and the log); the user confirmed M10's and Random Replicate's
-  choices (2026-11-19). **v0.10.2 is built and pushed**: Snap to Land fixed for things on
-  top of each other, rectangle select in the 3D view, View → Show primitives / Show props,
-  and the checked points of an outside review (below). Report it, then ask before Sky Lab.
+- **Released:** v0.1.0 … v0.10.2. Milestones 0–10 and Random Replicate are done (see the
+  milestone sections below and the log); the user confirmed the choices of M10, Random
+  Replicate and v0.10.2 (2026-11-19). **v0.10.3 is built and pushed** (asked by the user
+  before Sky Lab): `editor.cpp` split by topic (step 1: code moved unchanged; step 2:
+  script commands as tables, selection landing in the core), a prop benchmark (DEV.md
+  "Benchmark"), and what it showed: Snap to Land among many props, 2D views drawing
+  everything, the 3D view's draw call per prop. Report it, then ask before Sky Lab.
 - **Next:** **Sky Lab** once the user says go (ask them to attach the Bryce guide PDF
   again first). Bottega basics and the idle CPU test (`tests/ui/idle.sh`, see DEV.md) are done.
 - **Roadmap:** Sky Lab → cameras and Camera Preview →
@@ -124,7 +126,18 @@ are in [`DEV.md`](DEV.md). One-step-per-release: add `docs/releases/vX.Y.Z.md` a
     editor shading, alpha cutout and fog in one shader; light preview on props later.
   - Triangle budget per model: 200000; a prop whose model is above it shows a "heavy
     model" warning in Properties (it is still drawn).
-- **v0.10.2, decided without asking (confirm with the user):**
+- **v0.10.3 (asked by the user: split, both steps; benchmark for my own use; target
+  hundreds to thousands of props), decided without asking:**
+  - The script interpreter became tables of commands inside the Editor (not a separate
+    class): the commands use the editor's internals, so a separate class would have meant
+    rewriting every line for no gain. Equivalence checked: all 402 `expect` lines in the
+    scripts reach the same check as before.
+  - Drawing props: GPU instancing, frustum culling, 2D culling. Screenshots match the old
+    path (culling: identical; instancing: 1–6 edge pixels differ from rounding).
+  - Not done: building the scene once per redraw instead of per view (0.4 ms x 4 at 5000
+    props: not worth it yet); distance / LOD for heavy models (the software GPU here can't
+    say whether a real one needs it).
+- **v0.10.2, decided without asking; confirmed by the user (2026-11-19):**
   - **Snap to Land, what counts as below:** surfaces under the object's middle height.
     So it ignores a shelf over it and a neighbour it overlaps, and comes up out of what
     it is sunk into only up to half its height (sunk deeper, it goes down).
@@ -142,7 +155,7 @@ are in [`DEV.md`](DEV.md). One-step-per-release: add `docs/releases/vX.Y.Z.md` a
     `.map` numbers; props landing on their box corners; "unsaved" after undoing back to the
     saved state; model name clashes silently hiding a file; project version 0.0.1 (now taken
     from the newest release notes).
-  - **Parked (valid, not bugs):** split `src/app/editor.cpp` (~4,300 lines) into smaller
+  - **Done in v0.10.3 (were parked):** split `src/app/editor.cpp` (~4,300 lines) into smaller
     modules step by step; measure drawing of many props (each prop is one draw call per
     mesh; meshes are shared) on the Mac before considering GPU instancing. Ask the user
     when to do these.
