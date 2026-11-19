@@ -5,8 +5,11 @@
 # -- a Bottega (the shared folder) with a texture in it, found by Rescan
 bottega make studio
 copy assets/textures/rock.png studio/textures/walls/Rock Face.png
+copy assets/models/crate.glb studio/models/Crate.glb
+copy assets/models/post.glb studio/models/fence/post.glb
 rescan
 expect hastexture textures/walls/Rock_Face
+expect hasmodel models/Crate
 # -- terrain: a patch, raised and painted
 block -512 -512 -64 512 512 0
 terrain pick
@@ -63,6 +66,10 @@ prim torus 300 300 150 160 160 160
 primedit texture Tile_13
 prim cube -300 -300 100 100 100 100
 primedit round 12
+# -- props: two models, one turned and scaled, one missing from the Bottega
+prop models/Crate -200 250 0 0 0 30 1.5
+prop models/fence 200 -250 0 0 0 0 1
+prop models/Gone 0 -300 0
 # -- lights: a warm point light, a spot and a sun
 tool light
 lightset kind point
@@ -107,10 +114,12 @@ viewset figure on
 camera -900 -1000 800 48 -30
 # -- the loaded map really has everything (a failed expect prints FAIL and fails the test)
 expect prims 5
+expect props 3
 expect lights 3
 expect terrains 1
 expect sky Panorama_Sky_04
 expect bookmarks 1
 # -- leave the primitives selected (rings and size handles drawn)
 primselect 0 1 2
+propselect 0 2
 shot idle-ready.png

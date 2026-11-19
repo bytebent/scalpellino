@@ -276,6 +276,29 @@ are; brush tools never touch primitives). `core/mathprim.hpp`.
   map reopened in Scalpellino keeps them as primitives. Only exports turn them into
   meshes (M13): fine triangles in `.glb`.
 
+### Props (milestone 10, done)
+Static models next to brushes, lights and primitives. `core/model.hpp`, `core/prop.hpp`.
+- **Model:** triangles only (animations, skins, cameras and lights are ignored), several
+  materials (base colour, optional texture, cutout), bounds. glTF Y-up metres become Z-up
+  cm: `(x, y, z) -> (x, -z, y) * 100` (a proper rotation, winding kept). The model's own
+  origin is its pivot.
+- **Prop:** `{id, model name, pos, rot, scale (3), other keys}`; world = `pos + R * (scale *
+  local)`, R as for primitives. It stores only the model's name (`models/tree`), so a map
+  opens without the file: the prop then shows as a box and is kept on save.
+- **Names:** from Bottega's `models/`: a folder's only model file is that folder's model;
+  with several files the one named like the folder is; else each file is its own model;
+  loose files are models. Spaces become `_`. `.mazz` will be a second reader behind
+  `ModelStore` once Mazzuola's format is final.
+- **Drawing:** a model is uploaded once (mesh chunks of at most 65535 vertices); every prop is
+  one draw with its own matrix. Editor shading, alpha cutout and fog in one shader; no
+  light preview yet. 2D views show the turned bounding box and an origin cross; 3D picking
+  uses the triangles.
+- **Editing:** the shared object handles (rings, size handles; even scaling by default,
+  Shift for one axis), Snap to Land / Ground (landing works on any "subject": lifted copies
+  and ray tests on triangles), Duplicate, Delete, Multi-Replicate. All through commands.
+- **File:** a `scal_prop` point entity: `model`, `origin`, `rotation`, `scale` (3 numbers),
+  other keys kept.
+
 ### Snap to Land / Ground and Multi-Replicate (v0.9.2, from Bryce)
 - **Snap to Land** (Cmd+J, Transform menu; `core/landing`): selected primitives drop
   straight down onto visible brushes (terrain surfaces, not their flat faces), terrain
@@ -332,6 +355,8 @@ That's all. No gameplay entities (doors, triggers, physics, scripting).
 - **Native: Valve 220 `.map`.** Plain text, readable by func_godot and TrenchBroom.
   Editor-only data (visgroups, camera bookmarks, curve-generator parameters) stored as
   extra keys other tools ignore.
+- **Props** (v0.10.0): `scal_prop` point entities with `model` ("models/tree"), `origin`,
+  `rotation` (degrees X Y Z), `scale` (3 numbers) and any other keys, kept as they are.
 - **nodraw:** faces textured `nodraw` (also recognised: `tools/toolsnodraw`, `common/nodraw`)
   are shown in the editor but skipped by every render and export (Camera Preview, PNG
   renders, `.glb`). The `.map` export keeps them, as other tools expect.
@@ -406,7 +431,7 @@ robust, cheap (brushes are tiny).
 Fetched automatically by CMake, versions pinned:
 - raylib — window, input, drawing
 - Dear ImGui (docking branch) + rlImGui — UI
-- cgltf — glTF writing
+- cgltf — reading `.glb` models (vendored in `third_party/cgltf`, MIT, v1.15; later also glTF writing)
 - stb_image — textures (bundled with raylib)
 - Lua — later, for brush generator scripts
 
@@ -447,7 +472,7 @@ docs/         this file, roadmap
 | 7 | Terrain: grid patches from any picked face (3 or 4 corners), sculpt (raise/lower/smooth/flatten/noise; typed radius/strength), point-by-point editing with the vertex tool, painting up to 8 textures per patch, auto-stitched neighbours, heightmap import; stored in our `.map` | done (v0.7.0, v0.7.1) |
 | 8 | World: lights (point, spot, sun; rotation rings), sky picker (a setting, not a sealed box; panoramas and cube crosses), ambient, fog, rough editor preview (sky, light preview, fog toggles), camera bookmarks, scale figure | done (v0.8.0) |
 | 9 | Math primitives (Bryce-style): sphere, cube (rounded), cylinder, cone, torus, capsule, disc; exact per-pixel drawing; combining (add / subtract / intersect) and blending; single pieces movable; object handles shared with lights; 1 unit = 1 cm; Snap to Land / Ground; Multi-Replicate | done (v0.9.0 … v0.9.3) |
-| 10 | Props: static models (`.glb` first, then `.mazz`) with their textures, from Bottega's `models/`, placed / turned / sized as objects (uniform scale by default), Snap to Land, instanced; no physics. Preceded by the idle CPU test and Bottega basics (folder setting, Rescan, marker file) | next |
+| 10 | Props: static models (`.glb` first, then `.mazz`) with their textures, from Bottega's `models/`, placed / turned / sized as objects (uniform scale by default), Snap to Land, instanced; no physics. Preceded by the idle CPU test and Bottega basics (folder setting, Rescan, marker file) | done (v0.10.0; `.mazz` later) |
 | 10b | Random Replicate (Bryce): random offset / turn / size ranges for props and primitives | |
 | 10c | Sky Lab (Bryce, all of it): generated skies (sun, moon, stars, clouds, atmosphere) with live preview, baked to panoramas; settings kept in the map; tick box to lock the sun to the map's sun light | |
 | 11 | Cameras and Camera Preview (proposed order): camera objects (many, one active), options and presets, the on-request preview | |

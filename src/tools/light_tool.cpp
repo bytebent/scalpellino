@@ -28,6 +28,7 @@ void LightTool::press(ToolEnv& env, const Pointer& p) {
     pending = at;
     doc.setLightSelection({});
     doc.setPrimSelection({});
+    doc.setPropSelection({});
 }
 
 void LightTool::drag(ToolEnv& env, const Pointer& p) {

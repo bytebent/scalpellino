@@ -31,6 +31,8 @@ struct MenuState {
     size_t primsSelected = 0;
     bool hasAnything = false;   // brushes, lights or primitives selected
     bool primsInCombo = false;
+    bool propTool = false, propPending = false;
+    size_t propsSelected = 0;
 };
 
 struct MenuActions {
@@ -66,6 +68,7 @@ struct MenuActions {
     int primKind = -1;    // PrimKind index; also switches to the primitive tool
     int primOp = -1;      // PrimOp for the selected primitives
     bool replicate = false, snapLand = false, snapGround = false;
+    bool toolProp = false, createProp = false;
 };
 
 // Draws the menu bar and reports clicked items.
@@ -78,7 +81,7 @@ void drawStatusBar(const char* text);
 // on first run or when reset. Window names must match the windows' titles.
 void dockspace(bool forceReset, const char* tools, const char* topLeft, const char* topRight,
                const char* bottomLeft, const char* bottomRight, const char* rightTop,
-               const char* rightBottom, bool withPanels = true, const char* rightTopTab = nullptr);
+               const char* rightBottom, bool withPanels = true, const char* rightTopTab = nullptr, const char* rightTopTab2 = nullptr);
 
 // Help -> Controls: every shortcut in one place.
 void drawControlsWindow(bool* open);

@@ -5,13 +5,15 @@
 namespace scal {
 
 std::vector<ReplicateCopy> replicate(const std::vector<Brush>& brushes, const std::vector<MathPrim>& prims,
-                                     const std::vector<Light>& lights, const ReplicateSpec& spec) {
+                                     const std::vector<Light>& lights, const ReplicateSpec& spec,
+                                     const std::vector<Prop>& props, const ModelFinder& models) {
     std::vector<ReplicateCopy> out;
-    if (spec.copies < 1 || (brushes.empty() && prims.empty() && lights.empty())) return out;
+    if (spec.copies < 1 || (brushes.empty() && prims.empty() && lights.empty() && props.empty())) return out;
     AABB box;
     for (const Brush& b : brushes) { const AABB bb = b.bounds(); box.add(bb.min); box.add(bb.max); }
     for (const MathPrim& p : prims) { const AABB pb = primBounds(p); box.add(pb.min); box.add(pb.max); }
     for (const Light& l : lights) box.add(l.pos);
+    for (const Prop& p : props) { const AABB pb = propBounds(p, models ? models(p.model) : nullptr); box.add(pb.min); box.add(pb.max); }
     Vec3 pivot = spec.pivot == ReplicateSpec::Pivot::Selection ? box.center()
                  : spec.pivot == ReplicateSpec::Pivot::Origin ? Vec3{}
                                                              : spec.point;
@@ -20,6 +22,7 @@ std::vector<ReplicateCopy> replicate(const std::vector<Brush>& brushes, const st
     Vec3 moved;           // brushes: total offset so far
     std::vector<MathPrim> curP = prims;
     std::vector<Light> curL = lights;
+    std::vector<Prop> curQ = props;
     for (int i = 1; i <= spec.copies; ++i) {
         const Vec3 off = spec.scaleOffset ? Vec3{spec.offset.x * grow.x, spec.offset.y * grow.y, spec.offset.z * grow.z}
                                           : spec.offset;
@@ -30,6 +33,13 @@ std::vector<ReplicateCopy> replicate(const std::vector<Brush>& brushes, const st
             p.blend *= std::min({s.x, s.y, s.z});
             for (int a = 0; a < 3; ++a)
                 if (spec.rotate[a] != 0) rotatePrim(p, a, spec.rotate[a], pivot);
+            p.pos = cleanVec(p.pos + off);
+        }
+        for (Prop& p : curQ) {
+            p.pos = pivot + Vec3{(p.pos.x - pivot.x) * s.x, (p.pos.y - pivot.y) * s.y, (p.pos.z - pivot.z) * s.z};
+            p.scale = Vec3{p.scale.x * s.x, p.scale.y * s.y, p.scale.z * s.z};
+            for (int a = 0; a < 3; ++a)
+                if (spec.rotate[a] != 0) rotateProp(p, a, spec.rotate[a], pivot);
             p.pos = cleanVec(p.pos + off);
         }
         for (Light& l : curL) {
@@ -50,6 +60,7 @@ std::vector<ReplicateCopy> replicate(const std::vector<Brush>& brushes, const st
         }
         c.prims = curP;
         c.lights = curL;
+        c.props = curQ;
         out.push_back(std::move(c));
         if (spec.pivot == ReplicateSpec::Pivot::Selection) pivot += off;
         grow = Vec3{grow.x * s.x, grow.y * s.y, grow.z * s.z};

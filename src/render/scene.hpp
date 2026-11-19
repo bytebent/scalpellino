@@ -5,6 +5,7 @@
 #include "core/terrain.hpp"
 #include "core/world.hpp"
 #include "core/mathprim.hpp"
+#include "core/prop.hpp"
 #include <map>
 #include <optional>
 #include <set>
@@ -30,6 +31,7 @@ struct SceneBrush {
 };
 
 class TextureLibrary;
+class ModelLibrary;
 using FaceRef = std::pair<BrushId, int>; // brush id + face index
 
 struct Scene {
@@ -71,14 +73,21 @@ struct Scene {
     struct ScenePrim { MathPrim prim; bool selected = false; };
     std::vector<ScenePrim> prims;
     std::vector<MathPrim> pendingPrims;  // primitive tool preview (outlines)
-    // Rings and size handles of the selected primitives (tools that edit objects set it;
+
+    // Props (milestone 10): models drawn in 3D (from the model library), boxes in 2D.
+    // `local` is the model's box in its own space (the missing-model box if `missing`).
+    struct SceneProp { Prop prop; bool selected = false; AABB local; bool missing = false; };
+    std::vector<SceneProp> props;
+    std::vector<SceneProp> pendingProps;  // Props tool / Multi-Replicate preview (yellow boxes)
+    ModelLibrary* models = nullptr;       // set -> props are drawn as models in 3D
+    // Rings and size handles of the selected primitives and props (tools that edit objects set them;
     // views make the rings at least kRingPx across, and show only handles they see side-on).
     struct PrimGizmo {
         Vec3 center;
         double radius = 0;
         std::vector<std::pair<Vec3, Vec3>> handles; // position, the axis it moves along
     };
-    std::optional<PrimGizmo> primGizmo;
+    std::vector<PrimGizmo> gizmos; // one for the selected primitives, one for the selected props
     bool lightPreview = false;           // rough light preview on (prims light per pixel)
     Vec3 ambient;                        // for the preview
     int activeRing = -1;                 // ring being dragged (axis), drawn brighter

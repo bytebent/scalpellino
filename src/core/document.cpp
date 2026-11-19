@@ -119,10 +119,12 @@ void Document::apply(Command cmd) {
     for (const BrushChange& c : cmd.changes) setBrush(c.id, c.after);
     for (const LightChange& c : cmd.lightChanges) setLight(c.id, c.after);
     for (const PrimChange& c : cmd.primChanges) setPrim(c.id, c.after);
+    for (const PropChange& c : cmd.propChanges) setProp(c.id, c.after);
     if (cmd.envAfter) env_ = *cmd.envAfter;
     selection_ = cmd.selectionAfter;
     if (cmd.lightSelectionAfter) lightSelection_ = *cmd.lightSelectionAfter;
     if (cmd.primSelectionAfter) primSelection_ = *cmd.primSelectionAfter;
+    if (cmd.propSelectionAfter) propSelection_ = *cmd.propSelectionAfter;
     undo_.push_back(std::move(cmd));
     redo_.clear();
     bump();
@@ -136,10 +138,12 @@ bool Document::undo() {
     for (auto it = cmd.groupChanges.rbegin(); it != cmd.groupChanges.rend(); ++it) setGroup(it->id, it->before);
     for (auto it = cmd.lightChanges.rbegin(); it != cmd.lightChanges.rend(); ++it) setLight(it->id, it->before);
     for (auto it = cmd.primChanges.rbegin(); it != cmd.primChanges.rend(); ++it) setPrim(it->id, it->before);
+    for (auto it = cmd.propChanges.rbegin(); it != cmd.propChanges.rend(); ++it) setProp(it->id, it->before);
     if (cmd.envBefore) env_ = *cmd.envBefore;
     selection_ = cmd.selectionBefore;
     if (cmd.lightSelectionBefore) lightSelection_ = *cmd.lightSelectionBefore;
     if (cmd.primSelectionBefore) primSelection_ = *cmd.primSelectionBefore;
+    if (cmd.propSelectionBefore) propSelection_ = *cmd.propSelectionBefore;
     redo_.push_back(std::move(cmd));
     bump();
     return true;
@@ -153,10 +157,12 @@ bool Document::redo() {
     for (const BrushChange& c : cmd.changes) setBrush(c.id, c.after);
     for (const LightChange& c : cmd.lightChanges) setLight(c.id, c.after);
     for (const PrimChange& c : cmd.primChanges) setPrim(c.id, c.after);
+    for (const PropChange& c : cmd.propChanges) setProp(c.id, c.after);
     if (cmd.envAfter) env_ = *cmd.envAfter;
     selection_ = cmd.selectionAfter;
     if (cmd.lightSelectionAfter) lightSelection_ = *cmd.lightSelectionAfter;
     if (cmd.primSelectionAfter) primSelection_ = *cmd.primSelectionAfter;
+    if (cmd.propSelectionAfter) propSelection_ = *cmd.propSelectionAfter;
     undo_.push_back(std::move(cmd));
     bump();
     return true;
@@ -184,6 +190,13 @@ void Document::reset(KeyValues world, std::vector<Brush> brushes, std::vector<Ra
     for (MathPrim& p : extra.prims) {
         p.id = nextPrimId_++;
         prims_.push_back(std::move(p));
+    }
+    props_.clear();
+    propSelection_.clear();
+    nextPropId_ = 1;
+    for (Prop& p : extra.props) {
+        p.id = nextPropId_++;
+        props_.push_back(std::move(p));
     }
     bookmarks_ = std::move(extra.bookmarks);
     figure_ = extra.figure;
@@ -249,6 +262,8 @@ Command Document::makeAddLights(std::vector<Light> lights, const std::string& na
     c.lightSelectionAfter = std::set<LightId>{};
     c.primSelectionBefore = primSelection_;
     c.primSelectionAfter = std::set<MathPrimId>{};
+    c.propSelectionBefore = propSelection_;
+    c.propSelectionAfter = std::set<PropId>{};
     for (Light& l : lights) {
         if (l.id == 0) l.id = newLightId();
         c.lightSelectionAfter->insert(l.id);
@@ -316,6 +331,8 @@ Command Document::makeAddPrims(std::vector<MathPrim> prims, const std::string& n
     c.lightSelectionAfter = std::set<LightId>{};
     c.primSelectionBefore = primSelection_;
     c.primSelectionAfter = std::set<MathPrimId>{};
+    c.propSelectionBefore = propSelection_;
+    c.propSelectionAfter = std::set<PropId>{};
     for (MathPrim& p : prims) {
         if (p.id == 0) p.id = newPrimId();
         c.primSelectionAfter->insert(p.id);
@@ -342,6 +359,65 @@ void Document::addPrimDeletes(Command& c, const std::set<MathPrimId>& ids) const
             after.erase(id);
         }
     c.primSelectionAfter = after;
+}
+
+const Prop* Document::findProp(PropId id) const {
+    for (const Prop& p : props_)
+        if (p.id == id) return &p;
+    return nullptr;
+}
+
+void Document::setProp(PropId id, const std::optional<Prop>& p) {
+    auto it = std::find_if(props_.begin(), props_.end(), [&](const Prop& x) { return x.id == id; });
+    if (p) {
+        if (it != props_.end()) *it = *p;
+        else // kept in creation order, so undoing a delete puts it back where it was
+            props_.insert(std::lower_bound(props_.begin(), props_.end(), id,
+                                           [](const Prop& x, PropId v) { return x.id < v; }),
+                          *p);
+        if (id >= nextPropId_) nextPropId_ = id + 1;
+    } else if (it != props_.end()) {
+        props_.erase(it);
+        propSelection_.erase(id);
+    }
+}
+
+Command Document::makeAddProps(std::vector<Prop> props, const std::string& name) {
+    Command c;
+    c.name = name;
+    c.selectionBefore = selection_;
+    c.lightSelectionBefore = lightSelection_;
+    c.lightSelectionAfter = std::set<LightId>{};
+    c.primSelectionBefore = primSelection_;
+    c.primSelectionAfter = std::set<MathPrimId>{};
+    c.propSelectionBefore = propSelection_;
+    c.propSelectionAfter = std::set<PropId>{};
+    for (Prop& p : props) {
+        if (p.id == 0) p.id = newPropId();
+        c.propSelectionAfter->insert(p.id);
+        c.propChanges.push_back({p.id, std::nullopt, std::move(p)});
+    }
+    return c;
+}
+
+Command Document::makeModifyProps(const std::vector<Prop>& modified, const std::string& name) {
+    Command c;
+    c.name = name;
+    c.selectionBefore = c.selectionAfter = selection_;
+    for (const Prop& p : modified)
+        if (const Prop* old = findProp(p.id)) c.propChanges.push_back({p.id, *old, p});
+    return c;
+}
+
+void Document::addPropDeletes(Command& c, const std::set<PropId>& ids) const {
+    std::set<PropId> after = c.propSelectionAfter ? *c.propSelectionAfter : propSelection_;
+    if (!c.propSelectionBefore) c.propSelectionBefore = propSelection_;
+    for (PropId id : ids)
+        if (const Prop* p = findProp(id)) {
+            c.propChanges.push_back({id, *p, std::nullopt});
+            after.erase(id);
+        }
+    c.propSelectionAfter = after;
 }
 
 Command Document::makeEnvironment(const Environment& env, const std::string& name) {

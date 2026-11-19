@@ -88,6 +88,10 @@ inside the view. Lines starting with # are comments.
   prim <kind> x y z sx sy sz [rx ry rz]   primedit <key> <value...>   primselect <index...>
   snapland   snapground <z>   replicate <n> ox oy oz [rot x y z] [scale x y z] [scaleoffset] [pivot selection|origin|x y z]
   replicatepreview on|off   replicateopen <n> ox oy oz   expect replicating on|off
+  tool props   propset model <name>|rot x y z|scale s   prop <model> x y z [rx ry rz] [scale]
+  propselect all|none|<index...>   propedit pos x y z|rot x y z|scale s|scale x y z|model <name>
+  expect props|propsel <n>   expect proppos|proprot|propscale x y z   expect propmodel <name>
+  expect hasmodel [not] <name>
   combine   separate   expect prims|primsel <n>   expect primpos|primrot|primsize x y z   expect primop <op>
   environment sky <name|none> | ambient r g b | fog on|off | fogcolor r g b | fogrange <start> <end>
   bookmark add <name> | go <index>   expect sky <name>   expect bookmarks <n>   expect camera x y z

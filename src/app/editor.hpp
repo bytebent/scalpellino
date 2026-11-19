@@ -19,11 +19,13 @@
 #include "tools/terrain_tool.hpp"
 #include "tools/light_tool.hpp"
 #include "tools/prim_tool.hpp"
+#include "tools/prop_tool.hpp"
 #include "render/sky_library.hpp"
 #include "render/lighting.hpp"
 #include "core/replicate.hpp"
 #include "core/landing.hpp"
 #include "render/texture_library.hpp"
+#include "render/model_library.hpp"
 #include <deque>
 #include <memory>
 #include <string>
@@ -180,6 +182,16 @@ private:
     std::set<MathPrimId> primBufFor_;
     unsigned long long primBufRev_ = ~0ull;
     double primPend_[6] = {0, 0, 0, 64, 64, 64}; // typed centre + size of the pending box
+    // Props (milestone 10)
+    void drawPropsPanel();   // the Props panel: models of the Bottega, search by name
+    void drawPropPanel();    // Properties for the Props tool / selected props
+    Prop propBuf_;           // Properties fields for the selected prop
+    std::set<PropId> propBufFor_;
+    unsigned long long propBufRev_ = ~0ull;
+    char propSearch_[128] = "";
+    bool propPerAxis_ = false;       // show a scale per axis (else one even scale)
+    double propPend_[3] = {0, 0, 0}; // typed position of the pending prop
+    std::string propMessage_;
     void drawWorldDialogs();
     // Applies `fn` to every selected light as one undo step (if anything changed).
     template <class Fn> void editLights(const char* name, Fn fn);
@@ -230,6 +242,7 @@ private:
     TerrainTool terrainTool_;
     LightTool lightTool_;
     PrimTool primTool_;
+    PropTool propTool_;
     Tool* tool_ = &selectTool_;
 
     int capture_ = -1;          // view that owns the current left-button drag
@@ -278,6 +291,8 @@ private:
 
     TextureLibrary textures_;
     SkyLibrary skies_;
+    ModelLibrary models_;      // props' models (the Bottega's models folder), loaded on first use
+    ModelFinder modelFinder_;  // models_.finder(), handed to the tools
     LightingCache lighting_;   // only used (and built) while the light preview is on
     void loadSkyFolders();
     void saveSkyFolders() const;

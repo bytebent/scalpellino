@@ -20,10 +20,10 @@ texture licenses; `releases/` has the notes for each version.
   v0.9.2 (units in cm, blending primitives, Snap to Land, Multi-Replicate), **v0.9.3**
   (single pieces of a combination via Option+click; Multi-Replicate as a non-blocking
   window).
-- **Next: milestone 10 — Props** (static models from `.glb` and Mazzuola's `.mazz`, with
-  textures, no physics). Wait for the user's go-ahead; they had just received the
-  v0.9.3 report (which also gave an opinion on the Bottega shared folder) when this was
-  written. Then Random Replicate, Sky Lab, M11 renderer, M12 Camera Preview, M13 export
+- **Milestone 10 — Props is done (v0.10.0):** `.glb` models from Bottega's `models/`; `.mazz`
+  waits for Mazzuola's final format. The user has to confirm the items under "Props (M10),
+  decided without asking" in PLAN.md (even scaling is now the default for primitives too).
+- **Next: Random Replicate** once the user says go. Then Sky Lab, Sky Lab, M11 renderer, M12 Camera Preview, M13 export
   (see PLAN.md "Roadmap").
 - Mazzuola (`bytebent/mazzuola`) is the user's companion modeller (design only so far).
   Its models become Scalpellino props.

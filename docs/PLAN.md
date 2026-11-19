@@ -10,13 +10,13 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 
 ## Current status
 
-- **Released:** v0.1.0 … v0.9.3. Milestones 0–9 are done (see the milestone sections
-  below and the log). Latest: **v0.9.3** (single pieces of a combination with
-  Option+click; Multi-Replicate as a non-blocking window). Reported to the user.
-- **Next:** **milestone 10 — Props** once the user says go (decisions under "Open
-  questions"; models live in Bottega's `models/`). Bottega basics and the idle CPU test
-  (`tests/ui/idle.sh`, see DEV.md) are done.
-- **Roadmap:** M10 Props → Random Replicate → Sky Lab → cameras and Camera Preview →
+- **Released:** v0.1.0 … v0.9.4. Milestones 0–9 are done (see the milestone sections
+  below and the log). **Milestone 10 — Props is built and pushed as v0.10.0** (static
+  `.glb` models from Bottega's `models/`; `.mazz` waits for Mazzuola's final format).
+  Report it to the user, then ask before the next milestone.
+- **Next:** **Random Replicate** once the user says go. Bottega basics and the idle CPU
+  test (`tests/ui/idle.sh`, see DEV.md) are done.
+- **Roadmap:** Random Replicate → Sky Lab → cameras and Camera Preview →
   Render (Source look, with the material system) → water / cloud planes → camera effects →
   export. The renderer part is a
   proposal awaiting the user's confirmation. Details under "Roadmap" and "Direction".
@@ -101,6 +101,28 @@ are in [`DEV.md`](DEV.md). One-step-per-release: add `docs/releases/vX.Y.Z.md` a
   box, 3D picking uses triangles; Snap to Land works on props (landing generalised to any
   object); hiding / visgroups as for primitives (not yet); `.mazz` after `.glb`, behind a
   loader interface; a small generated `.glb` as test asset; a triangle-budget warning.
+- **Props (M10), built (v0.10.0). Decided without asking while building (confirm with the user):**
+  - **`.mazz` is not read yet**: it waits for Mazzuola's final file format; the loader sits
+    behind `ModelStore`, so it is an extra reader later.
+  - **Model names:** a folder with one model file is that folder's model (`models/tree`,
+    whatever the file is called); with several files the one named like the folder is the
+    model, else each file is its own model; loose `.glb` files in `models/` are models too.
+    Spaces become `_`.
+  - **Handles:** even scaling is now the default for primitives too, **Shift = one axis**
+    (the two old UI scripts were adjusted).
+  - **Depth in 2D views:** a click in the top view puts the prop on top of the last box
+    drawn (else z = 0); in the front and side views the depth is the middle of it. Type
+    the exact place in Properties.
+  - Props are deselected by every other object tool, as lights and primitives are; Snap to
+    Land / Ground, Duplicate (offset by the grid size), Delete and Multi-Replicate (turns
+    and scales props about the pivot) work on them. Hiding and visgroups do not cover props yet.
+  - cgltf 1.15 is vendored in `third_party/cgltf` (archive downloads are blocked here) with
+    its global symbols renamed (`src/io/cgltf_rename.h`), because raylib bundles its own copy.
+  - 3D drawing: each model is uploaded once (mesh chunks of at most 65535 vertices) and
+    every prop is drawn from it with its own matrix; backface culling is off for props;
+    editor shading, alpha cutout and fog in one shader; light preview on props later.
+  - Triangle budget per model: 200000; a prop whose model is above it shows a "heavy
+    model" warning in Properties (it is still drawn).
 - **Idle CPU test (agreed 2026-11-18; done):** `tests/ui/idle.sh` runs with a map open
   (terrain, primitives, lights, sky, fog, light preview on, map saved and re-opened) and
   expects 0 CPU ticks over 10 s; a busy control proves the measurement; in CI at 1x and 2x.
@@ -221,8 +243,8 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
 
 ## Roadmap (revised 2026-11-18; steps 4 to 8 are a proposal, to confirm)
 
-1. **M10 Props** — static models with their textures, no physics. `.glb` first; `.mazz`
-   once Mazzuola's file format is final. Placed, turned and sized like primitives (shared
+1. **M10 Props (done, v0.10.0)** — static models with their textures, no physics. `.glb`
+   first; `.mazz` once Mazzuola's file format is final. Placed, turned and sized like primitives (shared
    object handles), Snap to Land works on them, reload when the file changes. Texture
    filtering follows Scalpellino's Crisp / Smooth switch.
 2. **Random Replicate** (Bryce) — scatter copies with random offset / turn / size ranges,

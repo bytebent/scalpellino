@@ -1,6 +1,6 @@
 # Milestone 9: math primitives. Draw a sphere with the primitive tool (top view, then
 # the front view for its height), Return; select, move, turn with a ring, resize with
-# handles (and evenly with Shift); typed boxes for more shapes; combine (a cube with a
+# handles (evenly; Shift for one axis); typed boxes for more shapes; combine (a cube with a
 # spherical bite); pick in 3D; delete, undo, duplicate; save + open keeps primitives.
 block -512 -512 -32 512 512 0
 tool prim
@@ -38,17 +38,17 @@ wdrag -40 -110
 wdrag -128 -75.6
 release
 expect primrot 0 0 90
-# size handle on its own +X side (now pointing along +Y): drag out by 32
-wpress 1 -128 -128
-wdrag -128 -96
+# size handle on its own +X side (now pointing along +Y): Shift drags one axis, by 32
+wpress 1 -128 -128 shift
+wdrag -128 -96 shift
 release
 expect primsize 160 128 128
 expect primpos -128 -176 64
 undo
 expect primsize 128 128 128
-# Shift: evenly, about the centre
-wpress 1 -128 -128 shift
-wdrag -128 -96 shift
+# plain drag: evenly, about the centre
+wpress 1 -128 -128
+wdrag -128 -96
 release
 expect primsize 192 192 192
 expect primpos -128 -192 64

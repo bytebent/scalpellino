@@ -83,6 +83,7 @@ Editor::Editor(const EditorOptions& opt) : opt_(opt) {
 #endif
         if (!opt_.automated()) loadSkyFolders();
         skies_.setBuiltinFolder(skyDir);
+        modelFinder_ = models_.finder();
         if (!opt_.automated()) loadBottegaSetting(); // automated runs never read user settings
         if (!textures_.exists(currentTexture_) && !textures_.names().empty()) currentTexture_ = textures_.names()[0];
     }
@@ -94,7 +95,7 @@ Editor::Editor(const EditorOptions& opt) : opt_(opt) {
     updateTitle();
 }
 
-Editor::~Editor() = default;
+Editor::~Editor() { models_.unloadAll(); }
 
 // ------------------------------------------------------------------ input paths
 
@@ -116,6 +117,7 @@ ToolEnv Editor::env() {
     e.slopeAngles = slopeAngles_;
     e.textureLock = tfTexLock_;
     e.currentTexture = &currentTexture_;
+    e.models = &modelFinder_;
     return e;
 }
 
@@ -176,7 +178,10 @@ bool Editor::frame(float dt) {
     st.canUndo = doc_.canUndo();
     st.canRedo = doc_.canRedo();
     st.hasSelection = !doc_.selection().empty();
-    st.hasAnything = st.hasSelection || !doc_.lightSelection().empty() || !doc_.primSelection().empty();
+    st.hasAnything = st.hasSelection || !doc_.lightSelection().empty() || !doc_.primSelection().empty() || !doc_.propSelection().empty();
+    st.propTool = tool_ == &propTool_;
+    st.propPending = st.propTool && propTool_.hasPending();
+    st.propsSelected = doc_.propSelection().size();
     st.selectTool = tool_ == &selectTool_;
     st.blockTool = tool_ == &blockTool_;
     st.blockPreview = st.blockTool && blockTool_.hasPreview();
@@ -224,7 +229,7 @@ bool Editor::frame(float dt) {
     drawStatusBar(status.c_str());
     dockspace(resetLayout_, "Tools###tools", views_[0]->title(), views_[1]->title(),
               views_[2]->title(), views_[3]->title(), "Textures###textures", "Face###face", showPanels_,
-              "Visgroups###visgroups");
+              "Visgroups###visgroups", "Props###props");
     resetLayout_ = false;
 
     if (m.quit) requestQuit();
@@ -283,6 +288,8 @@ bool Editor::frame(float dt) {
     if (m.toolTerrain) setTool(&terrainTool_);
     if (m.toolLight) setTool(&lightTool_);
     if (m.toolPrim) setTool(&primTool_);
+    if (m.toolProp) setTool(&propTool_);
+    if (m.createProp) onKey(KEY_ENTER);
     if (m.primKind >= 0) { primTool_.templ.kind = (PrimKind)m.primKind; setTool(&primTool_); }
     if (m.createPrim) primTool_.create(doc_, currentTexture_, &lastBox_);
     if (m.combine) combinePrims();
@@ -333,7 +340,7 @@ bool Editor::frame(float dt) {
     if (m.toolTexture) setTool(&textureTool_);
     if (m.toggleTextureLock) tfTexLock_ = !tfTexLock_;
     if (m.defaultScale > 0) defaultScale_ = m.defaultScale;
-    if (m.smoothTextures >= 0) textures_.setSmooth(m.smoothTextures == 1);
+    if (m.smoothTextures >= 0) { textures_.setSmooth(m.smoothTextures == 1); models_.setSmooth(m.smoothTextures == 1); }
     if (m.textured3D >= 0) textured3D_ = m.textured3D == 1;
     if (m.addTextureFolder) { folderBuf_[0] = 0; askTexFolder_ = true; }
     if (m.rescanBottega) rescanBottega();
@@ -350,7 +357,7 @@ bool Editor::frame(float dt) {
     if (!ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId) && !io.WantTextInput) handleKeyboard();
 
     drawToolsPanel();
-    if (showPanels_) { drawTextureBrowser(); drawVisgroupsPanel(); drawFacePanel(); }
+    if (showPanels_) { drawTextureBrowser(); drawPropsPanel(); drawVisgroupsPanel(); drawFacePanel(); }
     drawViews();
     drawDialogs();
     drawTransformDialog();
@@ -420,6 +427,7 @@ void Editor::handleKeyboard() {
     if (shift_ && IsKeyPressed(KEY_G)) setTool(&terrainTool_);
     if (shift_ && IsKeyPressed(KEY_L)) setTool(&lightTool_);
     if (shift_ && IsKeyPressed(KEY_M)) setTool(&primTool_);
+    if (shift_ && IsKeyPressed(KEY_P)) setTool(&propTool_);
     if (IsKeyPressed(KEY_H)) { if (shift_) hideUnselected(); else hideSelected(); }
     if (shift_ && IsKeyPressed(KEY_X)) { if (tool_ == &clipTool_) clipTool_.cycleKeep(); else setTool(&clipTool_); }
     if (shift_ && IsKeyPressed(KEY_T)) applyCurrentTexture();
@@ -431,10 +439,20 @@ void Editor::handleKeyboard() {
 Scene Editor::buildScene() {
     Scene s;
     s.brushes = cache_.get(doc_);
+    s.models = &models_;
     // The texture tool works on faces; brush selection tint would compete with it.
     if (tool_ != &textureTool_) s.selected = doc_.selection();
     for (const Light& l : doc_.lights()) s.lights.push_back({l, doc_.lightSelection().count(l.id) > 0});
     for (const MathPrim& p : doc_.prims()) s.prims.push_back({p, doc_.primSelection().count(p.id) > 0});
+    for (const Prop& p : doc_.props()) {
+        Scene::SceneProp sp;
+        sp.prop = p;
+        sp.selected = doc_.propSelection().count(p.id) > 0;
+        const Model* m = models_.find(p.model);
+        sp.local = propLocalBounds(m);
+        sp.missing = m == nullptr;
+        s.props.push_back(std::move(sp));
+    }
     s.lightPreview = lightPreview_;
     s.ambient = doc_.environment().ambient;
     if (replicating_) { // Multi-Replicate preview
@@ -448,9 +466,19 @@ Scene Editor::buildScene() {
         for (MathPrimId id : doc_.withCombos(doc_.primSelection())) if (const MathPrim* p = doc_.findPrim(id)) ps.push_back(*p);
         std::vector<Light> ls;
         for (LightId id : doc_.lightSelection()) if (const Light* l = doc_.findLight(id)) ls.push_back(*l);
-        for (const ReplicateCopy& c : replicate(bs, ps, ls, repSpec_)) {
+        std::vector<Prop> qs;
+        for (PropId id : doc_.propSelection()) if (const Prop* q = doc_.findProp(id)) qs.push_back(*q);
+        for (const ReplicateCopy& c : replicate(bs, ps, ls, repSpec_, qs, modelFinder_)) {
             for (const Brush& b : c.brushes) s.ghosts.push_back(makeSceneBrush(b));
             for (const MathPrim& p : c.prims) s.pendingPrims.push_back(p);
+            for (const Prop& q : c.props) {
+                Scene::SceneProp sp;
+                sp.prop = q;
+                const Model* m = models_.find(q.model);
+                sp.local = propLocalBounds(m);
+                sp.missing = m == nullptr;
+                s.pendingProps.push_back(std::move(sp));
+            }
             for (const Light& l : c.lights) s.previewLights.push_back(l);
         }
     }
@@ -756,6 +784,7 @@ void Editor::selectAll() {
 void Editor::selectNone() {
     tool_->cancel();
     doc_.setSelection({});
+    doc_.setPropSelection({});
 }
 
 void Editor::duplicate() {
@@ -778,6 +807,19 @@ void Editor::duplicate() {
                 copies.push_back(std::move(c));
             }
         doc_.apply(doc_.makeAddPrims(std::move(copies), "Duplicate primitive"));
+        return;
+    }
+    if (doc_.selection().empty() && !doc_.propSelection().empty()) {
+        tool_->cancel();
+        std::vector<Prop> copies;
+        for (PropId id : doc_.propSelection())
+            if (const Prop* p = doc_.findProp(id)) {
+                Prop c = *p;
+                c.id = 0;
+                c.pos += Vec3{grid_.size, grid_.size, 0};
+                copies.push_back(std::move(c));
+            }
+        doc_.apply(doc_.makeAddProps(std::move(copies), "Duplicate prop"));
         return;
     }
     if (doc_.selection().empty() && !doc_.lightSelection().empty()) {
@@ -808,11 +850,12 @@ void Editor::duplicate() {
 }
 
 void Editor::deleteSelection() {
-    if (doc_.selection().empty() && doc_.lightSelection().empty() && doc_.primSelection().empty()) return;
+    if (doc_.selection().empty() && doc_.lightSelection().empty() && doc_.primSelection().empty() && doc_.propSelection().empty()) return;
     tool_->cancel();
     Command c = doc_.makeDelete(doc_.selection(), "Delete");
     doc_.addLightDeletes(c, doc_.lightSelection());
     doc_.addPrimDeletes(c, doc_.primSelection());
+    doc_.addPropDeletes(c, doc_.propSelection());
     doc_.apply(std::move(c));
 }
 
@@ -1289,6 +1332,128 @@ void Editor::setVisgroupVisible(std::uint32_t id, bool visible) {
     dropInvisibleFromSelection();
 }
 
+void Editor::drawPropsPanel() {
+    if (ImGui::Begin("Props###props", nullptr, ImGuiWindowFlags_NoCollapse)) {
+        const auto& names = models_.store().names();
+        ImGui::Text("model: %s", propTool_.model.empty() ? "(none picked)" : propTool_.model.c_str());
+        ImGui::SetNextItemWidth(-1);
+        ImGui::InputTextWithHint("##propsearch", "search by name", propSearch_, sizeof propSearch_);
+        std::string needle = propSearch_;
+        std::transform(needle.begin(), needle.end(), needle.begin(), [](unsigned char c) { return (char)std::tolower(c); });
+        const float footer = ImGui::GetFrameHeightWithSpacing() * 1.4f;
+        if (ImGui::BeginChild("##proplist", ImVec2(0, -footer), ImGuiChildFlags_Borders)) {
+            size_t shown = 0;
+            for (const std::string& name : names) {
+                std::string low = name;
+                std::transform(low.begin(), low.end(), low.begin(), [](unsigned char c) { return (char)std::tolower(c); });
+                if (!needle.empty() && low.find(needle) == std::string::npos) continue;
+                ++shown;
+                if (ImGui::Selectable(name.c_str(), name == propTool_.model)) {
+                    propTool_.model = name;
+                    if (tool_ != &propTool_) setTool(&propTool_);
+                }
+                if (ImGui::IsItemHovered()) {
+                    const std::string why = models_.store().problem(name);
+                    if (!why.empty()) ImGui::SetTooltip("%s\n%s", name.c_str(), why.c_str());
+                }
+            }
+            if (shown == 0) {
+                if (bottegaRoot_.empty()) ImGui::TextWrapped("No Bottega folder yet. File > Bottega folder... then put .glb models in its models folder.");
+                else if (names.empty()) ImGui::TextWrapped("No models found in the Bottega's models folder (.glb files).");
+                else ImGui::TextDisabled("No model matches.");
+            }
+        }
+        ImGui::EndChild();
+        if (ImGui::Button("Rescan")) rescanBottega();
+        ImGui::SameLine();
+        ImGui::TextDisabled("%zu models", names.size());
+    }
+    ImGui::End();
+}
+
+void Editor::drawPropPanel() {
+    auto vec3Edit = [](const char* label, Vec3& v) {
+        double a[3] = {v.x, v.y, v.z};
+        ImGui::SetNextItemWidth(220);
+        ImGui::InputScalarN(label, ImGuiDataType_Double, a, 3, nullptr, nullptr, "%g");
+        v = {a[0], a[1], a[2]};
+        return ImGui::IsItemDeactivatedAfterEdit();
+    };
+    ImGui::PushID("props");
+    const std::set<PropId>& sel = doc_.propSelection();
+    if (!sel.empty()) {
+        if ((sel != propBufFor_ || doc_.revision() != propBufRev_) && !ImGui::IsAnyItemActive()) {
+            if (const Prop* p = doc_.findProp(*sel.begin())) propBuf_ = *p;
+            propBufFor_ = sel;
+            propBufRev_ = doc_.revision();
+        }
+        Prop& b = propBuf_;
+        if (sel.size() == 1) ImGui::Text("prop: %s", b.model.c_str());
+        else ImGui::Text("%zu props selected", sel.size());
+        if (const Model* m = models_.find(b.model)) {
+            if (m->triangles() > Model::kTriangleBudget)
+                ImGui::TextColored(ImVec4(1, 0.5f, 0.3f, 1), "heavy model: %zu triangles", (size_t)m->triangles());
+        } else ImGui::TextColored(ImVec4(1, 0.5f, 0.3f, 1), "model not found (shown as a box)");
+        std::vector<std::function<void(Prop&)>> fns;
+        if (sel.size() == 1) {
+            if (vec3Edit("position", b.pos)) { const Vec3 v = b.pos; fns.push_back([v](Prop& p) { p.pos = v; }); }
+            if (vec3Edit("rotation X Y Z", b.rot)) { const Vec3 v = b.rot; fns.push_back([v](Prop& p) { p.rot = v; }); }
+            ImGui::Checkbox("scale per axis", &propPerAxis_);
+            if (propPerAxis_) {
+                if (vec3Edit("scale", b.scale)) { const Vec3 v = b.scale; fns.push_back([v](Prop& p) { p.scale = v; }); }
+            } else {
+                double k = b.scale.x;
+                ImGui::SetNextItemWidth(220);
+                ImGui::InputDouble("scale", &k, 0, 0, "%g");
+                if (ImGui::IsItemDeactivatedAfterEdit() && k > 0) fns.push_back([k](Prop& p) { p.scale = {k, k, k}; });
+            }
+        } else {
+            double k = 1;
+            ImGui::SetNextItemWidth(220);
+            ImGui::InputDouble("scale all by", &k, 0, 0, "%g");
+            if (ImGui::IsItemDeactivatedAfterEdit() && k > 0) fns.push_back([k](Prop& p) { p.scale = p.scale * k; });
+        }
+        if (!propTool_.model.empty() && ImGui::SmallButton("use the picked model")) {
+            const std::string m = propTool_.model;
+            fns.push_back([m](Prop& p) { p.model = m; });
+        }
+        if (!fns.empty()) {
+            std::vector<Prop> out;
+            for (PropId id : sel)
+                if (const Prop* p = doc_.findProp(id)) {
+                    Prop c = *p;
+                    for (auto& f : fns) f(c);
+                    out.push_back(c);
+                }
+            doc_.apply(doc_.makeModifyProps(out, "Edit prop"));
+        }
+        ImGui::Separator();
+    }
+    if (tool_ == &propTool_) {
+        ImGui::TextDisabled("next prop");
+        ImGui::Text("model: %s", propTool_.model.empty() ? "(pick one in the Props panel)" : propTool_.model.c_str());
+        ImGui::PushItemWidth(220);
+        vec3Edit("turn X Y Z", propTool_.rot);
+        ImGui::InputDouble("scale##next", &propTool_.scale, 0, 0, "%g");
+        if (propTool_.scale <= 0) propTool_.scale = 1;
+        if (propTool_.hasPending()) {
+            if (auto pp = propTool_.pending()) {
+                if (!ImGui::IsAnyItemActive()) { propPend_[0] = pp->pos.x; propPend_[1] = pp->pos.y; propPend_[2] = pp->pos.z; }
+                ImGui::InputScalarN("place at", ImGuiDataType_Double, propPend_, 3, nullptr, nullptr, "%g");
+                if (ImGui::IsItemDeactivatedAfterEdit()) propTool_.setPending({propPend_[0], propPend_[1], propPend_[2]});
+            }
+            if (ImGui::Button("Place (Return)")) propTool_.create(doc_);
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel (Esc)")) propTool_.cancel();
+        } else {
+            ImGui::TextDisabled("click a surface in 3D or a spot in a 2D view");
+            if (ImGui::Button("Start at the origin") && !propTool_.model.empty()) propTool_.setPending({0, 0, 0});
+        }
+        ImGui::PopItemWidth();
+    }
+    ImGui::PopID();
+}
+
 void Editor::drawVisgroupsPanel() {
     if (ImGui::Begin("Visgroups###visgroups", nullptr, ImGuiWindowFlags_NoCollapse)) {
         size_t hidden = 0;
@@ -1670,6 +1835,7 @@ void Editor::setBottegaRoot(const std::string& root) {
     const std::string use = bottega::usable(bottegaCheck_) ? root : std::string();
     textures_.setBottegaRoot(use);
     skies_.setBottegaRoot(use);
+    models_.setBottegaRoot(use);
     if (!textures_.exists(currentTexture_) && !textures_.names().empty()) currentTexture_ = textures_.names()[0];
 }
 
@@ -1681,6 +1847,7 @@ void Editor::rescanBottega() {
     textures_.rescan();
     skies_.setBottegaRoot(use);
     skies_.rescan();
+    models_.setBottegaRoot(use); // forgets every loaded model; they load again when next drawn
 }
 
 void Editor::drawBottegaDialog() {
@@ -2128,7 +2295,7 @@ std::vector<std::vector<const MathPrim*>> selectedObjects(const Document& doc) {
 
 void Editor::snapToLand() {
     auto objects = selectedObjects(doc_);
-    if (objects.empty()) { landMessage_ = "select primitives to snap to land"; return; }
+    if (objects.empty() && doc_.propSelection().empty()) { landMessage_ = "select primitives or props to snap to land"; return; }
     tool_->cancel();
     // Lowest first, so an object stacked on another selected one lands on its new spot.
     std::sort(objects.begin(), objects.end(), [](const auto& a, const auto& b) { return objectBottom(a) < objectBottom(b); });
@@ -2151,8 +2318,40 @@ void Editor::snapToLand() {
                 out.push_back(p);
             }
     }
+    // Props land after the primitives, each on what is below it (including the props already landed).
+    std::vector<Prop> propsWork = doc_.props();
+    std::vector<Prop> propsOut;
+    {
+        std::vector<PropId> ids(doc_.propSelection().begin(), doc_.propSelection().end());
+        auto bottomOf = [&](PropId id) {
+            for (const Prop& q : propsWork) if (q.id == id) return propBottom(q, models_.find(q.model));
+            return 0.0;
+        };
+        std::sort(ids.begin(), ids.end(), [&](PropId a, PropId b) { return bottomOf(a) < bottomOf(b); });
+        for (PropId id : ids) {
+            Prop* me = nullptr;
+            std::vector<PropRef> others;
+            for (Prop& q : propsWork) {
+                if (q.id == id) me = &q;
+                else others.push_back({&q, models_.find(q.model)});
+            }
+            if (!me) continue;
+            std::vector<const MathPrim*> prims;
+            for (const MathPrim& m : work) prims.push_back(&m);
+            const auto mv = propLandingMove({me, models_.find(me->model)}, brushes, prims, others);
+            if (!mv) { ++nothing; continue; }
+            me->pos.z = cleanNumber(me->pos.z + *mv, 1e-6);
+            propsOut.push_back(*me);
+        }
+    }
     landMessage_ = nothing ? std::to_string(nothing) + " object(s) had nothing below them" : "";
-    if (!out.empty()) doc_.apply(doc_.makeModifyPrims(out, "Snap to land"));
+    if (out.empty() && propsOut.empty()) return;
+    Command c = out.empty() ? doc_.makeModifyProps(propsOut, "Snap to land") : doc_.makeModifyPrims(out, "Snap to land");
+    if (!out.empty() && !propsOut.empty()) {
+        Command pc = doc_.makeModifyProps(propsOut, "Snap to land");
+        c.propChanges = std::move(pc.propChanges);
+    }
+    doc_.apply(std::move(c));
 }
 
 void Editor::snapToGround(double height) {
@@ -2165,13 +2364,22 @@ void Editor::snapToGround(double height) {
             out.push_back(c);
         }
     }
-    if (out.empty()) return;
+    std::vector<Prop> propsOut;
+    for (PropId id : doc_.propSelection())
+        if (const Prop* q = doc_.findProp(id)) {
+            Prop c = *q;
+            c.pos.z = cleanNumber(c.pos.z + height - propBottom(*q, models_.find(q->model)), 1e-6);
+            propsOut.push_back(c);
+        }
+    if (out.empty() && propsOut.empty()) return;
     tool_->cancel();
-    doc_.apply(doc_.makeModifyPrims(out, "Snap to ground"));
+    Command c = out.empty() ? doc_.makeModifyProps(propsOut, "Snap to ground") : doc_.makeModifyPrims(out, "Snap to ground");
+    if (!out.empty() && !propsOut.empty()) c.propChanges = doc_.makeModifyProps(propsOut, "").propChanges;
+    doc_.apply(std::move(c));
 }
 
 void Editor::openReplicate() {
-    if (doc_.selection().empty() && doc_.primSelection().empty() && doc_.lightSelection().empty()) return;
+    if (doc_.selection().empty() && doc_.primSelection().empty() && doc_.lightSelection().empty() && doc_.propSelection().empty()) return;
     tool_->cancel();
     if (repSpec_.offset == Vec3{100, 0, 0} && grid_.size > 0) repSpec_.offset = {grid_.size * 4, 0, 0};
     replicating_ = true;
@@ -2190,7 +2398,9 @@ bool Editor::applyReplicate(const ReplicateSpec& spec) {
     for (MathPrimId id : doc_.withCombos(doc_.primSelection())) if (const MathPrim* p = doc_.findPrim(id)) ps.push_back(*p);
     std::vector<Light> ls;
     for (LightId id : doc_.lightSelection()) if (const Light* l = doc_.findLight(id)) ls.push_back(*l);
-    const auto copies = replicate(bs, ps, ls, spec);
+    std::vector<Prop> qs;
+    for (PropId id : doc_.propSelection()) if (const Prop* q = doc_.findProp(id)) qs.push_back(*q);
+    const auto copies = replicate(bs, ps, ls, spec, qs, modelFinder_);
     if (copies.empty()) return false;
     // One command: every copy, each with its own groups and combinations.
     Command c;
@@ -2200,6 +2410,8 @@ bool Editor::applyReplicate(const ReplicateSpec& spec) {
     c.primSelectionBefore = doc_.primSelection();
     c.lightSelectionAfter = std::set<LightId>{};
     c.primSelectionAfter = std::set<MathPrimId>{};
+    c.propSelectionBefore = doc_.propSelection();
+    c.propSelectionAfter = std::set<PropId>{};
     std::uint32_t nextCombo = newComboId(doc_.prims());
     for (const ReplicateCopy& cp : copies) {
         std::map<std::uint32_t, std::uint32_t> newGroup, newCombo;
@@ -2229,6 +2441,11 @@ bool Editor::applyReplicate(const ReplicateSpec& spec) {
             }
             c.primSelectionAfter->insert(p.id);
             c.primChanges.push_back({p.id, std::nullopt, std::move(p)});
+        }
+        for (Prop q : cp.props) {
+            q.id = doc_.newPropId();
+            c.propSelectionAfter->insert(q.id);
+            c.propChanges.push_back({q.id, std::nullopt, std::move(q)});
         }
         for (Light l : cp.lights) {
             l.id = doc_.newLightId();
@@ -2839,6 +3056,11 @@ void Editor::drawFacePanel() {
         ImGui::End();
         return;
     }
+    if (tool_ == &propTool_ || ((tool_ == &selectTool_ || tool_ == &lightTool_ || tool_ == &primTool_) && doc_.primSelection().empty() && !doc_.propSelection().empty())) {
+        if (ImGui::Begin("Properties###face", nullptr, ImGuiWindowFlags_NoCollapse)) drawPropPanel();
+        ImGui::End();
+        return;
+    }
     if (tool_ == &primTool_ || ((tool_ == &selectTool_ || tool_ == &lightTool_) && !doc_.primSelection().empty())) {
         if (ImGui::Begin("Properties###face", nullptr, ImGuiWindowFlags_NoCollapse)) drawPrimPanel();
         ImGui::End();
@@ -2938,7 +3160,7 @@ void Editor::openMap(const std::string& path) {
     }
     tool_->cancel();
     doc_.reset(loaded.worldKeys, loaded.brushes(), loaded.otherEntities, loaded.groups(), loaded.visgroups(),
-               WorldData{loaded.lights(), loaded.environment(), loaded.bookmarks(), loaded.figure(), loaded.prims()});
+               WorldData{loaded.lights(), loaded.environment(), loaded.bookmarks(), loaded.figure(), loaded.prims(), loaded.props()});
     path_ = path;
     if (r.skippedBrushes > 0)
         errorText_ = "Opened, but skipped " + std::to_string(r.skippedBrushes) + " invalid brush(es).";
@@ -3156,7 +3378,7 @@ void Editor::stepScript() {
         std::string t; in >> t;
         setTool(t == "block" ? (Tool*)&blockTool_ : t == "vertex" ? (Tool*)&vertexTool_
               : t == "texture" ? (Tool*)&textureTool_ : t == "clip" ? (Tool*)&clipTool_
-              : t == "curve" ? (Tool*)&curveTool_ : t == "terrain" ? (Tool*)&terrainTool_ : t == "light" ? (Tool*)&lightTool_ : t == "prim" ? (Tool*)&primTool_ : (Tool*)&selectTool_);
+              : t == "curve" ? (Tool*)&curveTool_ : t == "terrain" ? (Tool*)&terrainTool_ : t == "light" ? (Tool*)&lightTool_ : t == "prim" ? (Tool*)&primTool_ : t == "props" ? (Tool*)&propTool_ : (Tool*)&selectTool_);
     } else if (cmd == "press") {
         int v; float x, y; in >> v >> x >> y;
         std::string mod;
@@ -3437,6 +3659,69 @@ void Editor::stepScript() {
     } else if (cmd == "expect" && in.str().find(" primsel ") != std::string::npos) {
         std::string w; size_t n = 0; in >> w >> n;
         if (doc_.primSelection().size() != n) { std::fprintf(stderr, "script FAIL (command %d): expected %zu selected primitives, got %zu\n", scriptLine_, n, doc_.primSelection().size()); ++scriptFailures_; }
+    } else if (cmd == "propset") {
+        // propset model <name> | rot x y z | scale s
+        std::string k; in >> k;
+        if (k == "model") in >> propTool_.model;
+        else if (k == "rot") in >> propTool_.rot.x >> propTool_.rot.y >> propTool_.rot.z;
+        else if (k == "scale") in >> propTool_.scale;
+    } else if (cmd == "prop") {
+        // prop <model> x y z [rx ry rz] [scale]: adds a prop
+        Prop p;
+        in >> p.model >> p.pos.x >> p.pos.y >> p.pos.z;
+        Vec3 r; if (in >> r.x >> r.y >> r.z) p.rot = r;
+        double k = 1; if (in >> k) p.scale = {k, k, k};
+        doc_.apply(doc_.makeAddProps({p}, "Create prop"));
+    } else if (cmd == "propselect") {
+        // propselect all | none | <index>...
+        std::set<PropId> sel;
+        std::string w;
+        while (in >> w) {
+            if (w == "all") for (const Prop& p : doc_.props()) sel.insert(p.id);
+            else if (w != "none") { const size_t i = (size_t)std::atoi(w.c_str()); if (i < doc_.props().size()) sel.insert(doc_.props()[i].id); }
+        }
+        doc_.setPropSelection(sel); doc_.setSelection({}); doc_.setLightSelection({}); doc_.setPrimSelection({});
+    } else if (cmd == "propedit") {
+        // propedit pos x y z | rot x y z | scale s | scale x y z | model <name>   (on the selected props)
+        std::string k, rest; in >> k; std::getline(in, rest);
+        std::vector<Prop> out;
+        for (PropId id : doc_.propSelection())
+            if (const Prop* q = doc_.findProp(id)) {
+                Prop c = *q;
+                std::istringstream v(rest);
+                if (k == "pos") v >> c.pos.x >> c.pos.y >> c.pos.z;
+                else if (k == "rot") v >> c.rot.x >> c.rot.y >> c.rot.z;
+                else if (k == "scale") { double a = 1, b2, d; v >> a; if (v >> b2 >> d) c.scale = {a, b2, d}; else c.scale = {a, a, a}; }
+                else if (k == "model") v >> c.model;
+                out.push_back(c);
+            }
+        if (!out.empty()) doc_.apply(doc_.makeModifyProps(out, "Edit prop"));
+    } else if (cmd == "expect" && in.str().find(" props ") != std::string::npos) {
+        std::string w; size_t n = 0; in >> w >> n;
+        if (doc_.props().size() != n) { std::fprintf(stderr, "script FAIL (command %d): expected %zu props, got %zu\n", scriptLine_, n, doc_.props().size()); ++scriptFailures_; }
+    } else if (cmd == "expect" && in.str().find(" propsel ") != std::string::npos) {
+        std::string w; size_t n = 0; in >> w >> n;
+        if (doc_.propSelection().size() != n) { std::fprintf(stderr, "script FAIL (command %d): expected %zu selected props, got %zu\n", scriptLine_, n, doc_.propSelection().size()); ++scriptFailures_; }
+    } else if (cmd == "expect" && (in.str().find(" proppos ") != std::string::npos || in.str().find(" proprot ") != std::string::npos ||
+                                   in.str().find(" propscale ") != std::string::npos || in.str().find(" propmodel ") != std::string::npos)) {
+        // expect proppos|proprot|propscale x y z   |   expect propmodel <name>   (first selected prop)
+        std::string w; in >> w;
+        const Prop* q = doc_.propSelection().empty() ? nullptr : doc_.findProp(*doc_.propSelection().begin());
+        if (!q) { std::fprintf(stderr, "script FAIL (command %d): no prop selected\n", scriptLine_); ++scriptFailures_; }
+        else if (w == "propmodel") {
+            std::string m; in >> m;
+            if (q->model != m) { std::fprintf(stderr, "script FAIL (command %d): prop model %s\n", scriptLine_, q->model.c_str()); ++scriptFailures_; }
+        } else {
+            Vec3 v; in >> v.x >> v.y >> v.z;
+            const Vec3 got = w == "proppos" ? q->pos : w == "proprot" ? q->rot : q->scale;
+            if (length(got - v) > (w == "propscale" ? 0.001 : 0.5)) { std::fprintf(stderr, "script FAIL (command %d): %s is %g %g %g\n", scriptLine_, w.c_str(), got.x, got.y, got.z); ++scriptFailures_; }
+        }
+    } else if (cmd == "expect" && in.str().find(" hasmodel ") != std::string::npos) {
+        // expect hasmodel <name> | expect hasmodel not <name>
+        std::string w, m; in >> w >> m;
+        bool want = true;
+        if (m == "not") { want = false; in >> m; }
+        if (models_.store().exists(m) != want) { std::fprintf(stderr, "script FAIL (command %d): model %s%s\n", scriptLine_, want ? "" : "not ", m.c_str()); ++scriptFailures_; }
     } else if (cmd == "viewset") {
         // viewset sky|preview|fog|figure on|off
         std::string k, v; in >> k >> v;

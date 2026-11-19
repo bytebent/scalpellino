@@ -4,6 +4,7 @@
 #include "core/sky.hpp"
 #include "render/lighting.hpp"
 #include "render/mathprim_render.hpp"
+#include "render/model_library.hpp"
 #include <algorithm>
 #include <cmath>
 
@@ -27,6 +28,8 @@ const Color kTerrainPoint{120, 190, 255, 255};
 const Color kPrimLine {200, 170, 255, 255};
 const Color kPrimCut  {255, 150,  80, 255};
 const Color kPrimKeep { 90, 220, 200, 255};
+const Color kPropLine { 130, 225, 140, 255};
+const Color kPropMissing {255, 170,  60, 255};
 
 const Color kBg3D      { 22,  22,  26, 255};
 const Color kGround    { 48,  48,  56, 255};
@@ -361,18 +364,39 @@ void Viewport::render2D(const Grid& grid, const Scene& scene) {
         }
         for (const auto& sp : scene.prims) if (sp.selected) drawPrim(sp.prim, kSelected);
         for (const MathPrim& p : scene.pendingPrims) drawPrim(p, kPreview);
-        // Rings around the selected primitives (the one around this view's axis) and the
-        // size handles seen side-on.
-        if (scene.primGizmo) {
-            const double r = std::max(scene.primGizmo->radius, Scene::kRingPx / zoom_);
-            const auto pts = axisCircle(scene.primGizmo->center, axD(), r, 96);
+        // Props: the box of the model (turned and sized), and a cross on its origin.
+        auto drawProp = [&](const Scene::SceneProp& sp, Color c) {
+            std::vector<Vec3> k;
+            for (int i = 0; i < 8; ++i)
+                k.push_back(propToWorld(sp.prop, {i & 1 ? sp.local.max.x : sp.local.min.x, i & 2 ? sp.local.max.y : sp.local.min.y,
+                                                   i & 4 ? sp.local.max.z : sp.local.min.z}));
+            for (int i = 0; i < 8; ++i)
+                for (int b = 0; b < 3; ++b)
+                    if (!(i & (1 << b))) {
+                        const Vec3 &a = k[i], &e = k[i | (1 << b)];
+                        segment(phys(a[U], a[V]), phys(e[U], e[V]), thick, c);
+                    }
+            const Vector2 o = phys(sp.prop.pos[U], sp.prop.pos[V]);
+            const float cs2 = (float)(4 * P);
+            segment({o.x - cs2, o.y}, {o.x + cs2, o.y}, thick, c);
+            segment({o.x, o.y - cs2}, {o.x, o.y + cs2}, thick, c);
+        };
+        for (const auto& sp : scene.props)
+            if (!sp.selected) drawProp(sp, sp.missing ? kPropMissing : kPropLine);
+        for (const auto& sp : scene.props) if (sp.selected) drawProp(sp, kSelected);
+        for (const auto& sp : scene.pendingProps) drawProp(sp, kPreview);
+        // Rings around the selected primitives / props (the one around this view's axis) and
+        // the size handles seen side-on.
+        for (const Scene::PrimGizmo& gz : scene.gizmos) {
+            const double r = std::max(gz.radius, Scene::kRingPx / zoom_);
+            const auto pts = axisCircle(gz.center, axD(), r, 96);
             const Color rc = scene.activeRing == axD() ? WHITE : kAxisCol[axD()];
             for (size_t i = 0; i < pts.size(); ++i) {
                 const Vec3 &a = pts[i], &b = pts[(i + 1) % pts.size()];
                 segment(phys(a[U], a[V]), phys(b[U], b[V]), thick + 1, rc);
             }
             const float hs = (float)(3 * P);
-            for (const auto& [pos, ax] : scene.primGizmo->handles) {
+            for (const auto& [pos, ax] : gz.handles) {
                 if (std::hypot(ax[U], ax[V]) < 0.3) continue;
                 const Vector2 c = phys(pos[U], pos[V]);
                 DrawRectangleRec({std::floor(c.x - hs - (float)P), std::floor(c.y - hs - (float)P), 2 * (hs + (float)P) + 1, 2 * (hs + (float)P) + 1}, BLACK);
@@ -825,6 +849,38 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
         for (const auto& sp : scene.prims) ps.push_back(sp.prim);
         drawMathPrims3D(ps, ctx);
     }
+    // Props: the models, every copy from one upload (fog included).
+    if (scene.models && !scene.props.empty()) {
+        PropDrawContext pctx;
+        pctx.camPos = {pos_.x, pos_.y, pos_.z};
+        pctx.fog = scene.fog;
+        pctx.fogColor = scene.fogColor;
+        pctx.fogStart = scene.fogStart;
+        pctx.fogEnd = scene.fogEnd;
+        std::vector<Prop> ps;
+        for (const auto& sp : scene.props) ps.push_back(sp.prop);
+        scene.models->draw(ps, pctx);
+    }
+    // Boxes: selected props in red, missing models in orange (and every prop when the
+    // shader can't run), the placement preview in yellow.
+    {
+        auto box3D = [&](const Scene::SceneProp& sp, Color c) {
+            std::vector<Vec3> k;
+            for (int i = 0; i < 8; ++i)
+                k.push_back(propToWorld(sp.prop, {i & 1 ? sp.local.max.x : sp.local.min.x, i & 2 ? sp.local.max.y : sp.local.min.y,
+                                                   i & 4 ? sp.local.max.z : sp.local.min.z}));
+            for (int i = 0; i < 8; ++i)
+                for (int b = 0; b < 3; ++b)
+                    if (!(i & (1 << b))) DrawLine3D(toRl(k[i]), toRl(k[i | (1 << b)]), c);
+        };
+        const bool modelsOk = scene.models && scene.models->shaderOk();
+        for (const auto& sp : scene.props) {
+            if (sp.selected) box3D(sp, kSelected);
+            else if (sp.missing) box3D(sp, kPropMissing);
+            else if (!modelsOk) box3D(sp, kPropLine);
+        }
+        for (const auto& sp : scene.pendingProps) box3D(sp, kPreview);
+    }
     // Their outlines: selected ones in red, the primitive tool's preview in yellow, and
     // all of them if the shader can't run.
     for (const auto& sp : scene.prims) {
@@ -880,10 +936,10 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
             for (size_t i = 0; i < pts.size(); ++i) DrawLine3D(toRl(pts[i]), toRl(pts[(i + 1) % pts.size()]), rc);
         }
     }
-    if (scene.primGizmo) {
-        const double r = std::max(scene.primGizmo->radius, Scene::kRingPx * worldPerPixel(scene.primGizmo->center));
+    for (const Scene::PrimGizmo& gz : scene.gizmos) {
+        const double r = std::max(gz.radius, Scene::kRingPx * worldPerPixel(gz.center));
         for (int ax = 0; ax < 3; ++ax) {
-            const auto pts = axisCircle(scene.primGizmo->center, ax, r, 96);
+            const auto pts = axisCircle(gz.center, ax, r, 96);
             const Color rc = scene.activeRing == ax ? WHITE : kAxisCol[ax];
             for (size_t i = 0; i < pts.size(); ++i) DrawLine3D(toRl(pts[i]), toRl(pts[(i + 1) % pts.size()]), rc);
         }
@@ -916,8 +972,8 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
         }
     };
     for (const auto& sl : scene.lights) marker3D(sl.light, sl.selected ? kSelected : BLACK, sl.selected ? 2 * P : P);
-    if (scene.primGizmo)
-        for (const auto& [pos, ax] : scene.primGizmo->handles) {
+    for (const Scene::PrimGizmo& gz : scene.gizmos)
+        for (const auto& [pos, ax] : gz.handles) {
             Vector2 c;
             if (!worldToLocal3D(pos, c)) continue;
             c.x *= P;

@@ -32,8 +32,9 @@ release
 expect primsel 1
 expect primpos 80 32 120
 # its ring and size handles work on it alone too: shrink it from its +X side
-wpress 1 140 32
-wdrag 108 32
+# (Shift: one axis; a plain drag scales evenly)
+wpress 1 140 32 shift
+wdrag 108 32 shift
 release
 expect primsize 88 120 120
 expect primpos 64 32 120

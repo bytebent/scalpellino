@@ -14,6 +14,9 @@
 #include "core/landing.hpp"
 #include "core/replicate.hpp"
 #include "core/bottega.hpp"
+#include "core/prop.hpp"
+#include "io/glb_loader.hpp"
+#include "io/model_store.hpp"
 #include "io/map_format.hpp"
 #include <cmath>
 #include <random>
@@ -2028,6 +2031,452 @@ static void testBottega() {
     fs::remove_all(base);
 }
 
+
+// ---------------------------------------------------------------- props (milestone 10)
+
+namespace {
+// A small `.glb` made on the spot (glTF units: metres, Y up). Kinds: a 1 m cube standing on
+// y = 0 (x and z from -0.5 to 0.5) with a material and an embedded "image", or one
+// triangle without indices or normals.
+enum class GlbKind { Cube, Triangle };
+struct GlbOptions {
+    GlbKind kind = GlbKind::Cube;
+    double tx = 0;             // the node's translation along glTF x (metres)
+    bool image = false;        // embed an image (bytes 1..10) with the material
+    bool mask = false;         // alpha mode MASK, cutoff 0.3
+    bool noMaterial = false;
+};
+
+void put32(std::string& o, std::uint32_t v) { for (int i = 0; i < 4; ++i) o.push_back((char)((v >> (8 * i)) & 0xff)); }
+
+std::string makeGlb(const GlbOptions& o) {
+    std::vector<float> pos, nor, uv;
+    std::vector<std::uint16_t> idx;
+    if (o.kind == GlbKind::Cube) {
+        const float h = 0.5f;
+        const float P[8][3] = {{-h, 0, -h}, {h, 0, -h}, {h, 1, -h}, {-h, 1, -h}, {-h, 0, h}, {h, 0, h}, {h, 1, h}, {-h, 1, h}};
+        const int F[6][4] = {{0, 1, 2, 3}, {5, 4, 7, 6}, {4, 0, 3, 7}, {1, 5, 6, 2}, {3, 2, 6, 7}, {4, 5, 1, 0}};
+        const float N[6][3] = {{0, 0, -1}, {0, 0, 1}, {-1, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, -1, 0}};
+        for (int f = 0; f < 6; ++f) {
+            for (int k = 0; k < 4; ++k) {
+                for (int a = 0; a < 3; ++a) { pos.push_back(P[F[f][k]][a]); nor.push_back(N[f][a]); }
+                uv.push_back(k == 1 || k == 2 ? 1.f : 0.f);
+                uv.push_back(k >= 2 ? 1.f : 0.f);
+            }
+            const std::uint16_t b = (std::uint16_t)(4 * f);
+            for (std::uint16_t i : {0, 2, 1, 0, 3, 2}) idx.push_back((std::uint16_t)(b + i));
+        }
+    } else {
+        pos = {0, 0, 0, 1, 0, 0, 0, 0, -1}; // in the xz plane, y = 0
+    }
+    std::string bin;
+    auto addF = [&](const std::vector<float>& v) { const size_t at = bin.size(); bin.append((const char*)v.data(), v.size() * 4); return at; };
+    const size_t posAt = addF(pos);
+    const size_t norAt = nor.empty() ? 0 : addF(nor);
+    const size_t uvAt = uv.empty() ? 0 : addF(uv);
+    size_t idxAt = 0;
+    if (!idx.empty()) { idxAt = bin.size(); bin.append((const char*)idx.data(), idx.size() * 2); while (bin.size() % 4) bin.push_back(0); }
+    size_t imgAt = 0;
+    if (o.image) { imgAt = bin.size(); for (int i = 1; i <= 10; ++i) bin.push_back((char)i); while (bin.size() % 4) bin.push_back(0); }
+    float lo[3] = {1e9f, 1e9f, 1e9f}, hi[3] = {-1e9f, -1e9f, -1e9f};
+    for (size_t i = 0; i < pos.size(); ++i) { lo[i % 3] = std::min(lo[i % 3], pos[i]); hi[i % 3] = std::max(hi[i % 3], pos[i]); }
+    std::ostringstream j;
+    j << "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+      << "\"nodes\":[{\"mesh\":0,\"translation\":[" << o.tx << ",0,0]}],"
+      << "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0";
+    int next = 1;
+    int norAcc = -1, uvAcc = -1, idxAcc = -1;
+    if (!nor.empty()) { norAcc = next++; j << ",\"NORMAL\":" << norAcc; }
+    if (!uv.empty()) { uvAcc = next++; j << ",\"TEXCOORD_0\":" << uvAcc; }
+    j << "}";
+    if (!idx.empty()) { idxAcc = next++; j << ",\"indices\":" << idxAcc; }
+    if (!o.noMaterial) j << ",\"material\":0";
+    j << "}]}]";
+    if (!o.noMaterial) {
+        j << ",\"materials\":[{\"name\":\"paint\",\"pbrMetallicRoughness\":{\"baseColorFactor\":[1,0.5,0.25,1]"
+          << (o.image ? ",\"baseColorTexture\":{\"index\":0}" : "") << "}"
+          << (o.mask ? ",\"alphaMode\":\"MASK\",\"alphaCutoff\":0.3" : "") << "}]";
+        if (o.image) j << ",\"textures\":[{\"source\":0}],\"images\":[{\"bufferView\":4,\"mimeType\":\"image/png\"}]";
+    }
+    j << ",\"buffers\":[{\"byteLength\":" << bin.size() << "}],\"bufferViews\":[";
+    j << "{\"buffer\":0,\"byteOffset\":" << posAt << ",\"byteLength\":" << pos.size() * 4 << "}";
+    j << ",{\"buffer\":0,\"byteOffset\":" << norAt << ",\"byteLength\":" << nor.size() * 4 << "}";
+    j << ",{\"buffer\":0,\"byteOffset\":" << uvAt << ",\"byteLength\":" << uv.size() * 4 << "}";
+    j << ",{\"buffer\":0,\"byteOffset\":" << idxAt << ",\"byteLength\":" << idx.size() * 2 << "}";
+    if (o.image) j << ",{\"buffer\":0,\"byteOffset\":" << imgAt << ",\"byteLength\":10}";
+    j << "],\"accessors\":[";
+    j << "{\"bufferView\":0,\"componentType\":5126,\"count\":" << pos.size() / 3 << ",\"type\":\"VEC3\",\"min\":[" << lo[0] << ","
+      << lo[1] << "," << lo[2] << "],\"max\":[" << hi[0] << "," << hi[1] << "," << hi[2] << "]}";
+    if (norAcc >= 0) j << ",{\"bufferView\":1,\"componentType\":5126,\"count\":" << nor.size() / 3 << ",\"type\":\"VEC3\"}";
+    if (uvAcc >= 0) j << ",{\"bufferView\":2,\"componentType\":5126,\"count\":" << uv.size() / 2 << ",\"type\":\"VEC2\"}";
+    if (idxAcc >= 0) j << ",{\"bufferView\":3,\"componentType\":5123,\"count\":" << idx.size() << ",\"type\":\"SCALAR\"}";
+    j << "]}";
+    std::string json = j.str();
+    while (json.size() % 4) json.push_back(' ');
+    std::string out;
+    put32(out, 0x46546C67);
+    put32(out, 2);
+    put32(out, (std::uint32_t)(12 + 8 + json.size() + 8 + bin.size()));
+    put32(out, (std::uint32_t)json.size());
+    put32(out, 0x4E4F534A);
+    out += json;
+    put32(out, (std::uint32_t)bin.size());
+    put32(out, 0x004E4942);
+    out += bin;
+    return out;
+}
+
+void writeFile(const std::filesystem::path& p, const std::string& data) {
+    std::filesystem::create_directories(p.parent_path());
+    std::ofstream f(p, std::ios::binary);
+    f << data;
+}
+
+Prop makeProp(const std::string& model, Vec3 pos, Vec3 rot = {}, Vec3 scale = {1, 1, 1}) {
+    Prop p;
+    p.model = model;
+    p.pos = pos;
+    p.rot = rot;
+    p.scale = scale;
+    return p;
+}
+} // namespace
+
+static void testPropsLoad() {
+    namespace fs = std::filesystem;
+    const fs::path base = fs::temp_directory_path() / "scal_props_test";
+    fs::remove_all(base);
+    std::string err;
+
+    // A cube: glTF metres, Y up -> centimetres, Z up; 1 m cube standing on the floor.
+    GlbOptions o;
+    o.tx = 1;
+    o.image = true;
+    o.mask = true;
+    writeFile(base / "cube.glb", makeGlb(o));
+    Model m;
+    CHECK(loadGlbFile((base / "cube.glb").string(), m, err));
+    CHECK(err.empty());
+    CHECK(m.triangles() == 12);
+    CHECK(m.meshes.size() == 1 && m.meshes[0].vertices() == 24);
+    CHECK(nearV(m.bounds.min, {50, -50, 0}, 1e-3));   // x 0.5..1.5 m, y = -z, z = y
+    CHECK(nearV(m.bounds.max, {150, 50, 100}, 1e-3));
+    CHECK(m.materials.size() == 1);
+    CHECK(near(m.materials[0].color.x, 255, 1e-3) && near(m.materials[0].color.y, 127.5, 1e-3) && near(m.materials[0].color.z, 63.75, 1e-3));
+    CHECK(m.materials[0].cutout && near(m.materials[0].cutoff, 0.3, 1e-6));
+    CHECK(m.materials[0].image.size() == 10 && m.materials[0].image[0] == 1 && m.materials[0].image[9] == 10);
+    CHECK(m.materials[0].hasTexture());
+    // Normals are Z-up too: the glTF +y face points to +Z.
+    {
+        bool up = false;
+        const ModelMesh& mesh = m.meshes[0];
+        for (size_t i = 0; i < mesh.vertices(); ++i)
+            if (near(mesh.normal[3 * i + 2], 1, 1e-6) && near(mesh.pos[3 * i + 2], 100, 1e-3)) up = true;
+        CHECK(up);
+    }
+    // Winding stays outward: every triangle's face normal points away from the centre.
+    {
+        const ModelMesh& mesh = m.meshes[0];
+        const Vec3 c = m.bounds.center();
+        bool outward = true;
+        for (size_t i = 0; i + 2 < mesh.index.size(); i += 3) {
+            const float *a = &mesh.pos[3 * mesh.index[i]], *b = &mesh.pos[3 * mesh.index[i + 1]], *d = &mesh.pos[3 * mesh.index[i + 2]];
+            const Vec3 fn = cross(Vec3{b[0] - a[0], b[1] - a[1], b[2] - a[2]}, Vec3{d[0] - a[0], d[1] - a[1], d[2] - a[2]});
+            if (dot(fn, Vec3{a[0], a[1], a[2]} - c) <= 0) outward = false;
+        }
+        CHECK(outward);
+    }
+
+    // No material: a plain grey one is made. No indices, no normals: both are worked out.
+    GlbOptions t;
+    t.kind = GlbKind::Triangle;
+    t.noMaterial = true;
+    writeFile(base / "tri.glb", makeGlb(t));
+    Model tm;
+    CHECK(loadGlbFile((base / "tri.glb").string(), tm, err));
+    CHECK(tm.triangles() == 1 && tm.materials.size() == 1 && !tm.materials[0].hasTexture());
+    {
+        const ModelMesh& mesh = tm.meshes[0];
+        const Vec3 n{mesh.normal[0], mesh.normal[1], mesh.normal[2]};
+        CHECK(near(length(n), 1, 1e-5));
+        CHECK(near(std::fabs(n.z), 1, 1e-5)); // the glTF xz plane is our XY plane: normal along Z
+    }
+
+    // Damaged and missing files fail with a plain message instead of crashing.
+    writeFile(base / "bad.glb", "not a glb at all");
+    Model bm;
+    CHECK(!loadGlbFile((base / "bad.glb").string(), bm, err) && !err.empty());
+    CHECK(!loadGlbFile((base / "nope.glb").string(), bm, err) && !err.empty());
+    { std::string cut = makeGlb(o); cut.resize(cut.size() / 2); writeFile(base / "cut.glb", cut); }
+    CHECK(!loadGlbFile((base / "cut.glb").string(), bm, err));
+    fs::remove_all(base);
+}
+
+static void testPropsStore() {
+    namespace fs = std::filesystem;
+    namespace bt = scal::bottega;
+    const fs::path base = fs::temp_directory_path() / "scal_props_store_test";
+    fs::remove_all(base);
+    const std::string root = (base / "Studio").string();
+    std::string err;
+    CHECK(bt::make(root, err));
+    const std::string cube = makeGlb({});
+    writeFile(fs::path(root) / "models/crate/crate.glb", cube);
+    writeFile(fs::path(root) / "models/loose.glb", cube);
+    writeFile(fs::path(root) / "models/pack/a.glb", cube);
+    writeFile(fs::path(root) / "models/pack/b.glb", cube);
+    writeFile(fs::path(root) / "models/one/whatever.glb", cube);
+    writeFile(fs::path(root) / "models/old chair/old chair.glb", cube);
+    writeFile(fs::path(root) / "models/broken/broken.glb", "junk");
+    writeFile(fs::path(root) / "models/notes.txt", "hello");
+    writeFile(fs::path(root) / "models/props/barrel/barrel.glb", cube);
+
+    ModelStore st;
+    CHECK(st.names().empty());
+    CHECK(st.find("models/crate") == nullptr);
+    st.setBottegaRoot(root);
+    const std::vector<std::string> want{"models/broken", "models/crate", "models/loose", "models/old_chair", "models/one",
+                                        "models/pack/a", "models/pack/b", "models/props/barrel"};
+    CHECK(st.names() == want);
+    CHECK(st.exists("models/crate") && !st.exists("models/nothing"));
+    const Model* crate = st.find("models/crate");
+    CHECK(crate && crate->triangles() == 12 && crate->name == "models/crate");
+    CHECK(st.find("models/crate") == crate); // loaded once, shared
+    CHECK(st.find("models/one") != nullptr);
+    CHECK(st.find("models/old_chair") != nullptr);
+    CHECK(st.find("models/pack/b") != nullptr);
+    CHECK(st.find("models/props/barrel") != nullptr);
+    CHECK(st.find("models/broken") == nullptr && !st.problem("models/broken").empty());
+    CHECK(st.find("models/nothing") == nullptr && !st.problem("models/nothing").empty());
+    ModelFinder fin = st.finder();
+    CHECK(fin("models/loose") != nullptr && fin("") == nullptr);
+
+    // Nothing is picked up by itself; rescan sees new files and forgets the loaded models.
+    writeFile(fs::path(root) / "models/new/new.glb", cube);
+    CHECK(!st.exists("models/new"));
+    const unsigned gen = st.generation();
+    st.rescan();
+    CHECK(st.exists("models/new") && st.generation() == gen + 1);
+    CHECK(st.find("models/new") != nullptr);
+
+    // No Bottega: nothing found.
+    st.setBottegaRoot("");
+    CHECK(st.names().empty() && st.find("models/crate") == nullptr);
+    fs::remove_all(base);
+}
+
+static void testPropsGeometry() {
+    namespace fs = std::filesystem;
+    const fs::path base = fs::temp_directory_path() / "scal_props_geo_test";
+    fs::remove_all(base);
+    writeFile(base / "cube.glb", makeGlb({}));
+    GlbOptions t;
+    t.kind = GlbKind::Triangle;
+    writeFile(base / "tri.glb", makeGlb(t));
+    Model cube, tri;
+    std::string err;
+    CHECK(loadGlbFile((base / "cube.glb").string(), cube, err));
+    CHECK(loadGlbFile((base / "tri.glb").string(), tri, err));
+    fs::remove_all(base);
+
+    // Placement: world = pos + R * (scale * local).
+    Prop p = makeProp("c", {1000, 0, 0});
+    CHECK(nearV(propToWorld(p, {10, 20, 30}), {1010, 20, 30}, 1e-9));
+    p.scale = {2, 2, 2};
+    CHECK(nearV(propToWorld(p, {10, 20, 30}), {1020, 40, 60}, 1e-9));
+    p.rot = {0, 0, 90};
+    CHECK(nearV(propToWorld(p, {10, 0, 0}), {1000, 20, 0}, 1e-9)); // +X turned to +Y
+    CHECK(nearV(propToLocal(p, propToWorld(p, {7, -3, 11})), {7, -3, 11}, 1e-9));
+    p.scale = {1, 2, 4};
+    CHECK(nearV(propToLocal(p, propToWorld(p, {7, -3, 11})), {7, -3, 11}, 1e-9));
+
+    // Bounds: the cube is 100 wide and deep, 100 high, standing on its origin.
+    Prop q = makeProp("c", {500, 500, 10});
+    const AABB b = propBounds(q, &cube);
+    CHECK(nearV(b.min, {450, 450, 10}, 1e-3) && nearV(b.max, {550, 550, 110}, 1e-3));
+    q.scale = {2, 1, 0.5};
+    const AABB bs = propBounds(q, &cube);
+    CHECK(nearV(bs.size(), {200, 100, 50}, 1e-3));
+    q.scale = {1, 1, 1};
+    q.rot = {0, 0, 45};
+    CHECK(near(propBounds(q, &cube).size().x, 100 * std::sqrt(2.0), 1e-3));
+    CHECK(near(propBottom(q, &cube), 10, 1e-3));
+    // No model: the missing-model box (64 x 64 x 64 on the origin).
+    const AABB pm = propBounds(makeProp("missing", {0, 0, 0}), nullptr);
+    CHECK(nearV(pm.min, {-32, -32, 0}) && nearV(pm.max, {32, 32, 64}));
+
+    // Rays: from above, onto the top of the cube.
+    Prop r = makeProp("c", {0, 0, 0});
+    r.id = 7;
+    auto h = rayHitProp(r, &cube, {0, 0, 500}, {0, 0, -1});
+    CHECK(h && near(h->t, 400, 1e-6) && nearV(h->normal, {0, 0, 1}, 1e-6) && h->prop == 7);
+    CHECK(!rayHitProp(r, &cube, {200, 0, 500}, {0, 0, -1}));
+    // Inside and scaled / turned.
+    r.scale = {2, 2, 2};
+    r.pos = {100, 0, 0};
+    h = rayHitProp(r, &cube, {100, 0, 500}, {0, 0, -1});
+    CHECK(h && near(h->t, 300, 1e-6)); // top at z = 200
+    r.rot = {0, 0, 45};
+    h = rayHitProp(r, &cube, {100 + 90, 0, 500}, {0, 0, -1}); // 90 out along x: inside the turned diamond (half-diagonal 141)
+    CHECK(h && near(h->t, 300, 1e-6));
+    CHECK(!rayHitProp(r, &cube, {100 + 150, 0, 500}, {0, 0, -1}));
+    // Hits use triangles, not the box: a single triangle leaves its box's far corner empty.
+    Prop tp = makeProp("t", {0, 0, 0});
+    {
+        // triangle (glTF) (0,0,0) (1,0,0) (0,0,-1) = ours (0,0,0) (100,0,0) (0,100,0): the half below the diagonal
+        const bool inside = rayHitProp(tp, &tri, {20, 20, 500}, {0, 0, -1}).has_value();
+        const bool outside = rayHitProp(tp, &tri, {80, 80, 500}, {0, 0, -1}).has_value();
+        CHECK(inside && !outside);
+        // The box stand-in (no model) would catch both.
+        CHECK(rayHitProp(tp, nullptr, {20, 20, 500}, {0, 0, -1}).has_value());
+    }
+    // The nearest of several props wins.
+    std::vector<Prop> props{makeProp("c", {0, 0, 0}), makeProp("c", {0, 0, 300})};
+    props[0].id = 1;
+    props[1].id = 2;
+    auto fin = [&](const std::string&) { return &cube; };
+    auto nearest = rayHitProps(props, fin, {0, 0, 1000}, {0, 0, -1});
+    CHECK(nearest && nearest->prop == 2 && near(nearest->t, 600, 1e-6));
+
+    // Turning about a world axis through a pivot.
+    Prop t2 = makeProp("c", {100, 0, 0});
+    rotateProp(t2, 2, 90, {0, 0, 0});
+    CHECK(nearV(t2.pos, {0, 100, 0}, 1e-9) && nearV(t2.rot, {0, 0, 90}, 1e-9));
+    rotateProp(t2, 2, 90);
+    CHECK(nearV(t2.pos, {0, 100, 0}, 1e-9) && nearV(t2.rot, {0, 0, 180}, 1e-9));
+
+    // Landing: a prop dropped on a floor, a sphere on a prop, a prop on a prop.
+    AABB fb; fb.add({-500, -500, -64}); fb.add({500, 500, 0});
+    const Brush floor = makeBox(fb, "a");
+    std::vector<const Brush*> bs1{&floor};
+    Prop drop = makeProp("c", {0, 0, 300});
+    auto mv = propLandingMove({&drop, &cube}, bs1, {}, {});
+    CHECK(mv && near(*mv, -300, 1e-6));
+    Prop sunk = makeProp("c", {0, 0, -20});
+    mv = propLandingMove({&sunk, &cube}, bs1, {}, {});
+    CHECK(mv && near(*mv, 20, 1e-6)); // comes up to rest on top
+    Prop away = makeProp("c", {5000, 0, 300});
+    CHECK(!propLandingMove({&away, &cube}, bs1, {}, {}));
+    Prop onTop = makeProp("c", {20, 10, 500}); // straddles the first one
+    Prop under = makeProp("c", {0, 0, 0});
+    mv = propLandingMove({&onTop, &cube}, {}, {}, {{&under, &cube}});
+    CHECK(mv && near(onTop.pos.z + *mv, 100, 1e-6));
+    MathPrim sph;
+    sph.kind = PrimKind::Sphere;
+    sph.pos = {0, 0, 600};
+    sph.size = {60, 60, 60};
+    auto sm = landingMove({&sph}, {}, {}, {{&under, &cube}});
+    CHECK(sm && near(sph.pos.z + *sm, 130, 1e-3)); // sits on the cube's top (100) by its radius
+    // A prop over a primitive.
+    MathPrim ball;
+    ball.id = 3;
+    ball.kind = PrimKind::Sphere;
+    ball.pos = {0, 0, 40};
+    ball.size = {80, 80, 80};
+    Prop above = makeProp("c", {0, 0, 400});
+    mv = propLandingMove({&above, &cube}, {}, {&ball}, {});
+    CHECK(mv && near(above.pos.z + *mv, 80, 1.0)); // on top of the sphere (top = 80)
+}
+
+static void testPropsDocument() {
+    namespace fs = std::filesystem;
+    Document d;
+    CHECK(d.props().empty() && d.propSelection().empty());
+    Prop a = makeProp("models/a", {10, 20, 30}, {0, 0, 45}, {2, 2, 2});
+    a.otherKeys.emplace_back("_note", "keep me");
+    Prop b = makeProp("models/gone", {0, 0, 0});
+    d.apply(d.makeAddProps({a, b}, "Place props"));
+    CHECK(d.props().size() == 2 && d.props()[0].id == 1 && d.props()[1].id == 2);
+    CHECK(d.propSelection() == std::set<PropId>({1, 2}));
+    CHECK(d.findProp(1) && d.findProp(1)->model == "models/a" && !d.findProp(9));
+    CHECK(d.dirty());
+
+    // Modify, undo, redo.
+    Prop moved = *d.findProp(1);
+    moved.pos = {99, 0, 0};
+    d.apply(d.makeModifyProps({moved}, "Move"));
+    CHECK(nearV(d.findProp(1)->pos, {99, 0, 0}));
+    CHECK(d.undo() && nearV(d.findProp(1)->pos, {10, 20, 30}));
+    CHECK(d.redo() && nearV(d.findProp(1)->pos, {99, 0, 0}));
+
+    // Delete: gone from the selection too; undo brings back the prop, at its place in the order, and the selection.
+    Command del = d.makeDelete({}, "Delete");
+    d.addPropDeletes(del, {1});
+    d.apply(std::move(del));
+    CHECK(d.props().size() == 1 && d.props()[0].id == 2 && d.propSelection() == std::set<PropId>({2}));
+    CHECK(d.undo());
+    CHECK(d.props().size() == 2 && d.props()[0].id == 1 && d.propSelection() == std::set<PropId>({1, 2}));
+    // Adding something else deselects props, and undo gives the selection back.
+    Light l;
+    d.apply(d.makeAddLights({l}, "Add light"));
+    CHECK(d.propSelection().empty());
+    CHECK(d.undo() && d.propSelection() == std::set<PropId>({1, 2}));
+    MathPrim sp;
+    d.apply(d.makeAddPrims({sp}, "Add primitive"));
+    CHECK(d.propSelection().empty());
+    CHECK(d.undo() && d.propSelection() == std::set<PropId>({1, 2}));
+
+    // Saving: our own point entity, round trip, nothing lost (also the model that is missing).
+    const std::string text = writeMap(d);
+    CHECK(text.find("\"classname\" \"scal_prop\"") != std::string::npos);
+    CHECK(text.find("\"model\" \"models/a\"") != std::string::npos);
+    Document e;
+    CHECK(readMap(text, e).ok);
+    CHECK(e.props().size() == 2);
+    CHECK(e.props()[0].model == "models/a" && nearV(e.props()[0].pos, {99, 0, 0}) && nearV(e.props()[0].rot, {0, 0, 45}) &&
+          nearV(e.props()[0].scale, {2, 2, 2}));
+    CHECK(e.props()[0].otherKeys.size() == 1 && e.props()[0].otherKeys[0].first == "_note");
+    CHECK(e.props()[1].model == "models/gone");
+    CHECK(e.propSelection().empty());
+    CHECK(writeMap(e) == text);
+    // The map stays a plain map for others: props are entities with no brushes.
+    CHECK(e.brushes().empty() && e.otherEntities.empty());
+    // Per-axis scale and a negative one survive.
+    Document f;
+    f.apply(f.makeAddProps({makeProp("m", {0, 0, 0}, {}, {1, 2.5, -1})}, "p"));
+    Document g;
+    CHECK(readMap(writeMap(f), g).ok && nearV(g.props()[0].scale, {1, 2.5, -1}));
+    // reset() with props (loading a map into the editor's document).
+    Document h;
+    h.reset(e.worldKeys, {}, {}, {}, {}, WorldData{{}, {}, {}, std::nullopt, {}, e.props()});
+    CHECK(h.props().size() == 2 && h.props()[0].id == 1 && h.props()[1].id == 2 && !h.dirty());
+}
+
+static void testPropsReplicate() {
+    Prop a = makeProp("m", {0, 0, 0});
+    ReplicateSpec spec;
+    spec.copies = 3;
+    spec.offset = {200, 0, 0};
+    auto out = replicate({}, {}, {}, spec, {a});
+    CHECK(out.size() == 3 && out[0].props.size() == 1);
+    CHECK(nearV(out[0].props[0].pos, {200, 0, 0}) && nearV(out[2].props[0].pos, {600, 0, 0}));
+    // Turn about the world origin: a ring of props.
+    spec.pivot = ReplicateSpec::Pivot::Origin;
+    spec.offset = {};
+    spec.rotate = {0, 0, 90};
+    Prop r = makeProp("m", {100, 0, 0});
+    out = replicate({}, {}, {}, spec, {r});
+    CHECK(nearV(out[0].props[0].pos, {0, 100, 0}, 1e-9) && nearV(out[0].props[0].rot, {0, 0, 90}, 1e-9));
+    CHECK(nearV(out[1].props[0].pos, {-100, 0, 0}, 1e-9) && nearV(out[2].props[0].pos, {0, -100, 0}, 1e-9));
+    // Scale per copy.
+    spec = ReplicateSpec{};
+    spec.copies = 2;
+    spec.offset = {};
+    spec.scale = {50, 50, 50};
+    out = replicate({}, {}, {}, spec, {makeProp("m", {0, 0, 0}, {}, {2, 2, 2})});
+    CHECK(nearV(out[0].props[0].scale, {1, 1, 1}) && nearV(out[1].props[0].scale, {0.5, 0.5, 0.5}));
+    // Props alone are enough to replicate; nothing at all gives nothing.
+    CHECK(replicate({}, {}, {}, ReplicateSpec{}, {}).empty());
+}
+
+static void testProps() {
+    testPropsLoad();
+    testPropsStore();
+    testPropsGeometry();
+    testPropsDocument();
+    testPropsReplicate();
+}
+
 int main() {
     testGrid();
     testBoxGeometry();
@@ -2053,6 +2502,7 @@ int main() {
     testMathPrims();
     testPrimBlend();
     testLandingReplicate();
+    testProps();
     testRay();
     testUndo();
     testMakeChange();

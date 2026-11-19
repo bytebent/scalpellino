@@ -52,7 +52,96 @@ AABB areaBox(const std::vector<const MathPrim*>& ps) {
     }
     return b;
 }
+std::vector<Prop> selectedProps(const Document& doc) {
+    std::vector<Prop> out;
+    for (PropId id : doc.propSelection())
+        if (const Prop* p = doc.findProp(id)) out.push_back(*p);
+    return out;
+}
+
+// A prop's world box from its model box (the Document's models are not needed once the box is known).
+AABB boundsOfLocal(const Prop& p, const AABB& local) {
+    AABB b;
+    for (int i = 0; i < 8; ++i)
+        b.add(propToWorld(p, {i & 1 ? local.max.x : local.min.x, i & 2 ? local.max.y : local.min.y, i & 4 ? local.max.z : local.min.z}));
+    return b;
+}
+
+// Centre of the model box face on axis `a`, `side` +1 = the max face.
+Vec3 faceCentre(const AABB& lb, int a, int side) {
+    Vec3 c = lb.center();
+    c[a] = side > 0 ? lb.max[a] : lb.min[a];
+    return c;
+}
+
+// The convex hull of points (Andrew's monotone chain).
+std::vector<Vector2> hull(std::vector<Vector2> p) {
+    std::sort(p.begin(), p.end(), [](Vector2 a, Vector2 b) { return a.x < b.x || (a.x == b.x && a.y < b.y); });
+    p.erase(std::unique(p.begin(), p.end(), [](Vector2 a, Vector2 b) { return a.x == b.x && a.y == b.y; }), p.end());
+    if (p.size() < 3) return p;
+    auto cr = [](Vector2 o, Vector2 a, Vector2 b) { return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x); };
+    std::vector<Vector2> h(2 * p.size());
+    size_t k = 0;
+    for (size_t i = 0; i < p.size(); ++i) {
+        while (k >= 2 && cr(h[k - 2], h[k - 1], p[i]) <= 0) --k;
+        h[k++] = p[i];
+    }
+    for (size_t i = p.size() - 1, t = k + 1; i > 0; --i) {
+        while (k >= t && cr(h[k - 2], h[k - 1], p[i - 1]) <= 0) --k;
+        h[k++] = p[i - 1];
+    }
+    h.resize(k - 1);
+    return h;
+}
+
+double polyArea(const std::vector<Vector2>& h) {
+    double a = 0;
+    for (size_t i = 0; i < h.size(); ++i) {
+        const Vector2 &p = h[i], &q = h[(i + 1) % h.size()];
+        a += p.x * q.y - q.x * p.y;
+    }
+    return std::fabs(a) * 0.5;
+}
 } // namespace
+
+PropId pickProp(const Document& doc, const Viewport& vp, Vector2 local, const ModelFinder* models, double* dist) {
+    if (doc.props().empty()) return 0;
+    if (!vp.is2D()) {
+        Vec3 o, d;
+        vp.pickRay(local, o, d);
+        ModelFinder none;
+        if (auto h = rayHitProps(doc.props(), models ? *models : none, o, d)) {
+            if (dist) *dist = h->t;
+            return h->prop;
+        }
+        return 0;
+    }
+    // 2D: inside the turned box (or near its outline); the smallest box wins.
+    PropId best = 0;
+    double bestArea = 1e300;
+    for (const Prop& p : doc.props()) {
+        std::vector<Vector2> pts;
+        for (const Vec3& c : propCorners(p, findModelOf(models, p.model))) {
+            Vector2 s;
+            if (vp.project(c, s)) pts.push_back(s);
+        }
+        if (pts.size() < 3) continue;
+        const std::vector<Vector2> h = hull(pts);
+        if (h.size() < 3) continue;
+        bool inside = true;
+        double edge = 1e300;
+        for (size_t i = 0; i < h.size(); ++i) {
+            const Vector2 &a = h[i], &b = h[(i + 1) % h.size()];
+            if ((b.x - a.x) * (local.y - a.y) - (b.y - a.y) * (local.x - a.x) < 0) inside = false;
+            edge = std::min(edge, segDist(local, a, b));
+        }
+        if (!inside && edge > kOutlineTol) continue;
+        const double area = polyArea(h);
+        if (area < bestArea) { bestArea = area; best = p.id; }
+    }
+    if (best && dist) *dist = 0;
+    return best;
+}
 
 LightId pickLight(const Document& doc, const Viewport& vp, Vector2 local) {
     LightId best = 0;
@@ -139,26 +228,49 @@ void primGizmo(const std::vector<MathPrim>& sel, const Viewport& vp, ObjectGizmo
         for (int s = 0; s < 2; ++s) {
             Vec3 l;
             l[a] = s ? 1 : -1;
-            g.handles.push_back({primToWorld(p, l), a * 2 + s});
+            g.handles.push_back({primToWorld(p, l), a * 2 + s, false});
         }
+    }
+}
+
+// Rings and handles for a set of props.
+void propGizmo(const std::vector<Prop>& sel, const Viewport& vp, const ModelFinder* models, ObjectGizmo& g) {
+    if (sel.empty()) return;
+    AABB b;
+    for (const Prop& p : sel) b.add(propBounds(p, findModelOf(models, p.model)));
+    const Vec3 c = b.center();
+    const double r = std::max(0.5 * length(b.size()) * 1.05, Scene::kRingPx * vp.worldPerPixel(c));
+    g.rings.push_back({c, r, 0, true});
+    if (sel.size() != 1) return;
+    const Prop& p = sel[0];
+    const AABB lb = propLocalBounds(findModelOf(models, p.model));
+    const Mat3 R = rotationMatrix(p.rot);
+    g.handleProp = p.id;
+    for (int a = 0; a < 3; ++a) {
+        if (lb.max[a] - lb.min[a] < 1e-6) continue; // a flat model has no handle across itself
+        const Vec3 u = R.col[a];
+        if (vp.is2D() && std::hypot(u[vp.axU()], u[vp.axV()]) < 0.3) continue; // seen end-on
+        for (int s = 0; s < 2; ++s) g.handles.push_back({propToWorld(p, faceCentre(lb, a, s ? 1 : -1)), a * 2 + s, true});
     }
 }
 } // namespace
 
-ObjectGizmo objectGizmo(const Document& doc, const Viewport& vp) {
+ObjectGizmo objectGizmo(const Document& doc, const Viewport& vp, const ModelFinder* models) {
     ObjectGizmo g;
     for (LightId id : doc.lightSelection()) {
         const Light* l = doc.findLight(id);
         if (l && l->hasDirection()) g.rings.push_back({l->pos, Scene::kRingPx * vp.worldPerPixel(l->pos), id});
     }
     primGizmo(selectedPrims(doc), vp, g);
+    propGizmo(selectedProps(doc), vp, models, g);
     return g;
 }
 
 bool ObjectEdit::press(ToolEnv& env, const Pointer& p) {
     Document& doc = env.doc;
     const Viewport& vp = *p.view;
-    const ObjectGizmo g = objectGizmo(doc, vp);
+    models_ = env.models;
+    const ObjectGizmo g = objectGizmo(doc, vp, env.models);
     auto begin = [&](Mode m) {
         mode_ = m;
         view_ = p.view;
@@ -170,24 +282,31 @@ bool ObjectEdit::press(ToolEnv& env, const Pointer& p) {
         moved_ = {};
         lightNow_ = lightStart_;
         primNow_ = primStart_;
+        propNow_ = propStart_;
     };
     lightStart_.clear();
     primStart_.clear();
+    propStart_.clear();
+    propsMode_ = false;
+    sizeProp_ = false;
     if (!env.cmd) {
         // 1. Size handles of a single selected primitive.
         int bestH = -1;
+        bool bestProp = false;
         double bestD = kHandleTol;
-        for (const auto& [pos, code] : g.handles) {
+        for (const auto& h : g.handles) {
             Vector2 s;
-            if (!vp.project(pos, s)) continue;
+            if (!vp.project(h.pos, s)) continue;
             const double d = std::hypot(s.x - p.local.x, s.y - p.local.y);
-            if (d < bestD) { bestD = d; bestH = code; }
+            if (d < bestD) { bestD = d; bestH = h.code; bestProp = h.prop; }
         }
         if (bestH >= 0) {
             handle_ = bestH;
-            even_ = env.shift;
+            perAxis_ = env.shift;
             lightsMode_ = false;
-            primStart_ = {*doc.findPrim(g.handlePrim)};
+            sizeProp_ = bestProp;
+            if (bestProp) propStart_ = {*doc.findProp(g.handleProp)};
+            else primStart_ = {*doc.findPrim(g.handlePrim)};
             begin(Mode::Size);
             return true;
         }
@@ -214,9 +333,12 @@ bool ObjectEdit::press(ToolEnv& env, const Pointer& p) {
             ax[hitAxis] = 1;
             sign_ = (vp.is2D() ? dot(ax, towardViewer(vp)) : dot(ax, cameraPos(vp) - pivot_)) > 0 ? 1 : -1;
             lightsMode_ = hitRing->light != 0;
+            propsMode_ = hitRing->props;
             if (lightsMode_) {
                 for (LightId id : doc.lightSelection())
                     if (const Light* l = doc.findLight(id)) lightStart_.push_back(*l);
+            } else if (propsMode_) {
+                propStart_ = selectedProps(doc);
             } else {
                 primStart_ = selectedPrims(doc);
             }
@@ -236,6 +358,7 @@ bool ObjectEdit::press(ToolEnv& env, const Pointer& p) {
             doc.setLightSelection({id});
             doc.setSelection({});
             doc.setPrimSelection({});
+            doc.setPropSelection({});
         }
         if (!vp.is2D()) return true;
         lightsMode_ = true;
@@ -256,10 +379,72 @@ bool ObjectEdit::press(ToolEnv& env, const Pointer& p) {
             p.v >= sb.min[vp.axV()] - pad && p.v <= sb.max[vp.axV()] + pad)
             return false;
     }
-    double tPrim = 0;
+    // A prop was hit (`tProp` = distance in 3D): a brush in front of it (or smaller, in 2D)
+    // takes the click; else select it and, in 2D, start dragging.
+    auto pressPropHit = [&](PropId prid, double tProp) -> bool {
+        const Prop* pr = doc.findProp(prid);
+        if (vp.is2D()) {
+            if (const BrushId bid = pick2D(env.sceneBrushes, vp, p.local)) {
+                const AABB pb = propBounds(*pr, findModelOf(env.models, pr->model));
+                for (const SceneBrush& b : env.sceneBrushes)
+                    if (b.id == bid) {
+                        const int U = vp.axU(), V = vp.axV();
+                        const double ab = (b.bounds.max[U] - b.bounds.min[U]) * (b.bounds.max[V] - b.bounds.min[V]);
+                        const double ap = (pb.max[U] - pb.min[U]) * (pb.max[V] - pb.min[V]);
+                        if (ab < ap) return false; // the smaller one wins, like brushes among themselves
+                    }
+            }
+        } else {
+            Vec3 o, d;
+            vp.pickRay(p.local, o, d);
+            for (const Brush& b : doc.brushes()) {
+                if (!doc.visible(b)) continue;
+                const double t = rayHit(b, o, d);
+                if (t >= 0 && t < tProp) return false; // a brush is in front
+            }
+        }
+        std::set<PropId> sel = doc.propSelection();
+        if (env.cmd) {
+            if (!sel.erase(prid)) sel.insert(prid);
+            doc.setPropSelection(sel);
+            return true;
+        }
+        if (!sel.count(prid)) {
+            doc.setPropSelection({prid});
+            doc.setSelection({});
+            doc.setLightSelection({});
+            doc.setPrimSelection({});
+        }
+        if (!vp.is2D()) return true;
+        lightsMode_ = false;
+        propsMode_ = true;
+        propStart_ = selectedProps(doc);
+        anchor_ = doc.findProp(prid)->pos;
+        begin(Mode::Move);
+        return true;
+    };
+    double tPrim = 0, tProp = 0;
     MathPrimId piece = 0;
     const MathPrimId pid = pickPrim(doc, vp, p.local, &tPrim, &piece, env.alt);
-    if (!pid) return false;
+    const PropId prid = pickProp(doc, vp, p.local, env.models, &tProp);
+    if (!pid && !prid) return false;
+    if (prid && pid) {
+        // Both under the cursor: the nearer one in 3D, the smaller one in a 2D view.
+        bool propWins;
+        if (vp.is2D()) {
+            const AABB bp = propBounds(*doc.findProp(prid), findModelOf(env.models, doc.findProp(prid)->model));
+            std::vector<const MathPrim*> ms;
+            for (MathPrimId m : doc.withCombos({pid})) ms.push_back(doc.findPrim(m));
+            const AABB bq = areaBox(ms);
+            const int U = vp.axU(), V = vp.axV();
+            propWins = (bp.max[U] - bp.min[U]) * (bp.max[V] - bp.min[V]) <= (bq.max[U] - bq.min[U]) * (bq.max[V] - bq.min[V]);
+        } else {
+            propWins = tProp <= tPrim;
+        }
+        if (propWins) return pressPropHit(prid, tProp);
+    } else if (prid) {
+        return pressPropHit(prid, tProp);
+    }
     // A plain click takes the whole combination; Option+click just the piece.
     const std::set<MathPrimId> group = env.alt ? std::set<MathPrimId>{piece} : doc.withCombos({pid});
     if (vp.is2D()) {
@@ -298,6 +483,7 @@ bool ObjectEdit::press(ToolEnv& env, const Pointer& p) {
         doc.setPrimSelection(group);
         doc.setSelection({});
         doc.setLightSelection({});
+        doc.setPropSelection({});
     }
     if (!vp.is2D()) return true;
     lightsMode_ = false;
@@ -321,6 +507,8 @@ void ObjectEdit::drag(ToolEnv& env, const Pointer& p) {
         for (Light& l : lightNow_) l.pos += d;
         primNow_ = primStart_;
         for (MathPrim& m : primNow_) m.pos += d;
+        propNow_ = propStart_;
+        for (Prop& m : propNow_) m.pos += d;
         return;
     }
     if (mode_ == Mode::Ring) {
@@ -335,8 +523,11 @@ void ObjectEdit::drag(ToolEnv& env, const Pointer& p) {
             if (l.hasDirection()) rotateLight(l, axis_, deg);
         primNow_ = primStart_;
         for (MathPrim& m : primNow_) rotatePrim(m, axis_, deg, pivot_);
+        propNow_ = propStart_;
+        for (Prop& m : propNow_) rotateProp(m, axis_, deg, pivot_);
         return;
     }
+    if (sizeProp_) { dragPropSize(env, p); return; }
     // Size: how far the mouse went along the handle's axis (as seen on screen).
     const MathPrim& p0 = primStart_[0];
     const int a = handle_ / 2;
@@ -357,7 +548,7 @@ void ObjectEdit::drag(ToolEnv& env, const Pointer& p) {
         }
     }
     const double size0 = std::fabs(p0.size[a]);
-    const bool even = env.shift || even_;
+    const bool even = !(env.shift || perAxis_); // evenly by default; Shift = one axis
     // The handle follows the mouse: with the centre fixed (evenly) the size grows twice as much.
     // The change snaps to the grid (not the size), so an odd size stays as it is until
     // the handle actually moves.
@@ -376,19 +567,75 @@ void ObjectEdit::drag(ToolEnv& env, const Pointer& p) {
     primNow_ = {m};
 }
 
+void ObjectEdit::dragPropSize(ToolEnv& env, const Pointer& p) {
+    const Viewport& vp = *view_;
+    const Prop& p0 = propStart_[0];
+    const Model* model = findModelOf(models_, p0.model);
+    const AABB lb = propLocalBounds(model);
+    const int a = handle_ / 2;
+    const int side = handle_ % 2 ? 1 : -1;
+    const double ext = lb.max[a] - lb.min[a];
+    const double sgn = p0.scale[a] < 0 ? -1 : 1; // a mirrored axis has its max face on the other side
+    const Mat3 R = rotationMatrix(p0.rot);
+    const Vec3 u = R.col[a];
+    const double size0 = std::fabs(ext * p0.scale[a]);
+    if (size0 < 1e-9) return;
+    // How far the mouse went along the handle's axis (as seen on screen).
+    double s = 0;
+    if (vp.is2D()) {
+        const double wu = p.u - u0_, wv = p.v - v0_;
+        const double iu = u[vp.axU()], iv = u[vp.axV()];
+        const double l2 = iu * iu + iv * iv;
+        if (l2 > 1e-6) s = (wu * iu + wv * iv) / l2;
+    } else {
+        Vector2 sa, sb;
+        const Vec3 at = propToWorld(p0, faceCentre(lb, a, side));
+        if (vp.project(at, sa) && vp.project(at + u * 64.0, sb)) {
+            const double sx = (sb.x - sa.x) / 64, sy = (sb.y - sa.y) / 64, l2 = sx * sx + sy * sy;
+            if (l2 > 1e-6) s = ((p.local.x - local0_.x) * sx + (p.local.y - local0_.y) * sy) / l2;
+        }
+    }
+    const bool even = !(env.shift || perAxis_);
+    // The change snaps to the grid (not the size), so a size that is off the grid stays as it
+    // is until the handle actually moves. Evenly about the centre the size grows twice as much.
+    const double newSize = std::max(1.0, size0 + env.grid.snapValue(s * side * sgn * (even ? 2 : 1)));
+    if (newSize - size0 == amount_) return;
+    amount_ = newSize - size0;
+    auto tidy = [](double v) { return std::round(v * 1e4) / 1e4; };
+    Prop m = p0;
+    const double f = newSize / size0;
+    if (even) {
+        const Vec3 cl = lb.center();
+        const Vec3 cw = propToWorld(p0, cl);
+        m.scale = {tidy(p0.scale.x * f), tidy(p0.scale.y * f), tidy(p0.scale.z * f)};
+        const Vec3 sl{cl.x * m.scale.x, cl.y * m.scale.y, cl.z * m.scale.z};
+        m.pos = cleanVec(cw - R * sl);
+    } else {
+        m.scale[a] = tidy(p0.scale[a] * f);
+        // the opposite face stays where it is
+        const Vec3 opp = faceCentre(lb, a, -side);
+        m.pos = cleanVec(p0.pos + u * ((p0.scale[a] - m.scale[a]) * opp[a]));
+    }
+    propNow_ = {m};
+}
+
 void ObjectEdit::release(ToolEnv& env) {
     if (mode_ == Mode::None) return;
-    const char* name = mode_ == Mode::Ring ? "Turn" : mode_ == Mode::Size ? "Resize primitive" : "Move";
+    const char* name = mode_ == Mode::Ring ? "Turn" : mode_ == Mode::Size ? (sizeProp_ ? "Resize prop" : "Resize primitive") : "Move";
     mode_ = Mode::None;
-    bool lc = false, pc = false;
+    bool lc = false, pc = false, qc = false;
     for (size_t i = 0; i < lightNow_.size(); ++i) lc = lc || lightNow_[i] != lightStart_[i];
     for (size_t i = 0; i < primNow_.size(); ++i) pc = pc || primNow_[i] != primStart_[i];
+    for (size_t i = 0; i < propNow_.size(); ++i) qc = qc || propNow_[i] != propStart_[i];
     if (lc) env.doc.apply(env.doc.makeModifyLights(lightNow_, name));
     if (pc) env.doc.apply(env.doc.makeModifyPrims(primNow_, name));
+    if (qc) env.doc.apply(env.doc.makeModifyProps(propNow_, name));
     lightStart_.clear();
     lightNow_.clear();
     primStart_.clear();
     primNow_.clear();
+    propStart_.clear();
+    propNow_.clear();
 }
 
 void ObjectEdit::cancel() {
@@ -397,6 +644,8 @@ void ObjectEdit::cancel() {
     lightNow_.clear();
     primStart_.clear();
     primNow_.clear();
+    propStart_.clear();
+    propNow_.clear();
     view_ = nullptr;
 }
 
@@ -408,16 +657,19 @@ void ObjectEdit::decorate(const Document& doc, Scene& scene) const {
     for (const MathPrim& m : primNow_)
         for (Scene::ScenePrim& s : scene.prims)
             if (s.prim.id == m.id) s.prim = m;
+    for (const Prop& m : propNow_)
+        for (Scene::SceneProp& s : scene.props)
+            if (s.prop.id == m.id) s.prop = m;
     // The primitives' rings and handles follow what is being dragged.
     std::vector<MathPrim> sel;
     for (const Scene::ScenePrim& s : scene.prims)
         if (doc.primSelection().count(s.prim.id)) sel.push_back(s.prim);
     if (!sel.empty()) {
-        scene.primGizmo = Scene::PrimGizmo{};
+        Scene::PrimGizmo gz;
         AABB b;
         for (const MathPrim& m : sel) { const AABB pb = primBounds(m); b.add(pb.min); b.add(pb.max); }
-        scene.primGizmo->center = b.center();
-        scene.primGizmo->radius = 0.5 * length(b.size()) * 1.05;
+        gz.center = b.center();
+        gz.radius = 0.5 * length(b.size()) * 1.05;
         if (sel.size() == 1) {
             const MathPrim& p = sel[0];
             const Mat3 R = rotationMatrix(p.rot);
@@ -426,10 +678,32 @@ void ObjectEdit::decorate(const Document& doc, Scene& scene) const {
                 for (int s = 0; s < 2; ++s) {
                     Vec3 l;
                     l[a] = s ? 1 : -1;
-                    scene.primGizmo->handles.push_back({primToWorld(p, l), R.col[a]});
+                    gz.handles.push_back({primToWorld(p, l), R.col[a]});
                 }
             }
         }
+        scene.gizmos.push_back(std::move(gz));
+    }
+    // ... and the props' (their model boxes come with the scene's props).
+    std::vector<const Scene::SceneProp*> psel;
+    for (const Scene::SceneProp& s : scene.props)
+        if (doc.propSelection().count(s.prop.id)) psel.push_back(&s);
+    if (!psel.empty()) {
+        Scene::PrimGizmo gz;
+        AABB b;
+        for (const Scene::SceneProp* sp : psel) b.add(boundsOfLocal(sp->prop, sp->local));
+        gz.center = b.center();
+        gz.radius = 0.5 * length(b.size()) * 1.05;
+        if (psel.size() == 1) {
+            const Prop& p = psel[0]->prop;
+            const AABB& lb = psel[0]->local;
+            const Mat3 R = rotationMatrix(p.rot);
+            for (int a = 0; a < 3; ++a) {
+                if (lb.max[a] - lb.min[a] < 1e-6) continue;
+                for (int s = 0; s < 2; ++s) gz.handles.push_back({propToWorld(p, faceCentre(lb, a, s ? 1 : -1)), R.col[a]});
+            }
+        }
+        scene.gizmos.push_back(std::move(gz));
     }
 }
 
@@ -444,8 +718,12 @@ const char* ObjectEdit::hint() const {
             return hintBuf_;
         }
         case Mode::Size:
-            std::snprintf(hintBuf_, sizeof hintBuf_, "size %g x %g x %g   (Shift: evenly)", primNow_[0].size.x,
-                          primNow_[0].size.y, primNow_[0].size.z);
+            if (sizeProp_ && !propNow_.empty())
+                std::snprintf(hintBuf_, sizeof hintBuf_, "scale %g x %g x %g   (evenly; Shift: one axis)", propNow_[0].scale.x,
+                              propNow_[0].scale.y, propNow_[0].scale.z);
+            else if (!primNow_.empty())
+                std::snprintf(hintBuf_, sizeof hintBuf_, "size %g x %g x %g   (evenly; Shift: one axis)", primNow_[0].size.x,
+                              primNow_[0].size.y, primNow_[0].size.z);
             return hintBuf_;
         default: return nullptr;
     }

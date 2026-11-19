@@ -9,6 +9,12 @@
 
 All are fetched at build time at pinned versions (see `cmake/Deps.cmake`).
 
+## Code
+
+| Files | Source | License |
+|---|---|---|
+| `third_party/cgltf/cgltf.h` | cgltf v1.15 (commit 85cd62382dfea638278962690cf515023f33ed00), Johannes Kuhlmann | MIT (the license text is at the top of the file) |
+
 ## Bundled textures
 
 | Files | Source | License |

@@ -72,6 +72,7 @@ void PrimTool::press(ToolEnv& env, const Pointer& p) {
     drawing_ = true;
     view_ = p.view;
     env.doc.setPrimSelection({});
+    env.doc.setPropSelection({});
     env.doc.setLightSelection({});
 }
 
@@ -103,15 +104,16 @@ bool PrimTool::key(ToolEnv& env, int key) {
     if (key == KEY_ESCAPE) {
         if (objects_.active()) objects_.cancel();
         else if (box_) box_.reset();
-        else env.doc.setPrimSelection({});
+        else { env.doc.setPrimSelection({}); env.doc.setPropSelection({}); }
         drawing_ = false;
         return true;
     }
     if ((key == KEY_DELETE || key == KEY_BACKSPACE) && !objects_.active() &&
-        (!env.doc.primSelection().empty() || !env.doc.lightSelection().empty())) {
+        (!env.doc.primSelection().empty() || !env.doc.lightSelection().empty() || !env.doc.propSelection().empty())) {
         Command c = env.doc.makeDelete({}, "Delete");
         env.doc.addLightDeletes(c, env.doc.lightSelection());
         env.doc.addPrimDeletes(c, env.doc.primSelection());
+        env.doc.addPropDeletes(c, env.doc.propSelection());
         env.doc.apply(std::move(c));
         return true;
     }

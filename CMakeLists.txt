@@ -33,6 +33,8 @@ add_library(scal_core STATIC
   src/core/world.cpp
   src/core/sky.cpp
   src/core/mathprim.cpp
+  src/core/model.cpp
+  src/core/prop.cpp
   src/core/landing.cpp
   src/core/replicate.cpp
   src/core/bottega.cpp)
@@ -40,7 +42,9 @@ target_include_directories(scal_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 # File formats. Also graphics-free, so it is tested headless too.
 add_library(scal_io STATIC
-  src/io/map_format.cpp)
+  src/io/map_format.cpp
+  src/io/glb_loader.cpp
+  src/io/model_store.cpp)
 target_link_libraries(scal_io PUBLIC scal_core)
 
 if(SCAL_BUILD_TESTS)
@@ -63,6 +67,7 @@ if(SCAL_BUILD_APP)
     src/render/sky_library.cpp
     src/render/lighting.cpp
     src/render/mathprim_render.cpp
+    src/render/model_library.cpp
     src/render/viewport.cpp
     src/tools/tool.cpp
     src/tools/select_tool.cpp
@@ -75,6 +80,7 @@ if(SCAL_BUILD_APP)
     src/tools/object_edit.cpp
     src/tools/light_tool.cpp
     src/tools/prim_tool.cpp
+    src/tools/prop_tool.cpp
     src/ui/layout.cpp
     src/ui/imgui_checks.cpp
   )

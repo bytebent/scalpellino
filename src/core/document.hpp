@@ -4,6 +4,7 @@
 #include "core/brush.hpp"
 #include "core/world.hpp"
 #include "core/mathprim.hpp"
+#include "core/prop.hpp"
 #include <map>
 #include <optional>
 #include <set>
@@ -64,6 +65,13 @@ struct PrimChange {
     std::optional<MathPrim> after;
 };
 
+// One prop before/after an edit.
+struct PropChange {
+    PropId id = 0;
+    std::optional<Prop> before;
+    std::optional<Prop> after;
+};
+
 struct Command {
     std::string name;
     std::vector<BrushChange> changes;
@@ -76,6 +84,8 @@ struct Command {
     std::optional<Environment> envBefore, envAfter; // set = the command changes the environment
     std::vector<PrimChange> primChanges;
     std::optional<std::set<MathPrimId>> primSelectionBefore, primSelectionAfter;
+    std::vector<PropChange> propChanges;
+    std::optional<std::set<PropId>> propSelectionBefore, propSelectionAfter;
 };
 
 // Everything besides brushes that a loaded map brings (milestone 8).
@@ -85,6 +95,7 @@ struct WorldData {
     std::vector<CameraBookmark> bookmarks;
     std::optional<Vec3> figure; // scale figure position (editor-only)
     std::vector<MathPrim> prims;
+    std::vector<Prop> props;
 };
 
 class Document {
@@ -131,6 +142,13 @@ public:
     // All members of the combinations the given primitives are in.
     std::set<MathPrimId> withCombos(const std::set<MathPrimId>& ids) const;
 
+    // Props (milestone 10): placed models. Selected on their own like primitives.
+    const std::vector<Prop>& props() const { return props_; }
+    const Prop* findProp(PropId id) const;
+    PropId newPropId() { return nextPropId_++; }
+    const std::set<PropId>& propSelection() const { return propSelection_; }
+    void setPropSelection(std::set<PropId> s) { propSelection_ = std::move(s); }
+
     // Environment (sky, ambient, fog): changed through commands (makeEnvironment).
     const Environment& environment() const { return env_; }
     // Camera bookmarks and the scale figure: editor-only, saved with the map, not undone
@@ -176,6 +194,10 @@ public:
     Command makeAddPrims(std::vector<MathPrim> prims, const std::string& name);
     Command makeModifyPrims(const std::vector<MathPrim>& modified, const std::string& name);
     void addPrimDeletes(Command& c, const std::set<MathPrimId>& ids) const;
+    // Props: new ones get ids and become the prop selection (everything else deselected).
+    Command makeAddProps(std::vector<Prop> props, const std::string& name);
+    Command makeModifyProps(const std::vector<Prop>& modified, const std::string& name);
+    void addPropDeletes(Command& c, const std::set<PropId>& ids) const;
     // Mixed edit as one undo step (clip, carve, hollow). New brushes get ids. The
     // selection afterwards is `selectAfter` if given, else the old selection minus
     // deleted brushes plus the added ones.
@@ -188,6 +210,7 @@ private:
     void setGroup(GroupId id, const std::optional<Group>& g);
     void setLight(LightId id, const std::optional<Light>& l);
     void setPrim(MathPrimId id, const std::optional<MathPrim>& p);
+    void setProp(PropId id, const std::optional<Prop>& p);
     // Adds group removals to `c` for groups that would have no brushes left.
     void pruneEmptyGroups(Command& c) const;
     void bump() { ++revision_; }
@@ -201,6 +224,9 @@ private:
     std::vector<MathPrim> prims_;
     std::set<MathPrimId> primSelection_;
     MathPrimId nextPrimId_ = 1;
+    std::vector<Prop> props_;
+    std::set<PropId> propSelection_;
+    PropId nextPropId_ = 1;
     std::vector<Light> lights_;
     std::set<LightId> lightSelection_;
     LightId nextLightId_ = 1;

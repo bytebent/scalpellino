@@ -1,0 +1,101 @@
+# Milestone 10: props. Models (.glb) found in the Bottega's models folder, placed with the
+# Props tool (3D click / 2D click, typed position, Return places, Esc cancels), selected,
+# moved, turned, scaled evenly, dropped on the ground, duplicated, replicated, deleted,
+# saved in the map and found again; a missing model stays in the map.
+bottega make studio
+copy assets/models/crate.glb studio/models/Crate.glb
+copy assets/models/post.glb studio/models/fence.glb
+expect hasmodel not models/Crate
+rescan
+expect hasmodel models/Crate
+expect hasmodel models/fence
+block -512 -512 -32 512 512 0
+# -- place with the tool: top view click, then Return
+tool props
+propset model models/Crate
+wpress 1 -128 -128
+release
+key Return
+expect props 1
+expect propsel 1
+expect proppos -128 -128 0
+expect propmodel models/Crate
+undo
+expect props 0
+redo
+expect props 1
+# Esc cancels a pending prop
+wpress 1 200 200
+release
+key Esc
+expect props 1
+# -- typed values: scale and turn for the next prop
+propset model models/fence
+propset rot 0 0 45
+propset scale 2
+wpress 1 128 -128
+release
+key Return
+expect props 2
+expect propscale 2 2 2
+expect proprot 0 0 45
+# -- select, move by dragging in the top view (snapped), edit, drop
+tool select
+key Esc
+expect propsel 0
+wpress 1 -128 -128
+release
+expect propsel 1
+expect propmodel models/Crate
+wpress 1 -128 -128
+wdrag -64 -128
+release
+expect proppos -64 -128 0
+propedit pos -64 -128 96
+expect proppos -64 -128 96
+snapland
+expect proppos -64 -128 0
+propedit scale 1.5
+expect propscale 1.5 1.5 1.5
+undo
+expect propscale 1 1 1
+# -- duplicate, replicate, delete
+duplicate
+expect props 3
+expect propsel 1
+undo
+expect props 2
+propselect 0
+replicateopen 3 200 0 0
+key Return
+expect props 5
+undo
+expect props 2
+propselect all
+key Delete
+expect props 0
+undo
+expect props 2
+# -- save and open keep the props; Bottega off: the prop stays, as a box
+save props-test.map
+open props-test.map
+expect props 2
+propselect 0
+expect propmodel models/Crate
+bottega none
+expect hasmodel not models/Crate
+expect props 2
+save props-nomodel.map
+bottega studio
+expect hasmodel models/Crate
+open props-nomodel.map
+expect props 2
+# -- a prop on the primitive below it lands on it (Snap to land)
+prim cube 300 300 64 128 128 128
+prop models/Crate 300 300 400
+propselect 2
+snapland
+expect proppos 300 300 128
+camera -560 -620 300 50 -16
+shot m10-01-props-placed.png
+quit

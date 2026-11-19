@@ -1,0 +1,41 @@
+#pragma once
+// raylib bundles its own copy of cgltf (global symbols). Ours is vendored separately, so
+// its global functions get a private prefix and the two never meet at link time.
+// Include this before third_party/cgltf/cgltf.h.
+#define cgltf_accessor_index scal_cgltf_accessor_index
+#define cgltf_accessor_read_float scal_cgltf_accessor_read_float
+#define cgltf_accessor_read_index scal_cgltf_accessor_read_index
+#define cgltf_accessor_read_uint scal_cgltf_accessor_read_uint
+#define cgltf_accessor_unpack_floats scal_cgltf_accessor_unpack_floats
+#define cgltf_accessor_unpack_indices scal_cgltf_accessor_unpack_indices
+#define cgltf_animation_channel_index scal_cgltf_animation_channel_index
+#define cgltf_animation_index scal_cgltf_animation_index
+#define cgltf_animation_sampler_index scal_cgltf_animation_sampler_index
+#define cgltf_buffer_index scal_cgltf_buffer_index
+#define cgltf_buffer_view_data scal_cgltf_buffer_view_data
+#define cgltf_buffer_view_index scal_cgltf_buffer_view_index
+#define cgltf_calc_size scal_cgltf_calc_size
+#define cgltf_camera_index scal_cgltf_camera_index
+#define cgltf_component_size scal_cgltf_component_size
+#define cgltf_copy_extras_json scal_cgltf_copy_extras_json
+#define cgltf_decode_string scal_cgltf_decode_string
+#define cgltf_decode_uri scal_cgltf_decode_uri
+#define cgltf_find_accessor scal_cgltf_find_accessor
+#define cgltf_free scal_cgltf_free
+#define cgltf_image_index scal_cgltf_image_index
+#define cgltf_light_index scal_cgltf_light_index
+#define cgltf_load_buffer_base64 scal_cgltf_load_buffer_base64
+#define cgltf_load_buffers scal_cgltf_load_buffers
+#define cgltf_material_index scal_cgltf_material_index
+#define cgltf_mesh_index scal_cgltf_mesh_index
+#define cgltf_node_index scal_cgltf_node_index
+#define cgltf_node_transform_local scal_cgltf_node_transform_local
+#define cgltf_node_transform_world scal_cgltf_node_transform_world
+#define cgltf_num_components scal_cgltf_num_components
+#define cgltf_parse scal_cgltf_parse
+#define cgltf_parse_file scal_cgltf_parse_file
+#define cgltf_sampler_index scal_cgltf_sampler_index
+#define cgltf_scene_index scal_cgltf_scene_index
+#define cgltf_skin_index scal_cgltf_skin_index
+#define cgltf_texture_index scal_cgltf_texture_index
+#define cgltf_validate scal_cgltf_validate

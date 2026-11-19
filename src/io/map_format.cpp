@@ -134,6 +134,19 @@ KeyValues primKeys(const MathPrim& p) {
     return kv;
 }
 
+// A prop as our own point entity ("scal_prop"; other tools ignore it). Only the model's
+// name is stored, so the map opens even when the file is gone.
+KeyValues propKeys(const Prop& p) {
+    KeyValues kv;
+    kv.emplace_back("classname", "scal_prop");
+    kv.emplace_back("model", p.model);
+    kv.emplace_back("origin", vec(p.pos));
+    kv.emplace_back("rotation", vec(p.rot));
+    kv.emplace_back("scale", vec(p.scale));
+    for (const auto& k : p.otherKeys) kv.push_back(k);
+    return kv;
+}
+
 bool readVec(const std::string& s, Vec3& v) {
     return std::sscanf(s.c_str(), "%lf %lf %lf", &v.x, &v.y, &v.z) == 3;
 }
@@ -156,6 +169,21 @@ bool primFromKeys(const KeyValues& kv, MathPrim& p) {
         else if (k == "texture") p.texture = v;
         else if (k == "color") readVec(v, p.color);
         else if (k == "texscale") p.texScale = std::atof(v.c_str());
+        else p.otherKeys.emplace_back(k, v);
+    }
+    return true;
+}
+
+bool propFromKeys(const KeyValues& kv, Prop& p) {
+    bool ours = false;
+    for (const auto& [k, v] : kv) if (k == "classname" && v == "scal_prop") ours = true;
+    if (!ours) return false;
+    for (const auto& [k, v] : kv) {
+        if (k == "classname") continue;
+        if (k == "model") p.model = v;
+        else if (k == "origin") readVec(v, p.pos);
+        else if (k == "rotation") readVec(v, p.rot);
+        else if (k == "scale") readVec(v, p.scale);
         else p.otherKeys.emplace_back(k, v);
     }
     return true;
@@ -254,6 +282,11 @@ std::string writeMap(const Document& doc) {
     for (const MathPrim& p : doc.prims()) {
         o << "// entity " << e++ << "\n{\n";
         writeKeys(o, primKeys(p));
+        o << "}\n";
+    }
+    for (const Prop& p : doc.props()) {
+        o << "// entity " << e++ << "\n{\n";
+        writeKeys(o, propKeys(p));
         o << "}\n";
     }
     for (const RawEntity& ent : doc.otherEntities) {
@@ -563,6 +596,8 @@ MapReadResult readMap(const std::string& text, Document& doc) {
                 extra.lights.push_back(l);
             } else if (MathPrim mp; brushes.empty() && primFromKeys(keys, mp)) {
                 extra.prims.push_back(mp);
+            } else if (Prop pp; brushes.empty() && propFromKeys(keys, pp)) {
+                extra.props.push_back(pp);
             } else {
                 others.push_back({std::move(keys), std::move(brushes)});
             }

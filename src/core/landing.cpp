@@ -3,6 +3,7 @@
 #include "core/hull.hpp"
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <map>
 
 namespace scal {
@@ -102,10 +103,19 @@ double objectBottom(const std::vector<const MathPrim*>& object) {
     return z;
 }
 
-std::optional<double> landingMove(const std::vector<const MathPrim*>& object, const std::vector<const Brush*>& brushes,
-                                  const std::vector<const MathPrim*>& otherPrims) {
-    if (object.empty()) return std::nullopt;
-    const AABB ob = boundsOf(object);
+namespace {
+// What lands: its box; `lift(dz)` raises it by dz (once, before anything is measured);
+// then its surface points, and what an upward ray from a point hits of it (distance).
+struct Subject {
+    AABB bounds;
+    std::function<void(double)> lift;
+    std::function<std::vector<Vec3>()> surface;
+    std::function<std::optional<double>(const Vec3&)> upHit;
+};
+
+std::optional<double> land(const Subject& sub, const std::vector<const Brush*>& brushes,
+                           const std::vector<const MathPrim*>& otherPrims, const std::vector<PropRef>& props) {
+    const AABB ob = sub.bounds;
     // Lift it clear of everything under its footprint first, so an object that is partly
     // sunk in comes up to rest on top.
     double top = -1e300;
@@ -121,29 +131,35 @@ std::optional<double> landingMove(const std::vector<const MathPrim*>& object, co
         const AABB pb = primBounds(*p);
         if (overlapsXY(pb, ob)) top = std::max(top, pb.max.z);
     }
+    for (const PropRef& r : props) {
+        const AABB pb = propBounds(*r.prop, r.model);
+        if (overlapsXY(pb, ob)) top = std::max(top, pb.max.z);
+    }
     if (top == -1e300) return std::nullopt;
     const double lift = std::max(0.0, top - ob.min.z) + 1;
-    std::vector<const MathPrim*> raisedPtrs;
-    const std::vector<MathPrim> raised = copies(object, lift);
-    for (const MathPrim& r : raised) raisedPtrs.push_back(&r);
-    const AABB rb = boundsOf(raisedPtrs);
+    sub.lift(lift);
+    AABB rb = ob;
+    rb.min.z += lift;
+    rb.max.z += lift;
 
-    const Vec3 down{0, 0, -1}, upDir{0, 0, 1};
+    const Vec3 down{0, 0, -1};
     double best = 1e300;
     // Downward from the object's surface.
-    for (const Vec3& q : objectSurfaceSamples(raisedPtrs)) {
+    for (const Vec3& q : sub.surface()) {
         for (const Brush* b : brushes) {
             const double t = hitBrush(*b, q, down);
             if (t >= 0) best = std::min(best, t);
         }
         if (!others.empty())
             if (auto h = rayHitPrims(others, q, down)) best = std::min(best, h->t);
+        for (const PropRef& r : props)
+            if (auto h = rayHitProp(*r.prop, r.model, q, down)) best = std::min(best, h->t);
     }
     // Upward from what sticks up under it (corners of brushes, terrain points, the tops of
-    // other primitives), so peaks between the samples count too.
+    // other primitives and props), so peaks between the samples count too.
     auto upFrom = [&](const Vec3& v) {
         if (v.x < rb.min.x || v.x > rb.max.x || v.y < rb.min.y || v.y > rb.max.y) return;
-        if (auto h = rayHitPrims(raised, v, upDir)) best = std::min(best, h->t);
+        if (auto t = sub.upHit(v)) best = std::min(best, *t);
     };
     for (const Brush* b : brushes) {
         if (b->terrain && terrainValid(*b)) {
@@ -153,8 +169,46 @@ std::optional<double> landingMove(const std::vector<const MathPrim*>& object, co
     }
     for (const MathPrim* p : otherPrims)
         for (const Vec3& v : objectSurfaceSamples({p}, 16, 8)) upFrom(v);
+    for (const PropRef& r : props)
+        for (const Vec3& v : propSurfacePoints(*r.prop, r.model, 1500)) upFrom(v);
     if (best >= 1e300) return std::nullopt;
     return lift - best;
+}
+} // namespace
+
+std::optional<double> landingMove(const std::vector<const MathPrim*>& object, const std::vector<const Brush*>& brushes,
+                                  const std::vector<const MathPrim*>& otherPrims, const std::vector<PropRef>& otherProps) {
+    if (object.empty()) return std::nullopt;
+    Subject sub;
+    sub.bounds = boundsOf(object);
+    std::vector<MathPrim> raised;
+    sub.lift = [&](double dz) { raised = copies(object, dz); };
+    sub.surface = [&] {
+        std::vector<const MathPrim*> ptrs;
+        for (const MathPrim& r : raised) ptrs.push_back(&r);
+        return objectSurfaceSamples(ptrs);
+    };
+    sub.upHit = [&](const Vec3& v) -> std::optional<double> {
+        if (auto h = rayHitPrims(raised, v, {0, 0, 1})) return h->t;
+        return std::nullopt;
+    };
+    return land(sub, brushes, otherPrims, otherProps);
+}
+
+std::optional<double> propLandingMove(const PropRef& prop, const std::vector<const Brush*>& brushes,
+                                      const std::vector<const MathPrim*>& otherPrims,
+                                      const std::vector<PropRef>& otherProps) {
+    if (!prop.prop) return std::nullopt;
+    Subject sub;
+    sub.bounds = propBounds(*prop.prop, prop.model);
+    Prop raised = *prop.prop;
+    sub.lift = [&](double dz) { raised.pos.z += dz; };
+    sub.surface = [&] { return propSurfacePoints(raised, prop.model, 3000); };
+    sub.upHit = [&](const Vec3& v) -> std::optional<double> {
+        if (auto h = rayHitProp(raised, prop.model, v, {0, 0, 1})) return h->t;
+        return std::nullopt;
+    };
+    return land(sub, brushes, otherPrims, otherProps);
 }
 
 } // namespace scal

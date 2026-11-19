@@ -44,6 +44,7 @@ MenuActions drawMenuBar(const MenuState& st) {
         if (ImGui::MenuItem("Terrain (sculpt, paint)", "Shift+G", st.terrainTool)) a.toolTerrain = true;
         if (ImGui::MenuItem("Light", "Shift+L", st.lightTool)) a.toolLight = true;
         if (ImGui::MenuItem("Math primitive", "Shift+M", st.primTool)) a.toolPrim = true;
+        if (ImGui::MenuItem("Props (models)", "Shift+P", st.propTool)) a.toolProp = true;
         ImGui::Separator();
         if (ImGui::BeginMenu("Clip: keep")) {
             if (ImGui::MenuItem("Both pieces", nullptr, st.clipKeep == 0)) a.clipKeep = 0;
@@ -71,9 +72,9 @@ MenuActions drawMenuBar(const MenuState& st) {
     if (ImGui::BeginMenu("Transform")) {
         if (ImGui::MenuItem("Move / Rotate / Scale...", "Cmd+T", false, st.hasSelection)) a.transform = true;
         ImGui::Separator();
-        if (ImGui::MenuItem("Snap to land", "Cmd+J", false, st.primsSelected > 0)) a.snapLand = true;
-        if (ImGui::MenuItem("Snap to ground...", nullptr, false, st.primsSelected > 0)) a.snapGround = true;
-        ImGui::TextDisabled("drops selected primitives onto what is below them");
+        if (ImGui::MenuItem("Snap to land", "Cmd+J", false, st.primsSelected + st.propsSelected > 0)) a.snapLand = true;
+        if (ImGui::MenuItem("Snap to ground...", nullptr, false, st.primsSelected + st.propsSelected > 0)) a.snapGround = true;
+        ImGui::TextDisabled("drops selected primitives and props onto what is below them");
         ImGui::Separator();
         static const char* axes[] = {"X", "Y", "Z"};
         for (int ax = 2; ax >= 0; --ax) {
@@ -166,6 +167,17 @@ MenuActions drawMenuBar(const MenuState& st) {
         ImGui::TextDisabled("pieces and intersect pieces keep only the overlap");
         ImGui::EndMenu();
     }
+    if (ImGui::BeginMenu("Props")) {
+        if (ImGui::MenuItem("Props tool", "Shift+P", st.propTool)) a.toolProp = true;
+        if (ImGui::MenuItem("Place prop", "Return", false, st.propPending)) a.createProp = true;
+        if (ImGui::MenuItem("Cancel", "Esc", false, st.propPending)) a.cancel = true;
+        ImGui::Separator();
+        if (ImGui::MenuItem("Rescan Bottega (models, textures, skies)", "Cmd+R")) a.rescanBottega = true;
+        ImGui::TextDisabled("Pick a model in the Props panel, then click a surface in 3D");
+        ImGui::TextDisabled("or a spot in a 2D view; Return places it. Models live in");
+        ImGui::TextDisabled("the Bottega's models folder (File > Bottega folder...).");
+        ImGui::EndMenu();
+    }
     if (ImGui::BeginMenu("World")) {
         if (ImGui::MenuItem("Light tool", "Shift+L", st.lightTool)) a.toolLight = true;
         static const char* kinds[] = {"New point light", "New spot light", "New sun"};
@@ -247,11 +259,13 @@ void drawControlsWindow(bool* open) {
             {"Terrain points", "Vertex tool on a selected terrain: click a point (Cmd+click adds), drag in the 3D view or a side view; Cmd+Shift+T types a height"},
             {"Terrain tool", "Shift+G: drag over terrain (3D, or a 2D view facing it); mode, radius, amount in Properties; Esc cancels a stroke"},
             {"Primitive tool", "Shift+M (Primitives menu): pick sphere, cube, cylinder, cone, torus, capsule or disc in Properties, drag a box in a 2D view, Return creates, Esc cancels"},
+            {"Props tool", "Shift+P (Props menu): pick a model in the Props panel (search by name), click a surface in 3D or a spot in a 2D view, drag to move it, type position / turn / scale in Properties, Return places it, Esc cancels"},
+            {"Select / move / turn / scale props", "click a prop (any tool that selects; 3D picks its triangles, a 2D view its turned box); drag it in a 2D view; rings turn it (15 degrees); size handles scale it evenly (Shift: one axis); Delete removes, Cmd+D duplicates, Cmd+J drops it onto what is below"},
             {"Select / move primitives", "click a primitive (Select, Light or Primitive tool; a combination selects whole); drag it in a 2D view; Delete removes, Cmd+D duplicates"},
             {"One piece of a combination", "Option+click it (or pick it in Properties), then drag, turn or size it alone"},
-            {"Turn / size primitives", "drag the rings around the selection (15 degree steps); drag a size handle (opposite face stays, Shift: evenly); or type in Properties"},
-            {"Multi-Replicate", "Cmd+Shift+D (Edit menu): copies, each one step further (offset; primitives and lights also turn, primitives also scale); the preview stays while you look around the views; Return creates, Esc cancels"},
-            {"Snap to land / ground", "Cmd+J (Transform menu): drops selected primitives onto the brushes, terrain or primitives below; Snap to ground: onto a typed height"},
+            {"Turn / size primitives", "drag the rings around the selection (15 degree steps); drag a size handle (scales evenly; Shift: one axis, opposite face stays); or type in Properties"},
+            {"Multi-Replicate", "Cmd+Shift+D (Edit menu): copies, each one step further (offset; primitives, props and lights also turn, primitives and props also scale); the preview stays while you look around the views; Return creates, Esc cancels"},
+            {"Snap to land / ground", "Cmd+J (Transform menu): drops selected primitives and props onto the brushes, terrain, primitives or props below; Snap to ground: onto a typed height"},
             {"Blend primitives", "Properties, in a combination: blend (units) melts a piece into the others (0 = sharp)"},
             {"Combine primitives", "Primitives menu or Properties: Combine selected; each piece adds, subtracts or intersects; Separate undoes it"},
             {"Light tool", "Shift+L (World menu): pick point / spot / sun and settings in Properties, click in a view to place, Return creates, Esc cancels"},
@@ -310,10 +324,10 @@ void drawStatusBar(const char* text) {
 
 void dockspace(bool forceReset, const char* tools, const char* topLeft, const char* topRight,
                const char* bottomLeft, const char* bottomRight, const char* rightTop,
-               const char* rightBottom, bool withPanels, const char* rightTopTab) {
+               const char* rightBottom, bool withPanels, const char* rightTopTab, const char* rightTopTab2) {
     const ImGuiViewport* vp = ImGui::GetMainViewport();
     // Bump the version suffix whenever the default layout changes.
-    const ImGuiID id = ImGui::GetID("MainDockspace.v4");
+    const ImGuiID id = ImGui::GetID("MainDockspace.v5");
 
     if (forceReset || ImGui::DockBuilderGetNode(id) == nullptr) {
         ImGui::DockBuilderRemoveNode(id);
@@ -340,6 +354,7 @@ void dockspace(bool forceReset, const char* tools, const char* topLeft, const ch
         if (withPanels) {
             ImGui::DockBuilderDockWindow(rightTop, panelTop);
             if (rightTopTab) ImGui::DockBuilderDockWindow(rightTopTab, panelTop); // second tab
+            if (rightTopTab2) ImGui::DockBuilderDockWindow(rightTopTab2, panelTop); // third tab
             ImGui::DockBuilderDockWindow(rightBottom, panelBottom);
         }
         ImGui::DockBuilderDockWindow(topLeft, tl);

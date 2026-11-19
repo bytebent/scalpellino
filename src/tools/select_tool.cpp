@@ -12,7 +12,7 @@ namespace scal {
 void SelectTool::press(ToolEnv& env, const Pointer& p) {
     Document& doc = env.doc;
     if (lights_.press(env, p)) return;
-    if (!env.cmd) { doc.setLightSelection({}); doc.setPrimSelection({}); } // a plain click elsewhere drops objects
+    if (!env.cmd) { doc.setLightSelection({}); doc.setPrimSelection({}); doc.setPropSelection({}); } // a plain click elsewhere drops objects
     if (!p.view->is2D()) {
         const BrushId id = pick3D(doc, *p.view, p.local);
         std::set<BrushId> sel = doc.selection();
@@ -145,15 +145,16 @@ bool SelectTool::key(ToolEnv& env, int key) {
     Document& doc = env.doc;
     if (key == KEY_ESCAPE) {
         if (mode_ != Mode::Idle || lights_.active()) cancel();
-        else { doc.setSelection({}); doc.setLightSelection({}); doc.setPrimSelection({}); }
+        else { doc.setSelection({}); doc.setLightSelection({}); doc.setPrimSelection({}); doc.setPropSelection({}); }
         return true;
     }
     if ((key == KEY_DELETE || key == KEY_BACKSPACE) &&
-        (!doc.selection().empty() || !doc.lightSelection().empty() || !doc.primSelection().empty()) &&
+        (!doc.selection().empty() || !doc.lightSelection().empty() || !doc.primSelection().empty() || !doc.propSelection().empty()) &&
         mode_ == Mode::Idle && !lights_.active()) {
         Command c = doc.makeDelete(doc.selection(), "Delete");
         doc.addLightDeletes(c, doc.lightSelection());
         doc.addPrimDeletes(c, doc.primSelection());
+        doc.addPropDeletes(c, doc.propSelection());
         doc.apply(std::move(c));
         return true;
     }

@@ -30,7 +30,11 @@ struct ToolEnv {
     bool slopeAngles = false;                    // drag rotation snaps to grid-friendly slopes
     bool textureLock = true;                     // textures stay put when brushes move
     std::string* currentTexture = nullptr;       // texture tool eyedropper target
+    const ModelFinder* models = nullptr;         // props: model of a name (null = none loaded)
 };
+
+// The model of `name` through an optional finder (null finder or unknown name = null).
+inline const Model* findModelOf(const ModelFinder* f, const std::string& name) { return f && *f ? (*f)(name) : nullptr; }
 
 // Grid-friendly rotation angles (radians, 0..2pi): Pythagorean angles, whose sine and
 // cosine are exact fractions (3:4:5 -> 36.87 deg, 5:12:13, 8:15:17, 7:24:25), plus

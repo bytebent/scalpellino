@@ -1,18 +1,22 @@
 #pragma once
-// Selecting, moving, turning and sizing objects (lights and math primitives), shared by
-// the select tool, the light tool and the primitive tool. Brush tools never touch them.
+// Selecting, moving, turning and sizing objects (lights, math primitives and props), shared
+// by the select tool, the light tool, the primitive tool and the props tool. Brush tools
+// never touch them.
 //  - click a light's marker or a primitive (any view) to select it; brushes and the
 //    other kind are deselected. A primitive in a combination selects the whole
 //    combination; Option+click selects just the piece under the cursor (a piece already
 //    selected on its own stays that way, so it can be dragged, turned and sized alone).
-//    Cmd+click adds or removes.
+//    Cmd+click adds or removes. A prop is picked on its triangles in 3D, inside its turned
+//    box in a 2D view.
 //  - drag in a 2D view to move what was clicked (snapped to the grid).
 //  - rotation rings: around each selected spot/sun light, and one set around the
-//    selected primitives. Three in 3D (red = X, green = Y, blue = Z), one per 2D view
-//    (the axis you look along). Drag a ring to turn in 15 degree steps.
-//  - size handles on a single selected primitive: one on each face of its own box
-//    (only the ones you can see side-on in 2D). Drag to resize with the opposite face
-//    staying put; Shift+drag scales evenly about the centre. Changes snap to the grid.
+//    selected primitives and one around the selected props. Three in 3D (red = X, green = Y,
+//    blue = Z), one per 2D view (the axis you look along). Drag a ring to turn in 15 degree
+//    steps.
+//  - size handles on a single selected primitive or prop: one on each face of its own box
+//    (only the ones you can see side-on in 2D). Drag to scale EVENLY about the centre (the
+//    default, v0.10.0); Shift+drag changes one axis with the opposite face staying put.
+//    Changes snap to the grid (a prop's size in units, so its scale changes by that).
 // Every change is one undoable command on release; Esc during a drag cancels it.
 #include "tools/tool.hpp"
 #include <vector>
@@ -28,14 +32,22 @@ LightId pickLight(const Document& doc, const Viewport& vp, Vector2 local);
 MathPrimId pickPrim(const Document& doc, const Viewport& vp, Vector2 local, double* dist = nullptr,
                     MathPrimId* piece = nullptr, bool outlinesFirst = false);
 
+// Prop under `local` (nearest to the camera in 3D, the smallest box in 2D), or 0. `dist`
+// gets the distance along the view ray in 3D.
+PropId pickProp(const Document& doc, const Viewport& vp, Vector2 local, const ModelFinder* models,
+                double* dist = nullptr);
+
 // Rings and size handles of the current selection, as drawn and picked.
 struct ObjectGizmo {
-    struct Rings { Vec3 center; double radius; LightId light = 0; }; // light 0 = the primitives
+    // light 0 and !props = the primitives
+    struct Rings { Vec3 center; double radius; LightId light = 0; bool props = false; };
     std::vector<Rings> rings;
-    std::vector<std::pair<Vec3, int>> handles; // size handles: position, axis*2 + (0 = -, 1 = +)
+    struct Handle { Vec3 pos; int code; bool prop; }; // size handle: axis*2 + (0 = -, 1 = +)
+    std::vector<Handle> handles;
     MathPrimId handlePrim = 0;
+    PropId handleProp = 0;
 };
-ObjectGizmo objectGizmo(const Document& doc, const Viewport& vp);
+ObjectGizmo objectGizmo(const Document& doc, const Viewport& vp, const ModelFinder* models = nullptr);
 
 class ObjectEdit {
 public:
@@ -50,6 +62,7 @@ public:
     const char* hint() const;
 
 private:
+    void dragPropSize(ToolEnv& env, const Pointer& p);
     enum class Mode { None, Move, Ring, Size } mode_ = Mode::None;
     const Viewport* view_ = nullptr;
     double u0_ = 0, v0_ = 0;
@@ -64,10 +77,12 @@ private:
     Vec3 anchor_;           // move: the clicked object's position
     int handle_ = -1;       // size: axis*2 + side
     double amount_ = 0;     // size: change so far
-    bool lightsMode_ = false;
-    bool even_ = false;     // size: Shift held at the press (or now): scale evenly
+    bool lightsMode_ = false, propsMode_ = false, sizeProp_ = false;
+    bool perAxis_ = false;  // size: Shift held at the press (or now): one axis, not evenly
+    const ModelFinder* models_ = nullptr;
     std::vector<Light> lightStart_, lightNow_;
     std::vector<MathPrim> primStart_, primNow_;
+    std::vector<Prop> propStart_, propNow_;
     mutable char hintBuf_[140] = "";
 };
 
