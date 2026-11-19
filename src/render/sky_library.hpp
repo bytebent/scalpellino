@@ -1,6 +1,8 @@
 #pragma once
-// Sky library (milestone 8): sky images from the built-in folder (shipped inside the
-// app) and the user's sky folders. A sky's name is its file name without extension.
+// Sky library (milestone 8): sky images from the Bottega, the user's sky folders and the
+// built-in folder (shipped inside the app), searched in that order. A sky's name is its
+// file name without extension, except for skies in the Bottega: those go by their path
+// relative to the Bottega root, e.g. "skies/Dusk".
 // Panoramas (2:1) load as they are; cube crosses (4:3) are turned into panoramas
 // (core/sky.hpp). Files load on first use.
 #include "raylib.h"
@@ -14,6 +16,9 @@ class SkyLibrary {
 public:
     ~SkyLibrary();
     void setBuiltinFolder(const std::string& dir);
+    // The Bottega root ("" = none); its skies/ folder is searched first. Rescans.
+    void setBottegaRoot(const std::string& root);
+    const std::string& bottegaRoot() const { return bottega_; }
     const std::vector<std::string>& userFolders() const { return userFolders_; }
     void addUserFolder(const std::string& dir);
     void removeUserFolder(size_t index);
@@ -34,8 +39,9 @@ private:
         bool loaded = false, failed = false;
         std::string problem;
     };
-    void scanFolder(const std::string& dir);
+    void scanFolder(const std::string& dir, const std::string& keyRoot = "");
     std::string builtin_;
+    std::string bottega_;
     std::vector<std::string> userFolders_;
     std::map<std::string, Entry> entries_;
     std::vector<std::string> names_;

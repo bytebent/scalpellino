@@ -83,6 +83,8 @@ Editor::Editor(const EditorOptions& opt) : opt_(opt) {
 #endif
         if (!opt_.automated()) loadSkyFolders();
         skies_.setBuiltinFolder(skyDir);
+        if (!opt_.automated()) loadBottegaSetting(); // automated runs never read user settings
+        if (!textures_.exists(currentTexture_) && !textures_.names().empty()) currentTexture_ = textures_.names()[0];
     }
     lastBox_.min = {0, 0, 0};
     lastBox_.max = {64, 64, 64};
@@ -334,7 +336,8 @@ bool Editor::frame(float dt) {
     if (m.smoothTextures >= 0) textures_.setSmooth(m.smoothTextures == 1);
     if (m.textured3D >= 0) textured3D_ = m.textured3D == 1;
     if (m.addTextureFolder) { folderBuf_[0] = 0; askTexFolder_ = true; }
-    if (m.rescanTextures) textures_.rescan();
+    if (m.rescanBottega) rescanBottega();
+    if (m.bottegaFolder) { std::snprintf(bottegaBuf_, sizeof bottegaBuf_, "%s", bottegaRoot_.c_str()); bottegaMsg_.clear(); askBottega_ = true; }
     if (!curveTool_.hasShape()) { curveTool_.params.texture = currentTexture_; curveTool_.params.texScale = defaultScale_; }
     blockTool_.texture = currentTexture_;
     blockTool_.textureScale = defaultScale_;
@@ -356,6 +359,7 @@ bool Editor::frame(float dt) {
     drawTerrainDialogs();
     drawWorldDialogs();
     drawReplicateDialog();
+    drawBottegaDialog();
     drawControlsWindow(&controlsOpen_);
     drawOverlapsWindow();
     closeDialogs_ = false;
@@ -394,6 +398,7 @@ void Editor::handleKeyboard() {
         if (shift_ && IsKeyPressed(KEY_C)) carveWithSelection();
         if (shift_ && IsKeyPressed(KEY_H) && !doc_.selection().empty()) { shapingError_.clear(); askHollow_ = true; }
         if (IsKeyPressed(KEY_E)) centerViews();
+        if (IsKeyPressed(KEY_R)) rescanBottega();
         if (IsKeyPressed(KEY_U)) showAll();
         if (IsKeyPressed(KEY_ZERO)) allViewsToOrigin();
         if (shift_ && IsKeyPressed(KEY_O)) { findOverlapsNow(); return; }
@@ -1641,6 +1646,97 @@ void Editor::saveTextureFolders() const {
     for (const std::string& d : textures_.userFolders()) f << d << '\n';
 }
 
+// ------------------------------------------------------------------ Bottega
+
+void Editor::loadBottegaSetting() {
+    const std::string dir = settingsDir();
+    if (dir.empty()) return;
+    std::ifstream f(dir + "/bottega.txt");
+    std::string line;
+    if (std::getline(f, line) && !line.empty()) setBottegaRoot(line);
+}
+
+void Editor::saveBottegaSetting() const {
+    if (opt_.automated()) return; // tests never touch user settings
+    const std::string dir = settingsDir();
+    if (dir.empty()) return;
+    std::ofstream f(dir + "/bottega.txt");
+    f << bottegaRoot_ << '\n';
+}
+
+void Editor::setBottegaRoot(const std::string& root) {
+    bottegaRoot_ = root;
+    bottegaCheck_ = bottega::inspect(root);
+    const std::string use = bottega::usable(bottegaCheck_) ? root : std::string();
+    textures_.setBottegaRoot(use);
+    skies_.setBottegaRoot(use);
+    if (!textures_.exists(currentTexture_) && !textures_.names().empty()) currentTexture_ = textures_.names()[0];
+}
+
+void Editor::rescanBottega() {
+    // Never automatic (idle must stay free): the user asks, by menu, button or Cmd+R.
+    bottegaCheck_ = bottega::inspect(bottegaRoot_);
+    const std::string use = bottega::usable(bottegaCheck_) ? bottegaRoot_ : std::string();
+    textures_.setBottegaRoot(use);
+    textures_.rescan();
+    skies_.setBottegaRoot(use);
+    skies_.rescan();
+}
+
+void Editor::drawBottegaDialog() {
+    if (askBottega_) { ImGui::OpenPopup("Bottega folder"); askBottega_ = false; }
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    if (!ImGui::BeginPopupModal("Bottega folder", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
+    ImGui::TextWrapped("The Bottega is one folder shared by Scalpellino, Mazzuola and other tools: textures, skies, models, "
+                       "shaders, maps and renders live in its sub-folders. Choose it once.");
+    ImGui::Separator();
+    ImGui::SetNextItemWidth(520);
+    if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+    const bool enter = ImGui::InputTextWithHint("##bottega", "path of the Bottega folder", bottegaBuf_, sizeof bottegaBuf_,
+                                                ImGuiInputTextFlags_EnterReturnsTrue);
+    if (useNative_) {
+        if (ImGui::Button("Browse...")) { native_ = Native::Bottega; ImGui::CloseCurrentPopup(); }
+        ImGui::SameLine();
+    }
+    const bottega::Check typed = bottega::inspect(bottegaBuf_);
+    ImGui::TextWrapped("%s", bottega::describe(typed).c_str());
+    if (!bottegaMsg_.empty()) ImGui::TextColored(ImVec4(1, 0.5f, 0.4f, 1), "%s", bottegaMsg_.c_str());
+
+    const bool canMake = typed.state == bottega::State::MissingFolder || typed.state == bottega::State::Empty ||
+                         typed.state == bottega::State::NotBottega || (typed.state == bottega::State::Ready && !typed.missing.empty());
+    const bool canUse = typed.state == bottega::State::Ready && typed.missing.empty();
+    if (canMake) {
+        const char* label = typed.state == bottega::State::Ready ? "Add missing folders" : "Make this a Bottega and use it";
+        if (ImGui::Button(label)) {
+            if (bottega::make(bottegaBuf_, bottegaMsg_)) {
+                bottegaMsg_.clear();
+                setBottegaRoot(bottegaBuf_);
+                saveBottegaSetting();
+                ImGui::CloseCurrentPopup();
+            }
+        }
+        ImGui::SameLine();
+    }
+    ImGui::BeginDisabled(!canUse);
+    if (ImGui::Button("Use this folder") || (enter && canUse)) {
+        bottegaMsg_.clear();
+        setBottegaRoot(bottegaBuf_);
+        saveBottegaSetting();
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (!bottegaRoot_.empty() && ImGui::Button("Stop using the Bottega")) {
+        setBottegaRoot("");
+        saveBottegaSetting();
+        ImGui::CloseCurrentPopup();
+    }
+    if (!bottegaRoot_.empty()) { ImGui::SameLine(); }
+    if (ImGui::Button("Close") || ImGui::IsKeyPressed(ImGuiKey_Escape, false) || closeDialogs_) ImGui::CloseCurrentPopup();
+    ImGui::TextDisabled("Current: %s", bottegaRoot_.empty() ? "(none)" : bottegaRoot_.c_str());
+    ImGui::EndPopup();
+}
+
 template <class Fn> void Editor::editFaces(const char* name, Fn fn) {
     const std::vector<FaceRef> faces = textureTool_.faces(doc_);
     if (faces.empty()) return;
@@ -1754,9 +1850,10 @@ void Editor::drawTextureBrowser() {
                 {
                     bool user = false;
                     for (const std::string& d : textures_.userFolders()) user = user || d == textures_.folderOf(name);
-                    ImGui::SetTooltip("%s\n%d x %d\n%s", name.c_str(), t.width, t.height, user ? "your folder" : "built-in");
+                    const bool inBottega = !bottegaRoot_.empty() && name.rfind("textures/", 0) == 0;
+                    ImGui::SetTooltip("%s\n%d x %d\n%s", name.c_str(), t.width, t.height, inBottega ? "Bottega" : user ? "your folder" : "built-in");
                 }
-                std::string label = name;
+                std::string label = name.substr(name.find_last_of('/') == std::string::npos ? 0 : name.find_last_of('/') + 1);
                 while (label.size() > 3 && ImGui::CalcTextSize(label.c_str()).x > cell) label = label.substr(0, label.size() - 4) + "..";
                 ImGui::TextUnformatted(label.c_str());
                 ImGui::PopID();
@@ -1768,9 +1865,10 @@ void Editor::drawTextureBrowser() {
         ImGui::EndChild();
         if (ImGui::Button("Add folder...")) { folderBuf_[0] = 0; askTexFolder_ = true; }
         ImGui::SameLine();
-        if (ImGui::Button("Rescan")) textures_.rescan();
+        if (ImGui::Button("Rescan")) rescanBottega();
         ImGui::SameLine();
-        ImGui::TextDisabled("%zu textures", textures_.names().size());
+        if (bottegaRoot_.empty()) ImGui::TextDisabled("%zu textures, no Bottega (File menu)", textures_.names().size());
+        else ImGui::TextDisabled("%zu textures", textures_.names().size());
     }
     ImGui::End();
 
@@ -2899,6 +2997,10 @@ void Editor::runNativeDialog() {
         case Native::Folder:
             if (chooseFolderDialog(docs, picked)) { textures_.addUserFolder(picked); saveTextureFolders(); }
             break;
+        case Native::Bottega:
+            if (chooseFolderDialog(docs, picked)) std::snprintf(bottegaBuf_, sizeof bottegaBuf_, "%s", picked.c_str());
+            askBottega_ = true; // back to the Bottega dialog
+            break;
         case Native::SkyFolder:
             if (chooseFolderDialog(docs, picked)) { skies_.addUserFolder(picked); saveSkyFolders(); }
             askEnvironment_ = true; // back to the environment dialog
@@ -3353,6 +3455,29 @@ void Editor::stepScript() {
         else if (k == "fogcolor") in >> e.fog.color.x >> e.fog.color.y >> e.fog.color.z;
         else if (k == "fogrange") in >> e.fog.start >> e.fog.end;
         if (e != doc_.environment()) doc_.apply(doc_.makeEnvironment(e, "Environment"));
+    } else if (cmd == "bottega") {
+        // bottega <path> | make <path> | none  (in memory only: tests never touch user settings)
+        std::string op; in >> op;
+        if (op == "none") setBottegaRoot("");
+        else if (op == "make") {
+            std::string d; std::getline(in >> std::ws, d);
+            std::string err;
+            if (!bottega::make(d, err)) { std::fprintf(stderr, "script FAIL (command %d): %s\n", scriptLine_, err.c_str()); ++scriptFailures_; }
+            setBottegaRoot(d);
+        } else setBottegaRoot(op == "set" ? [&] { std::string d; std::getline(in >> std::ws, d); return d; }() : op);
+    } else if (cmd == "rescan") {
+        rescanBottega();
+    } else if (cmd == "bottegadialog") {
+        std::snprintf(bottegaBuf_, sizeof bottegaBuf_, "%s", bottegaRoot_.c_str());
+        bottegaMsg_.clear();
+        askBottega_ = true;
+    } else if (cmd == "copy") {
+        // copy <from> <to...>  (tests only: add a file to a folder; makes the parent folders)
+        std::string from, to; in >> from; std::getline(in >> std::ws, to);
+        std::error_code ec;
+        std::filesystem::create_directories(std::filesystem::path(to).parent_path(), ec);
+        std::filesystem::copy_file(from, to, std::filesystem::copy_options::overwrite_existing, ec);
+        if (ec) { std::fprintf(stderr, "script FAIL (command %d): copy %s: %s\n", scriptLine_, from.c_str(), ec.message().c_str()); ++scriptFailures_; }
     } else if (cmd == "skydir") {
         std::string d; std::getline(in >> std::ws, d);
         skies_.addUserFolder(d);
@@ -3552,6 +3677,23 @@ void Editor::stepScript() {
         }
     } else if (cmd == "expect" && in.str().find(" edges") != std::string::npos) {
         edgeCheck_ = true;
+    } else if (cmd == "expect" && in.str().find("expect bottega") == 0) {
+        // expect bottega ready|empty|notbottega|missing|newer|damaged|none
+        std::string w, state; in >> w >> state;
+        using S = bottega::State;
+        const S s = bottegaCheck_.state;
+        const bool ok = (state == "ready" && s == S::Ready) || (state == "empty" && s == S::Empty) ||
+                        (state == "notbottega" && s == S::NotBottega) || (state == "missing" && s == S::MissingFolder) ||
+                        (state == "newer" && s == S::NewerVersion) || (state == "damaged" && s == S::Damaged) ||
+                        (state == "none" && s == S::NoPath);
+        if (!ok) { std::fprintf(stderr, "script FAIL (command %d): expected Bottega state %s\n", scriptLine_, state.c_str()); ++scriptFailures_; }
+    } else if (cmd == "expect" && (in.str().find("expect hastexture") == 0 || in.str().find("expect hassky") == 0)) {
+        // expect hastexture <name> | expect hassky <name>; add "not" before the name to expect it absent
+        std::string w, name; in >> w >> name;
+        bool want = true;
+        if (name == "not") { want = false; in >> name; }
+        const bool has = w == "hastexture" ? textures_.exists(name) : skies_.exists(name);
+        if (has != want) { std::fprintf(stderr, "script FAIL (command %d): %s %s%s\n", scriptLine_, w.c_str(), want ? "" : "not ", name.c_str()); ++scriptFailures_; }
     } else if (cmd == "expect") {
         std::string what; size_t n = 0; in >> what >> n;
         const size_t got = what == "selected" ? doc_.selection().size() : doc_.brushes().size();

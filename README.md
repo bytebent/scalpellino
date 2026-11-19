@@ -74,7 +74,9 @@ Everything is also in the menus (File, Edit, Tools, Transform, Texture, Terrain,
 | Wrap a texture around a corner | Texture tool: click a face, **Option+Shift+click** the neighbouring face (repeat to go around); or pick several and use **Wrap around** (Face panel / Texture menu) |
 | Hidden faces | Texture → Apply nodraw: faces with `nodraw` show in the editor but are never rendered or exported |
 | Adjust a face's texture | **Face** panel (right): shift, scale, rotation, fit, justify, align to world/face |
-| Your own textures | Texture → Add texture folder... (PNG, TGA, JPG, BMP; subfolders included) |
+| Bottega (shared folder) | File → Bottega folder...: choose the folder shared with Mazzuola and other tools once (it offers to make the sub-folders). Its `textures/` and `skies/` show up in Scalpellino; maps store them by path (`textures/walls/Brick_Red`) |
+| Rescan the Bottega | **Cmd+R** (File menu), or **Rescan** in the Textures panel. Never automatic: new files appear when you ask |
+| Your own textures | Texture → Add texture folder... (PNG, TGA, JPG, BMP; subfolders included): extra folders next to the Bottega |
 | Texture lock, default scale, crisp/smooth | Texture menu |
 | Textured / flat 3D view | View menu |
 | Delete | **Delete** or **Backspace** (in any tool) |

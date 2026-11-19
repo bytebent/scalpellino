@@ -2,6 +2,7 @@
 // The editor: owns the document, viewports and tools, and runs one UI frame at a time.
 // Real input and scripted input (for automated tests/screenshots) go through the same
 // onPress/onDrag/onRelease/onKey paths.
+#include "core/bottega.hpp"
 #include "imgui.h"
 #include "core/document.hpp"
 #include "core/grid.hpp"
@@ -102,6 +103,12 @@ private:
     // Applies fn to every picked face (texture tool) as one undoable command.
     template <class Fn> void editFaces(const char* name, Fn fn);
     void loadTextureFolders();
+    // Bottega: the shared folder (textures, skies... later models, shaders). See core/bottega.hpp.
+    void loadBottegaSetting();
+    void saveBottegaSetting() const;
+    void setBottegaRoot(const std::string& root); // inspects it and points the libraries at it when usable
+    void rescanBottega();                         // re-reads every library; never automatic
+    void drawBottegaDialog();
     void saveTextureFolders() const;
     void newMap();
     void openMap(const std::string& path);
@@ -286,12 +293,17 @@ private:
     bool showPanels_ = true;         // right-hand Textures/Face panels ("layout classic" hides)
     char texSearch_[128] = "";
     bool askTexFolder_ = false;
+    bool askBottega_ = false;
+    char bottegaBuf_[1024] = "";
+    std::string bottegaRoot_;        // the chosen folder ("" = none), kept in the user's settings
+    bottega::Check bottegaCheck_;
+    std::string bottegaMsg_;         // result of the last make
     char folderBuf_[1024] = "";
     int fitTimes_[2] = {1, 1};
 
     // Native file dialogs (macOS). They open only once no modifier key or mouse button is
     // held: the system panel swallows key-up events, which would leave Cmd "stuck".
-    enum class Native { None, Open, SaveAs, Folder, Heightmap, SkyFolder };
+    enum class Native { None, Open, SaveAs, Folder, Heightmap, SkyFolder, Bottega };
     Native native_ = Native::None;
     bool useNative_ = false;
 

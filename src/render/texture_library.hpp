@@ -1,7 +1,9 @@
 #pragma once
-// Texture library: textures found in the built-in folder (shipped inside the app) and
-// the user's own folders. A texture's name is its file name without extension (spaces
-// become underscores, since .map files can't hold spaces). Files load on first use.
+// Texture library: textures found in the Bottega, the user's own folders and the built-in
+// folder (shipped inside the app), searched in that order (the first match wins).
+// A texture's name is its file name without extension (spaces become underscores, since
+// .map files can't hold spaces), except for textures in the Bottega: those go by their path
+// relative to the Bottega root, e.g. "textures/walls/Brick_Red". Files load on first use.
 #include "raylib.h"
 #include "core/texture.hpp"
 #include <map>
@@ -15,6 +17,9 @@ public:
     ~TextureLibrary();
 
     void setBuiltinFolder(const std::string& dir);
+    // The Bottega root ("" = none); its textures/ folder is searched first. Rescans.
+    void setBottegaRoot(const std::string& root);
+    const std::string& bottegaRoot() const { return bottega_; }
     const std::vector<std::string>& userFolders() const { return userFolders_; }
     void addUserFolder(const std::string& dir);
     void removeUserFolder(size_t index);
@@ -43,11 +48,12 @@ private:
         bool loaded = false;
         bool failed = false;
     };
-    void scanFolder(const std::string& dir);
+    void scanFolder(const std::string& dir, const std::string& keyRoot = "");
     void applyFilter(Texture2D& t) const;
     const Texture2D& missing();
 
     std::string builtin_;
+    std::string bottega_;
     std::vector<std::string> userFolders_;
     std::map<std::string, Entry> entries_;
     std::vector<std::string> names_;

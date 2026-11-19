@@ -1,5 +1,6 @@
 #include "render/sky_library.hpp"
 #include "core/sky.hpp"
+#include "core/bottega.hpp"
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
@@ -13,6 +14,12 @@ SkyLibrary::~SkyLibrary() { unloadAll(); }
 
 void SkyLibrary::setBuiltinFolder(const std::string& dir) {
     builtin_ = dir;
+    rescan();
+}
+
+void SkyLibrary::setBottegaRoot(const std::string& root) {
+    if (root == bottega_) return;
+    bottega_ = root;
     rescan();
 }
 
@@ -30,7 +37,7 @@ void SkyLibrary::removeUserFolder(size_t i) {
     rescan();
 }
 
-void SkyLibrary::scanFolder(const std::string& dir) {
+void SkyLibrary::scanFolder(const std::string& dir, const std::string& keyRoot) {
     std::error_code ec;
     if (dir.empty() || !fs::is_directory(dir, ec)) return;
     for (auto it = fs::recursive_directory_iterator(dir, fs::directory_options::skip_permission_denied, ec);
@@ -41,6 +48,10 @@ void SkyLibrary::scanFolder(const std::string& dir) {
         if (ext != ".png" && ext != ".tga" && ext != ".jpg" && ext != ".jpeg" && ext != ".bmp") continue;
         std::string name = it->path().stem().string();
         for (char& c : name) if (std::isspace((unsigned char)c)) c = '_';
+        if (!keyRoot.empty()) { // in the Bottega: named by its path under the root
+            name = bottega::keyFor(keyRoot, it->path().string());
+            if (name.empty()) continue;
+        }
         if (entries_.count(name)) continue; // first folder wins
         Entry e;
         e.path = it->path().string();
@@ -51,6 +62,7 @@ void SkyLibrary::scanFolder(const std::string& dir) {
 void SkyLibrary::rescan() {
     unloadAll();
     entries_.clear();
+    if (!bottega_.empty()) scanFolder(bottega::path(bottega_, "skies"), bottega_);
     for (const std::string& d : userFolders_) scanFolder(d);
     scanFolder(builtin_);
     names_.clear();

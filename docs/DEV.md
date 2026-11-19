@@ -91,6 +91,10 @@ inside the view. Lines starting with # are comments.
   combine   separate   expect prims|primsel <n>   expect primpos|primrot|primsize x y z   expect primop <op>
   environment sky <name|none> | ambient r g b | fog on|off | fogcolor r g b | fogrange <start> <end>
   bookmark add <name> | go <index>   expect sky <name>   expect bookmarks <n>   expect camera x y z
+  bottega none | <path> | make <path>   rescan   bottegadialog   (in memory only; make = create + use)
+  expect bottega ready|empty|notbottega|missing|newer|damaged|none
+  expect hastexture [not] <name>   expect hassky [not] <name>
+  copy <from> <to...>   (tests only: add a file, e.g. to prove nothing rescans by itself)
   terrainset mode <raise|lower|smooth|flatten|noise|paint|erase> | radius|amount|strength <n>
              | falloff soft|linear|hard      whover <view> <u> <v> (hover, no button)
   camera <x> <y> <z> <yaw> <pitch>   (3D view camera, degrees)
@@ -119,7 +123,7 @@ policy), and it must hold **with a map open**, not only with an empty app.
 
 - `tests/ui/idle.sh <absolute path to Scalpellino> [seconds]` (Linux, needs Xvfb):
   starts the app on its own virtual screen with `tests/ui/idle/rich_map.script`, which
-  builds a map with terrain (raised and painted), brushes, a dome, a blended primitive
+  builds a map with a Bottega (one texture in it, found by Rescan, used on the tower), terrain (raised and painted), brushes, a dome, a blended primitive
   combination, a torus and a cube, three lights, sky, ambient, fog, a bookmark and the
   scale figure, saves it, **re-opens the saved map**, switches on the sky, light preview,
   fog and figure, and selects the primitives. The script has no `quit`, so the app goes

@@ -1,4 +1,5 @@
 #include "render/texture_library.hpp"
+#include "core/bottega.hpp"
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
@@ -12,6 +13,12 @@ TextureLibrary::~TextureLibrary() { unloadAll(); }
 
 void TextureLibrary::setBuiltinFolder(const std::string& dir) {
     builtin_ = dir;
+    rescan();
+}
+
+void TextureLibrary::setBottegaRoot(const std::string& root) {
+    if (root == bottega_) return;
+    bottega_ = root;
     rescan();
 }
 
@@ -29,7 +36,7 @@ void TextureLibrary::removeUserFolder(size_t i) {
     rescan();
 }
 
-void TextureLibrary::scanFolder(const std::string& dir) {
+void TextureLibrary::scanFolder(const std::string& dir, const std::string& keyRoot) {
     std::error_code ec;
     if (dir.empty() || !fs::is_directory(dir, ec)) return;
     for (auto it = fs::recursive_directory_iterator(dir, fs::directory_options::skip_permission_denied, ec);
@@ -40,6 +47,10 @@ void TextureLibrary::scanFolder(const std::string& dir) {
         if (ext != ".png" && ext != ".tga" && ext != ".jpg" && ext != ".jpeg" && ext != ".bmp") continue;
         std::string name = it->path().stem().string();
         for (char& c : name) if (std::isspace((unsigned char)c)) c = '_';
+        if (!keyRoot.empty()) { // in the Bottega: named by its path under the root
+            name = bottega::keyFor(keyRoot, it->path().string());
+            if (name.empty()) continue;
+        }
         if (entries_.count(name)) continue; // first folder wins
         Entry e;
         e.path = it->path().string();
@@ -52,6 +63,7 @@ void TextureLibrary::rescan() {
     // Keep already-loaded GPU textures whose file is still found.
     std::map<std::string, Entry> old;
     old.swap(entries_);
+    if (!bottega_.empty()) scanFolder(bottega::path(bottega_, "textures"), bottega_);
     for (const std::string& d : userFolders_) scanFolder(d); // user folders override built-ins
     scanFolder(builtin_);
     for (auto& [name, e] : entries_) {

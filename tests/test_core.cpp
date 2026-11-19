@@ -13,10 +13,13 @@
 #include "core/mathprim.hpp"
 #include "core/landing.hpp"
 #include "core/replicate.hpp"
+#include "core/bottega.hpp"
 #include "io/map_format.hpp"
 #include <cmath>
 #include <random>
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
 #include <sstream>
 #include <string>
 
@@ -1945,6 +1948,86 @@ void testLandingReplicate() {
     CHECK(near(rsc[2].prims[0].size.x, 100 * 0.125));
 }
 
+// ---------------------------------------------------------------- bottega
+
+static void testBottega() {
+    namespace fs = std::filesystem;
+    namespace bt = scal::bottega;
+    const fs::path base = fs::temp_directory_path() / "scal_bottega_test";
+    fs::remove_all(base);
+    const std::string root = (base / "Studio").string();
+
+    CHECK(bt::inspect("").state == bt::State::NoPath);
+    CHECK(bt::inspect(root).state == bt::State::MissingFolder);
+
+    // make() on a path that doesn't exist yet creates the folder, every sub-folder and the marker.
+    std::string err;
+    CHECK(bt::make(root, err));
+    CHECK(err.empty());
+    bt::Check c = bt::inspect(root);
+    CHECK(c.state == bt::State::Ready);
+    CHECK(c.version == bt::kFormatVersion);
+    CHECK(c.missing.empty());
+    CHECK(bt::usable(c));
+    for (const std::string& sub : bt::subfolders()) CHECK(fs::is_directory(bt::path(root, sub)));
+    CHECK(fs::is_directory(bt::path(root, "presets/camera_presets")));
+    CHECK(fs::is_regular_file(bt::path(root, bt::kMarkerFile)));
+
+    // Making again changes nothing and keeps files.
+    { std::ofstream f(bt::path(root, "textures/keep.png")); f << "x"; }
+    CHECK(bt::make(root, err));
+    CHECK(fs::is_regular_file(bt::path(root, "textures/keep.png")));
+
+    // A missing sub-folder is reported, and make() puts it back.
+    fs::remove_all(bt::path(root, "skies"));
+    c = bt::inspect(root);
+    CHECK(c.state == bt::State::Ready);
+    CHECK(c.missing.size() == 1 && c.missing[0] == "skies");
+    CHECK(!bt::describe(c).empty());
+    CHECK(bt::make(root, err));
+    CHECK(bt::inspect(root).missing.empty());
+
+    // Notes in the marker are fine.
+    { std::ofstream f(bt::path(root, bt::kMarkerFile)); f << "# hello\nbottega 1\n# more\n"; }
+    CHECK(bt::inspect(root).state == bt::State::Ready);
+
+    // An empty folder, and a folder with files but no marker (files are kept).
+    const std::string empty = (base / "Empty").string();
+    fs::create_directories(empty);
+    CHECK(bt::inspect(empty).state == bt::State::Empty);
+    const std::string used = (base / "Used").string();
+    fs::create_directories(used);
+    { std::ofstream f(bt::path(used, "old.png")); f << "x"; }
+    CHECK(bt::inspect(used).state == bt::State::NotBottega);
+    CHECK(bt::make(used, err));
+    CHECK(bt::inspect(used).state == bt::State::Ready);
+    CHECK(fs::is_regular_file(bt::path(used, "old.png")));
+
+    // A newer version is left alone; a damaged marker is refused.
+    { std::ofstream f(bt::path(root, bt::kMarkerFile)); f << "bottega 99\n"; }
+    c = bt::inspect(root);
+    CHECK(c.state == bt::State::NewerVersion && c.version == 99);
+    CHECK(!bt::usable(c));
+    CHECK(!bt::make(root, err));
+    CHECK(!err.empty());
+    { std::ofstream f(bt::path(root, bt::kMarkerFile)); f << "garbage\n"; }
+    CHECK(bt::inspect(root).state == bt::State::Damaged);
+    CHECK(!bt::make(root, err));
+    CHECK(!bt::make("", err));
+    // A path that is a file, not a folder.
+    CHECK(bt::inspect(bt::path(used, "old.png")).state == bt::State::Damaged);
+
+    // The name a file goes by in a map.
+    CHECK(bt::keyFor(root, bt::path(root, "textures/walls/Brick Red.PNG")) == "textures/walls/Brick_Red");
+    CHECK(bt::keyFor(root, bt::path(root, "skies/Dusk.png")) == "skies/Dusk");
+    CHECK(bt::keyFor(root, (base / "Other" / "x.png").string()).empty());
+    CHECK(bt::keyFor("", "a.png").empty());
+    CHECK(bt::path("/a/b", "c") == "/a/b/c");
+    CHECK(bt::path("/a/b/", "c") == "/a/b/c");
+
+    fs::remove_all(base);
+}
+
 int main() {
     testGrid();
     testBoxGeometry();
@@ -1966,6 +2049,7 @@ int main() {
     testTerrainPoints();
     testWorld();
     testSky();
+    testBottega();
     testMathPrims();
     testPrimBlend();
     testLandingReplicate();

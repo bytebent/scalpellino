@@ -336,7 +336,20 @@ That's all. No gameplay entities (doors, triggers, physics, scripting).
   are shown in the editor but skipped by every render and export (Camera Preview, PNG
   renders, `.glb`). The `.map` export keeps them, as other tools expect.
 - **Textures:** built-in CC0 textures inside the app + the user's folders of PNG/TGA/JPG/BMP
-  (name = file name without extension). Half-Life `.wad` support later.
+  (name = file name without extension) + the Bottega's `textures/` (below). Half-Life `.wad`
+  support later.
+- **Bottega** (built, v0.9.4): one folder shared by Mazzuola, Scalpellino and later tools.
+  A normal folder anywhere; each tool asks once, in its settings, where it is (File >
+  Bottega folder...). A marker file `bottega.txt` at its root holds the format version
+  (`bottega 1`); a newer version is left alone. Sub-folders: `textures/`, `models/`,
+  `maps/`, `palettes/`, `skies/`, `shaders/`, `renders/`, `presets/` (camera presets in
+  `presets/camera_presets`). **Never rescanned automatically** (idle stays free): File >
+  Rescan Bottega (Cmd+R) or the Textures panel's Rescan button. Search order: Bottega,
+  the user's extra folders, then the built-ins; the first match wins.
+  **Names in maps:** things from the Bottega go by their path relative to the root, without
+  extension, spaces as `_` (`textures/walls/Brick_Red`, `skies/Dusk`; models later). Built-in
+  textures and the user's extra folders keep plain names (`Bricks_24`). A name that can't be
+  found (Bottega not set, file gone) stays in the map and the texture shows as missing.
 
 ## 9. Rendering
 
@@ -400,7 +413,7 @@ Fetched automatically by CMake, versions pinned:
 ## 13. Repo layout
 
 ```
-src/core/     brushes, entities, document, commands (no raylib)
+src/core/     brushes, entities, document, commands, Bottega folder logic (no raylib)
 src/io/       map reader/writer, glb import/export, textures
 src/render/   viewports, render modes, camera preview, shaders/
 src/tools/    select, block, clip, vertex, carve, curve, texture, light, camera

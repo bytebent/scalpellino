@@ -13,6 +13,9 @@ MenuActions drawMenuBar(const MenuState& st) {
         if (ImGui::MenuItem("Open...", "Cmd+O")) a.open = true;
         if (ImGui::MenuItem("Open by typing a path...")) a.openPath = true;
         ImGui::Separator();
+        if (ImGui::MenuItem("Bottega folder...")) a.bottegaFolder = true;
+        if (ImGui::MenuItem("Rescan Bottega", "Cmd+R")) a.rescanBottega = true;
+        ImGui::Separator();
         if (ImGui::MenuItem("Save", "Cmd+S")) a.save = true;
         if (ImGui::MenuItem("Save as...", "Cmd+Shift+S")) a.saveAs = true;
         ImGui::Separator();
@@ -127,7 +130,7 @@ MenuActions drawMenuBar(const MenuState& st) {
         }
         ImGui::Separator();
         if (ImGui::MenuItem("Add texture folder...")) a.addTextureFolder = true;
-        if (ImGui::MenuItem("Rescan texture folders")) a.rescanTextures = true;
+        if (ImGui::MenuItem("Rescan Bottega and texture folders", "Cmd+R")) a.rescanBottega = true;
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("Terrain")) {
@@ -217,6 +220,7 @@ void drawControlsWindow(bool* open) {
     ImGui::SetNextWindowSize(ImVec2(560, 520), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("Controls", open)) {
         static const char* rows[][2] = {
+            {"Bottega (shared folder)", "File > Bottega folder... picks it; Cmd+R (File menu) rescans it: textures, skies. Never automatic"},
             {"Select tool / Block tool", "Shift+S / Shift+B"},
             {"Draw a block", "Block tool: drag in a 2D view; Return creates, Esc cancels"},
             {"Select", "click (2D or 3D); Cmd+click adds/removes; Cmd+A all; Esc none"},

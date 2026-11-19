@@ -34,7 +34,8 @@ add_library(scal_core STATIC
   src/core/sky.cpp
   src/core/mathprim.cpp
   src/core/landing.cpp
-  src/core/replicate.cpp)
+  src/core/replicate.cpp
+  src/core/bottega.cpp)
 target_include_directories(scal_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 # File formats. Also graphics-free, so it is tested headless too.

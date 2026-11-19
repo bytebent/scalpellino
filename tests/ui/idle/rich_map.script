@@ -2,6 +2,11 @@
 # state is with a loaded map), switch on every View preview and leave things selected.
 # The script deliberately does NOT end with `quit`: the app then goes idle, and
 # tests/ui/idle.sh measures its CPU time. The screenshot is the "ready" signal.
+# -- a Bottega (the shared folder) with a texture in it, found by Rescan
+bottega make studio
+copy assets/textures/rock.png studio/textures/walls/Rock Face.png
+rescan
+expect hastexture textures/walls/Rock_Face
 # -- terrain: a patch, raised and painted
 block -512 -512 -64 512 512 0
 terrain pick
@@ -31,6 +36,7 @@ texture Bricks_24
 block -480 480 0 480 512 160
 applytexture
 blockshape cylinder 16
+texture textures/walls/Rock_Face
 block 600 -100 0 700 0 200
 applytexture
 blockshape box

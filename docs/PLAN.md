@@ -13,15 +13,16 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 - **Released:** v0.1.0 … v0.9.3. Milestones 0–9 are done (see the milestone sections
   below and the log). Latest: **v0.9.3** (single pieces of a combination with
   Option+click; Multi-Replicate as a non-blocking window). Reported to the user.
-- **Next:** **Bottega basics** (folder setting, Rescan, marker file), then **milestone 10 —
-  Props** once the user says go (decisions under "Open questions"). The idle CPU test is
-  done (`tests/ui/idle.sh`, see DEV.md).
+- **Next:** **milestone 10 — Props** once the user says go (decisions under "Open
+  questions"; models live in Bottega's `models/`). Bottega basics and the idle CPU test
+  (`tests/ui/idle.sh`, see DEV.md) are done.
 - **Roadmap:** M10 Props → Random Replicate → Sky Lab → cameras and Camera Preview →
   Render (Source look, with the material system) → water / cloud planes → camera effects →
   export. The renderer part is a
   proposal awaiting the user's confirmation. Details under "Roadmap" and "Direction".
-- **Bottega** (shared folder for Mazzuola, Scalpellino and later tools): decided with the
-  user, not built (shader format agreed). See "Bottega" below.
+- **Bottega** (shared folder for Mazzuola, Scalpellino and later tools): the basics are
+  built (v0.9.4); models, shaders, presets and renders will use it as they arrive. See
+  "Bottega" below.
 - How the user likes to work: one release per step, short plain reports, ask before
   starting the next milestone (see `HANDOFF.md`).
 
@@ -259,7 +260,7 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
 - **Later / maybe:** a ray-tracing renderer (Bryce look; real reflections and bending
   glass), `.wad` textures, Lua generators, texture tags.
 
-## Bottega (shared folder) — decided with the user, not built
+## Bottega (shared folder) — basics built in v0.9.4 (folder setting, Rescan, marker, textures and skies)
 
 User's idea (2026-11-18): one folder that Mazzuola, Scalpellino and later texture tools
 read and write. Agreed so far:
@@ -276,8 +277,10 @@ read and write. Agreed so far:
 - **Decided with the user (2026-11-18):**
   - Bottega is a normal folder anywhere; each tool asks once, in its settings, where it
     is; an empty folder is offered the sub-folders.
-  - Maps store paths relative to the Bottega root (`textures/Bricks_24`, `models/tree`),
-    so moving Bottega doesn't break maps.
+  - Maps store paths relative to the Bottega root (`textures/walls/Brick_Red`,
+    `models/tree`), so moving Bottega doesn't break maps. **Only for what lives in the
+    Bottega** (user, 2026-11-19): the built-in (shipped, dev) textures keep plain names
+    like `Bricks_24`, and so do the user's extra folders.
   - A model folder keeps its own textures (self-contained) and may also use the shared
     `textures/` library.
   - **No automatic or constant rescanning** (not even on window focus): a **Rescan**
@@ -285,8 +288,17 @@ read and write. Agreed so far:
   - A small marker file at the root with a format version.
   - The user's existing texture and sky folders keep working as extra folders beside
     Bottega.
-- **Decided without asking (confirm):** things found in an extra folder are stored by
-  their relative name and looked up in Bottega first, then the extra folders.
+- **Built in v0.9.4 (core in `src/core/bottega.*`, tests in `tests/test_core.cpp` and
+  `tests/ui/v094_bottega.script`):** File > Bottega folder... (typed path, Browse, status
+  line, make the sub-folders; the path is kept in the user's settings, `bottega.txt`);
+  marker file `bottega.txt` holding `bottega 1` (user: fine); a folder with files but no
+  marker can be made a Bottega, files kept (user: yes); File > Rescan Bottega, **Cmd+R**
+  (user: fine) and the Textures panel's Rescan do one full re-read (textures, skies;
+  models, shaders and presets join when they are built); search order Bottega, extra
+  folders, built-ins, first match wins; Bottega skies are named by path too (decided
+  without asking, same rule as textures). A name that can't be found stays in the map.
+  Folders for models, shaders, palettes, renders and presets are made but nothing reads
+  them yet. Cmd+R itself is not scripted (scripts call the same `rescan` function).
 - **Shader format, agreed with the user (2026-11-18):** GLSL files, one per shader, with a
   few comment lines at the top giving its name, its kind and its settings, so a tool can
   list a shader and show its settings without running it. Fits the Source renderer (see

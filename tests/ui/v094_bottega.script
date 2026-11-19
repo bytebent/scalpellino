@@ -1,0 +1,59 @@
+# v0.9.4: Bottega, the shared folder. Choosing it, making one, textures and skies found in
+# it (named by their path under the root, spaces become '_'), nothing rescans by itself,
+# Rescan, the dialog. Built-in textures keep their plain names.
+bottega none
+expect bottega none
+# -- a path that doesn't exist yet: not usable until it is made
+bottega studio
+expect bottega missing
+expect hastexture Bricks_24
+bottega make studio
+expect bottega ready
+# -- a texture dropped into the Bottega is NOT seen until Rescan
+copy assets/textures/grass.png studio/textures/walls/Mossy Stone.png
+expect hastexture not textures/walls/Mossy_Stone
+rescan
+expect hastexture textures/walls/Mossy_Stone
+expect hastexture Bricks_24
+# -- skies work the same way
+copy assets/skies/Cubemap_Sky_21.png studio/skies/Dusk.png
+expect hassky not skies/Dusk
+rescan
+expect hassky skies/Dusk
+# -- use them in a map: the Bottega name is the texture / sky name in the .map
+block 0 0 0 128 128 128
+texture textures/walls/Mossy_Stone
+applytexture
+expect texture textures/walls/Mossy_Stone
+environment sky skies/Dusk
+expect sky skies/Dusk
+save bottega-test.map
+open bottega-test.map
+selectall
+expect texture textures/walls/Mossy_Stone
+expect sky skies/Dusk
+# -- without the Bottega the names stay in the map (the texture just shows as missing)
+bottega none
+expect hastexture not textures/walls/Mossy_Stone
+expect texture textures/walls/Mossy_Stone
+bottega studio
+expect bottega ready
+expect hastexture textures/walls/Mossy_Stone
+expect sky skies/Dusk
+# -- a folder with files but no marker can still be made into a Bottega; its files are kept
+copy assets/textures/rock.png used/textures/Old Rock.png
+bottega used
+expect bottega notbottega
+expect hastexture not textures/Old_Rock
+bottega make used
+expect bottega ready
+expect hastexture textures/Old_Rock
+# -- the dialog draws (and passes the duplicate-ID check)
+bottegadialog
+# (a few cheap commands: the dialog sizes itself over the first frames)
+expect brushes 1
+expect brushes 1
+expect brushes 1
+shot v094-01-bottega-dialog.png
+key Esc
+quit

@@ -4,6 +4,23 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-19 — Bottega basics (v0.9.4)
+- **What:** the shared folder. `src/core/bottega.*` (graphics-free): check a folder
+  (ready, empty, has files but no marker, missing, newer version, damaged), make it
+  (sub-folders plus `bottega.txt` with `bottega 1`, never overwrites or deletes), name
+  keys (`textures/walls/Brick_Red`: relative path, no extension, spaces as `_`). Texture
+  and sky libraries scan the Bottega first, then extra folders, then built-ins; the
+  built-ins keep plain names. Editor: File > Bottega folder... dialog (path, Browse,
+  status, confirm before making sub-folders), setting kept per user, File > Rescan
+  Bottega and Cmd+R, Textures panel Rescan button; Controls and README updated. Script
+  commands `bottega`, `rescan`, `bottegadialog`, `copy`, `expect bottega|hastexture|hassky`.
+- **Tests:** core 4298 checks, 0 failed. UI suite 18 of 18 at 1x and 2x, including
+  `v094_bottega` (dialog, states, nothing rescans by itself, Rescan finds a new file, a
+  Bottega sky). Idle test now builds a Bottega and uses its texture: 0 ticks at 1x and
+  2x, control run busy.
+- **Screenshot:** `docs/screenshots/m9-09-bottega-dialog.png`.
+- **Next:** milestone 10, Props.
+
 ### 2026-11-18 — Idle CPU test
 - **What:** `tests/ui/idle.sh` + `tests/ui/idle/rich_map.script`. The script builds a map
   with terrain (raised and painted), brushes, a dome, a blended primitive combination, a

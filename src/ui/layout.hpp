@@ -51,7 +51,7 @@ struct MenuActions {
     double defaultScale = 0;     // > 0: new default texture scale
     int smoothTextures = -1;     // 0 crisp, 1 smooth
     int textured3D = -1;         // 0 flat colours, 1 textured
-    bool addTextureFolder = false, rescanTextures = false;
+    bool addTextureFolder = false, rescanBottega = false, bottegaFolder = false;
     bool toolClip = false, clipApply = false, clipPoints = false, carve = false, hollow = false;
     bool toolCurve = false, editCurve = false, bakeCurve = false;
     bool hideSelected = false, hideUnselected = false, showAll = false;
