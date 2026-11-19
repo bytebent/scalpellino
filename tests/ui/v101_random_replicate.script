@@ -1,0 +1,77 @@
+# v0.10.1: Random Replicate. Copies scattered around the selection with random offset,
+# turn and size inside typed ranges; a window like Multi-Replicate's (Return / Esc from
+# the views); one undo step; the copies stay selected so Snap to Land drops them.
+bottega make studio
+copy assets/models/crate.glb studio/models/Crate.glb
+copy assets/models/post.glb studio/models/fence.glb
+rescan
+block -1200 -1200 -40 1200 1200 0
+# -- props: one crate up in the air, 40 copies scattered around it, then landed
+prop models/Crate 0 0 200
+propselect all
+expect propsel 1
+randreplicate 40 900 900 0 turn 0 0 180 size 60 160 seed 3
+expect props 41
+expect propsel 40
+snapland
+expect props 41
+undo
+undo
+expect props 1
+redo
+expect props 41
+expect propsel 40
+# -- the window: Esc cancels, Return creates (keys from the views)
+propselect none
+prop models/fence -300 0 0
+propselect 41
+randreplicateopen 12 600 600 0 turn 0 0 180 seed 9
+expect randomizing on
+key Escape
+expect randomizing off
+expect props 42
+randreplicateopen 12 600 600 0 turn 0 0 180 seed 9
+key Return
+expect randomizing off
+expect props 54
+expect propsel 12
+# Multi-Replicate and Random Replicate never stay open together
+randreplicateopen 3 100 100 0
+replicateopen 3 300 0 0
+expect randomizing off
+expect replicating on
+key Escape
+expect replicating off
+# -- primitives: each axis its own size; a combination stays one piece
+propselect none
+prim sphere 600 -600 300 120 120 120
+primselect 0
+randreplicate 6 300 300 100 turn 30 30 180 size 50 150 uneven seed 2
+expect prims 7
+expect primsel 6
+# -- brushes only move, by whole grid steps: they stay on the grid
+primselect
+key Esc
+grid 16
+block -896 896 0 -832 960 64
+expect selected 1
+randreplicate 8 500 500 0 seed 4
+expect brushes 10
+expect selected 8
+expect ongrid
+key Esc
+# -- the window with its preview, for the screenshot (a new scatter of the first crate)
+propselect 0
+randreplicateopen 40 900 900 0 turn 0 0 180 size 60 160 seed 5
+camera -1500 -1700 900 48 -26
+shot m10-02-random-replicate-window.png
+key Escape
+expect props 54
+# the preview alone (scripts), then the landed scatter
+randreplicatepreview on
+expect randomizing on
+randreplicatepreview off
+propselect none
+camera -1500 -1700 900 48 -26
+shot m10-03-random-replicate-landed.png
+quit

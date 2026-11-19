@@ -36,7 +36,7 @@ std::vector<ReplicateCopy> replicate(const std::vector<Brush>& brushes, const st
                                      const std::vector<Light>& lights, const ReplicateSpec& spec,
                                      const std::vector<Prop>& props = {}, const ModelFinder& models = {});
 
-// Random Replicate (v0.11.0, from Bryce): copies of the selection scattered around it, each
+// Random Replicate (v0.10.1, from Bryce): copies of the selection scattered around it, each
 // with its own random offset, turn and size inside the given ranges. The selection moves,
 // turns and sizes as one piece about its centre. Brushes only move (by whole grid steps
 // when `brushGrid` > 0); primitives and props also turn and size; lights also turn.

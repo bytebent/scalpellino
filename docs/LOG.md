@@ -4,6 +4,31 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-19 — Random Replicate (v0.10.1)
+- **Before:** checked the v0.10.0 commit (made by another model by mistake): builds, core
+  4397 / 0 failed, UI 19 / 19 at 1x and 2x, idle 0 ticks, privacy rules kept. The user
+  confirmed M10's choices; fixed a doubled "Sky Lab" in HANDOFF.md.
+- **What:** `core/replicate`: `RandomReplicateSpec` and `randomReplicate()` (graphics-free):
+  per copy a random offset, turn and size inside ranges, from a seed, through our own
+  SplitMix64 so every machine gets the same copies; copy i depends only on the seed and i,
+  nine draws per copy in a fixed order. Editor: the Random Replicate window (Cmd+Shift+R,
+  Edit menu; non-modal, live preview, Return / Esc from the views, New seed), sharing the
+  preview and the one-undo-step commit with Multi-Replicate (`replicateSource`,
+  `commitCopies`); only one of the two windows open at a time. Brushes move by whole grid
+  steps while snapping is on. Script commands `randreplicate`, `randreplicateopen`,
+  `randreplicatepreview`, `expect randomizing`. Help → Controls, README and DEV.md updated;
+  Multi-Replicate's window text now mentions props.
+- **Tests:** core 4412 checks, 0 failed (was 4397): ranges kept, whole range used, even
+  sizes, same seed same copies, fewer copies keep the first ones, pinned numbers for seed
+  1, per-axis sizes, brushes on the grid, selection turns as one piece, lights turn. UI 20
+  of 20 at 1x and 2x, including the new `v101_random_replicate` (props scattered and
+  landed, undo / redo, window Esc / Return, one window at a time, uneven primitives,
+  brushes on the grid). Idle: `rich_map.script` now also leaves the Random Replicate window
+  open with 30 copies previewed: 0 ticks at 1x and 2x; control busy (868 ticks).
+- **Screenshots:** `docs/screenshots/m10-02-random-replicate-window.png`,
+  `docs/screenshots/m10-03-random-replicate-landed.png`.
+- **Next:** report v0.10.1; Sky Lab once the user says go.
+
 ### 2026-11-19 — Milestone 10: Props (v0.10.0)
 - **What:** static models placed in the map. Core (graphics-free): `model.*` (meshes,
   materials, bounds, ray tests), `prop.*` (a prop, its box, surface points, ray tests),

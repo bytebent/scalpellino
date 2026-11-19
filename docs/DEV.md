@@ -88,6 +88,9 @@ inside the view. Lines starting with # are comments.
   prim <kind> x y z sx sy sz [rx ry rz]   primedit <key> <value...>   primselect <index...>
   snapland   snapground <z>   replicate <n> ox oy oz [rot x y z] [scale x y z] [scaleoffset] [pivot selection|origin|x y z]
   replicatepreview on|off   replicateopen <n> ox oy oz   expect replicating on|off
+  randreplicate <n> sx sy sz [turn x y z] [size <min%> <max%>] [uneven] [seed <n>]
+    (offsets up to +-s per axis)   randreplicateopen <same arguments> (opens the window)
+  randreplicatepreview on|off   expect randomizing on|off
   tool props   propset model <name>|rot x y z|scale s   prop <model> x y z [rx ry rz] [scale]
   propselect all|none|<index...>   propedit pos x y z|rot x y z|scale s|scale x y z|model <name>
   expect props|propsel <n>   expect proppos|proprot|propscale x y z   expect propmodel <name>
@@ -130,7 +133,8 @@ policy), and it must hold **with a map open**, not only with an empty app.
   builds a map with a Bottega (one texture in it, found by Rescan, used on the tower), terrain (raised and painted), brushes, a dome, a blended primitive
   combination, a torus and a cube, three lights, sky, ambient, fog, a bookmark and the
   scale figure, saves it, **re-opens the saved map**, switches on the sky, light preview,
-  fog and figure, and selects the primitives. The script has no `quit`, so the app goes
+  fog and figure, selects the primitives and props, and leaves the Random Replicate window
+  open with its preview. The script has no `quit`, so the app goes
   idle (a scripted run is only "busy" while commands are left). The screenshot at the end
   is the "ready" signal; the harness waits 3 s more, then reads the process's CPU time
   (user + system, all threads, from `/proc`) twice, 10 s apart.

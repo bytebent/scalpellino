@@ -67,7 +67,7 @@ struct MenuActions {
     bool toolPrim = false, createPrim = false, combine = false, separate = false;
     int primKind = -1;    // PrimKind index; also switches to the primitive tool
     int primOp = -1;      // PrimOp for the selected primitives
-    bool replicate = false, snapLand = false, snapGround = false;
+    bool replicate = false, randomReplicate = false, snapLand = false, snapGround = false;
     bool toolProp = false, createProp = false;
 };
 

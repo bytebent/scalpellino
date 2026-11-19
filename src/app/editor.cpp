@@ -146,6 +146,11 @@ void Editor::onKey(int key) {
         replicating_ = false;
         return;
     }
+    if (randomizing_ && !scriptPreview_ && (key == KEY_ENTER || key == KEY_KP_ENTER || key == KEY_ESCAPE)) {
+        if (key != KEY_ESCAPE) applyRandomReplicate(randSpecNow());
+        randomizing_ = false;
+        return;
+    }
     if (tool_ == &terrainTool_ && terrainTool_.picking() && (key == KEY_ENTER || key == KEY_KP_ENTER)) {
         makeTerrainNow(terrainPower_);
         return;
@@ -294,6 +299,7 @@ bool Editor::frame(float dt) {
     if (m.createPrim) primTool_.create(doc_, currentTexture_, &lastBox_);
     if (m.combine) combinePrims();
     if (m.replicate) openReplicate();
+    if (m.randomReplicate) openRandomReplicate();
     if (m.snapLand) snapToLand();
     if (m.snapGround) askGround_ = true;
     if (m.separate) separatePrims();
@@ -366,6 +372,7 @@ bool Editor::frame(float dt) {
     drawTerrainDialogs();
     drawWorldDialogs();
     drawReplicateDialog();
+    drawRandomReplicateWindow();
     drawBottegaDialog();
     drawControlsWindow(&controlsOpen_);
     drawOverlapsWindow();
@@ -405,7 +412,7 @@ void Editor::handleKeyboard() {
         if (shift_ && IsKeyPressed(KEY_C)) carveWithSelection();
         if (shift_ && IsKeyPressed(KEY_H) && !doc_.selection().empty()) { shapingError_.clear(); askHollow_ = true; }
         if (IsKeyPressed(KEY_E)) centerViews();
-        if (IsKeyPressed(KEY_R)) rescanBottega();
+        if (IsKeyPressed(KEY_R)) { if (shift_) openRandomReplicate(); else rescanBottega(); }
         if (IsKeyPressed(KEY_U)) showAll();
         if (IsKeyPressed(KEY_ZERO)) allViewsToOrigin();
         if (shift_ && IsKeyPressed(KEY_O)) { findOverlapsNow(); return; }
@@ -455,20 +462,15 @@ Scene Editor::buildScene() {
     }
     s.lightPreview = lightPreview_;
     s.ambient = doc_.environment().ambient;
-    if (replicating_) { // Multi-Replicate preview
+    if (replicating_ || randomizing_) { // Multi- / Random Replicate preview
         std::vector<Brush> bs;
-        std::set<BrushId> sel = doc_.selection();
-        std::set<std::uint32_t> groups;
-        for (BrushId id : sel) if (const Brush* b = doc_.find(id)) if (b->group) groups.insert(b->group);
-        for (const Brush& b : doc_.brushes()) if (b.group && groups.count(b.group)) sel.insert(b.id);
-        for (BrushId id : sel) if (const Brush* b = doc_.find(id)) bs.push_back(*b);
         std::vector<MathPrim> ps;
-        for (MathPrimId id : doc_.withCombos(doc_.primSelection())) if (const MathPrim* p = doc_.findPrim(id)) ps.push_back(*p);
         std::vector<Light> ls;
-        for (LightId id : doc_.lightSelection()) if (const Light* l = doc_.findLight(id)) ls.push_back(*l);
         std::vector<Prop> qs;
-        for (PropId id : doc_.propSelection()) if (const Prop* q = doc_.findProp(id)) qs.push_back(*q);
-        for (const ReplicateCopy& c : replicate(bs, ps, ls, repSpec_, qs, modelFinder_)) {
+        replicateSource(bs, ps, ls, qs);
+        const std::vector<ReplicateCopy> copies = replicating_ ? replicate(bs, ps, ls, repSpec_, qs, modelFinder_)
+                                                               : randomReplicate(bs, ps, ls, randSpecNow(), qs, modelFinder_);
+        for (const ReplicateCopy& c : copies) {
             for (const Brush& b : c.brushes) s.ghosts.push_back(makeSceneBrush(b));
             for (const MathPrim& p : c.prims) s.pendingPrims.push_back(p);
             for (const Prop& q : c.props) {
@@ -2381,30 +2383,61 @@ void Editor::snapToGround(double height) {
 void Editor::openReplicate() {
     if (doc_.selection().empty() && doc_.primSelection().empty() && doc_.lightSelection().empty() && doc_.propSelection().empty()) return;
     tool_->cancel();
+    randomizing_ = false; // one replicate window at a time
     if (repSpec_.offset == Vec3{100, 0, 0} && grid_.size > 0) repSpec_.offset = {grid_.size * 4, 0, 0};
     replicating_ = true;
     replicateFocus_ = true;
 }
 
-bool Editor::applyReplicate(const ReplicateSpec& spec) {
+void Editor::replicateSource(std::vector<Brush>& bs, std::vector<MathPrim>& ps, std::vector<Light>& ls, std::vector<Prop>& qs) const {
     // Groups of the selected brushes come along whole.
     std::set<BrushId> sel = doc_.selection();
     std::set<std::uint32_t> groups;
     for (BrushId id : sel) if (const Brush* b = doc_.find(id)) if (b->group) groups.insert(b->group);
     for (const Brush& b : doc_.brushes()) if (b.group && groups.count(b.group)) sel.insert(b.id);
-    std::vector<Brush> bs;
     for (BrushId id : sel) if (const Brush* b = doc_.find(id)) bs.push_back(*b);
-    std::vector<MathPrim> ps;
     for (MathPrimId id : doc_.withCombos(doc_.primSelection())) if (const MathPrim* p = doc_.findPrim(id)) ps.push_back(*p);
-    std::vector<Light> ls;
     for (LightId id : doc_.lightSelection()) if (const Light* l = doc_.findLight(id)) ls.push_back(*l);
-    std::vector<Prop> qs;
     for (PropId id : doc_.propSelection()) if (const Prop* q = doc_.findProp(id)) qs.push_back(*q);
-    const auto copies = replicate(bs, ps, ls, spec, qs, modelFinder_);
+}
+
+bool Editor::applyReplicate(const ReplicateSpec& spec) {
+    std::vector<Brush> bs;
+    std::vector<MathPrim> ps;
+    std::vector<Light> ls;
+    std::vector<Prop> qs;
+    replicateSource(bs, ps, ls, qs);
+    return commitCopies(replicate(bs, ps, ls, spec, qs, modelFinder_), "Multi-Replicate");
+}
+
+RandomReplicateSpec Editor::randSpecNow() const {
+    RandomReplicateSpec r = randSpec_;
+    r.brushGrid = grid_.snap ? grid_.size : 0; // brushes stay on the grid while snapping is on
+    return r;
+}
+
+void Editor::openRandomReplicate() {
+    if (doc_.selection().empty() && doc_.primSelection().empty() && doc_.lightSelection().empty() && doc_.propSelection().empty()) return;
+    tool_->cancel();
+    replicating_ = false; // one replicate window at a time
+    randomizing_ = true;
+    randomFocus_ = true;
+}
+
+bool Editor::applyRandomReplicate(const RandomReplicateSpec& spec) {
+    std::vector<Brush> bs;
+    std::vector<MathPrim> ps;
+    std::vector<Light> ls;
+    std::vector<Prop> qs;
+    replicateSource(bs, ps, ls, qs);
+    return commitCopies(randomReplicate(bs, ps, ls, spec, qs, modelFinder_), "Random Replicate");
+}
+
+bool Editor::commitCopies(const std::vector<ReplicateCopy>& copies, const char* name) {
     if (copies.empty()) return false;
     // One command: every copy, each with its own groups and combinations.
     Command c;
-    c.name = "Multi-Replicate";
+    c.name = name;
     c.selectionBefore = doc_.selection();
     c.lightSelectionBefore = doc_.lightSelection();
     c.primSelectionBefore = doc_.primSelection();
@@ -2504,8 +2537,8 @@ void Editor::drawReplicateDialog() {
         ImGui::RadioButton("a point", &repPivot_, 2);
         if (repPivot_ == 2) vec("point", r.point);
         r.pivot = (ReplicateSpec::Pivot)repPivot_;
-        ImGui::TextDisabled("brushes only move (they stay on the grid); primitives and");
-        ImGui::TextDisabled("lights also turn; primitives also scale");
+        ImGui::TextDisabled("brushes only move (they stay on the grid); primitives, props");
+        ImGui::TextDisabled("and lights also turn; primitives and props also scale");
         const bool focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
         const bool apply = ImGui::Button("Create (Return)") ||
                            (focused && (ImGui::IsKeyPressed(ImGuiKey_Enter, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false)));
@@ -2517,6 +2550,61 @@ void Editor::drawReplicateDialog() {
     ImGui::End();
     replicateFocus_ = false;
     if (!open) replicating_ = false;
+}
+
+void Editor::drawRandomReplicateWindow() {
+    // Random Replicate: a window like Multi-Replicate's, so the views stay free to look around.
+    if (!randomizing_ || scriptPreview_) return;
+    const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(ImVec2(center.x, center.y * 0.4f), ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.0f));
+    if (randomFocus_) ImGui::SetNextWindowFocus();
+    bool open = true;
+    if (ImGui::Begin("Random Replicate", &open, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse)) {
+        RandomReplicateSpec& r = randSpec_;
+        ImGui::TextUnformatted("Copies scattered around the selection, each with its own random");
+        ImGui::TextUnformatted("offset, turn and size inside these ranges");
+        ImGui::TextDisabled("look around in the views freely; Return creates, Esc cancels");
+        ImGui::SetNextItemWidth(120);
+        if (randomFocus_) ImGui::SetKeyboardFocusHere();
+        ImGui::InputInt("copies", &r.copies);
+        r.copies = std::clamp(r.copies, 1, 2000);
+        auto vec = [](const char* label, Vec3& v) {
+            double a[3] = {v.x, v.y, v.z};
+            ImGui::SetNextItemWidth(240);
+            ImGui::InputScalarN(label, ImGuiDataType_Double, a, 3, nullptr, nullptr, "%g");
+            v = {std::fabs(a[0]), std::fabs(a[1]), std::fabs(a[2])};
+        };
+        vec("offset up to +- (units X Y Z)", r.spread);
+        vec("turn up to +- (degrees X Y Z)", r.turn);
+        for (int a = 0; a < 3; ++a) r.turn[a] = std::min(r.turn[a], 180.0);
+        double sz[2] = {r.sizeMin, r.sizeMax};
+        ImGui::SetNextItemWidth(160);
+        ImGui::InputScalarN("size from / to (%)", ImGuiDataType_Double, sz, 2, nullptr, nullptr, "%g");
+        r.sizeMin = std::clamp(sz[0], 1.0, 1000.0);
+        r.sizeMax = std::clamp(sz[1], 1.0, 1000.0);
+        bool uneven = !r.uniform;
+        ImGui::Checkbox("each axis its own size", &uneven);
+        r.uniform = !uneven;
+        int seed = (int)r.seed;
+        ImGui::SetNextItemWidth(120);
+        ImGui::InputInt("seed", &seed);
+        r.seed = (std::uint32_t)std::max(0, seed);
+        ImGui::SameLine();
+        if (ImGui::Button("New seed")) r.seed = (r.seed * 1103515245u + 12345u) % 1000000u; // the same seed gives the same copies
+        ImGui::TextDisabled("brushes only move (by whole grid steps while snapping is on);");
+        ImGui::TextDisabled("primitives and props also turn and size; lights also turn.");
+        ImGui::TextDisabled("The copies stay selected: Cmd+J then drops them onto the land.");
+        const bool focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
+        const bool apply = ImGui::Button("Create (Return)") ||
+                           (focused && (ImGui::IsKeyPressed(ImGuiKey_Enter, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false)));
+        ImGui::SameLine();
+        const bool cancel = ImGui::Button("Cancel (Esc)") || (focused && ImGui::IsKeyPressed(ImGuiKey_Escape, false)) || closeDialogs_;
+        if (apply) { applyRandomReplicate(randSpecNow()); randomizing_ = false; }
+        else if (cancel) randomizing_ = false;
+    }
+    ImGui::End();
+    randomFocus_ = false;
+    if (!open) randomizing_ = false;
 }
 
 void Editor::setPrimOp(PrimOp op) {
@@ -3641,6 +3729,27 @@ void Editor::stepScript() {
     } else if (cmd == "expect" && in.str().find(" replicating ") != std::string::npos) {
         std::string w, v; in >> w >> v;
         if (replicating_ != (v == "on")) { std::fprintf(stderr, "script FAIL (command %d): Multi-Replicate window is %s\n", scriptLine_, replicating_ ? "open" : "closed"); ++scriptFailures_; }
+    } else if (cmd == "randreplicate" || cmd == "randreplicateopen") {
+        // randreplicate <copies> sx sy sz [turn x y z] [size <min> <max>] [uneven] [seed <n>]
+        // (offsets up to +-s per axis); randreplicateopen: the same, opening the window instead
+        RandomReplicateSpec r;
+        in >> r.copies >> r.spread.x >> r.spread.y >> r.spread.z;
+        std::string w;
+        while (in >> w) {
+            if (w == "turn") in >> r.turn.x >> r.turn.y >> r.turn.z;
+            else if (w == "size") in >> r.sizeMin >> r.sizeMax;
+            else if (w == "uneven") r.uniform = false;
+            else if (w == "seed") in >> r.seed;
+        }
+        randSpec_ = r;
+        if (cmd == "randreplicate") applyRandomReplicate(randSpecNow());
+        else openRandomReplicate();
+    } else if (cmd == "expect" && in.str().find(" randomizing ") != std::string::npos) {
+        std::string w, v; in >> w >> v;
+        if (randomizing_ != (v == "on")) { std::fprintf(stderr, "script FAIL (command %d): Random Replicate window is %s\n", scriptLine_, randomizing_ ? "open" : "closed"); ++scriptFailures_; }
+    } else if (cmd == "randreplicatepreview") {
+        // randreplicatepreview on|off: show the window's preview with the last spec (screenshots)
+        std::string v; in >> v; randomizing_ = scriptPreview_ = v == "on";
     } else if (cmd == "replicatepreview") {
         // replicatepreview on|off: show the dialog's preview with the last spec (screenshots)
         std::string v; in >> v; replicating_ = scriptPreview_ = v == "on";

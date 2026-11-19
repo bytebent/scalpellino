@@ -122,4 +122,7 @@ expect bookmarks 1
 # -- leave the primitives selected (rings and size handles drawn)
 primselect 0 1 2
 propselect 0 2
+# -- and the Random Replicate window open with its preview (scattered copies drawn)
+randreplicateopen 30 600 600 0 turn 0 0 180 size 60 140 seed 3
+expect randomizing on
 shot idle-ready.png

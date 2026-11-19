@@ -28,6 +28,7 @@ MenuActions drawMenuBar(const MenuState& st) {
         ImGui::Separator();
         if (ImGui::MenuItem("Duplicate", "Cmd+D", false, st.hasAnything)) a.duplicate = true;
         if (ImGui::MenuItem("Multi-Replicate...", "Cmd+Shift+D", false, st.hasAnything)) a.replicate = true;
+        if (ImGui::MenuItem("Random Replicate...", "Cmd+Shift+R", false, st.hasAnything)) a.randomReplicate = true;
         if (ImGui::MenuItem("Delete", "Delete", false, st.hasAnything)) a.del = true;
         ImGui::Separator();
         if (ImGui::MenuItem("Select all", "Cmd+A")) a.selectAll = true;
@@ -265,6 +266,7 @@ void drawControlsWindow(bool* open) {
             {"One piece of a combination", "Option+click it (or pick it in Properties), then drag, turn or size it alone"},
             {"Turn / size primitives", "drag the rings around the selection (15 degree steps); drag a size handle (scales evenly; Shift: one axis, opposite face stays); or type in Properties"},
             {"Multi-Replicate", "Cmd+Shift+D (Edit menu): copies, each one step further (offset; primitives, props and lights also turn, primitives and props also scale); the preview stays while you look around the views; Return creates, Esc cancels"},
+            {"Random Replicate", "Cmd+Shift+R (Edit menu): copies scattered around the selection, each with a random offset, turn and size inside typed ranges (brushes only move, by whole grid steps while snapping is on); New seed shakes them up, the same seed gives the same copies; Return creates, Esc cancels. The copies stay selected: Cmd+J drops them onto the land"},
             {"Snap to land / ground", "Cmd+J (Transform menu): drops selected primitives and props onto the brushes, terrain, primitives or props below; Snap to ground: onto a typed height"},
             {"Blend primitives", "Properties, in a combination: blend (units) melts a piece into the others (0 = sharp)"},
             {"Combine primitives", "Primitives menu or Properties: Combine selected; each piece adds, subtracts or intersects; Separate undoes it"},

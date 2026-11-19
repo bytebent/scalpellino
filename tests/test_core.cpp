@@ -2469,7 +2469,7 @@ static void testPropsReplicate() {
     CHECK(replicate({}, {}, {}, ReplicateSpec{}, {}).empty());
 }
 
-// Random Replicate (v0.11.0).
+// Random Replicate (v0.10.1).
 static void testRandomReplicate() {
     MathPrim ball; ball.kind = PrimKind::Sphere; ball.pos = {0, 0, 100}; ball.size = {50, 50, 50};
     RandomReplicateSpec r;

@@ -171,6 +171,16 @@ private:
     void openReplicate();
     void drawReplicateDialog();
     bool applyReplicate(const ReplicateSpec& spec);
+    // The selection as Multi- and Random Replicate copy it (groups and combinations whole).
+    void replicateSource(std::vector<Brush>& bs, std::vector<MathPrim>& ps, std::vector<Light>& ls, std::vector<Prop>& qs) const;
+    bool commitCopies(const std::vector<ReplicateCopy>& copies, const char* name);
+    // v0.10.1: Random Replicate
+    void openRandomReplicate();
+    void drawRandomReplicateWindow();
+    bool applyRandomReplicate(const RandomReplicateSpec& spec);
+    RandomReplicateSpec randSpec_;
+    RandomReplicateSpec randSpecNow() const; // randSpec_ with the current grid for brushes
+    bool randomizing_ = false, randomFocus_ = false;
     ReplicateSpec repSpec_;
     bool replicating_ = false, askGround_ = false;
     bool scriptPreview_ = false; // scripts show the preview without the dialog

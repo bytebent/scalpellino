@@ -312,6 +312,18 @@ Static models next to brushes, lights and primitives. `core/model.hpp`, `core/pr
   Brushes only move (they stay on the grid), primitives turn and scale, lights turn.
   Groups and combinations are copied as new ones. Live preview in a non-modal window (the
   views stay navigable), Return creates, Esc cancels, one undo step.
+- **Random Replicate** (Cmd+Shift+R, Edit menu; `core/replicate`, v0.10.1): N copies
+  scattered around the selection. Each copy gets its own offset (-range .. +range per
+  axis), turn (-range .. +range degrees about X, then Y, then Z) and size (from / to %,
+  the same on all axes unless "each axis its own size"), drawn from a seed. The selection
+  moves, turns and sizes as one piece about its centre. Brushes only move, by whole grid
+  steps while snapping is on; primitives and props also turn and size; lights also turn.
+  The numbers come from our own SplitMix64 (not the standard library's distributions,
+  which differ between compilers), and copy i depends only on the seed and i: the same
+  seed gives the same copies on every machine, more copies keep the earlier ones, and a
+  wider turn range does not move the offsets. Same window behaviour as Multi-Replicate
+  (only one of the two open at a time); the copies stay selected, so Snap to Land drops
+  them onto the land.
 
 ### Scale reference
 Toggleable ghost human figure (175 units = 1.75 m tall, blocky, see-through) to judge
@@ -473,7 +485,7 @@ docs/         this file, roadmap
 | 8 | World: lights (point, spot, sun; rotation rings), sky picker (a setting, not a sealed box; panoramas and cube crosses), ambient, fog, rough editor preview (sky, light preview, fog toggles), camera bookmarks, scale figure | done (v0.8.0) |
 | 9 | Math primitives (Bryce-style): sphere, cube (rounded), cylinder, cone, torus, capsule, disc; exact per-pixel drawing; combining (add / subtract / intersect) and blending; single pieces movable; object handles shared with lights; 1 unit = 1 cm; Snap to Land / Ground; Multi-Replicate | done (v0.9.0 … v0.9.3) |
 | 10 | Props: static models (`.glb` first, then `.mazz`) with their textures, from Bottega's `models/`, placed / turned / sized as objects (uniform scale by default), Snap to Land, instanced; no physics. Preceded by the idle CPU test and Bottega basics (folder setting, Rescan, marker file) | done (v0.10.0; `.mazz` later) |
-| 10b | Random Replicate (Bryce): random offset / turn / size ranges for props and primitives | |
+| 10b | Random Replicate (Bryce): random offset / turn / size ranges for props and primitives | done (v0.10.1) |
 | 10c | Sky Lab (Bryce, all of it): generated skies (sun, moon, stars, clouds, atmosphere) with live preview, baked to panoramas; settings kept in the map; tick box to lock the sun to the map's sun light | |
 | 11 | Cameras and Camera Preview (proposed order): camera objects (many, one active), options and presets, the on-request preview | |
 | 12 | Render, the Source look, with materials (proposed): render window, terminal log, light baking, reflection probes, mirrors, the material system (GLSL shaders from Bottega's `shaders/`, reflection kind per material), PNG to `renders/` | |

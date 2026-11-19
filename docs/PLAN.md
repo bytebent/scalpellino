@@ -10,13 +10,13 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 
 ## Current status
 
-- **Released:** v0.1.0 … v0.9.4. Milestones 0–9 are done (see the milestone sections
-  below and the log). **Milestone 10 — Props is built and pushed as v0.10.0** (static
-  `.glb` models from Bottega's `models/`; `.mazz` waits for Mazzuola's final format).
-  Reported; the user confirmed its choices (2026-11-19).
-- **Next:** **Random Replicate** (the user said go, 2026-11-19). Bottega basics and the idle CPU
-  test (`tests/ui/idle.sh`, see DEV.md) are done.
-- **Roadmap:** Random Replicate → Sky Lab → cameras and Camera Preview →
+- **Released:** v0.1.0 … v0.10.0. Milestones 0–10 are done (see the milestone sections
+  below and the log); the user confirmed M10's choices (2026-11-19). **Random Replicate
+  is built and pushed as v0.10.1.** Report it to the user, then ask before the next
+  milestone.
+- **Next:** **Sky Lab** once the user says go (ask them to attach the Bryce guide PDF
+  again first). Bottega basics and the idle CPU test (`tests/ui/idle.sh`, see DEV.md) are done.
+- **Roadmap:** Sky Lab → cameras and Camera Preview →
   Render (Source look, with the material system) → water / cloud planes → camera effects →
   export. The renderer part is a
   proposal awaiting the user's confirmation. Details under "Roadmap" and "Direction".
@@ -123,6 +123,20 @@ are in [`DEV.md`](DEV.md). One-step-per-release: add `docs/releases/vX.Y.Z.md` a
     editor shading, alpha cutout and fog in one shader; light preview on props later.
   - Triangle budget per model: 200000; a prop whose model is above it shows a "heavy
     model" warning in Properties (it is still drawn).
+- **Random Replicate (v0.10.1), decided without asking (confirm with the user):**
+  - **Shortcut Cmd+Shift+R** (Edit menu); Cmd+R stays Rescan.
+  - **The selection is one piece:** each copy of the whole selection gets one offset, turn
+    and size, about the selection's centre (as in Bryce), not each object on its own.
+  - **Ranges:** offset and turn are -x .. +x per axis (defaults: 400 units in X and Y, 0 in
+    Z; turn 0 / 0 / 180 degrees); size from / to in % (default 80–120), the same on all
+    axes unless "each axis its own size" is ticked. Up to 2000 copies.
+  - **Seed:** a typed number plus a **New seed** button; the same seed gives the same
+    copies on every machine. The settings are remembered while the app runs, not saved
+    in the map.
+  - **Brushes only move**, rounded to whole grid steps while grid snapping is on.
+  - **No landing built in:** the copies stay selected, so Cmd+J (Snap to Land) drops them
+    onto the land; the window says so.
+  - Multi-Replicate and Random Replicate windows never stay open together.
 - **Idle CPU test (agreed 2026-11-18; done):** `tests/ui/idle.sh` runs with a map open
   (terrain, primitives, lights, sky, fog, light preview on, map saved and re-opened) and
   expects 0 CPU ticks over 10 s; a busy control proves the measurement; in CI at 1x and 2x.
@@ -247,8 +261,8 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
    first; `.mazz` once Mazzuola's file format is final. Placed, turned and sized like primitives (shared
    object handles), Snap to Land works on them, reload when the file changes. Texture
    filtering follows Scalpellino's Crisp / Smooth switch.
-2. **Random Replicate** (Bryce) — scatter copies with random offset / turn / size ranges,
-   for props and primitives (brushes: offset only, as with Multi-Replicate).
+2. **Random Replicate (done, v0.10.1)** (Bryce) — scatter copies with random offset / turn /
+   size ranges, for props and primitives (brushes: offset only, as with Multi-Replicate).
 3. **Sky Lab** (Bryce; agreed with the user in a separate chat, missed here until they
    pointed it out) — make skies instead of only loading images. **Everything Bryce's Sky
    Lab has** (user: "it is amazing"): sun and moon (position, size, glow, colour, moon
