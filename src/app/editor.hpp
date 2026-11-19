@@ -2,6 +2,12 @@
 // The editor: owns the document, viewports and tools, and runs one UI frame at a time.
 // Real input and scripted input (for automated tests/screenshots) go through the same
 // onPress/onDrag/onRelease/onKey paths.
+// The class is defined over several files by topic (v0.10.3): editor.cpp (main loop,
+// input, scene, views), editor_edit.cpp (commands, transform, carve, curves),
+// editor_visibility.cpp, editor_surfaces.cpp (textures, terrain), editor_objects.cpp
+// (primitives, props, landing), editor_replicate.cpp, editor_world.cpp (lights, sky,
+// bookmarks), editor_files.cpp (files, settings, Bottega), editor_script.cpp (test
+// scripts). Shared helpers: editor_util.hpp; member templates: editor_templates.hpp.
 #include "core/bottega.hpp"
 #include "imgui.h"
 #include "core/document.hpp"

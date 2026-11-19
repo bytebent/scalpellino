@@ -477,6 +477,7 @@ src/render/   viewports, render modes, camera preview, shaders/
 src/tools/    select, block, clip, vertex, carve, curve, texture, light, camera
 src/ui/       panels, menus, shortcuts
 src/app/      main loop, settings, startup
+              (the Editor class is split by topic over editor*.cpp; see editor.hpp)
 tests/        core + io tests, sample .map files
 docs/         this file, roadmap
 .github/      macOS builds (Intel + Apple Silicon) + tests

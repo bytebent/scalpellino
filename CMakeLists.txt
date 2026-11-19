@@ -69,6 +69,14 @@ if(SCAL_BUILD_APP)
   set(SCAL_APP_SOURCES
     src/app/main.cpp
     src/app/editor.cpp
+    src/app/editor_edit.cpp
+    src/app/editor_files.cpp
+    src/app/editor_objects.cpp
+    src/app/editor_replicate.cpp
+    src/app/editor_script.cpp
+    src/app/editor_surfaces.cpp
+    src/app/editor_visibility.cpp
+    src/app/editor_world.cpp
     src/app/settings.cpp
     src/render/scene.cpp
     src/render/texture_library.cpp
