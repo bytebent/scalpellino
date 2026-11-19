@@ -5,6 +5,7 @@
 // but objects land on them (and on terrain, other primitives and props). Hidden brushes
 // and the object itself are left out by the caller.
 #include "core/brush.hpp"
+#include "core/document.hpp"
 #include "core/mathprim.hpp"
 #include "core/prop.hpp"
 #include <optional>
@@ -34,5 +35,17 @@ std::optional<double> propLandingMove(const PropRef& prop, const std::vector<con
 
 // The object's lowest point (Z) on its surface.
 double objectBottom(const std::vector<const MathPrim*>& object);
+
+// Snap to Land for the document's selected primitives and props (moved here from the
+// editor in v0.10.3): each lands on the visible brushes, shown primitives and props below
+// it. Several land lowest first; one lands on another selected object only if it started
+// entirely above it (stacks stay stacks, overlapping copies don't pile up). The result
+// holds the moved ones (to apply as one command) and how many had nothing below them.
+struct LandingResult {
+    std::vector<MathPrim> prims;
+    std::vector<Prop> props;
+    int nothingBelow = 0;
+};
+LandingResult landSelection(const Document& doc, const ModelFinder& models);
 
 } // namespace scal

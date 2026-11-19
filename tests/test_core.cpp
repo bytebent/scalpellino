@@ -2715,6 +2715,43 @@ static void testMapBadNumbers() {
     }
 }
 
+// Snap to Land for a whole selection, in the core since v0.10.3.
+static void testLandSelection() {
+    Document doc;
+    AABB fb; fb.add({-1000, -1000, -64}); fb.add({1000, 1000, 0});
+    doc.apply(doc.makeAdd({makeBox(fb, "a")}, "Add"));
+    auto cube = [](Vec3 c) { MathPrim p; p.kind = PrimKind::Cube; p.pos = c; p.size = {100, 100, 100}; return p; };
+    // a stack (A under B), two overlapping side by side (C, D), one far away (E)
+    doc.apply(doc.makeAddPrims({cube({0, 0, 300}), cube({20, 10, 700}), cube({400, 0, 250}), cube({440, 30, 260}),
+                                cube({5000, 0, 300})}, "Add"));
+    std::set<MathPrimId> all;
+    for (const MathPrim& p : doc.prims()) all.insert(p.id);
+    doc.setPrimSelection(all);
+    const LandingResult r = landSelection(doc, {});
+    CHECK(r.prims.size() == 4 && r.props.empty() && r.nothingBelow == 1);
+    std::map<MathPrimId, double> z;
+    for (const MathPrim& p : r.prims) z[p.id] = p.pos.z;
+    const auto& ps = doc.prims();
+    CHECK(near(z[ps[0].id], 50, 1e-3));  // A on the floor
+    CHECK(near(z[ps[1].id], 150, 1e-3)); // B stays on A
+    CHECK(near(z[ps[2].id], 50, 1e-3) && near(z[ps[3].id], 50, 1e-3)); // C and D both on the floor
+    CHECK(!z.count(ps[4].id));
+    // Hidden props aren't landed on; shown ones are.
+    Prop box; box.model = "missing"; box.pos = {-400, 0, 0};
+    doc.apply(doc.makeAddProps({box}, "Add"));
+    MathPrim f = cube({-400, 0, 600});
+    doc.apply(doc.makeAddPrims({f}, "Add"));
+    const MathPrimId fid = doc.prims().back().id;
+    doc.setPrimSelection({fid});
+    doc.setPropSelection({});
+    const LandingResult onBox = landSelection(doc, {});
+    CHECK(onBox.prims.size() == 1 && onBox.prims[0].pos.z > 60);
+    doc.setPropsShown(false);
+    doc.setPrimSelection({fid});
+    const LandingResult hidden = landSelection(doc, {});
+    CHECK(hidden.prims.size() == 1 && near(hidden.prims[0].pos.z, 50, 1e-3));
+}
+
 static void testProps() {
     testPropsLoad();
     testPropsStore();
@@ -2725,6 +2762,7 @@ static void testProps() {
     testLandingStacks();
     testDirtyAndShown();
     testMapBadNumbers();
+    testLandSelection();
 }
 
 int main() {

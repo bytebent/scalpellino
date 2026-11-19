@@ -176,114 +176,14 @@ void Editor::combinePrims() {
 }
 
 void Editor::snapToLand() {
-    auto objects = selectedObjects(doc_);
-    if (objects.empty() && doc_.propSelection().empty()) { landMessage_ = "select primitives or props to snap to land"; return; }
+    if (selectedObjects(doc_).empty() && doc_.propSelection().empty()) { landMessage_ = "select primitives or props to snap to land"; return; }
     tool_->cancel();
-    // Several selected objects land lowest first. One lands on another selected object only
-    // if it started entirely above it (a stack stays a stack); selected objects that
-    // overlap side by side, like scattered copies, all go down to what is below them
-    // instead of piling up on each other (v0.10.2).
-    struct Item {
-        bool isProp = false;
-        std::set<MathPrimId> prims; // the primitive object's pieces
-        PropId prop = 0;
-        double bottom = 0, top = 0;  // where it started
-        bool landed = false;
-    };
-    std::vector<Item> items;
-    std::set<MathPrimId> selPrims;
-    for (const auto& obj : objects) {
-        Item it;
-        AABB b;
-        for (const MathPrim* p : obj) {
-            it.prims.insert(p->id);
-            selPrims.insert(p->id);
-            const AABB pb = primBounds(*p);
-            b.add(pb.min);
-            b.add(pb.max);
-        }
-        it.bottom = objectBottom(obj);
-        it.top = b.max.z;
-        items.push_back(std::move(it));
-    }
-    for (PropId id : doc_.propSelection())
-        if (const Prop* q = doc_.findProp(id)) {
-            Item it;
-            it.isProp = true;
-            it.prop = id;
-            const Model* mdl = models_.find(q->model);
-            it.bottom = propBottom(*q, mdl);
-            it.top = propBounds(*q, mdl).max.z;
-            items.push_back(std::move(it));
-        }
-    std::stable_sort(items.begin(), items.end(), [](const Item& a, const Item& b) { return a.bottom < b.bottom; });
-
-    std::vector<const Brush*> brushes;
-    for (const Brush& b : doc_.brushes())
-        if (doc_.visible(b)) brushes.push_back(&b);
-    std::vector<MathPrim> work = doc_.prims();
-    std::vector<Prop> propsWork = doc_.props();
-    std::set<MathPrimId> movedPrims;
-    std::set<PropId> movedProps;
-    std::map<MathPrimId, const Item*> primItem;
-    std::map<PropId, const Item*> propItem;
-    for (const Item& it : items) {
-        if (it.isProp) propItem[it.prop] = &it;
-        else for (MathPrimId id : it.prims) primItem[id] = &it;
-    }
-    // Whether `other` is something `me` may land on.
-    auto counts = [](const Item& me, const Item* other) {
-        if (!other) return true;                      // not selected
-        if (other == &me) return false;
-        return other->landed && other->top <= me.bottom + 1e-6; // selected: only if it started below
-    };
-    int nothing = 0;
-    for (Item& it : items) {
-        std::vector<const MathPrim*> me, otherPrims;
-        for (const MathPrim& p : work) {
-            if (it.prims.count(p.id)) me.push_back(&p);
-            else if (doc_.primsShown()) { // hidden ones are not landed on
-                auto f = primItem.find(p.id);
-                if (counts(it, f == primItem.end() ? nullptr : f->second)) otherPrims.push_back(&p);
-            }
-        }
-        std::vector<PropRef> otherProps;
-        Prop* myProp = nullptr;
-        for (Prop& q : propsWork) {
-            if (it.isProp && q.id == it.prop) { myProp = &q; continue; }
-            if (!doc_.propsShown()) continue; // hidden ones are not landed on
-            auto f = propItem.find(q.id);
-            if (counts(it, f == propItem.end() ? nullptr : f->second)) otherProps.push_back({&q, models_.find(q.model)});
-        }
-        std::optional<double> mv;
-        if (it.isProp) {
-            if (!myProp) continue;
-            mv = propLandingMove({myProp, models_.find(myProp->model)}, brushes, otherPrims, otherProps);
-        } else {
-            mv = landingMove(me, brushes, otherPrims, otherProps);
-        }
-        it.landed = true;
-        if (!mv) { ++nothing; continue; }
-        if (it.isProp) {
-            myProp->pos.z = cleanNumber(myProp->pos.z + *mv, 1e-6);
-            movedProps.insert(it.prop);
-        } else {
-            for (MathPrim& p : work)
-                if (it.prims.count(p.id)) {
-                    p.pos.z = cleanNumber(p.pos.z + *mv, 1e-6);
-                    movedPrims.insert(p.id);
-                }
-        }
-    }
-    std::vector<MathPrim> out;
-    for (const MathPrim& p : work) if (movedPrims.count(p.id)) out.push_back(p);
-    std::vector<Prop> propsOut;
-    for (const Prop& q : propsWork) if (movedProps.count(q.id)) propsOut.push_back(q);
-    landMessage_ = nothing ? std::to_string(nothing) + " object(s) had nothing below them" : "";
-    if (out.empty() && propsOut.empty()) return;
-    Command c = out.empty() ? doc_.makeModifyProps(propsOut, "Snap to land") : doc_.makeModifyPrims(out, "Snap to land");
-    if (!out.empty() && !propsOut.empty()) {
-        Command pc = doc_.makeModifyProps(propsOut, "Snap to land");
+    const LandingResult r = landSelection(doc_, modelFinder_);
+    landMessage_ = r.nothingBelow ? std::to_string(r.nothingBelow) + " object(s) had nothing below them" : "";
+    if (r.prims.empty() && r.props.empty()) return;
+    Command c = r.prims.empty() ? doc_.makeModifyProps(r.props, "Snap to land") : doc_.makeModifyPrims(r.prims, "Snap to land");
+    if (!r.prims.empty() && !r.props.empty()) {
+        Command pc = doc_.makeModifyProps(r.props, "Snap to land");
         c.propChanges = std::move(pc.propChanges);
     }
     doc_.apply(std::move(c));

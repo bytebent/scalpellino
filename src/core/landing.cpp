@@ -5,6 +5,7 @@
 #include <cmath>
 #include <functional>
 #include <map>
+#include <set>
 
 namespace scal {
 
@@ -236,6 +237,128 @@ std::optional<double> propLandingMove(const PropRef& prop, const std::vector<con
         return std::nullopt;
     };
     return land(sub, brushes, otherPrims, otherProps);
+}
+
+namespace {
+const Model* findModel(const ModelFinder& models, const std::string& name) { return models ? models(name) : nullptr; }
+
+// The selected primitives as objects: a combination is one object.
+std::vector<std::vector<const MathPrim*>> selectedObjectsOf(const Document& doc) {
+    std::vector<std::vector<const MathPrim*>> out;
+    std::set<std::uint32_t> combos;
+    for (MathPrimId id : doc.primSelection()) {
+        const MathPrim* p = doc.findPrim(id);
+        if (!p) continue;
+        if (!p->combo) { out.push_back({p}); continue; }
+        if (combos.insert(p->combo).second) out.push_back(comboMembers(doc.prims(), p->combo));
+    }
+    return out;
+}
+} // namespace
+
+LandingResult landSelection(const Document& doc, const ModelFinder& models) {
+    LandingResult result;
+    const auto objects = selectedObjectsOf(doc);
+    // Several selected objects land lowest first. One lands on another selected object only
+    // if it started entirely above it (a stack stays a stack); selected objects that
+    // overlap side by side, like scattered copies, all go down to what is below them
+    // instead of piling up on each other (v0.10.2).
+    struct Item {
+        bool isProp = false;
+        std::set<MathPrimId> prims; // the primitive object's pieces
+        PropId prop = 0;
+        double bottom = 0, top = 0;  // where it started
+        bool landed = false;
+    };
+    std::vector<Item> items;
+    std::set<MathPrimId> selPrims;
+    for (const auto& obj : objects) {
+        Item it;
+        AABB b;
+        for (const MathPrim* p : obj) {
+            it.prims.insert(p->id);
+            selPrims.insert(p->id);
+            const AABB pb = primBounds(*p);
+            b.add(pb.min);
+            b.add(pb.max);
+        }
+        it.bottom = objectBottom(obj);
+        it.top = b.max.z;
+        items.push_back(std::move(it));
+    }
+    for (PropId id : doc.propSelection())
+        if (const Prop* q = doc.findProp(id)) {
+            Item it;
+            it.isProp = true;
+            it.prop = id;
+            const Model* mdl = findModel(models, q->model);
+            it.bottom = propBottom(*q, mdl);
+            it.top = propBounds(*q, mdl).max.z;
+            items.push_back(std::move(it));
+        }
+    std::stable_sort(items.begin(), items.end(), [](const Item& a, const Item& b) { return a.bottom < b.bottom; });
+
+    std::vector<const Brush*> brushes;
+    for (const Brush& b : doc.brushes())
+        if (doc.visible(b)) brushes.push_back(&b);
+    std::vector<MathPrim> work = doc.prims();
+    std::vector<Prop> propsWork = doc.props();
+    std::set<MathPrimId> movedPrims;
+    std::set<PropId> movedProps;
+    std::map<MathPrimId, const Item*> primItem;
+    std::map<PropId, const Item*> propItem;
+    for (const Item& it : items) {
+        if (it.isProp) propItem[it.prop] = &it;
+        else for (MathPrimId id : it.prims) primItem[id] = &it;
+    }
+    // Whether `other` is something `me` may land on.
+    auto counts = [](const Item& me, const Item* other) {
+        if (!other) return true;                      // not selected
+        if (other == &me) return false;
+        return other->landed && other->top <= me.bottom + 1e-6; // selected: only if it started below
+    };
+    int nothing = 0;
+    for (Item& it : items) {
+        std::vector<const MathPrim*> me, otherPrims;
+        for (const MathPrim& p : work) {
+            if (it.prims.count(p.id)) me.push_back(&p);
+            else if (doc.primsShown()) { // hidden ones are not landed on
+                auto f = primItem.find(p.id);
+                if (counts(it, f == primItem.end() ? nullptr : f->second)) otherPrims.push_back(&p);
+            }
+        }
+        std::vector<PropRef> otherProps;
+        Prop* myProp = nullptr;
+        for (Prop& q : propsWork) {
+            if (it.isProp && q.id == it.prop) { myProp = &q; continue; }
+            if (!doc.propsShown()) continue; // hidden ones are not landed on
+            auto f = propItem.find(q.id);
+            if (counts(it, f == propItem.end() ? nullptr : f->second)) otherProps.push_back({&q, findModel(models, q.model)});
+        }
+        std::optional<double> mv;
+        if (it.isProp) {
+            if (!myProp) continue;
+            mv = propLandingMove({myProp, findModel(models, myProp->model)}, brushes, otherPrims, otherProps);
+        } else {
+            mv = landingMove(me, brushes, otherPrims, otherProps);
+        }
+        it.landed = true;
+        if (!mv) { ++nothing; continue; }
+        if (it.isProp) {
+            myProp->pos.z = cleanNumber(myProp->pos.z + *mv, 1e-6);
+            movedProps.insert(it.prop);
+        } else {
+            for (MathPrim& p : work)
+                if (it.prims.count(p.id)) {
+                    p.pos.z = cleanNumber(p.pos.z + *mv, 1e-6);
+                    movedPrims.insert(p.id);
+                }
+        }
+    }
+    for (const MathPrim& p : work) if (movedPrims.count(p.id)) result.prims.push_back(p);
+    for (const Prop& q : propsWork) if (movedProps.count(q.id)) result.props.push_back(q);
+    result.nothingBelow = nothing;
+    return result;
 }
 
 } // namespace scal
