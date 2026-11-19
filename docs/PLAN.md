@@ -13,8 +13,8 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 - **Released:** v0.1.0 … v0.9.4. Milestones 0–9 are done (see the milestone sections
   below and the log). **Milestone 10 — Props is built and pushed as v0.10.0** (static
   `.glb` models from Bottega's `models/`; `.mazz` waits for Mazzuola's final format).
-  Report it to the user, then ask before the next milestone.
-- **Next:** **Random Replicate** once the user says go. Bottega basics and the idle CPU
+  Reported; the user confirmed its choices (2026-11-19).
+- **Next:** **Random Replicate** (the user said go, 2026-11-19). Bottega basics and the idle CPU
   test (`tests/ui/idle.sh`, see DEV.md) are done.
 - **Roadmap:** Random Replicate → Sky Lab → cameras and Camera Preview →
   Render (Source look, with the material system) → water / cloud planes → camera effects →
@@ -101,7 +101,7 @@ are in [`DEV.md`](DEV.md). One-step-per-release: add `docs/releases/vX.Y.Z.md` a
   box, 3D picking uses triangles; Snap to Land works on props (landing generalised to any
   object); hiding / visgroups as for primitives (not yet); `.mazz` after `.glb`, behind a
   loader interface; a small generated `.glb` as test asset; a triangle-budget warning.
-- **Props (M10), built (v0.10.0). Decided without asking while building (confirm with the user):**
+- **Props (M10), built (v0.10.0). Decided while building, confirmed by the user (2026-11-19):**
   - **`.mazz` is not read yet**: it waits for Mazzuola's final file format; the loader sits
     behind `ModelStore`, so it is an extra reader later.
   - **Model names:** a folder with one model file is that folder's model (`models/tree`,
