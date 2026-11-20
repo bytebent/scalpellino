@@ -1,0 +1,38 @@
+# v0.11.2: built-in Sky Lab presets (the skies Sky Lab was tested with) and the plain
+# bottom of a sky kept out of memory (5 degrees past the end of the fade).
+bottega make studio
+block -2048 -2048 -32 2048 2048 0
+block 128 -64 0 192 0 256
+tool select
+key Esc
+camera -700 -650 140 42 18
+viewset sky on
+# -- a built-in preset, baked: about 40% of the picture's height is plain ground
+skylab open
+skylabpreset builtin Sunset clouds
+skylab ok
+expect skylab sun_altitude 5
+expect skylab cloud_height 35
+expect skycover 0.55 0.68
+shot m11-07-builtin-sunset-clouds.png
+# -- looking down past the horizon: the fade, then the plain colour (no seam)
+camera 2300 0 200 0 -14
+shot m11-08-sky-cut-horizon.png
+# -- another one replaces it; the sun lock and baked size belong to the map
+skylab open
+skylabpreset builtin Moonlit night
+skylab ok
+expect skylab moon_visible 1
+expect skylab stars 1
+expect skycover 0.55 0.68
+camera -700 -650 140 42 18
+shot m11-09-builtin-moonlit-night.png
+# -- built-in presets need no Bottega (baking does)
+bottega none
+skylab open
+skylabpreset builtin Rainbow and halo
+skylab cancel
+# -- a photo sky with no plain bottom keeps all of it
+environment sky Panorama_Sky_04
+expect skycover 1 1
+quit

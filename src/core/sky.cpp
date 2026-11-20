@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include "core/sky.hpp"
 #include <algorithm>
 #include <cmath>
@@ -13,6 +14,25 @@ SkyLayout skyLayout(int w, int h) {
     if (w == 2 * h) return SkyLayout::Panorama;
     if (w * 3 == h * 4 && w % 4 == 0) return SkyLayout::Cross;
     return SkyLayout::Unknown;
+}
+
+int skyRowsToKeep(const unsigned char* rgb, int w, int h, double marginDeg, unsigned char below[3], int tolerance) {
+    if (!rgb || w <= 0 || h <= 1) return h;
+    const unsigned char* last = rgb + (size_t)(h - 1) * w * 3;
+    for (int c = 0; c < 3; ++c) below[c] = last[c];
+    auto plainRow = [&](int r) {
+        const unsigned char* p = rgb + (size_t)r * w * 3;
+        for (int x = 0; x < w; ++x)
+            for (int c = 0; c < 3; ++c)
+                if (std::abs((int)p[3 * x + c] - (int)below[c]) > tolerance) return false;
+        return true;
+    };
+    int plainFrom = h; // the first row of the plain block at the bottom
+    while (plainFrom > 0 && plainRow(plainFrom - 1)) --plainFrom;
+    const int margin = (int)std::ceil(h * marginDeg / 180.0);
+    const int keep = std::min(h, std::max(plainFrom + margin, (h + 1) / 2 + margin));
+    if (h - keep < h / 20) return h; // not worth it
+    return keep;
 }
 
 std::vector<unsigned char> crossToPanorama(const unsigned char* rgb, int w, int h, int outW) {

@@ -262,6 +262,17 @@ PLAN.md (Roadmap item 3).
   sky out of date, with a Rebake command. Directions: the sky's sun is where the light
   comes *from* (azimuth = light yaw + 180, altitude = −light pitch).
 - **The moon moves freely**; phase is a slider; solar and lunar eclipses (PLAN.md).
+- **Saved and built-in skies:** Save sky / Load a saved sky (the Bottega's
+  `presets/skies`, `.skylab` text); 13 built-in presets (v0.11.2, `core/sky_presets`: the
+  skies Sky Lab was tested with) listed under "Built-in", loaded the same way, no Bottega
+  needed. Loading keeps the map's sun lock and baked size.
+- **Memory** (v0.11.2, any sky picture, `core/sky.hpp` `skyRowsToKeep`): a plain-coloured
+  bottom is not kept on the graphics card: only the rows down to 5 degrees past where the
+  colour stops changing (never above the horizon; only if it saves 5% or more); the 3D
+  view and the Camera Preview draw the rest of the sphere in that colour. The PNG files
+  stay whole 2:1 panoramas (other tools and the renderer read them as they are). A Sky Lab
+  sky keeps about 60% of its height, so about 40% less graphics memory (an 8192 x 4096
+  sky is 96 MB uploaded as RGB, 128 MB where the driver pads it to RGBA).
 
 ### Math primitives (milestone 9, done)
 Bryce-style exact shapes, next to brushes (brushes and low-poly shapes stay as they

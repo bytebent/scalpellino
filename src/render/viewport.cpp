@@ -691,24 +691,36 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
         rlDrawRenderBatchActive();
         rlDisableDepthMask();
         rlDisableBackfaceCulling();
-        rlSetTexture(scene.skyTexture);
-        rlBegin(RL_QUADS);
-        rlColor4ub(255, 255, 255, 255);
-        for (int j = 0; j < NV; ++j)
-            for (int i = 0; i < NU; ++i) {
-                // Columns go once round (u from 0 to 1 as the yaw falls), rows top to bottom.
-                const int ci[4] = {i, i + 1, i + 1, i}, cj[4] = {j, j, j + 1, j + 1};
-                for (int k = 0; k < 4; ++k) {
-                    const double u = (double)ci[k] / NU, v = (double)cj[k] / NV;
-                    const double yaw = (0.5 - u) * 2 * 3.14159265358979323846, lat = (0.5 - v) * 3.14159265358979323846;
-                    const Vec3 d{std::cos(lat) * std::cos(yaw), std::cos(lat) * std::sin(yaw), std::sin(lat)};
-                    rlTexCoord2f((float)u, (float)v);
-                    const Vec3 p = c + d * R;
-                    rlVertex3f((float)p.x, (float)p.y, (float)p.z);
+        // Rows of the sphere from v0 to v1 (0 = straight up, 1 = straight down); textured:
+        // the texture holds the panorama's top `cover` (the rest is its plain colour).
+        const double cover = std::clamp((double)scene.skyCover, 0.05, 1.0);
+        auto band = [&](double v0, double v1, int rows, bool textured) {
+            if (textured) rlSetTexture(scene.skyTexture);
+            rlBegin(RL_QUADS);
+            if (textured) rlColor4ub(255, 255, 255, 255);
+            else rlColor4ub((unsigned char)scene.skyBelow.x, (unsigned char)scene.skyBelow.y, (unsigned char)scene.skyBelow.z, 255);
+            for (int j = 0; j < rows; ++j)
+                for (int i = 0; i < NU; ++i) {
+                    // Columns go once round (u from 0 to 1 as the yaw falls), rows top to bottom.
+                    const int ci[4] = {i, i + 1, i + 1, i}, cj[4] = {j, j, j + 1, j + 1};
+                    for (int k = 0; k < 4; ++k) {
+                        const double u = (double)ci[k] / NU, v = v0 + (v1 - v0) * cj[k] / rows;
+                        const double yaw = (0.5 - u) * 2 * 3.14159265358979323846, lat = (0.5 - v) * 3.14159265358979323846;
+                        const Vec3 d{std::cos(lat) * std::cos(yaw), std::cos(lat) * std::sin(yaw), std::sin(lat)};
+                        if (textured) rlTexCoord2f((float)u, (float)(v / cover));
+                        const Vec3 p = c + d * R;
+                        rlVertex3f((float)p.x, (float)p.y, (float)p.z);
+                    }
                 }
-            }
-        rlEnd();
-        rlSetTexture(0);
+            rlEnd();
+            if (textured) rlSetTexture(0);
+        };
+        const int texRows = std::max(4, (int)std::lround(NV * cover));
+        band(0, cover, texRows, true);
+        if (cover < 1) {
+            rlDrawRenderBatchActive();
+            band(cover, 1, std::max(2, NV - texRows), false);
+        }
         rlDrawRenderBatchActive();
         rlEnableBackfaceCulling();
         rlEnableDepthMask();

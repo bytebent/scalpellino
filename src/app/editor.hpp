@@ -302,7 +302,8 @@ private:
     std::vector<std::string> moonImages() const;   // Bottega skies/moons/ (keys)
     std::vector<std::string> skyPresets() const;   // Bottega presets/skies/ (names)
     bool saveSkyPreset(const std::string& name);
-    bool loadSkyPreset(const std::string& name);
+    bool loadSkyPreset(const std::string& name, bool builtin = false); // builtin: core/sky_presets
+    bool applySkyPresetText(const std::string& text);
     void randomizeSky();
     int skyLabTab_ = -1; // a tab to open (0 Sun & Moon, 1 Clouds, 2 Atmosphere), for tests
     std::string skyLabSection_; // a section to open (its title's start), for tests

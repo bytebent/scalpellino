@@ -312,7 +312,12 @@ Scene Editor::cameraPreviewScene() {
     if (lightPreview_) s.lighting = &lighting_.get(doc_, cache_.get(doc_));
     if (skyLabOpen_ && skyLabTex_.id) s.skyTexture = skyLabTex_.id;
     else if (!doc_.environment().sky.empty())
-        if (const Texture2D* t = skies_.get(doc_.environment().sky)) s.skyTexture = t->id;
+        if (const Texture2D* t = skies_.get(doc_.environment().sky)) {
+            s.skyTexture = t->id;
+            const SkyLibrary::Cut cut = skies_.cut(doc_.environment().sky);
+            s.skyCover = cut.cover;
+            s.skyBelow = {(double)cut.below[0], (double)cut.below[1], (double)cut.below[2]};
+        }
     const Environment& env = doc_.environment();
     if (env.fogOn) {
         s.fog = true;

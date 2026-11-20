@@ -105,6 +105,8 @@ inside the view. Lines starting with # are comments.
   skylabset fog on|off | fog_color r g b | fog_range <start> <end> | fog_height <base> <thickness>
                                   (the window's fog, applied to the map with the sky)
   skylabpreset save|load <name>   (a saved sky in the Bottega's presets/skies)
+  skylabpreset builtin <name>     (a built-in sky, core/sky_presets)
+  expect skycover <min> <max>     (how much of the map's sky picture is kept in memory, 1 = all)
   skylabrandom [<seed>]           (Randomize Sky)
   environment ... fogheight <base> <thickness>   expect fog on|off [<base> <thickness>]
   skylabset <field> <value...>   (a Sky Lab field as saved in the map: mode darker, sun_altitude 6,

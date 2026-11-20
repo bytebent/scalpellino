@@ -490,7 +490,12 @@ Scene Editor::buildScene() {
     if (textured3D_) s.textures = &textures_;
     if (skyLabOpen_ && skyLabTex_.id) s.skyTexture = skyLabTex_.id; // Sky Lab's live preview
     else if (showSky_ && !doc_.environment().sky.empty())
-        if (const Texture2D* t = skies_.get(doc_.environment().sky)) s.skyTexture = t->id;
+        if (const Texture2D* t = skies_.get(doc_.environment().sky)) {
+            s.skyTexture = t->id;
+            const SkyLibrary::Cut cut = skies_.cut(doc_.environment().sky);
+            s.skyCover = cut.cover;
+            s.skyBelow = {(double)cut.below[0], (double)cut.below[1], (double)cut.below[2]};
+        }
     if (showFigure_) s.figure = doc_.figure() ? *doc_.figure() : Vec3{};
     if (lightPreview_) s.lighting = &lighting_.get(doc_, cache_.get(doc_));
     const Environment& env = doc_.environment();

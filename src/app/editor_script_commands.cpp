@@ -500,7 +500,8 @@ void Editor::registerScriptCommands() {
     add({"skylabpreset"}, [this](const std::string&, std::istringstream& in) {
         // skylabpreset save|load <name>
         std::string op, name; in >> op; std::getline(in >> std::ws, name);
-        const bool done = op == "save" ? saveSkyPreset(name) : loadSkyPreset(name);
+        // skylabpreset builtin <name>: one of the built-in skies
+        const bool done = op == "save" ? saveSkyPreset(name) : loadSkyPreset(name, op == "builtin");
         if (!done) { std::fprintf(stderr, "script FAIL (command %d): sky preset %s %s\n", scriptLine_, op.c_str(), name.c_str()); ++scriptFailures_; }
     });
     add({"skylabrandom"}, [this](const std::string&, std::istringstream& in) {

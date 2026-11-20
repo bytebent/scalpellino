@@ -95,12 +95,23 @@ const Texture2D* SkyLibrary::get(const std::string& name) {
         ImageFormat(&img, PIXELFORMAT_UNCOMPRESSED_R8G8B8);
         std::copy(pano.begin(), pano.end(), (unsigned char*)img.data);
     }
+    // Keep only what isn't plain ground colour (plus a margin past the fade).
+    const int keep = skyRowsToKeep((const unsigned char*)img.data, img.width, img.height, kCutMarginDeg, e.cut.below);
+    if (keep < img.height) {
+        e.cut.cover = (float)keep / (float)img.height;
+        ImageCrop(&img, Rectangle{0, 0, (float)img.width, (float)keep});
+    }
     e.tex = LoadTextureFromImage(img);
     UnloadImage(img);
     SetTextureFilter(e.tex, TEXTURE_FILTER_BILINEAR);
     SetTextureWrap(e.tex, TEXTURE_WRAP_CLAMP);
     e.loaded = true;
     return &e.tex;
+}
+
+SkyLibrary::Cut SkyLibrary::cut(const std::string& name) const {
+    auto it = entries_.find(name);
+    return it == entries_.end() || !it->second.loaded ? Cut{} : it->second.cut;
 }
 
 std::string SkyLibrary::problem(const std::string& name) const {

@@ -208,6 +208,14 @@ void Editor::registerScriptExpects() {
             ++scriptFailures_;
         }
     });
+    add({"skycover"}, [this](const std::string&, std::istringstream& in) {
+        // expect skycover <min> <max>: how much of the map's sky picture is kept in memory
+        // (v0.11.2: the plain bottom is dropped; 1 = all of it)
+        std::string w; double lo = 0, hi = 1; in >> w >> lo >> hi;
+        const std::string& n = doc_.environment().sky;
+        const double c = skies_.get(n) ? skies_.cut(n).cover : -1;
+        if (c < lo - 1e-6 || c > hi + 1e-6) { std::fprintf(stderr, "script FAIL (command %d): sky %s keeps %g of its height\n", scriptLine_, n.c_str(), c); ++scriptFailures_; }
+    });
     add({"skylab"}, [this](const std::string&, std::istringstream& in) {
         // expect skylab <field> <value...>: a field of the map's Sky Lab settings, as saved
         std::string w, k, v; in >> w >> k; std::getline(in >> std::ws, v);

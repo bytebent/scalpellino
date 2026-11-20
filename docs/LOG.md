@@ -4,6 +4,32 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-20 — Built-in Sky Lab skies, plain sky bottoms out of memory (v0.11.2)
+- Asked by the user as an aside before M12 (they also said the v0.11.1 choices seem good;
+  they haven't tried the cameras yet). They asked for the skies Sky Lab was tested with
+  as built-in presets, and agreed to dropping the plain grey bottom of skies from memory,
+  "a bit after the fade just to be sure".
+- **Built-in presets** (`core/sky_presets`): 13 skies made by running the settings of the
+  Sky Lab test scripts (v104 / v105 / v106) through Sky Lab and saving them: Clear day,
+  Sunset, Darker sunset, Painted dusk, Plain night, Clouds, Sunset clouds, Round clouds,
+  Moonlit night, Comets, Solar eclipse, Lunar eclipse, Rainbow and halo. "Fog in the sky"
+  is left out: its fog belongs to the map, not to the saved sky. Listed under "Built-in"
+  in Load a saved sky (works without a Bottega).
+- **Memory:** `skyRowsToKeep` (`core/sky`) finds the plain block at the bottom of a
+  panorama (every pixel within 2 of the bottom colour) and keeps the rows above it plus 5
+  degrees (never above the horizon; only if 5% or more goes). `SkyLibrary` crops the
+  texture and keeps `cover` / `below`; the sky sphere draws the textured part over
+  `cover` and the rest in the plain colour (3D view and Camera Preview). Files unchanged.
+- **Tests:** core 4660 checks, 0 failed (presets read back to their own text; the cut on a
+  made-up picture, tolerance, the margin, all-one-colour, and on four real Sky Lab skies:
+  everything dropped is the plain colour, 30–45% of the rows go). UI 28 of 28 at 1x and 2x
+  (new `v112_sky_presets`: built-in presets baked, the kept part, looking past the edge
+  of the floor at the fade (no seam), without a Bottega, a photo sky kept whole). Idle 0
+  ticks at 1x and 2x.
+- **Screenshots:** `m11-07-builtin-sunset-clouds.png`, `m11-08-sky-cut-horizon.png`,
+  `m11-09-builtin-moonlit-night.png`.
+- **Next:** report; then Render (M12) when the user says go.
+
 ### 2026-11-20 — Cameras, step 2: Camera Preview and presets (v0.11.1)
 - The user confirmed the v0.11.0 choices ("seems sensible") and said carry on.
 - **Presets:** `cameraPresetToString` / `applyCameraPreset` in `core/camera` (settings

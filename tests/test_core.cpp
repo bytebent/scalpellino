@@ -1,4 +1,5 @@
 // Core + IO tests. No framework: each CHECK prints on failure; exit code = failures.
+#include "core/sky_presets.hpp"
 #include "core/brush.hpp"
 #include "core/document.hpp"
 #include "core/grid.hpp"
@@ -3411,6 +3412,57 @@ static void testCameras() {
     CHECK(readMap("{\n\"classname\" \"worldspawn\"\n}\n{\n\"classname\" \"scal_camera\"\n}\n", none).ok && none.cameras()[0].active);
 }
 
+// v0.11.2: built-in Sky Lab presets; dropping a sky's plain bottom from memory.
+static void testSkyPresetsAndCut() {
+    // Built-in presets: 13, distinct names, each reads back to exactly its own text.
+    CHECK(builtinSkyPresets().size() == 13);
+    std::set<std::string> names;
+    for (const BuiltinSky& b : builtinSkyPresets()) {
+        names.insert(b.name);
+        CHECK(skyLabToString(skyLabFromString(b.text)) == b.text);
+    }
+    CHECK(names.size() == 13 && findBuiltinSky("Sunset") && !findBuiltinSky("nope"));
+    CHECK(skyLabFromString(findBuiltinSky("Moonlit night")->text).moonVisible);
+    CHECK(skyLabFromString(findBuiltinSky("Rainbow and halo")->text).rainbow);
+
+    // A made-up 64 x 32 panorama: changing down to row 19, plain from row 20.
+    const int W = 64, H = 32;
+    std::vector<unsigned char> img((size_t)W * H * 3);
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < W; ++x)
+            for (int c = 0; c < 3; ++c) img[((size_t)y * W + x) * 3 + c] = y < 20 ? (unsigned char)(y * 5 + x) : 90;
+    unsigned char below[3];
+    // 5 degrees of 180 over 32 rows: 1 more row kept after the change stops.
+    CHECK(skyRowsToKeep(img.data(), W, H, 5, below) == 21 && below[0] == 90 && below[2] == 90);
+    CHECK(skyRowsToKeep(img.data(), W, H, 20, below) == 24); // ceil(32 * 20 / 180) = 4
+    // One pixel different on the last-but-one row: the plain block is just the last row,
+    // not worth dropping.
+    img[((size_t)30 * W + 7) * 3] = 95;
+    CHECK(skyRowsToKeep(img.data(), W, H, 5, below) == H);
+    img[((size_t)30 * W + 7) * 3] = 92; // within the tolerance (2): still plain
+    CHECK(skyRowsToKeep(img.data(), W, H, 5, below) == 21);
+    // All one colour: never cut above the horizon (16) + margin.
+    std::vector<unsigned char> flat((size_t)W * H * 3, 40);
+    CHECK(skyRowsToKeep(flat.data(), W, H, 5, below) == 17);
+    CHECK(skyRowsToKeep(nullptr, W, H, 5, below) == H);
+
+    // Real Sky Lab skies: everything dropped is the plain colour, the fade is kept with a
+    // margin, and about 40% of the rows go.
+    for (const char* name : {"Clear day", "Sunset clouds", "Moonlit night", "Rainbow and halo"}) {
+        const SkyLab s = skyLabFromString(findBuiltinSky(name)->text);
+        const int w = 512, h = 256;
+        const std::vector<unsigned char> sky = generateSky(s, w);
+        unsigned char b[3];
+        const int keep = skyRowsToKeep(sky.data(), w, h, 5, b);
+        CHECK(keep > h / 2 + 6 && keep < h * 7 / 10);
+        bool plain = true;
+        for (int y = keep - (int)std::ceil(h * 5 / 180.0); y < h; ++y)
+            for (int x = 0; x < w * 3; ++x)
+                if (std::abs((int)sky[(size_t)y * w * 3 + x] - (int)b[x % 3]) > 2) plain = false;
+        CHECK(plain);
+    }
+}
+
 int main() {
     testGrid();
     testBoxGeometry();
@@ -3436,6 +3488,7 @@ int main() {
     testSkyLab();
     testSkyLabClouds();
     testSkyLabNight();
+    testSkyPresetsAndCut();
     testBottega();
     testMathPrims();
     testPrimBlend();

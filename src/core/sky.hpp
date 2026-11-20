@@ -17,6 +17,15 @@ SkyLayout skyLayout(int w, int h);
 // outW x outW/2 pixels (bilinear).
 std::vector<unsigned char> crossToPanorama(const unsigned char* rgb, int w, int h, int outW);
 
+// Memory saving (v0.11.2): a panorama (RGB rows, top to bottom) whose bottom is one plain
+// colour all the way across (Sky Lab's ground) needs only the rows above it in memory;
+// what lies below is drawn in that colour. Returns how many rows to keep from the top:
+// down to where the colour stops changing (the horizon's fade, haze, fog), plus
+// `marginDeg` degrees more to be sure (the image is 180 degrees tall), and never above
+// the horizon. `below` gets the plain colour. Returns `h` (keep everything) when there is
+// no plain bottom or dropping it would save less than 5%.
+int skyRowsToKeep(const unsigned char* rgb, int w, int h, double marginDeg, unsigned char below[3], int tolerance = 2);
+
 // Where world direction `dir` (Z up) is in a panorama, u and v in 0..1 (v = 0 at the
 // top). The middle of the image faces +X; turning right (clockwise seen from above)
 // moves right in the image.

@@ -10,7 +10,7 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 
 ## Current status
 
-- **Released:** v0.1.0 … v0.11.1. Milestones 0–11, Random Replicate and Sky Lab are done (see the
+- **Released:** v0.1.0 … v0.11.2. Milestones 0–11, Random Replicate and Sky Lab are done (see the
   milestone sections below and the log); the user confirmed the choices of M10, Random
   Replicate and v0.10.2 (2026-11-19). **v0.10.3 is built and pushed** (asked by the user
   before Sky Lab): `editor.cpp` split by topic (step 1: code moved unchanged; step 2:
@@ -27,7 +27,9 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   TGA images not loading at all (raylib had them off).
 - **Milestone 11, cameras and Camera Preview, is done** (v0.11.0 camera objects, v0.11.1
   Camera Preview and presets; built and pushed). v0.11.0's choices were confirmed by the
-  user; v0.11.1's are under "v0.11.1, decided without asking". Next: **report**, then
+  user; v0.11.1's are under "v0.11.1, decided without asking". **v0.11.2** (an aside the
+  user asked for): built-in Sky Lab skies and plain sky bottoms kept out of graphics
+  memory (choices under "v0.11.2, decided without asking"). Next: **report**, then
   **Render, the Source look, with materials** (Roadmap item 5) when the user says go; its
   open point is the reflection probes' details.
 - **Roadmap:** Sky Lab → cameras and Camera Preview →
@@ -56,7 +58,19 @@ are in [`DEV.md`](DEV.md). One-step-per-release: add `docs/releases/vX.Y.Z.md` a
 
 ## Open questions (parked)
 
-- **v0.11.1 (Camera Preview, presets), decided without asking (confirm with the user):**
+- **v0.11.2 (built-in skies, sky memory), decided without asking (confirm with the user):**
+  - The built-in skies are the 13 distinct skies of the Sky Lab test scripts, named
+    by what they show; "fog in the sky" left out (the fog is the map's, not the sky's).
+  - They are part of the app (no files to install), listed under "Built-in" below the
+    user's own saved skies; they can't be changed or removed (save a changed one under
+    your own name).
+  - **The cut:** "plain" means every pixel of the row within 2 (of 255) of the bottom
+    colour; the margin past the fade is **5 degrees**; never above the horizon; only when
+    it saves 5% or more; any sky picture, not only Sky Lab's; Sky Lab's own live preview
+    (while its window is open) isn't cut (it is small and short-lived).
+
+- **v0.11.1 (Camera Preview, presets), decided without asking: the user said the choices
+  "seem good so far" (2026-11-20; not tried in the app yet).** Kept for reference:
   - **Cmd+K** draws the preview (K is the camera key; also the panel's Update button and
     World > Update Camera Preview).
   - **Layout:** the right column is now Textures (top half) / Properties / Camera Preview

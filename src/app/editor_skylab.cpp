@@ -2,6 +2,7 @@
 // the window, the live preview in the 3D view, baking to the Bottega, the sun lock.
 #include "app/editor.hpp"
 #include "core/bottega.hpp"
+#include "core/sky_presets.hpp"
 #include "ui/layout.hpp"
 
 #include "imgui.h"
@@ -232,11 +233,19 @@ bool Editor::saveSkyPreset(const std::string& raw) {
     return (bool)f;
 }
 
-bool Editor::loadSkyPreset(const std::string& name) {
+bool Editor::loadSkyPreset(const std::string& name, bool builtin) {
+    if (builtin) {
+        const BuiltinSky* b = findBuiltinSky(name);
+        return b && applySkyPresetText(b->text);
+    }
     if (!bottega::usable(bottegaCheck_)) return false;
     std::ifstream f(fs::path(bottega::path(bottegaRoot_, "presets/skies")) / (name + ".skylab"));
     std::string text;
     if (!f || !std::getline(f, text)) return false;
+    return applySkyPresetText(text);
+}
+
+bool Editor::applySkyPresetText(const std::string& text) {
     const bool lock = skyLabBuf_.lockSun;
     const int size = skyLabBuf_.bakeSize;
     skyLabBuf_ = skyLabFromString(text);
@@ -686,15 +695,23 @@ void Editor::drawSkyLabWindow() {
         // Saved skies (the Bottega's presets/skies) and Randomize Sky.
         {
             const std::vector<std::string> presets = skyPresets();
-            ImGui::BeginDisabled(!bottega::usable(bottegaCheck_));
             ImGui::SetNextItemWidth(170);
             if (ImGui::BeginCombo("##presets", "Load a saved sky...")) {
+                ImGui::SeparatorText("Yours (the Bottega)");
                 for (const std::string& p : presets)
                     if (ImGui::Selectable(p.c_str())) loadSkyPreset(p);
-                if (presets.empty()) ImGui::TextDisabled("(none saved yet)");
+                if (!bottega::usable(bottegaCheck_)) ImGui::TextDisabled("(no Bottega set)");
+                else if (presets.empty()) ImGui::TextDisabled("(none saved yet)");
+                ImGui::SeparatorText("Built-in");
+                for (const BuiltinSky& b : builtinSkyPresets()) {
+                    ImGui::PushID(b.name);
+                    if (ImGui::Selectable(b.name)) loadSkyPreset(b.name, true);
+                    ImGui::PopID();
+                }
                 ImGui::EndCombo();
             }
             ImGui::SameLine();
+            ImGui::BeginDisabled(!bottega::usable(bottegaCheck_));
             ImGui::SetNextItemWidth(120);
             ImGui::InputTextWithHint("##presetname", "name", skyPresetName_, sizeof skyPresetName_);
             ImGui::SameLine();

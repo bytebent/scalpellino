@@ -5,6 +5,9 @@
 // relative to the Bottega root, e.g. "skies/Dusk".
 // Panoramas (2:1) load as they are; cube crosses (4:3) are turned into panoramas
 // (core/sky.hpp). Files load on first use.
+// Memory (v0.11.2): a plain-coloured bottom (Sky Lab's ground) isn't kept on the graphics
+// card: only the rows down to 5 degrees past where the colour stops changing; the rest is
+// drawn in that colour (`cover`, `below`). The files stay whole panoramas.
 #include "raylib.h"
 #include <map>
 #include <string>
@@ -28,6 +31,11 @@ public:
     bool exists(const std::string& name) const { return entries_.count(name) > 0; }
     // Panorama texture for `name`, or nullptr (unknown, unreadable, or not 2:1 / 4:3).
     const Texture2D* get(const std::string& name);
+    // How much of the panorama's height the texture holds (1 = all) and the plain colour
+    // drawn below it. Call after get().
+    struct Cut { float cover = 1; unsigned char below[3] = {0, 0, 0}; };
+    Cut cut(const std::string& name) const;
+    static constexpr double kCutMarginDeg = 5;
     // Why get() failed for `name` ("" if it didn't).
     std::string problem(const std::string& name) const;
     void unloadAll();
@@ -37,6 +45,7 @@ private:
         std::string path;
         Texture2D tex{};
         bool loaded = false, failed = false;
+        Cut cut;
         std::string problem;
     };
     void scanFolder(const std::string& dir, const std::string& keyRoot = "");

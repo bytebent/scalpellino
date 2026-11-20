@@ -48,7 +48,8 @@ add_library(scal_core STATIC
   src/core/landing.cpp
   src/core/replicate.cpp
   src/core/bottega.cpp
-  src/core/camera.cpp)
+  src/core/camera.cpp
+  src/core/sky_presets.cpp)
 target_include_directories(scal_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 find_package(Threads REQUIRED)
 target_link_libraries(scal_core PUBLIC Threads::Threads) # Sky Lab bakes on all threads
