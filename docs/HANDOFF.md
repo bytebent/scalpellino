@@ -49,7 +49,7 @@ texture licenses; `releases/` has the notes for each version.
   (an aside). Next: **Render with materials** (M12), split into 7 batches (PLAN.md
   Roadmap item 5). **How the user wants M12 run:** discuss each batch in depth first,
   build it only when they say go, then report. **v0.12.0 (batch 1, the render pipeline)
-  is done**; next: report, then discuss batch 2 (baked direct light and shadows).
+  is done** and reported; batch 2 (baked direct light and shadows) is being discussed (PLAN.md "Batch 2 under discussion").
   Read PLAN.md Roadmap item 5 first: the Camera Preview becomes a draft render (the real
   renderer at lower settings), ignores the View menu and shows hidden things (the user
   tried v0.11.x and asked for this; the current preview is only the editor's 3D look). The roadmap order is confirmed up to camera
