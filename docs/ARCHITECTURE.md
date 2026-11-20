@@ -531,7 +531,12 @@ Preview and in renders.
     automatically when the drawn picture would pass 16384 pixels a side or 50 million
     pixels.
   - **Lighting in v0.12.0:** the rough light preview's (lights and ambient, no shadows),
-    always on. Baked lightmaps replace it in v0.12.1.
+    always on. Baked lightmaps replace it in v0.12.1, done the way VRAD does them (agreed
+    2026-11-20; details and formulas in PLAN.md Roadmap item 5): lightmaps per brush
+    face and terrain, Hammer's light keys and falloff (Source numbers converted from
+    inches to cm), sky light from the sky picture, shadows from everything, 3D lightmaps
+    for primitives, linear light; bounces in v0.12.2, ambient cubes and prop vertex
+    light in v0.12.3.
 - **The Source look** comes from **how Source renders**: fast, on the graphics card, with
   baked lightmaps (light, shadows, bounce), baked reflection probes, real textures and
   fog. It is **never faked with filters** laid over the picture (user: that is not the

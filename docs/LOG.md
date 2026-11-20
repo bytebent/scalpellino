@@ -4,6 +4,27 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-20 — Batch 2 (v0.12.1, baked direct light and shadows) agreed (docs only)
+- The user asked whether Scalpellino bakes light like Source / Hammer: not yet (v0.12.0
+  renders use the rough light preview: no shadows, no bounce, flat ambient). Discussed
+  what would make it as close to VRAD as possible while also lighting primitives.
+- The user shared their research on Source 1 lighting (VRAD, radiosity normal mapping,
+  ambient cubes). Its unconfirmed points were checked in Valve's Source SDK 2013 code
+  and settled: the 50% / 0% falloff fit, the 100-unit normalization, spot falloff (with
+  an extra cosine the research missed), 162 sky directions, ColorRGBExp32 decoding,
+  squared and normalized bump weights, the bounce stop rule, how ambient cubes are
+  gathered, smoothing at 45 degrees by default. Written down as "VRAD reference" in
+  PLAN.md (Roadmap item 5).
+- 26 numbered questions with options, consequences and a recommendation; all answered.
+  Recorded as "Batch 2 decided with the user" (Roadmap item 5); the batch list updated
+  (primitives get their own 3D lightmaps already in v0.12.1; v0.12.3 is ambient cubes and
+  prop vertex light). Choices the user flagged "might change" are under Open questions,
+  with the default texture scale change (decided, not scheduled).
+- Replaces the "Batch 2 under discussion" proposal (5 questions) recorded earlier the
+  same evening from another chat; its questions are answered by this discussion (noted
+  in Open questions).
+- No code changed. Next: build v0.12.1 (one release) when the user says go.
+
 ### 2026-11-20 — Review fixes (branch `fix/review-findings`, not released)
 - The user passed on a review (another AI's) with six findings; each checked against the
   code first, all six confirmed and fixed. On a branch, no `main` push, no release.

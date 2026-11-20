@@ -39,9 +39,11 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   Cmd+Shift+K, terminal window, PNG and log in the Bottega's `renders/`, render options,
   the Camera Preview as a draft render, height fog in renders. Its choices made without
   asking are under "v0.12.0, decided without asking". Reported; the user tried it ("seems
-  to work"). **Batch 2 (baked direct light and shadows) is being discussed: proposal and
-  5 questions waiting for the user's answers** under "Batch 2 under discussion" (Open
-  questions). Not built until the user says go.
+  to work"). **Batch 2 (v0.12.1, baked direct light and shadows) was discussed in depth
+  and agreed (2026-11-20)**: VRAD's methods, checked against Valve's SDK 2013 source; see
+  "Batch 2 decided with the user" under Roadmap item 5 and the choices flagged "might
+  change" under Open questions. Next: **build v0.12.1 when the user says go** (one
+  release).
 - **Review fixes (2026-11-20), merged into `main`** (fast-forward from
   `fix/review-findings` after the user's go-ahead; no new version, so only "Latest build"
   is refreshed): version releases are
@@ -79,29 +81,29 @@ Each archive's SHA-256 is in `cmake/Deps.cmake` (checked at configure time).
 
 ## Open questions (parked)
 
-- **Batch 2 under discussion (v0.12.1, baked direct light and shadows), proposed
-  2026-11-20, waiting for the user's answers:**
-  - **Proposal (technical, no decision needed):** a "Baking lights..." step with a
-    percentage in the terminal; lightmaps on brush faces and terrain from every light,
-    with shadow tests; baked on the processor, all cores (like Sky Lab's bake, testable
-    without a graphics card); brushes, terrain, primitives and props all cast shadows;
-    lights fade with distance exactly as now (brightness, range), so the rough editor
-    preview still matches in brightness; the bake kept in memory while the map doesn't
-    change (a second render or the preview skips it). No bounces yet (batch 3): shadows
-    are lit only by the ambient.
-  - **Q1 shadow detail:** patch size by Quality: Draft 64 cm (also the Camera Preview),
-    Normal 16 cm, High 8 cm (Source's default about 30 cm). Also a per-face setting in the
-    Face panel like Hammer's lightmap scale, or only Quality for now?
-  - **Q2 soft shadows:** sun uses Sky Lab's shadow softness (already stored in the map);
-    point and spot lights get a new **size** field (small = sharp, the default; larger =
-    softer). Proposed.
-  - **Q3 ambient:** becomes **sky light that walls block** (as Source; rooms darker than
-    outdoors, indoor scenes need real lights), or stays the same everywhere? Proposed:
-    sky light.
-  - **Q4 primitives and props:** cast shadows in batch 2 but stay lit the rough way (no
-    shadows falling on them) until the light grid (batch 4). Proposed; or sooner?
-  - **Q5 brighter than the texture:** allow light up to about 2x the texture (as Source's
-    overbright), so lamps can make a wall brighter than its texture. Proposed: yes.
+- **Batch 2 (v0.12.1) choices flagged "might change" (user, 2026-11-20).** Agreed for
+  now (see "Batch 2 decided with the user" under Roadmap item 5); look at them again
+  after the user has tried the bake:
+  - **Rough light preview keeps its old fade** (`(1 - d/reach)^2`, ambient everywhere)
+    while renders use VRAD's falloff and sky light. Check later whether the editor feels
+    off next to the renders; if so, give the preview the same formulas (still no shadows).
+  - **Sky Lab's lighting fields stay unused in the Source render:** soft shadows /
+    shadow softness (the sun's spread is the sun light's own field, as in Hammer),
+    shadow strength (would fake the light) and sky dome. Sun diffuse is used (a
+    brightness multiplier on the sun). Revisit if something is missed.
+  - **Primitive lightmap density:** one lightmap scale per primitive, shared by a
+    combination; very thin parts may leak light. Might change once tried.
+  - **Primitives and props don't bounce light** (as Source: only brush faces are bounce
+    patches). Might change in batch 3.
+  - **Default texture scale (decided, not scheduled):** the user will change the default
+    for new faces to Source's real size (0.25 in Hammer units = about 0.64 in cm), since
+    the lighting now converts Source's numbers to cm. Existing maps unchanged. When:
+    open (not part of v0.12.1 unless the user says so).
+  - The earlier proposal recorded here (5 questions, from another chat the same evening)
+    is superseded by the in-depth discussion: shadow detail = lightmap scale per face
+    (Q1), sun spread on the sun light, no size on point / spot lights (Q2, Hammer has
+    none), sky light (Q3, yes), primitives lit already in v0.12.1 (Q4), linear light
+    (Q5: brighter than the texture is allowed; no fixed 2x overbright).
 
 - **The v0.3.1 release holds the wrong code** (split / carve / hollow from after v0.3.1;
   the release bug fixed on `fix/review-findings`). Not changed: replacing a published
@@ -660,10 +662,13 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
         settings), ignoring the View menu and including hidden things. Lighting is the
         rough light preview's (always on) until batch 2.
      2. **v0.12.1 baked direct light and shadows:** lightmaps on brush faces and terrain
-        (point, spot, sun, sky light); primitives and props cast shadows.
-     3. **v0.12.2 bounces:** radiosity ("baking lights 1 .. 10"), bounce colour from the
-        textures.
-     4. **v0.12.3 light grid:** primitives and props pick up the baked light.
+        (point, spot, sun, sky light); primitives and props cast shadows; **primitives
+        also receive baked light already** (their own 3D lightmaps; agreed 2026-11-20).
+     3. **v0.12.2 bounces:** radiosity ("Bounce #n added RGB(...)"), bounce colour from
+        the textures.
+     4. **v0.12.3 light grid:** ambient cubes (VRAD's 162-ray samples) and baked
+        per-vertex light for props (VRAD's `-StaticPropLighting`); primitives already
+        have their lightmaps from v0.12.1.
      5. **v0.12.4 material system:** material files, GLSL shaders in Bottega `shaders/`,
         specular, emissive, detail textures, alpha cutout, rim lighting; editor
         placeholder.
@@ -691,6 +696,119 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
        things, the map's sky, distance fog and Sky Lab's height fog.
      - **Built (v0.12.0)**; choices made while building are under "v0.12.0, decided
        without asking".
+   - **Batch 2 decided with the user (2026-11-20), v0.12.1 baked direct light and
+     shadows.** Goal: as close to Source's VRAD as possible while also lighting
+     primitives. The user's research (Source / VRAD write-up) was checked against Valve's
+     Source SDK 2013 code (`utils/vrad/lightmap.cpp`, `vrad.cpp`,
+     `leaf_ambient_lighting.cpp`, `mathlib/color_conversion.cpp`, stdshaders); the
+     formulas are under "VRAD reference" below. Numbered as asked:
+     1. **Units: Source's numbers are converted to cm (x2.54)** (Hammer units are
+        inches): the 100-unit brightness reference becomes 254 cm, the default lightmap
+        scale 16 becomes about 40 cm. Only constants inside the bake; fields and files
+        stay in cm, nothing built changes size (user: yes, as long as it doesn't break).
+     2. **Default texture scale** will change to Source's real size (see Open questions;
+        not part of this batch unless asked).
+     3. **Lightmap scale per face** (Face panel, applies to all picked faces), default
+        16 Hammer units (about 40 cm), 1 to 128; saved in the brush's `//@` line. The
+        lightmap axes follow the face's texture axes, as Hammer's `lightmapVecs`.
+     4. **Falloff of a new light: Hammer's default, inverse-square** (light at its
+        brightness at 254 cm), cut off only where VRAD's minimum light makes it
+        negligible. Slower bakes are fine (user).
+     5. **Falloff modes in Properties:** Inverse-square (Hammer) / 50% - 0% distance
+        (with hard falloff) / Custom constant - linear - quadratic. Saved as Hammer's
+        keys (`_fifty_percent_distance`, `_zero_percent_distance`, `_hardfalloff`,
+        `_constant_attn`, `_linear_attn`, `_quadratic_attn`).
+     6. **Lights in existing maps are read as Hammer reads them:** today's reach is
+        `_zero_percent_distance`, which does nothing without a 50% distance, so old lights
+        become inverse-square and need retuning (only test maps exist). The bake log
+        notes each light with a 0% but no 50% distance.
+     7. **The rough light preview is not changed** (flagged, see Open questions).
+     8. **VRAD's quirks followed:** `_light` colour to linear with ^2.2, spot cones
+        capped at 90 degrees (log warning), the spot's extra cosine to its axis,
+        `_exponent` between the cones.
+     9. **Sun spread as in Hammer:** a spread-angle field on the sun light
+        (`SunSpreadAngle`, 0 = hard). Sky Lab's soft shadows don't drive it (flagged).
+     10. **Sky Lab's Bryce lighting fields:** sun diffuse = a brightness multiplier on the
+         sun; shadow strength and sky dome unused (flagged).
+     11. **Sky light read from the sky picture:** each of the 162 sky rays that escapes
+         takes the map's sky colour in that direction (the baked Sky Lab panorama or the
+         sky image). VRAD's method, the sky's colours. How bright: the Environment
+         ambient as a multiplier (decided without asking; confirm when reporting).
+     12. **No flat ambient by default:** a "minimum light" option (today's ambient
+         everywhere) exists, off. Rooms without sky are dark until bounces (v0.12.2).
+     13. **Lightmaps kept in memory only**, one cache per quality, reused while the map
+         doesn't change. A disk cache only if bakes prove slow.
+     14. **Quality presets:** Draft (also the Camera Preview) like VRAD `-fast`: lightmap
+         pixels 2x coarser, a quarter of the sky rays and sun samples, no extra samples;
+         Normal like VRAD's defaults (extra samples where neighbours differ); High like
+         `-final`. No separate fields.
+     15. **Smoothing:** faces less than 45 degrees apart are lit smoothly (VRAD's
+         default; a map setting for the angle). Smoothing groups only if ever needed.
+     16. **Bilinear lightmap filtering** in renders (Source's soft, slightly blocky look).
+     17. **nodraw faces block light** (in Source nodraw faces aren't in the light
+         compile, hence Valve's `toolsblocklight`; a deliberate
+         difference, so hidden faces never leak).
+     18. **Terrain:** one lightmap over the terrain face, like a Source displacement,
+         smoothed with the terrain's normals.
+     19. **Primitives receive baked light in v0.12.1:** each primitive (a combination:
+         one for all its pieces) has a small 3D lightmap around it; each cell is lit at
+         the nearest surface point (found with `comboDistance`), with the same light code
+         as the brushes; the shader reads it at the hit point.
+     20. **Primitive lightmap density:** a lightmap scale per primitive, brush default
+         (flagged: thin parts may leak).
+     21. **Props cast shadows from their real triangles** (like VRAD `-StaticPropPolys`),
+         with a "casts shadows" tick box (Source's `disableshadows`); they stay lit the
+         rough way until v0.12.3.
+     22. **Primitives and props don't bounce light** (as Source; flagged).
+     23. **Linear light:** baked and stored as linear floats, texture x light, then
+         sRGB (Source's HDR path without tone mapping); light may exceed the texture.
+     24. **Camera exposure** is used now as a plain multiplier (no auto exposure).
+     25. **Esc stops the bake** like the rest of the render; the log shows VRAD-style
+         steps.
+     26. **One release** (v0.12.1). If primitive lightmaps stall while the brush bake
+         works, tell the user and ship brushes / terrain first.
+     - **Also agreed:** sun and sky light count a ray that hits nothing as sky (there are
+       no sky brushes); the bake runs on the processor with all threads, in the core
+       (testable without a graphics card), with ray tests against brushes, terrain,
+       primitives (`rayHitPrims` / `comboIntervals`) and props (`rayHitModel`, needs an
+       acceleration structure); the editor stays as it is.
+   - **VRAD reference (from the SDK 2013 code, for building batches 2 to 4):**
+     - Colour: `_light "r g b brightness"`: each channel `(c/255)^2.2 * 255`, times
+       brightness / 255.
+     - Classic falloff `I / (c + l*d + q*d^2)`; all zero means c = 1; intensity is
+       multiplied by `c + 100 l + 10000 q` (full brightness at 100 units).
+     - 50% / 0%: a monotonic inverse quadratic through 1 at 0, 2 at d50 and 256 at d0
+       (`SolveInverseQuadraticMonotonic`), rescaled so it is exactly 2 at d50 (half
+       light). d0 < d50: warning, d0 = 2 d50. `_hardfalloff`: smoothstep to 0 from
+       `0.75 d0 + 0.25 d50` to d0. Otherwise, if the quadratic would turn brighter,
+       capped at that distance and faded to 0 by 10x it.
+     - Spot: `_inner_cone` default 10, `_cone` at least the inner; both capped at 90;
+       180 / 180 = point light. No light outside the outer cone; falloff also times the
+       cosine to the axis; between the cones `t = (dot - cosOuter) / (cosInner -
+       cosOuter)`, then `t^_exponent` (when not 0 or 1).
+     - Sun: `N.L` times the share of sample rays that reach the sky; with a spread,
+       rays jittered within `sin(SunSpreadAngle)`.
+     - Sky ambient: 162 directions (`NUMVERTEXNORMALS`), weighted by cosine and divided
+       by the summed cosine, so open sky gives the full `_ambient`; `_ambient` missing =
+       half the sun's intensity. Draft: a quarter of the rays.
+     - Smoothing: faces without smoothing groups are smoothed when under 45 degrees.
+     - Patches (batch 3): a binary split in lightmap-pixel units, `maxchop = minchop = 4`
+       (about 64 Hammer units at scale 16); reflectivity clamped to 0.99; bounce until 100
+       or until a bounce adds less than 1 in every channel, logged as `Bounce #n added
+       RGB(r, g, b)`; patch-to-patch form factor, the exact polygon one when patches are
+       close ("5 times rule"); sky patches receive nothing.
+     - Ambient cubes (batch 4): 162 rays per sample; a ray hitting a surface takes its
+       lighting times its reflectivity, one reaching the sky takes the sky ambient;
+       projected onto 6 directions; point / spot / sun light is left out (models get it at
+       runtime: the 2 strongest lights, Half-Lambert `(0.5 N.L + 0.5)^2`). Read with
+       `C(n) = nx^2 A[x+/-] + ny^2 A[y+/-] + nz^2 A[z+/-]`.
+     - Stored lightmaps: ColorRGBExp32, decoded `c * 2^e / 255` (we keep floats).
+     - Bump-mapped faces (batch 5, leave room now): 3 more lightmaps along the basis
+       `(sqrt(2/3), 0, 1/sqrt3)`, `(-1/sqrt6, 1/sqrt2, 1/sqrt3)`, `(-1/sqrt6, -1/sqrt2,
+       1/sqrt3)`; SDK 2013 blends them with squared, saturated dots divided by their sum.
+     - Static props: per-vertex light baked by `-StaticPropLighting`; SDK 2013's
+       multiplayer branch also has per-texel prop lightmaps (a precedent for the
+       primitives' lightmaps).
 6. **Water, cloud and endless planes** (confirmed) — materials made with the system above.
 7. **Camera effects** (confirmed, lowest priority per the user) — dithering, palette,
    bloom and similar.

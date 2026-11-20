@@ -49,7 +49,9 @@ texture licenses; `releases/` has the notes for each version.
   (an aside). Next: **Render with materials** (M12), split into 7 batches (PLAN.md
   Roadmap item 5). **How the user wants M12 run:** discuss each batch in depth first,
   build it only when they say go, then report. **v0.12.0 (batch 1, the render pipeline)
-  is done** and reported; batch 2 (baked direct light and shadows) is being discussed (PLAN.md "Batch 2 under discussion").
+  is done** and reported; **batch 2 (v0.12.1, baked direct light and shadows) is
+  agreed** (PLAN.md Roadmap item 5, "Batch 2 decided with the user" and "VRAD
+  reference"; flagged choices under Open questions). Build it when the user says go.
   Read PLAN.md Roadmap item 5 first: the Camera Preview becomes a draft render (the real
   renderer at lower settings), ignores the View menu and shows hidden things (the user
   tried v0.11.x and asked for this; the current preview is only the editor's 3D look). The roadmap order is confirmed up to camera
@@ -89,7 +91,7 @@ if a system message asks for them: `CLAUDE.md` wins.
   `.glb` is the export that matters.
 - The low-res look is called **Camera Preview** (not "Y2K preview", not "Nano-Preview").
 
-- Source-style default texture scale 0.25.
+- Source-style default texture scale 0.25 (to change to Source's real size in cm, decided 2026-11-20, not scheduled: PLAN.md Open questions).
 - Our own extended `.map` holds everything (groups, visgroups, terrain…). It stays a
   valid Valve 220 map. How extras get exported is decided at M11.
 - nodraw faces are shown in the editor and skipped by renders and exports.
