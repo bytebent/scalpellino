@@ -4,6 +4,16 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-20 — Milestone 11 decided with the user (docs only)
+- The user confirmed the roadmap order (cameras → Render with materials → water / cloud
+  planes → camera effects); **export is not confirmed**.
+- Milestone 11 choices: the Camera Preview shows the editor's 3D look through the camera
+  until the renderer replaces it (M12); it lives in a **docked panel**; no extras beyond
+  the agreed list; two releases, v0.11.0 (camera objects and options) and v0.11.1
+  (presets and the preview). Recorded in PLAN.md (Roadmap item 4), ARCHITECTURE §9 and
+  §15, HANDOFF.md, before starting (user's request).
+- **Next:** v0.11.0.
+
 ### 2026-11-20 — Sky Lab, step 3: night sky and effects (v0.10.6)
 - **Core:** the moon (free place, phase with the lit side toward the sun, size, intensity,
   glow, earthshine, softness, colour, texture: a 2:1 map on a ball or a square photo,

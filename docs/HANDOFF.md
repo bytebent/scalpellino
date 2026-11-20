@@ -42,7 +42,9 @@ texture licenses; `releases/` has the notes for each version.
 - **Sky Lab is done** (v0.10.4–v0.10.6; PLAN.md Roadmap item 3 and its "decided without
   asking" lists). The Bryce guide PDF is the user's; ask them to attach it again if a
   later session needs it (Sky Lab is its PDF pages 786–938; printed page = PDF page − 31).
-  Next: cameras and Camera Preview, the renderer, export (see PLAN.md "Roadmap").
+  Next: **milestone 11, cameras and Camera Preview** (user said go, 2026-11-20; choices in
+  PLAN.md Roadmap item 4), then the renderer. The roadmap order is confirmed up to camera
+  effects; export is not confirmed.
 - Mazzuola (`bytebent/mazzuola`) is the user's companion modeller (design only so far).
   Its models become Scalpellino props.
 

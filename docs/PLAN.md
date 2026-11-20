@@ -24,12 +24,14 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   the sky, Blend with Sun, saved skies, Randomize Sky, scene effects stored) are built and
   pushed**; the choices made without asking are listed under "Sky Lab v0.10.4 / v0.10.5 /
   v0.10.6, decided without asking" for the user to confirm. v0.10.6 also fixed JPEG and
-  TGA images not loading at all (raylib had them off). Next: report; then cameras and
-  Camera Preview (Roadmap item 4) when the user says go.
+  TGA images not loading at all (raylib had them off).
+- **Next: milestone 11, cameras and Camera Preview** (Roadmap item 4). The user said go
+  (2026-11-20) and answered the open questions; the choices are under Roadmap item 4.
+  Two releases: v0.11.0 and v0.11.1.
 - **Roadmap:** Sky Lab → cameras and Camera Preview →
   Render (Source look, with the material system) → water / cloud planes → camera effects →
-  export. The renderer part is a
-  proposal awaiting the user's confirmation. Details under "Roadmap" and "Direction".
+  export. **Confirmed by the user (2026-11-20)** up to camera effects; **export is not
+  confirmed** (it stays last and optional). Details under "Roadmap" and "Direction".
 - **Bottega** (shared folder for Mazzuola, Scalpellino and later tools): the basics are
   built (v0.9.4); models, shaders, presets and renders will use it as they arrive. See
   "Bottega" below.
@@ -369,7 +371,7 @@ handles shared with lights (move, rings, size handles); units changed to 1 unit 
 Snap to Land / Ground, Multi-Replicate (v0.9.2); ImGui ID fix (v0.9.1); single pieces of
 a combination and a non-blocking Multi-Replicate window (v0.9.3).
 
-## Roadmap (revised 2026-11-18; steps 4 to 8 are a proposal, to confirm)
+## Roadmap (revised 2026-11-18; steps 4 to 7 confirmed by the user 2026-11-20, step 8 not)
 
 1. **M10 Props (done, v0.10.0)** — static models with their textures, no physics. `.glb`
    first; `.mazz` once Mazzuola's file format is final. Placed, turned and sized like primitives (shared
@@ -447,21 +449,36 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
      ring; a "Move moon onto sun" button; the moon's face is dark (earthshine only) during
      a solar eclipse whatever the phase. Lunar: an amount slider (0..1) and a colour (copper
      red), Earth's round shadow moving across the disk.
-4. **Cameras and Camera Preview** (proposed order, confirm) — camera objects (many, one
+4. **Cameras and Camera Preview** (M11; next) — camera objects (many, one
    active), options and presets (field of view, image size...), and the small preview: an
    approximation of the final picture, shaders included, updated only on a keybind or
-   button, shown only while the map has a camera.
-5. **Render, the Source look, with materials** (proposed) — the render window (image size,
+   button, shown only while the map has a camera. Full option list under "Direction" →
+   "Camera options".
+   - **Decided with the user (2026-11-20):**
+     - **The preview before the renderer exists:** in M11 the Camera Preview shows the
+       camera's view drawn the way the editor's 3D view draws it (textures, sky, fog, the
+       rough light preview when it is on), at the image's shape (its width : height). The
+       renderer replaces it in M12 with the real approximation (shaders and the rest).
+     - **Where:** a **docked panel**, not a floating window or a viewport.
+     - **No extras beyond the agreed list:** no "camera from the 3D view", no "look
+       through the camera" in the 3D view (both offered, user: neither).
+     - **Releases:** two steps. **v0.11.0** camera objects and their options (place, aim
+       with rings, roll, lens, near / far, image size, orthographic, aim at a point, name,
+       colour, active); **v0.11.1** saved camera presets (Bottega's
+       `presets/camera_presets`) and the Camera Preview. Docs updated before starting
+       (user).
+     - Depth of field stays with the camera effects (item 7); exposure is stored for HDR.
+5. **Render, the Source look, with materials** (confirmed) — the render window (image size,
    options) that opens on Render, a terminal-style log (+ log file), baking the lights
    (shadows), reflection probes, mirror reflections on flat surfaces, a PNG saved to
    `renders/` (Bottega's once it exists). Only what the camera sees is drawn (frustum,
    back faces, nodraw). **The material system is part of this milestone** (a surface's
    look is its material): GLSL shaders from Bottega's `shaders/`, reflection kind per
    material. The Source look comes from how Source renders, never from filters.
-6. **Water, cloud and endless planes** (proposed) — materials made with the system above.
-7. **Camera effects** (proposed, lowest priority per the user) — dithering, palette,
+6. **Water, cloud and endless planes** (confirmed) — materials made with the system above.
+7. **Camera effects** (confirmed, lowest priority per the user) — dithering, palette,
    bloom and similar.
-8. **Export** — `.glb`, optional and last; the user probably will never use it elsewhere.
+8. **Export** (not confirmed by the user) — `.glb`, optional and last; the user probably will never use it elsewhere.
    Godot not a goal.
 - **Later / maybe:** a ray-tracing renderer (Bryce look; real reflections and bending
   glass), `.wad` textures, Lua generators, texture tags.
@@ -604,8 +621,8 @@ read and write. Agreed so far:
     - *Presets:* the user can **save their own presets** (for example a favourite lens
       plus size). They live in Bottega, in **`presets/camera_presets`** (user), so other
       tools share them.
-  - **Open:** probe details; the order of the
-    renderer part of the roadmap (proposed below, to confirm).
+  - **Open:** probe details. (The order of the renderer part of the roadmap was confirmed
+    by the user on 2026-11-20.)
 
 ## Milestone 1 plan — Brushes (done)
 

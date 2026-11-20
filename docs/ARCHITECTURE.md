@@ -452,8 +452,9 @@ Preview and in renders.
 - **2D views:** wireframe, redrawn only on change.
 - **3D view modes:** wireframe, flat-color, textured, plus the rough light preview, sky and
   fog toggles (milestone 8). Materials show as a simple placeholder here (planned).
-- **Camera Preview** (planned): a small window showing the active camera's view, only when
-  the map has a camera. An approximation of the final picture, in between a full render
+- **Camera Preview** (planned, M11): a docked panel showing the active camera's view, only
+  when the map has a camera. Until the renderer exists (M12) it draws the editor's 3D look
+  at the image's shape. An approximation of the final picture, in between a full render
   and the editor view, heavy stuff and shaders included. Updated **only on a keybind or
   button**, never live.
 - **Render** (planned): the Render button opens the render window (image size and render
@@ -543,9 +544,9 @@ docs/         this file, roadmap
 | 10 | Props: static models (`.glb` first, then `.mazz`) with their textures, from Bottega's `models/`, placed / turned / sized as objects (uniform scale by default), Snap to Land, instanced; no physics. Preceded by the idle CPU test and Bottega basics (folder setting, Rescan, marker file) | done (v0.10.0; `.mazz` later) |
 | 10b | Random Replicate (Bryce): random offset / turn / size ranges for props and primitives | done (v0.10.1) |
 | 10c | Sky Lab (Bryce, all of it): generated skies (sun, moon, stars, clouds, atmosphere) with live preview in the 3D view, baked to panoramas in Bottega's `skies/`; settings kept in the map; tick box to lock the sun to the map's sun light; eclipses. Steps: v0.10.4 window / bake / sky modes / sun / haze / lock, v0.10.5 clouds, v0.10.6 night sky and effects | done (v0.10.6) |
-| 11 | Cameras and Camera Preview (proposed order): camera objects (many, one active), options and presets, the on-request preview | |
-| 12 | Render, the Source look, with materials (proposed): render window, terminal log, light baking, reflection probes, mirrors, the material system (GLSL shaders from Bottega's `shaders/`, reflection kind per material), PNG to `renders/` | |
-| 13 | Water, cloud and endless planes (proposed): materials made with the system above | |
-| 14 | Camera effects (proposed, lowest priority): dithering, palette, bloom | |
-| 15 | Export: `.glb`, optional and last | |
+| 11 | Cameras and Camera Preview: camera objects (many, one active), options and presets, the on-request preview in a docked panel (editor look until M12 replaces it). Steps: v0.11.0 camera objects and options, v0.11.1 presets and the preview | next |
+| 12 | Render, the Source look, with materials: render window, terminal log, light baking, reflection probes, mirrors, the material system (GLSL shaders from Bottega's `shaders/`, reflection kind per material), PNG to `renders/` | |
+| 13 | Water, cloud and endless planes: materials made with the system above | |
+| 14 | Camera effects (lowest priority): dithering, palette, bloom | |
+| 15 | Export: `.glb`, optional and last (not confirmed by the user) | |
 | later / maybe | ray-tracing renderer (Bryce look), `.wad` textures, Lua generators, texture tags | |
