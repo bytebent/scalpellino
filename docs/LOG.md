@@ -4,6 +4,10 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-20 — The user tried v0.12.0 (docs only)
+- "Seems to work! so far!" The v0.12.0 choices are not explicitly confirmed yet (still
+  listed in PLAN.md). Next: discuss batch 2 (baked direct light and shadows).
+
 ### 2026-11-20 — Render, step 1: the pipeline (v0.12.0)
 - The user said go for batch 1 (decided earlier today, entry below).
 - **Core** (`core/render_job`): render options (quality, anti-aliasing, filtering) and their
