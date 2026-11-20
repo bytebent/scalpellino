@@ -40,14 +40,15 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   the Camera Preview as a draft render, height fog in renders. Its choices made without
   asking are under "v0.12.0, decided without asking". Next: **report**, then discuss
   batch 2 (baked direct light and shadows) in depth before building it.
-- **Review fixes (2026-11-20), on branch `fix/review-findings`, not on `main` and not
-  released** (the user asked for a branch, no main release yet): version releases are
+- **Review fixes (2026-11-20), merged into `main`** (fast-forward from
+  `fix/review-findings` after the user's go-ahead; no new version, so only "Latest build"
+  is refreshed): version releases are
   built from the commit that added their notes; scenes share the brush list instead of
   copying it per view; edits rebuild only the touched brushes (editor, light preview,
   renderer); 64 MB undo history limit; strict numbers in terrain rows, terrain face /
   size, visgroup and combo; terrain size checked before use; dependency SHA-256 checks.
-  A brush and terrain benchmark was added (DEV.md "Benchmark"). Next: the user merges it
-  (or asks for changes). See the LOG entry.
+  A brush and terrain benchmark was added (DEV.md "Benchmark"). Next: watch the first
+  version release made with the new release logic. See the LOG entry.
 - **Roadmap:** Sky Lab → cameras and Camera Preview →
   Render (Source look, with the material system) → water / cloud planes → camera effects →
   export. **Confirmed by the user (2026-11-20)** up to camera effects; **export is not

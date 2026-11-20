@@ -56,7 +56,14 @@ too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
   releases on pushes); the earlier PLAN note saying it could was wrong and is corrected
   (manual steps there). Every notes file up to v0.12.0 has a release, so merging starts
   no version builds.
-- **Next:** the user reviews / merges the branch.
+- **App check, branch vs `main`:** both built and run through the same script (terrain,
+  a shot mid sculpt stroke, paint, undo / redo, move, ambient change, hide, nodraw,
+  render, Camera Preview, save and reopen): 13 of 15 screenshots pixel-identical, the
+  render included; the other two differ only in the open render log's times and file
+  date. Render time the same (0.21–0.23 s, three runs each).
+- **Merged** into `main` (fast-forward) after the user's go-ahead. No new notes file, so
+  no version release; "Latest build" is refreshed.
+- **Next:** watch the first version release made with the new release logic.
 
 ### 2026-11-20 — The user tried v0.12.0 (docs only)
 - "Seems to work! so far!" The v0.12.0 choices are not explicitly confirmed yet (still
