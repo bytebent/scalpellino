@@ -508,8 +508,11 @@ Preview and in renders.
   picture's shape, as large as the panel, with nothing of the editor's (grid, axes,
   markers, outlines, selection, the figure). For now it is the editor's 3D look:
   textures, the map's sky and fog (whatever the View menu shows), the rough light preview
-  when it is on; hidden things stay hidden. M12 makes it the real approximation of the
-  final picture (in between a full render and the editor view, shaders included).
+  when it is on; hidden things stay hidden. **Agreed for M12 (2026-11-20):** the preview
+  becomes a **draft render**, the renderer itself at lower settings, and it and the
+  render **ignore the View menu** (everything as the map has it) and **include hidden
+  things** (hiding is an editing aid). The current preview's View-menu dependence is
+  fixed then, not before.
 - **Render** (planned): the Render button opens the render window (image size and render
   options). A terminal-style log shows the steps as they run (baking the lights, building
   the reflection cubemaps, drawing...); it takes as long as it needs. The result is a PNG

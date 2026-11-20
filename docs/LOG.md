@@ -4,6 +4,19 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-20 — The user tried the cameras; Camera Preview decisions (docs only)
+- The user noticed the preview is the 3D view seen through the camera, not a render
+  (as agreed for M11 until the renderer exists), and that it follows some View menu
+  options. Checked: sky and fog already ignore the View menu (a script with the sky
+  toggled off and on draws the same preview); the rough light preview, Show primitives /
+  Show props and hidden things are followed. The preview also isn't marked out of date
+  when only View options change, which can look like it follows them.
+- Decided with the user: the preview is a **draft render** (M12's renderer at lower
+  settings); preview and render **ignore the View menu** and **include hidden things**;
+  fix the current preview in M12, not now. Recorded in PLAN.md (Roadmap item 5),
+  ARCHITECTURE §9, HANDOFF.md. No code changed.
+- The user will start a new chat for the next milestones.
+
 ### 2026-11-20 — Built-in Sky Lab skies, plain sky bottoms out of memory (v0.11.2)
 - Asked by the user as an aside before M12 (they also said the v0.11.1 choices seem good;
   they haven't tried the cameras yet). They asked for the skies Sky Lab was tested with

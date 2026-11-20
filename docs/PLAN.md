@@ -31,7 +31,9 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   user asked for): built-in Sky Lab skies and plain sky bottoms kept out of graphics
   memory (choices under "v0.11.2, decided without asking"). Next: **report**, then
   **Render, the Source look, with materials** (Roadmap item 5) when the user says go; its
-  open point is the reflection probes' details.
+  open point is the reflection probes' details. The user tried the cameras (2026-11-20):
+  the preview must be a draft render ignoring the View menu (Roadmap item 5); they will
+  start a **new chat** for the next milestones.
 - **Roadmap:** Sky Lab → cameras and Camera Preview →
   Render (Source look, with the material system) → water / cloud planes → camera effects →
   export. **Confirmed by the user (2026-11-20)** up to camera effects; **export is not
@@ -79,7 +81,9 @@ are in [`DEV.md`](DEV.md). One-step-per-release: add `docs/releases/vX.Y.Z.md` a
   - **What it shows now:** textures always; the map's sky and fog whatever the View menu
     toggles say; the rough light preview only when it is on (it costs time); hidden
     brushes, and primitives / props hidden with the View toggles, stay out; Sky Lab's
-    live sky while Sky Lab is open (as the 3D view).
+    live sky while Sky Lab is open (as the 3D view). **Overruled by the user
+    (2026-11-20):** the preview must ignore every View option and show hidden things;
+    to fix in M12 (see Roadmap item 5).
   - **Size:** drawn as large as the panel at the picture's shape, at screen resolution
     (not the picture's pixel size); resizing the panel scales the last picture until the
     next update. "Out of date" shows when the map (anything undoable) or the active
@@ -550,6 +554,21 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
    back faces, nodraw). **The material system is part of this milestone** (a surface's
    look is its material): GLSL shaders from Bottega's `shaders/`, reflection kind per
    material. The Source look comes from how Source renders, never from filters.
+   - **Decided with the user (2026-11-20), after trying the cameras:**
+     - **The Camera Preview is a draft render:** the M12 renderer itself at lower
+       settings (smaller picture, coarser baked light, fewer bounces...), not a separate
+       cheaper imitation, so it can't disagree with the final render. It runs only on
+       Update / Cmd+K, so taking a few seconds is fine. This replaces v0.11.1's editor
+       look in the preview.
+     - **The preview and renders ignore the View menu entirely** (it is for the editor):
+       sky, fog, lights / light preview, primitives, props, textured / flat all as the map
+       has them, whatever is switched off in the editor. Today's preview follows some of
+       these (rough light preview, Show primitives / props, hidden things): fix it **in
+       M12**, not before (user: they are only testing the app for now, nothing to be
+       misled by yet).
+     - **Hidden things are in the preview and the render:** Hide selected / hidden
+       visgroups are an editing aid only (as Hammer still compiles hidden visgroups). A
+       "leave out of the render" setting could come later if wanted (not asked for).
 6. **Water, cloud and endless planes** (confirmed) — materials made with the system above.
 7. **Camera effects** (confirmed, lowest priority per the user) — dithering, palette,
    bloom and similar.

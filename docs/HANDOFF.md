@@ -46,8 +46,10 @@ texture licenses; `releases/` has the notes for each version.
   asking" lists). The Bryce guide PDF is the user's; ask them to attach it again if a
   later session needs it (Sky Lab is its PDF pages 786–938; printed page = PDF page − 31).
   **Milestone 11, cameras and Camera Preview, is done** (v0.11.0, v0.11.1), plus v0.11.2
-  (an aside). Next: report v0.11.2, then **Render with materials** (M12) when the user
-  says go. The roadmap order is confirmed up to camera
+  (an aside). Next: **Render with materials** (M12) when the user says go, in a new chat.
+  Read PLAN.md Roadmap item 5 first: the Camera Preview becomes a draft render (the real
+  renderer at lower settings), ignores the View menu and shows hidden things (the user
+  tried v0.11.x and asked for this; the current preview is only the editor's 3D look). The roadmap order is confirmed up to camera
   effects; export is not confirmed.
 - Mazzuola (`bytebent/mazzuola`) is the user's companion modeller (design only so far).
   Its models become Scalpellino props.
