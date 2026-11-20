@@ -128,6 +128,8 @@ expect props 3
 expect lights 3
 expect cameras 2
 expect cameraactive 0
+# -- the Camera Preview drawn once (it must not redraw by itself)
+camerapreview
 expect terrains 1
 expect sky Panorama_Sky_04
 expect bookmarks 1

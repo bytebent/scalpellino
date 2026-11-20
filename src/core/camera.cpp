@@ -2,6 +2,8 @@
 #include "core/world.hpp"
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <sstream>
 
 namespace scal {
 
@@ -140,6 +142,53 @@ std::vector<std::pair<Vec3, Vec3>> cameraShape(const Camera& c, double len) {
     s.push_back({a, tip});
     s.push_back({tip, b});
     return s;
+}
+
+std::string cameraPresetToString(const Camera& c) {
+    auto num = [](double v) {
+        char b[48];
+        std::snprintf(b, sizeof b, "%.10g", v);
+        return std::string(b);
+    };
+    std::string s;
+    s += "fov " + num(c.fov) + "\n";
+    s += "near " + num(c.nearDist) + "\n";
+    s += "far " + num(c.farDist) + "\n";
+    s += "size " + std::to_string(c.width) + " " + std::to_string(c.height) + "\n";
+    s += std::string("ortho ") + (c.ortho ? "1" : "0") + "\n";
+    s += "ortho_size " + num(c.orthoSize) + "\n";
+    s += "exposure " + num(c.exposure) + "\n";
+    return s;
+}
+
+bool applyCameraPreset(Camera& c, const std::string& text) {
+    std::istringstream in(text);
+    std::string line;
+    Camera r = c;
+    int read = 0;
+    while (std::getline(in, line)) {
+        std::istringstream l(line);
+        std::string k;
+        if (!(l >> k)) continue;
+        double a = 0, b = 0;
+        if (!(l >> a) || !std::isfinite(a)) continue;
+        if (k == "fov") r.fov = a;
+        else if (k == "near") r.nearDist = a;
+        else if (k == "far") r.farDist = a;
+        else if (k == "size") {
+            if (!(l >> b) || !std::isfinite(b) || a < 1 || b < 1 || a > 1e6 || b > 1e6) continue;
+            r.width = (int)std::lround(a);
+            r.height = (int)std::lround(b);
+        } else if (k == "ortho") r.ortho = a != 0;
+        else if (k == "ortho_size") r.orthoSize = a;
+        else if (k == "exposure") r.exposure = a;
+        else continue;
+        ++read;
+    }
+    if (!read) return false;
+    clampCamera(r);
+    c = r;
+    return true;
 }
 
 std::vector<CameraId> fixActiveCamera(std::vector<Camera>& cams) {

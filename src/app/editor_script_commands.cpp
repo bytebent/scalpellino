@@ -281,6 +281,16 @@ void Editor::registerScriptCommands() {
         }
         doc_.setCameraSelection(sel); doc_.setSelection({}); doc_.setLightSelection({}); doc_.setPrimSelection({}); doc_.setPropSelection({});
     });
+    add({"camerapreview"}, [this](const std::string&, std::istringstream&) {
+        // camerapreview: draw the Camera Preview now (as Cmd+K; drawn with the next frame)
+        if (!doc_.cameras().empty()) requestCameraPreview();
+    });
+    add({"camerapreset"}, [this](const std::string&, std::istringstream& in) {
+        // camerapreset save|load <name>: from / into the selected camera, else the next camera
+        std::string op, name; in >> op; std::getline(in >> std::ws, name);
+        const bool done = op == "save" ? saveCameraPreset(name) : loadCameraPreset(name);
+        if (!done) { std::fprintf(stderr, "script FAIL (command %d): camera preset %s %s\n", scriptLine_, op.c_str(), name.c_str()); ++scriptFailures_; }
+    });
     add({"cameraactive"}, [this](const std::string&, std::istringstream& in) {
         // cameraactive <index>: makes that camera the active one (as the Properties tick box)
         size_t i = 0; in >> i;

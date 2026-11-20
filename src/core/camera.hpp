@@ -79,6 +79,14 @@ std::array<Vec3, 4> cameraFrame(const Camera& c, double dist);
 // frame's top edge showing which way is up.
 std::vector<std::pair<Vec3, Vec3>> cameraShape(const Camera& c, double len);
 
+// Saved camera presets (v0.11.1; the Bottega's presets/camera_presets/<name>.camera): the
+// camera's settings, not where it is or which way it looks. Plain text, one "key value"
+// per line: fov, near, far, size (w h), ortho (0/1), ortho_size, exposure.
+std::string cameraPresetToString(const Camera& c);
+// Puts a preset's settings into `c` (position, angles, name, colour and active kept).
+// Unknown lines are skipped, missing keys keep their value. False if nothing was read.
+bool applyCameraPreset(Camera& c, const std::string& text);
+
 // Exactly one active camera: none -> the first; several -> the first of them stays.
 // Returns the ids whose `active` changed.
 std::vector<CameraId> fixActiveCamera(std::vector<Camera>& cams);

@@ -379,7 +379,7 @@ Static models next to brushes, lights and primitives. `core/model.hpp`, `core/pr
   the map is unsaved when the newest command isn't the one it was saved at (or a
   visgroup, bookmark or the figure, which aren't undoable, changed since the save).
 
-### Cameras (milestone 11, v0.11.0 built; presets and the Camera Preview in v0.11.1)
+### Cameras (milestone 11, done: v0.11.0 and v0.11.1)
 The objects Render and the Camera Preview look through. `core/camera.hpp`,
 `Document::cameras()`, `tools/camera_tool`, `app/editor_cameras.cpp`.
 - **Camera:** name, position, pitch / yaw (as a light's) and roll; field of view in degrees
@@ -408,6 +408,12 @@ The objects Render and the Camera Preview look through. `core/camera.hpp`,
 - **Files:** our own point entity `scal_camera` (name, origin, angles "pitch yaw roll" with
   pitch positive down as Hammer writes it, fov, near, far, size "w h", ortho, ortho_size,
   exposure, color, active; unknown keys kept).
+- **Presets** (v0.11.1): the camera's settings (fov, near, far, size, ortho, ortho_size,
+  exposure; not where it is, which way it looks, its name or colour) as a text file of
+  "key value" lines, `<name>.camera` in the Bottega's `presets/camera_presets`. Save /
+  Load in Properties: from / into the selected camera (loading is one undo step), or the
+  camera tool's settings for the next camera when none is selected.
+- **Camera Preview** (v0.11.1): see §9.
 
 ### Scale reference
 Toggleable ghost human figure (175 units = 1.75 m tall, blocky, see-through) to judge
@@ -420,10 +426,10 @@ it appears below the top view's centre). Editor-only, never exported.
 - **Math primitives** — exact shapes, combinable (milestone 9).
 - **Props** — static models (`.glb` and Mazzuola's `.mazz`) with their textures; placed,
   turned and sized like primitives. No physics (milestone 10).
-- **Cameras** (v0.11.0) — objects placed and aimed like a spot light, with many options
+- **Cameras** (v0.11.0, v0.11.1) — objects placed and aimed like a spot light, with many options
   and presets: lens (field of view or mm, roll, near / far distance, orthographic mode),
   image size, aim at a point, depth of field and exposure later; the user can save their
-  own presets (saved in Bottega's `presets/camera_presets`). Full list in PLAN.md. A map can hold several; exactly one is
+  own presets (saved in Bottega's `presets/camera_presets`). Details in §6 "Cameras". A map can hold several; exactly one is
   **active**, the only one the Camera Preview and Render use.
 - **Reflection probes** (planned) — placed by hand; Render bakes a picture of their
   surroundings for shiny materials to reflect.
@@ -483,11 +489,16 @@ Preview and in renders.
 - **2D views:** wireframe, redrawn only on change.
 - **3D view modes:** wireframe, flat-color, textured, plus the rough light preview, sky and
   fog toggles (milestone 8). Materials show as a simple placeholder here (planned).
-- **Camera Preview** (planned, M11): a docked panel showing the active camera's view, only
-  when the map has a camera. Until the renderer exists (M12) it draws the editor's 3D look
-  at the image's shape. An approximation of the final picture, in between a full render
-  and the editor view, heavy stuff and shaders included. Updated **only on a keybind or
-  button**, never live.
+- **Camera Preview** (v0.11.1): a docked panel under Properties showing the active camera's
+  view, only while the map has a camera. Updated **only on a keybind or button** (Cmd+K,
+  its Update button, World > Update Camera Preview), never live; it says when the map has
+  changed since. Drawn by a `Viewport` given the camera as its lens (`setLens`: its field
+  of view, near / far, orthographic with parallel rays for the primitives' shader) at the
+  picture's shape, as large as the panel, with nothing of the editor's (grid, axes,
+  markers, outlines, selection, the figure). For now it is the editor's 3D look:
+  textures, the map's sky and fog (whatever the View menu shows), the rough light preview
+  when it is on; hidden things stay hidden. M12 makes it the real approximation of the
+  final picture (in between a full render and the editor view, shaders included).
 - **Render** (planned): the Render button opens the render window (image size and render
   options). A terminal-style log shows the steps as they run (baking the lights, building
   the reflection cubemaps, drawing...); it takes as long as it needs. The result is a PNG
@@ -575,7 +586,7 @@ docs/         this file, roadmap
 | 10 | Props: static models (`.glb` first, then `.mazz`) with their textures, from Bottega's `models/`, placed / turned / sized as objects (uniform scale by default), Snap to Land, instanced; no physics. Preceded by the idle CPU test and Bottega basics (folder setting, Rescan, marker file) | done (v0.10.0; `.mazz` later) |
 | 10b | Random Replicate (Bryce): random offset / turn / size ranges for props and primitives | done (v0.10.1) |
 | 10c | Sky Lab (Bryce, all of it): generated skies (sun, moon, stars, clouds, atmosphere) with live preview in the 3D view, baked to panoramas in Bottega's `skies/`; settings kept in the map; tick box to lock the sun to the map's sun light; eclipses. Steps: v0.10.4 window / bake / sky modes / sun / haze / lock, v0.10.5 clouds, v0.10.6 night sky and effects | done (v0.10.6) |
-| 11 | Cameras and Camera Preview: camera objects (many, one active), options and presets, the on-request preview in a docked panel (editor look until M12 replaces it). Steps: v0.11.0 camera objects and options, v0.11.1 presets and the preview | next |
+| 11 | Cameras and Camera Preview: camera objects (many, one active), options and presets, the on-request preview in a docked panel (editor look until M12 replaces it). Steps: v0.11.0 camera objects and options, v0.11.1 presets and the preview | done (v0.11.0, v0.11.1) |
 | 12 | Render, the Source look, with materials: render window, terminal log, light baking, reflection probes, mirrors, the material system (GLSL shaders from Bottega's `shaders/`, reflection kind per material), PNG to `renders/` | |
 | 13 | Water, cloud and endless planes: materials made with the system above | |
 | 14 | Camera effects (lowest priority): dithering, palette, bloom | |

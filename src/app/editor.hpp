@@ -233,6 +233,25 @@ private:
     CameraId camBufFor_ = 0;
     unsigned long long camBufRev_ = ~0ull;
     double camAim_[3] = {0, 0, 0};      // typed point to aim at
+    // Saved presets (v0.11.1): the Bottega's presets/camera_presets/<name>.camera
+    std::vector<std::string> cameraPresets() const;
+    bool saveCameraPreset(const std::string& name);  // from the selected camera, else the new-camera settings
+    bool loadCameraPreset(const std::string& name);  // into the selected cameras (one undo step), else the new-camera settings
+    char camPresetName_[64] = "";
+    std::string camMsg_;
+    // Camera Preview (v0.11.1): a docked panel under Properties, only while the map has a
+    // camera. Drawn only when asked (Cmd+K, its Update button, View menu): the active
+    // camera's view in the editor's 3D look, at the picture's shape. M12's renderer takes
+    // over what it shows.
+    void drawCameraPreview();
+    void requestCameraPreview() { previewWanted_ = true; }
+    Scene cameraPreviewScene();
+    std::unique_ptr<Viewport> preview_;
+    bool previewWanted_ = false;       // draw it at the next panel draw (which knows the size)
+    bool previewDone_ = false;         // there is a picture to show
+    unsigned long long previewRev_ = 0; // the document when it was drawn
+    CameraId previewCam_ = 0;
+    int previewUpdates_ = 0;           // times drawn (scripts check it)
 
     // Sky Lab (milestone 10c): editor_skylab.cpp
     void openSkyLab();

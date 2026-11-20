@@ -160,6 +160,7 @@ bool Editor::frame(float dt) {
     st.cameraPending = st.cameraTool && cameraTool_.pending.has_value();
     st.cameraAiming = st.cameraTool && cameraTool_.aiming();
     st.camerasSelected = doc_.cameraSelection().size();
+    st.hasCameras = !doc_.cameras().empty();
     if (st.camerasSelected == 1)
         if (const Camera* c = doc_.findCamera(*doc_.cameraSelection().begin())) st.selectedCameraActive = c->active;
     st.propTool = tool_ == &propTool_;
@@ -215,7 +216,7 @@ bool Editor::frame(float dt) {
     drawStatusBar(status.c_str());
     dockspace(resetLayout_, "Tools###tools", views_[0]->title(), views_[1]->title(),
               views_[2]->title(), views_[3]->title(), "Textures###textures", "Face###face", showPanels_,
-              "Visgroups###visgroups", "Props###props");
+              "Visgroups###visgroups", "Props###props", "Camera Preview###camerapreview");
     resetLayout_ = false;
 
     if (m.quit) requestQuit();
@@ -279,6 +280,7 @@ bool Editor::frame(float dt) {
     if (m.createCamera) cameraTool_.create(doc_);
     if (m.activateCamera && doc_.cameraSelection().size() == 1) activateCamera(*doc_.cameraSelection().begin());
     if (m.aimCamera) startCameraAim();
+    if (m.updatePreview && !doc_.cameras().empty()) requestCameraPreview();
     if (m.createProp) onKey(KEY_ENTER);
     if (m.primKind >= 0) { primTool_.templ.kind = (PrimKind)m.primKind; setTool(&primTool_); }
     if (m.createPrim) primTool_.create(doc_, currentTexture_, &lastBox_);
@@ -352,7 +354,7 @@ bool Editor::frame(float dt) {
     if (!ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId) && !io.WantTextInput) handleKeyboard();
 
     drawToolsPanel();
-    if (showPanels_) { drawTextureBrowser(); drawPropsPanel(); drawVisgroupsPanel(); drawFacePanel(); }
+    if (showPanels_) { drawTextureBrowser(); drawPropsPanel(); drawVisgroupsPanel(); drawFacePanel(); drawCameraPreview(); }
     drawViews();
     drawDialogs();
     drawTransformDialog();
@@ -405,6 +407,7 @@ void Editor::handleKeyboard() {
         if (IsKeyPressed(KEY_E)) centerViews();
         if (IsKeyPressed(KEY_R)) { if (shift_) openRandomReplicate(); else rescanBottega(); }
         if (IsKeyPressed(KEY_U)) showAll();
+        if (IsKeyPressed(KEY_K) && !shift_ && !doc_.cameras().empty()) requestCameraPreview();
         if (IsKeyPressed(KEY_ZERO)) allViewsToOrigin();
         if (shift_ && IsKeyPressed(KEY_O)) { findOverlapsNow(); return; }
         if (IsKeyPressed(KEY_S)) { if (shift_) requestSaveAs(); else save(); }

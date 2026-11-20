@@ -2,15 +2,32 @@
 // the Properties panel for the camera tool and the selected camera, making one active,
 // aiming at a point.
 #include "app/editor.hpp"
+#include "core/bottega.hpp"
 #include "imgui.h"
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
 
 namespace scal {
 
+namespace fs = std::filesystem;
+
 namespace {
+constexpr const char* kPresetDir = "presets/camera_presets";
+// A file name from what was typed: letters, digits, space, - and _ (others become _).
+std::string presetFileName(const std::string& raw) {
+    std::string name;
+    for (char c : raw) name += (std::isalnum((unsigned char)c) || c == '-' || c == '_' || c == ' ') ? c : '_';
+    while (!name.empty() && name.back() == ' ') name.pop_back();
+    while (!name.empty() && name.front() == ' ') name.erase(name.begin());
+    return name;
+}
+
 // The fields of one camera (the selected one, or the next one to be made). True when an
 // edit is finished (so one change = one undo step). `withPos`: show the position.
 bool cameraFields(Camera& c, bool withPos) {
@@ -93,6 +110,76 @@ bool cameraFields(Camera& c, bool withPos) {
 }
 } // namespace
 
+std::vector<std::string> Editor::cameraPresets() const {
+    std::vector<std::string> out;
+    if (!bottega::usable(bottegaCheck_)) return out;
+    std::error_code ec;
+    const fs::path dir = bottega::path(bottegaRoot_, kPresetDir);
+    for (fs::directory_iterator it(dir, ec); !ec && it != fs::directory_iterator(); it.increment(ec))
+        if (it->is_regular_file(ec) && it->path().extension() == ".camera") out.push_back(it->path().stem().string());
+    std::sort(out.begin(), out.end());
+    return out;
+}
+
+bool Editor::saveCameraPreset(const std::string& raw) {
+    const std::string name = presetFileName(raw);
+    if (name.empty() || !bottega::usable(bottegaCheck_)) return false;
+    const Camera* from = nullptr;
+    if (!doc_.cameraSelection().empty()) from = doc_.findCamera(*doc_.cameraSelection().begin());
+    const Camera& c = from ? *from : cameraTool_.templ;
+    std::error_code ec;
+    const fs::path dir = bottega::path(bottegaRoot_, kPresetDir);
+    fs::create_directories(dir, ec);
+    std::ofstream f(dir / (name + ".camera"));
+    if (!f) return false;
+    f << cameraPresetToString(c);
+    return (bool)f;
+}
+
+bool Editor::loadCameraPreset(const std::string& name) {
+    if (!bottega::usable(bottegaCheck_)) return false;
+    std::ifstream f(fs::path(bottega::path(bottegaRoot_, kPresetDir)) / (name + ".camera"));
+    if (!f) return false;
+    std::stringstream ss;
+    ss << f.rdbuf();
+    const std::string text = ss.str();
+    if (doc_.cameraSelection().empty()) return applyCameraPreset(cameraTool_.templ, text);
+    std::vector<Camera> out;
+    for (CameraId id : doc_.cameraSelection())
+        if (const Camera* c = doc_.findCamera(id)) {
+            Camera m = *c;
+            if (!applyCameraPreset(m, text)) return false;
+            if (m != *c) out.push_back(m);
+        }
+    if (!out.empty()) doc_.apply(doc_.makeModifyCameras(out, "Load camera preset"));
+    camBufRev_ = ~0ull;
+    return true;
+}
+
+// Load / save presets: into / from the selected camera, or the new-camera settings.
+static void presetRow(Editor& ed, const std::vector<std::string>& presets, char* name, size_t nameSize, bool usable,
+                      bool (Editor::*load)(const std::string&), bool (Editor::*save)(const std::string&), std::string& msg) {
+    ImGui::BeginDisabled(!usable);
+    ImGui::SetNextItemWidth(150);
+    if (ImGui::BeginCombo("##campresets", "Load a preset...")) {
+        for (const std::string& p : presets)
+            if (ImGui::Selectable(p.c_str()) && !(ed.*load)(p)) msg = "Couldn't read the preset " + p + ".";
+        if (presets.empty()) ImGui::TextDisabled("(none saved yet)");
+        ImGui::EndCombo();
+    }
+    ImGui::SetNextItemWidth(150);
+    ImGui::InputTextWithHint("##campresetname", "name", name, nameSize);
+    ImGui::SameLine();
+    if (ImGui::Button("Save preset") && name[0]) {
+        if (!(ed.*save)(name)) msg = "Couldn't save the preset in the Bottega's presets/camera_presets.";
+        else msg.clear();
+    }
+    ImGui::EndDisabled();
+    if (!usable) ImGui::TextDisabled("presets need the Bottega (File > Bottega folder...)");
+    ImGui::TextDisabled("lens, near / far, size, orthographic, exposure");
+    if (!msg.empty()) ImGui::TextColored(ImVec4(1, 0.75f, 0.3f, 1), "%s", msg.c_str());
+}
+
 void Editor::activateCamera(CameraId id) {
     Command c = doc_.makeActivateCamera(id);
     if (!c.cameraChanges.empty()) doc_.apply(std::move(c));
@@ -151,6 +238,9 @@ void Editor::drawCameraPanel() {
         if (ImGui::Button("Aim")) CameraTool::aimSelected(doc_, {camAim_[0], camAim_[1], camAim_[2]});
         if (ImGui::Button(cameraTool_.aiming() ? "Click the point in a view..." : "Aim at a clicked point")) startCameraAim();
         ImGui::TextDisabled("or drag the rings (yellow: roll)");
+        ImGui::SeparatorText("Presets");
+        presetRow(*this, cameraPresets(), camPresetName_, sizeof camPresetName_, bottega::usable(bottegaCheck_),
+                  &Editor::loadCameraPreset, &Editor::saveCameraPreset, camMsg_);
         ImGui::TextDisabled("Delete removes, Cmd+D duplicates");
         ImGui::PopID();
         if (tool_ != &cameraTool_) return;
@@ -184,11 +274,104 @@ void Editor::drawCameraPanel() {
     if (t.pending) t.templ.pos = *t.pending;
     if (cameraFields(t.templ, t.pending.has_value())) clampCamera(t.templ);
     if (t.pending) t.pending = t.templ.pos;
+    ImGui::SeparatorText("Presets");
+    presetRow(*this, cameraPresets(), camPresetName_, sizeof camPresetName_, bottega::usable(bottegaCheck_),
+              &Editor::loadCameraPreset, &Editor::saveCameraPreset, camMsg_);
     ImGui::BeginDisabled(!t.pending);
     if (ImGui::Button("Create (Return)")) t.create(doc_);
     ImGui::EndDisabled();
     if (!t.pending) ImGui::TextDisabled("click in a view to place it");
     ImGui::PopID();
+}
+
+} // namespace scal
+
+namespace scal {
+
+Scene Editor::cameraPreviewScene() {
+    // What a picture holds: no selection, editor marks, ghosts or the figure. Sky and fog as
+    // the map has them (whatever the View menu shows); the rough light preview when it is on.
+    Scene s;
+    s.brushes = cache_.get(doc_);
+    s.models = &models_;
+    s.textures = &textures_;
+    for (const Light& l : doc_.lights()) s.lights.push_back({l, false}); // lights the primitives
+    if (doc_.primsShown())
+        for (const MathPrim& p : doc_.prims()) s.prims.push_back({p, false});
+    if (doc_.propsShown())
+        for (const Prop& p : doc_.props()) {
+            Scene::SceneProp sp;
+            sp.prop = p;
+            const Model* m = models_.find(p.model);
+            sp.local = propLocalBounds(m);
+            sp.missing = m == nullptr;
+            s.props.push_back(std::move(sp));
+        }
+    s.lightPreview = lightPreview_;
+    s.ambient = doc_.environment().ambient;
+    if (lightPreview_) s.lighting = &lighting_.get(doc_, cache_.get(doc_));
+    if (skyLabOpen_ && skyLabTex_.id) s.skyTexture = skyLabTex_.id;
+    else if (!doc_.environment().sky.empty())
+        if (const Texture2D* t = skies_.get(doc_.environment().sky)) s.skyTexture = t->id;
+    const Environment& env = doc_.environment();
+    if (env.fogOn) {
+        s.fog = true;
+        s.fogColor = env.fog.color;
+        s.fogStart = env.fog.start;
+        s.fogEnd = env.fog.end;
+    }
+    return s;
+}
+
+void Editor::drawCameraPreview() {
+    if (doc_.cameras().empty()) { // no panel without a camera; a new map starts blank
+        previewDone_ = false;
+        previewWanted_ = false;
+        return;
+    }
+    if (ImGui::Begin("Camera Preview###camerapreview", nullptr, ImGuiWindowFlags_NoCollapse)) {
+        const Camera* cam = doc_.activeCamera();
+        if (ImGui::Button("Update")) previewWanted_ = true;
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Draw the active camera's view now (Cmd+K)");
+        ImGui::SameLine();
+        if (cam) {
+            if (cam->ortho) ImGui::Text("%s  %d x %d  orthographic", cam->name.c_str(), cam->width, cam->height);
+            else ImGui::Text("%s  %d x %d  %g mm", cam->name.c_str(), cam->width, cam->height, std::round(fovToLens(cam->fov) * 10) / 10);
+        }
+        const bool stale = previewDone_ && (previewRev_ != doc_.revision() || !cam || previewCam_ != cam->id);
+        if (stale) ImGui::TextColored(ImVec4(1, 0.75f, 0.3f, 1), "The map has changed: Update (Cmd+K) to see it.");
+
+        const ImVec2 avail = ImGui::GetContentRegionAvail();
+        if (previewWanted_ && cam && avail.x > 8 && avail.y > 8) {
+            previewWanted_ = false;
+            // The picture's shape, as large as the panel allows.
+            const double aspect = (double)cam->width / cam->height;
+            double w = avail.x, h = w / aspect;
+            if (h > avail.y) { h = avail.y; w = h * aspect; }
+            if (!preview_) preview_ = std::make_unique<Viewport>(ViewKind::Persp);
+            const float fb = ImGui::GetIO().DisplayFramebufferScale.x > 0 ? ImGui::GetIO().DisplayFramebufferScale.x : 1.0f;
+            preview_->resize((int)std::floor(w), (int)std::floor(h), viewScale_ > 0 ? viewScale_ : fb);
+            preview_->setLens(*cam);
+            preview_->render(grid_, cameraPreviewScene());
+            previewDone_ = true;
+            previewRev_ = doc_.revision();
+            previewCam_ = cam->id;
+            ++previewUpdates_;
+        }
+        if (previewDone_ && preview_) {
+            // The last picture, kept at its own shape inside the panel until the next update.
+            const double aspect = (double)preview_->width() / std::max(1, preview_->height());
+            double w = avail.x, h = w / aspect;
+            if (h > avail.y) { h = avail.y; w = h * aspect; }
+            const ImVec2 at = ImGui::GetCursorScreenPos();
+            ImGui::SetCursorScreenPos(ImVec2(at.x + (float)std::floor((avail.x - w) * 0.5), at.y));
+            ImGui::Image(ImTextureID(preview_->target().texture.id), ImVec2((float)w, (float)h), ImVec2(0, 1), ImVec2(1, 0));
+        } else {
+            ImGui::TextWrapped("The active camera's view shows here when you ask for it: Update, or Cmd+K. "
+                               "It doesn't follow every change, so the editor stays quick.");
+        }
+    }
+    ImGui::End();
 }
 
 } // namespace scal

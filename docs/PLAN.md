@@ -10,7 +10,7 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 
 ## Current status
 
-- **Released:** v0.1.0 … v0.11.0. Milestones 0–10, Random Replicate and Sky Lab are done (see the
+- **Released:** v0.1.0 … v0.11.1. Milestones 0–11, Random Replicate and Sky Lab are done (see the
   milestone sections below and the log); the user confirmed the choices of M10, Random
   Replicate and v0.10.2 (2026-11-19). **v0.10.3 is built and pushed** (asked by the user
   before Sky Lab): `editor.cpp` split by topic (step 1: code moved unchanged; step 2:
@@ -25,11 +25,11 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   pushed**; the choices made without asking are listed under "Sky Lab v0.10.4 / v0.10.5 /
   v0.10.6, decided without asking" for the user to confirm. v0.10.6 also fixed JPEG and
   TGA images not loading at all (raylib had them off).
-- **Milestone 11, cameras and Camera Preview** (Roadmap item 4; the user said go
-  2026-11-20, choices under Roadmap item 4). **v0.11.0 (camera objects and options) is
-  built and pushed**; its choices made without asking are under "v0.11.0, decided without
-  asking". Next: **v0.11.1**, saved camera presets (Bottega's `presets/camera_presets`)
-  and the Camera Preview (docked panel, editor look until M12), then report.
+- **Milestone 11, cameras and Camera Preview, is done** (v0.11.0 camera objects, v0.11.1
+  Camera Preview and presets; built and pushed). v0.11.0's choices were confirmed by the
+  user; v0.11.1's are under "v0.11.1, decided without asking". Next: **report**, then
+  **Render, the Source look, with materials** (Roadmap item 5) when the user says go; its
+  open point is the reflection probes' details.
 - **Roadmap:** Sky Lab → cameras and Camera Preview →
   Render (Source look, with the material system) → water / cloud planes → camera effects →
   export. **Confirmed by the user (2026-11-20)** up to camera effects; **export is not
@@ -56,7 +56,31 @@ are in [`DEV.md`](DEV.md). One-step-per-release: add `docs/releases/vX.Y.Z.md` a
 
 ## Open questions (parked)
 
-- **v0.11.0 (cameras), decided without asking (confirm with the user):**
+- **v0.11.1 (Camera Preview, presets), decided without asking (confirm with the user):**
+  - **Cmd+K** draws the preview (K is the camera key; also the panel's Update button and
+    World > Update Camera Preview).
+  - **Layout:** the right column is now Textures (top half) / Properties / Camera Preview
+    (the lower 42% of the bottom half). The saved layout resets once to this (dock
+    layout version bumped). Without a camera the preview's space goes to Properties.
+  - **What it shows now:** textures always; the map's sky and fog whatever the View menu
+    toggles say; the rough light preview only when it is on (it costs time); hidden
+    brushes, and primitives / props hidden with the View toggles, stay out; Sky Lab's
+    live sky while Sky Lab is open (as the 3D view).
+  - **Size:** drawn as large as the panel at the picture's shape, at screen resolution
+    (not the picture's pixel size); resizing the panel scales the last picture until the
+    next update. "Out of date" shows when the map (anything undoable) or the active
+    camera changed since; View toggles and Sky Lab's live edits don't count.
+  - **Near** cuts through solid brushes as they are (you see through, nothing is capped);
+    looking into a hollowed room through its wall works.
+  - **Orthographic** cameras see the sky as almost one colour (every ray is parallel).
+  - **Presets** hold the settings only (lens, near / far, size, orthographic and its
+    width, exposure), not position, angles, name or colour. Names are cleaned for files
+    ("Portrait/50" becomes "Portrait_50"); saving under an existing name replaces it;
+    deleting a preset is deleting its file in the Bottega (no button). Presets need the
+    Bottega, as saved skies do.
+
+- **v0.11.0 (cameras), decided without asking: confirmed by the user (2026-11-20, "seems
+  sensible").** Kept here for reference:
   - **Shortcut Shift+K** (K is free; C is the curve tool); the tool is in the World and
     Tools menus and the tools strip.
   - **Defaults:** 50 mm lens (39.6 degrees), 1920 x 1080, near 4 units, far 100000 (1 km),
@@ -486,7 +510,7 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
      ring; a "Move moon onto sun" button; the moon's face is dark (earthshine only) during
      a solar eclipse whatever the phase. Lunar: an amount slider (0..1) and a colour (copper
      red), Earth's round shadow moving across the disk.
-4. **Cameras and Camera Preview** (M11; next) — camera objects (many, one
+4. **Cameras and Camera Preview** (M11; done: v0.11.0, v0.11.1) — camera objects (many, one
    active), options and presets (field of view, image size...), and the small preview: an
    approximation of the final picture, shaders included, updated only on a keybind or
    button, shown only while the map has a camera. Full option list under "Direction" →
@@ -505,7 +529,7 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
        `presets/camera_presets`) and the Camera Preview. Docs updated before starting
        (user).
      - Depth of field stays with the camera effects (item 7); exposure is stored for HDR.
-5. **Render, the Source look, with materials** (confirmed) — the render window (image size,
+5. **Render, the Source look, with materials** (confirmed; next) — the render window (image size,
    options) that opens on Render, a terminal-style log (+ log file), baking the lights
    (shadows), reflection probes, mirror reflections on flat surfaces, a PNG saved to
    `renders/` (Bottega's once it exists). Only what the camera sees is drawn (frustum,

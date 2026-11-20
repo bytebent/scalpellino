@@ -116,6 +116,9 @@ inside the view. Lines starting with # are comments.
                (cameraset = the next camera, pos places it; cameraedit = the selected cameras, one
                 undo step; cameraedit active 1 makes the first selected one active)
   cameraselect all|none|<index...>   cameraactive <index>   cameraaim x y z | click
+  camerapreview   (Cmd+K: draws the Camera Preview with the next frame)
+  camerapreset save|load <name>   (from / into the selected camera, else the next camera)
+  expect camerapreview <times drawn> [stale 0|1]   expect camerapresets <n>
                (click: the next press aims the selected cameras, as World > Aim ... at a clicked point)
   expect cameras|camerasel <n>   expect cameraactive <index>   (the only active one)
   expect cam pos|angles|fov|lens|near|far|size|ortho|orthosize|exposure|color <values> | name <n>

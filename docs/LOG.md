@@ -4,6 +4,34 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-20 — Cameras, step 2: Camera Preview and presets (v0.11.1)
+- The user confirmed the v0.11.0 choices ("seems sensible") and said carry on.
+- **Presets:** `cameraPresetToString` / `applyCameraPreset` in `core/camera` (settings
+  only, "key value" lines, partial and bad files handled); Save / Load in Properties
+  (selected camera, one undo step; else the next camera's settings); `.camera` files in
+  the Bottega's `presets/camera_presets`.
+- **Camera Preview:** docked panel under Properties (dock layout v6: the right column is
+  now Textures / Properties / Camera Preview), only while the map has a camera; drawn
+  only on Cmd+K, its Update button or World > Update Camera Preview; an "out of date"
+  line when the map or the active camera changed since. `Viewport::setLens`: a camera
+  object as the 3D camera (field of view across the longer side, near / far as clip
+  planes, orthographic), the sky sphere kept between near and far, no grid / axes /
+  editor outlines / markers. The primitives' shader got parallel rays for orthographic
+  cameras.
+- **Bugs found while testing:** primitives through an orthographic camera came out as
+  ragged specks: the rays started 1 km away and the sphere / torus maths lost precision in
+  floats; they now start on the camera's plane. (Also a typo in the new script made a
+  flat sphere; fixed the script.)
+- **Tests:** core 4629 checks, 0 failed (presets: round trip, what is kept, partial and
+  bad files). UI 27 of 27 at 1x and 2x (new `v111_camera_preview`: nothing without a
+  camera, drawn on request only, out of date after edits and after switching the active
+  camera, presets save / load / undo, a preset into the next camera, file-name cleaning,
+  portrait, orthographic, near cutting, delete all cameras and undo). Idle 0 ticks at 1x
+  and 2x with the preview drawn (`rich_map` now draws it once).
+- **Screenshots:** `m11-03-camera-preview.png`, `m11-04-camera-preview-portrait.png`,
+  `m11-05-camera-preview-ortho.png`, `m11-06-camera-preview-near.png`.
+- **Milestone 11 is done.** Next: report to the user; then Render (M12), when they say go.
+
 ### 2026-11-20 — Cameras, step 1: camera objects (v0.11.0)
 - **Core** (`src/core/camera.*`): the camera (name, position, pitch / yaw / roll, field of
   view across the longer side, lens mm on a 36 mm sensor and back, near / far, picture

@@ -193,6 +193,7 @@ MenuActions drawMenuBar(const MenuState& st) {
         if (ImGui::MenuItem("Create camera", "Return", false, st.cameraPending)) a.createCamera = true;
         if (ImGui::MenuItem("Make selected camera active", nullptr, false, st.camerasSelected == 1 && !st.selectedCameraActive)) a.activateCamera = true;
         if (ImGui::MenuItem("Aim selected cameras at a clicked point", nullptr, st.cameraAiming, st.camerasSelected > 0)) a.aimCamera = true;
+        if (ImGui::MenuItem("Update Camera Preview", "Cmd+K", false, st.hasCameras)) a.updatePreview = true;
         ImGui::TextDisabled("Camera tool: click to place, Return creates; lens,");
         ImGui::TextDisabled("picture size, aim at a typed point in Properties");
         ImGui::Separator();
@@ -289,6 +290,8 @@ void drawControlsWindow(bool* open) {
             {"Camera tool", "Shift+K (World menu): settings in Properties (lens in degrees or mm, presets, near / far, picture size, orthographic), click in a view to place, Return creates, Esc cancels. The first camera is the active one"},
             {"Select / move / turn cameras", "click a camera's marker (a diamond; any tool that selects); drag it in a 2D view; drag the rings (15 degree steps), the yellow ring rolls it; or type pitch / yaw / roll in Properties; Delete removes, Cmd+D duplicates"},
             {"Active camera", "the one Render and the Camera Preview use (white dot in its marker): tick 'active' in Properties, or World > Make selected camera active; only one at a time"},
+            {"Camera Preview", "panel under Properties while the map has a camera: the active camera's view; drawn only when you ask: Cmd+K, its Update button or World > Update Camera Preview"},
+            {"Camera presets", "Properties (camera tool or a selected camera): Save preset / Load a preset (lens, near / far, size, orthographic, exposure), kept in the Bottega's presets/camera_presets"},
             {"Aim a camera at a point", "Properties: type a point and Aim, or World > Aim selected cameras at a clicked point, then click a surface in 3D or a spot in a 2D view"},
             {"Sky, ambient, fog", "World > Environment (sky folders too: 2:1 panoramas or 4:3 cube crosses)"},
             {"Sky Lab", "World > Sky Lab: make a sky (sky mode, sun, moon and eclipses, stars and comets, rings, stratus and cumulus clouds, haze, fog, rainbow, ground); saved skies in the Bottega's presets/skies, Randomize sky; the 3D view shows it while the window is open; Apply bakes it into the Bottega's skies/skylab and sets it as the map's sky (one undo step), OK applies and closes, Cancel (Esc) drops the changes. With a sun light in the map, tick the lock to keep the sky's sun on it; if the light turns later, World > Rebake Sky Lab sky"},
@@ -344,10 +347,11 @@ void drawStatusBar(const char* text) {
 
 void dockspace(bool forceReset, const char* tools, const char* topLeft, const char* topRight,
                const char* bottomLeft, const char* bottomRight, const char* rightTop,
-               const char* rightBottom, bool withPanels, const char* rightTopTab, const char* rightTopTab2) {
+               const char* rightBottom, bool withPanels, const char* rightTopTab, const char* rightTopTab2,
+               const char* rightPreview) {
     const ImGuiViewport* vp = ImGui::GetMainViewport();
     // Bump the version suffix whenever the default layout changes.
-    const ImGuiID id = ImGui::GetID("MainDockspace.v5");
+    const ImGuiID id = ImGui::GetID("MainDockspace.v6");
 
     if (forceReset || ImGui::DockBuilderGetNode(id) == nullptr) {
         ImGui::DockBuilderRemoveNode(id);
@@ -357,10 +361,12 @@ void dockspace(bool forceReset, const char* tools, const char* topLeft, const ch
 
         ImGuiID toolsNode = 0, rest0 = 0, rest = 0, panel = 0;
         ImGui::DockBuilderSplitNode(id, ImGuiDir_Left, 0.07f, &toolsNode, &rest0);
-        ImGuiID panelTop = 0, panelBottom = 0;
+        ImGuiID panelTop = 0, panelBottom = 0, panelPreview = 0;
         if (withPanels) {
             ImGui::DockBuilderSplitNode(rest0, ImGuiDir_Right, 0.22f, &panel, &rest);
-            ImGui::DockBuilderSplitNode(panel, ImGuiDir_Up, 0.62f, &panelTop, &panelBottom);
+            ImGui::DockBuilderSplitNode(panel, ImGuiDir_Up, 0.5f, &panelTop, &panelBottom);
+            // The Camera Preview below Properties (v0.11.1; there only while the map has a camera).
+            if (rightPreview) ImGui::DockBuilderSplitNode(panelBottom, ImGuiDir_Down, 0.42f, &panelPreview, &panelBottom);
         } else {
             rest = rest0; // "classic" layout (used by older UI test scripts)
         }
@@ -376,6 +382,7 @@ void dockspace(bool forceReset, const char* tools, const char* topLeft, const ch
             if (rightTopTab) ImGui::DockBuilderDockWindow(rightTopTab, panelTop); // second tab
             if (rightTopTab2) ImGui::DockBuilderDockWindow(rightTopTab2, panelTop); // third tab
             ImGui::DockBuilderDockWindow(rightBottom, panelBottom);
+            if (rightPreview) ImGui::DockBuilderDockWindow(rightPreview, panelPreview);
         }
         ImGui::DockBuilderDockWindow(topLeft, tl);
         ImGui::DockBuilderDockWindow(topRight, tr);

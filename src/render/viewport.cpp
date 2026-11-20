@@ -613,6 +613,24 @@ static Vector3 forwardFrom(float yawDeg, float pitchDeg) {
 
 Camera3D Viewport::camera() const {
     Camera3D cam{};
+    if (lens_) {
+        const Mat3 b = cameraBasis(*lens_);
+        const Vec3 p = lens_->pos, t = p + b.col[0];
+        cam.position = {(float)p.x, (float)p.y, (float)p.z};
+        cam.target = {(float)t.x, (float)t.y, (float)t.z};
+        cam.up = {(float)b.col[2].x, (float)b.col[2].y, (float)b.col[2].z};
+        double tx, ty;
+        if (lens_->ortho) {
+            cameraHalfSize(*lens_, tx, ty);
+            cam.fovy = (float)(2 * ty); // orthographic: the height in units
+            cam.projection = CAMERA_ORTHOGRAPHIC;
+        } else {
+            cameraHalfTangents(*lens_, tx, ty);
+            cam.fovy = (float)(2 * std::atan(ty) * 180 / 3.14159265358979323846);
+            cam.projection = CAMERA_PERSPECTIVE;
+        }
+        return cam;
+    }
     cam.position = pos_;
     const Vector3 f = forwardFrom(yaw_, pitch_);
     cam.target = {pos_.x + f.x, pos_.y + f.y, pos_.z + f.z};
@@ -653,13 +671,22 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
     auto byte = [](double v) { return (unsigned char)std::clamp((int)std::lround(v), 0, 255); };
     const Color fogCol{byte(scene.fogColor.x), byte(scene.fogColor.y), byte(scene.fogColor.z), 255};
     ClearBackground(scene.fog ? fogCol : kBg3D);
-    rlSetClipPlanes(2.0, 200000.0);
+    // Through a camera object: its own near / far.
+    if (lens_) rlSetClipPlanes(lens_->nearDist, lens_->farDist);
+    else rlSetClipPlanes(2.0, 200000.0);
+    const Vector3 eye = lens_ ? Vector3{(float)lens_->pos.x, (float)lens_->pos.y, (float)lens_->pos.z} : pos_;
     BeginMode3D(camera());
 
     // Sky: a big sphere around the camera, behind everything (no depth writes).
     if (scene.skyTexture) {
-        const double R = 100000; // 1 km, inside the far clip (2 km)
-        const Vec3 c{pos_.x, pos_.y, pos_.z};
+        // 1 km, inside the far clip (2 km). Through a camera: between its near and far (the
+        // sky shows whatever far is), and wider than an orthographic picture.
+        double R = 100000;
+        if (lens_) {
+            R = std::min(R, 0.5 * (lens_->nearDist + lens_->farDist));
+            if (lens_->ortho) R = std::min(std::max(R, lens_->orthoSize * 2), lens_->farDist * 0.99);
+        }
+        const Vec3 c{eye.x, eye.y, eye.z};
         constexpr int NU = 48, NV = 24;
         rlDrawRenderBatchActive();
         rlDisableDepthMask();
@@ -687,7 +714,7 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
         rlEnableDepthMask();
     }
 
-    if (grid.visible) {
+    if (grid.visible && !lens_) {
         const float ext = 2048.0f;
         for (float t = -ext; t <= ext; t += 64.0f) {
             Color c = (std::fmod(std::fabs(t), 1024.0f) == 0.0f) ? kGround1024 : kGround;
@@ -695,9 +722,11 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
             DrawLine3D({-ext, t, 0}, {ext, t, 0}, c);
         }
     }
-    DrawLine3D({0, 0, 0}, {256, 0, 0}, {220, 70, 70, 255});
-    DrawLine3D({0, 0, 0}, {0, 256, 0}, {70, 200, 70, 255});
-    DrawLine3D({0, 0, 0}, {0, 0, 256}, {80, 120, 230, 255});
+    if (!lens_) {
+        DrawLine3D({0, 0, 0}, {256, 0, 0}, {220, 70, 70, 255});
+        DrawLine3D({0, 0, 0}, {0, 256, 0}, {70, 200, 70, 255});
+        DrawLine3D({0, 0, 0}, {0, 0, 256}, {80, 120, 230, 255});
+    }
 
     // Fog: everything solid from here on is drawn through the fog shader.
     bool fogging = false;
@@ -706,7 +735,7 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
         if (fs.ok) {
             rlDrawRenderBatchActive();
             BeginShaderMode(fs.shader);
-            const float cam[3] = {pos_.x, pos_.y, pos_.z};
+            const float cam[3] = {eye.x, eye.y, eye.z};
             const float col[3] = {fogCol.r / 255.0f, fogCol.g / 255.0f, fogCol.b / 255.0f};
             const float range[2] = {(float)scene.fogStart, (float)scene.fogEnd};
             SetShaderValue(fs.shader, fs.camPos, cam, SHADER_UNIFORM_VEC3);
@@ -890,7 +919,8 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
     // Math primitives: exact surfaces (their own shader, fog and light preview included).
     if (!scene.prims.empty()) {
         PrimDrawContext ctx;
-        ctx.camPos = {pos_.x, pos_.y, pos_.z};
+        ctx.camPos = {eye.x, eye.y, eye.z};
+        if (lens_ && lens_->ortho) ctx.orthoDir = cameraForward(*lens_);
         ctx.textures = scene.textures;
         ctx.lightPreview = scene.lightPreview;
         ctx.ambient = scene.ambient;
@@ -906,7 +936,7 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
     // Props: the models, every copy from one upload (fog included).
     if (scene.models && !scene.props.empty()) {
         PropDrawContext pctx;
-        pctx.camPos = {pos_.x, pos_.y, pos_.z};
+        pctx.camPos = {eye.x, eye.y, eye.z};
         pctx.fog = scene.fog;
         pctx.fogColor = scene.fogColor;
         pctx.fogStart = scene.fogStart;
@@ -914,6 +944,11 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
         std::vector<Prop> ps;
         for (const auto& sp : scene.props) ps.push_back(sp.prop);
         scene.models->draw(ps, pctx);
+    }
+    if (lens_) { // a picture: none of the editor's boxes, outlines, markers or labels
+        rlDrawRenderBatchActive();
+        EndMode3D();
+        return;
     }
     // Boxes: selected props in red, missing models in orange (and every prop when the
     // shader can't run), the placement preview in yellow.

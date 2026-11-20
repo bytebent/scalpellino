@@ -3391,6 +3391,22 @@ static void testCameras() {
     CHECK(readMap(twoActive, h).ok && h.cameras().size() == 3);
     CHECK(h.cameras()[0].active && !h.cameras()[1].active && !h.cameras()[2].active);
     CHECK(near(h.cameras()[0].fov, Camera{}.fov) && h.cameras()[0].width == 1920 && h.cameras()[1].nearDist > 0);
+    // Presets: settings only, round trip; position / angles / name / colour / active kept.
+    Camera src; src.fov = lensToFov(85); src.nearDist = 12; src.farDist = 3000; src.width = 1080; src.height = 1350;
+    src.ortho = true; src.orthoSize = 640; src.exposure = 0.5;
+    const std::string pre = cameraPresetToString(src);
+    Camera dst; dst.pos = {1, 2, 3}; dst.pitch = -10; dst.yaw = 20; dst.roll = 5; dst.name = "keep"; dst.active = true;
+    dst.color = {1, 2, 3};
+    CHECK(applyCameraPreset(dst, pre));
+    CHECK(near(dst.fov, src.fov, 1e-9) && near(dst.nearDist, 12) && near(dst.farDist, 3000) && dst.width == 1080 && dst.height == 1350);
+    CHECK(dst.ortho && near(dst.orthoSize, 640) && near(dst.exposure, 0.5));
+    CHECK(nearV(dst.pos, {1, 2, 3}) && near(dst.pitch, -10) && near(dst.yaw, 20) && near(dst.roll, 5) && dst.name == "keep" && dst.active);
+    CHECK(nearV(dst.color, {1, 2, 3}));
+    // Partial and bad presets: what is there is used (clamped), the rest kept; nothing -> false.
+    Camera part;
+    CHECK(applyCameraPreset(part, "# my lens\nfov 500\nsize 0 0\nbogus 3\nnear nan\n") && near(part.fov, 170) && part.width == 1920);
+    Camera none2;
+    CHECK(!applyCameraPreset(none2, "hello\n\n") && none2 == Camera{});
     Document none;
     CHECK(readMap("{\n\"classname\" \"worldspawn\"\n}\n{\n\"classname\" \"scal_camera\"\n}\n", none).ok && none.cameras()[0].active);
 }

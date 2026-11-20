@@ -5,6 +5,7 @@
 #include "core/grid.hpp"
 #include "core/math.hpp"
 #include "render/scene.hpp"
+#include <optional>
 
 namespace scal {
 
@@ -39,6 +40,11 @@ public:
     int height() const { return h_; }
 
     void render(const Grid& grid, const Scene& scene);
+
+    // Camera Preview (v0.11.1): look through a camera object instead of the fly camera
+    // (its lens, near / far, orthographic) and draw only what a picture shows: no grid,
+    // axes, markers or editor outlines. nullopt: the editor's own 3D camera.
+    void setLens(const std::optional<scal::Camera>& c) { lens_ = c; }
 
     // --- 2D navigation and mapping
     void pan2D(Vector2 deltaPx);
@@ -91,6 +97,7 @@ private:
     // 3D: position + yaw/pitch in degrees. Z is up.
     Vector3 pos_{-384.0f, -384.0f, 256.0f};
     float yaw_ = 45.0f, pitch_ = -25.0f;
+    std::optional<scal::Camera> lens_;
 };
 
 } // namespace scal

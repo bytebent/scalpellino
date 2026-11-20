@@ -38,6 +38,7 @@ struct MenuState {
     bool cameraTool = false, cameraPending = false, cameraAiming = false;
     size_t camerasSelected = 0;
     bool selectedCameraActive = false; // the one selected camera is the active one already
+    bool hasCameras = false;
 };
 
 struct MenuActions {
@@ -77,6 +78,7 @@ struct MenuActions {
     bool replicate = false, randomReplicate = false, snapLand = false, snapGround = false;
     bool toolProp = false, createProp = false;
     bool toolCamera = false, createCamera = false, activateCamera = false, aimCamera = false;
+    bool updatePreview = false;
 };
 
 // Draws the menu bar and reports clicked items.
@@ -89,7 +91,8 @@ void drawStatusBar(const char* text);
 // on first run or when reset. Window names must match the windows' titles.
 void dockspace(bool forceReset, const char* tools, const char* topLeft, const char* topRight,
                const char* bottomLeft, const char* bottomRight, const char* rightTop,
-               const char* rightBottom, bool withPanels = true, const char* rightTopTab = nullptr, const char* rightTopTab2 = nullptr);
+               const char* rightBottom, bool withPanels = true, const char* rightTopTab = nullptr, const char* rightTopTab2 = nullptr,
+               const char* rightPreview = nullptr);
 
 // Help -> Controls: every shortcut in one place.
 void drawControlsWindow(bool* open);

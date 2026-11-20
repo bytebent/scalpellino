@@ -81,6 +81,23 @@ void Editor::registerScriptExpects() {
         const size_t got = w == "cameras" ? doc_.cameras().size() : doc_.cameraSelection().size();
         if (got != n) { std::fprintf(stderr, "script FAIL (command %d): expected %zu %s, got %zu\n", scriptLine_, n, w.c_str(), got); ++scriptFailures_; }
     });
+    add({"camerapreview"}, [this](const std::string&, std::istringstream& in) {
+        // expect camerapreview <times drawn> [stale 0|1]
+        std::string w; int n = 0; in >> w >> n;
+        std::string k; int stale = -1;
+        if (in >> k >> stale) {}
+        const Camera* cam = doc_.activeCamera();
+        const int isStale = previewDone_ && (previewRev_ != doc_.revision() || !cam || previewCam_ != cam->id) ? 1 : 0;
+        if (previewUpdates_ != n || (stale >= 0 && stale != isStale)) {
+            std::fprintf(stderr, "script FAIL (command %d): camera preview drawn %d times (stale %d), expected %d\n", scriptLine_, previewUpdates_, isStale, n);
+            ++scriptFailures_;
+        }
+    });
+    add({"camerapresets"}, [this](const std::string&, std::istringstream& in) {
+        // expect camerapresets <n>: saved presets in the Bottega
+        std::string w; size_t n = 0; in >> w >> n;
+        if (cameraPresets().size() != n) { std::fprintf(stderr, "script FAIL (command %d): expected %zu camera presets, got %zu\n", scriptLine_, n, cameraPresets().size()); ++scriptFailures_; }
+    });
     add({"cameraactive"}, [this](const std::string&, std::istringstream& in) {
         // expect cameraactive <index>: that camera (order in the map) is the only active one
         std::string w; size_t i = 0; in >> w >> i;

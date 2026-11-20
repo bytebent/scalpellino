@@ -1,0 +1,102 @@
+# v0.11.1: saved camera presets (the Bottega's presets/camera_presets) and the Camera
+# Preview: a docked panel, only while the map has a camera, drawn only when asked
+# (camerapreview = Cmd+K / Update), out of date when the map changes.
+bottega make studio
+block -1024 -1024 -32 1024 1024 0
+block 128 -128 0 384 128 256
+block -256 192 0 -128 320 400
+prim sphere 0 -320 96 192 192 192
+environment sky Panorama_Sky_04
+environment fog on
+environment fogcolor 170 190 220
+environment fogrange 400 4000
+tool select
+key Esc
+camera -900 -800 500 40 -25
+# -- no camera: nothing drawn, Cmd+K does nothing
+camerapreview
+expect camerapreview 0
+# -- a camera looking at the boxes
+tool camera
+cameraset lens 35
+cameraset size 1920 1080
+cameraset pos -700 -500 180
+key Return
+cameraedit angles -8 35 0
+expect cameras 1
+expect camerapreview 0
+camerapreview
+expect camerapreview 1 stale 0
+shot m11-03-camera-preview.png
+# -- changing the map leaves it as it was, marked out of date
+cameraedit angles -8 40 0
+expect camerapreview 1 stale 1
+camerapreview
+expect camerapreview 2 stale 0
+# -- presets: save this camera's settings, change them, load them back (one undo step)
+expect camerapresets 0
+camerapreset save Wide 35
+expect camerapresets 1
+cameraedit lens 85
+cameraedit size 1080 1350
+cameraedit near 200
+expect cam lens 85
+camerapreset load Wide 35
+expect cam lens 35
+expect cam size 1920 1080
+expect cam near 4
+expect cam angles -8 40 0
+expect cam pos -700 -500 180
+undo
+expect cam lens 85
+expect cam size 1080 1350
+redo
+expect cam lens 35
+# ... a portrait one, loaded into the next camera's settings (nothing selected)
+cameraedit size 1080 1350
+cameraedit lens 50
+camerapreset save Portrait/50
+expect camerapresets 2
+cameraselect none
+camerapreset load Portrait_50
+cameraset pos 600 -700 300
+key Return
+expect cameras 2
+expect cam size 1080 1350
+expect cam lens 50
+expect cam pos 600 -700 300
+# -- a portrait picture keeps its shape in the panel
+cameraedit angles -10 120 0
+cameraedit active 1
+expect cameraactive 1
+expect camerapreview 2 stale 1
+camerapreview
+expect camerapreview 3 stale 0
+shot m11-04-camera-preview-portrait.png
+# -- orthographic (parallel rays: the sphere stays round, the boxes keep their sides)
+cameraedit ortho 1
+cameraedit orthosize 1400
+cameraedit size 1600 1000
+cameraedit pos -900 -900 900
+cameraedit angles -35.26 45 0
+camerapreview
+expect camerapreview 4 stale 0
+shot m11-05-camera-preview-ortho.png
+# -- near cuts away the box in front: looking into it from outside
+cameraedit ortho 0
+cameraedit size 1920 1080
+cameraedit lens 24
+cameraedit pos 256 -400 128
+cameraedit angles 0 90 0
+cameraedit near 420
+camerapreview
+expect camerapreview 5 stale 0
+shot m11-06-camera-preview-near.png
+# -- deleting every camera removes the panel; undo brings the cameras back (not drawn yet)
+cameraselect all
+key Delete
+expect cameras 0
+undo
+expect cameras 2
+expect camerapreview 5 stale 0
+quit

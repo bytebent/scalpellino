@@ -26,6 +26,8 @@ const char* kFS = R"(#version 330
 in vec3 fragPos;
 uniform mat4 mvp;
 uniform vec3 camPos;
+uniform int orthoOn;   // orthographic camera: parallel rays along viewDir
+uniform vec3 viewDir;
 uniform int count;
 uniform int kind[16];
 uniform int op[16];
@@ -390,6 +392,9 @@ const int MAXI = 8;
 void main() {
     vec3 o = camPos;
     vec3 d = normalize(fragPos - camPos);
+    // Orthographic: parallel rays starting on the camera's plane (not far away: the
+    // intersections lose precision in floats).
+    if (orthoOn == 1) { d = viewDir; o = fragPos - viewDir * dot(fragPos - camPos, viewDir); }
     float best = INF;
     vec3 n = vec3(0.0);
     int who = -1;
@@ -594,6 +599,8 @@ void drawMathPrims3D(const std::vector<MathPrim>& prims, const PrimDrawContext& 
         SetShaderValue(S.sh, S.at(n), f, SHADER_UNIFORM_VEC3);
     };
     set3("camPos", ctx.camPos);
+    setI("orthoOn", ctx.orthoDir ? 1 : 0);
+    set3("viewDir", ctx.orthoDir ? *ctx.orthoDir : Vec3{1, 0, 0});
     setI("lightMode", ctx.lightPreview ? 1 : 0);
     set3("ambient", ctx.ambient / 255.0);
     {
