@@ -492,6 +492,16 @@ void Editor::drawFacePanel() {
             if (ImGui::SmallButton("-90")) editFaces("Texture rotation", [&](Face& x, const Polygon&, TexSize, const Vec3& n) { rotateTexture(x, n, -90); });
             ImGui::SameLine();
             if (ImGui::SmallButton("+90")) editFaces("Texture rotation", [&](Face& x, const Polygon&, TexSize, const Vec3& n) { rotateTexture(x, n, 90); });
+            double lm = f.lightmapScale;
+            ImGui::TextUnformatted("Lightmap"); ImGui::SameLine(70);
+            ImGui::InputDouble("##lmscale", &lm, 0, 0, "%g");
+            if (ImGui::IsItemDeactivatedAfterEdit() && lm > 0) {
+                lm = std::clamp(lm, kMinLightmapScale, kMaxLightmapScale);
+                editFaces("Lightmap scale", [&](Face& x, const Polygon&, TexSize, const Vec3&) { x.lightmapScale = lm; });
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Baked light: units (cm) per lightmap pixel, as Hammer's lightmap scale.\n"
+                                  "Smaller = sharper shadows, slower bake. Default %g (Hammer's 16 units).", kDefaultLightmapScale);
             ImGui::PopItemWidth();
             ImGui::Separator();
             if (ImGui::Button("Fit")) editFaces("Fit texture", [&](Face& x, const Polygon& p, TexSize ts, const Vec3&) { fitTexture(x, p, ts, fitTimes_[0], fitTimes_[1]); });

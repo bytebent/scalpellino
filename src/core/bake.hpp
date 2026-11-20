@@ -1,0 +1,125 @@
+#pragma once
+// Baked light (milestone 12, v0.12.1): direct light and shadows, done the way Source's
+// VRAD does it (formulas checked against the Source SDK 2013 code; PLAN.md "VRAD
+// reference"). No graphics: the renderer uploads what this makes.
+//  - Lightmaps on every drawn brush face (a grid of luxels along the face's texture axes,
+//    `Face::lightmapScale` cm apart) and over each terrain face (like a displacement).
+//  - A small 3D lightmap around each primitive (or combination): cells near the surface
+//    are lit at the nearest surface point; the shader reads it where its ray hits.
+//  - Light: point, spot (VRAD's falloff, cones and exponent), the sun (with its spread for
+//    soft shadows) and sky light (162 directions, cosine weighted; colour from the sky
+//    picture). Shadows from brushes (nodraw ones too), terrain, primitives and props that
+//    cast shadows. Smooth normals across faces less than `smoothAngle` apart.
+//  - Source's numbers are in Hammer units (inches): distances are converted (cm / 2.54).
+//  - Light is linear: 1 = the texture as it is (VRAD's 255).
+#include "core/brush.hpp"
+#include "core/mathprim.hpp"
+#include "core/prop.hpp"
+#include "core/world.hpp"
+#include <atomic>
+#include <cstdint>
+#include <string>
+#include <vector>
+
+namespace scal {
+
+constexpr double kCmPerHammerUnit = 2.54;
+
+// The map's sky as linear colours, for the sky light: an equirectangular panorama (rows top
+// first, the middle column facing +X, as core/sky.hpp).
+struct SkyPicture {
+    int w = 0, h = 0;
+    std::vector<float> rgb;
+    bool valid() const { return w > 0 && h > 0 && rgb.size() == (size_t)w * h * 3; }
+    Vec3 at(const Vec3& dir) const; // bilinear; dir need not be unit
+};
+// sRGB byte <-> linear.
+double srgbToLinear(double c01);
+double linearToSrgb(double lin01);
+// A panorama (RGB bytes, rows top first) made small and linear for the sky light.
+SkyPicture makeSkyPicture(const unsigned char* rgb, int w, int h, int outW = 128);
+
+enum class BakeQuality { Draft, Normal, High };
+
+struct BakeInput {
+    std::vector<Brush> brushes;  // all of them (hidden ones too: hiding is an editing aid)
+    std::vector<Light> lights;
+    std::vector<MathPrim> prims;
+    std::vector<Prop> props;
+    ModelFinder models;          // for props' triangles (shadows)
+    Environment env;
+    SkyPicture sky;              // invalid: the ambient colour lights from every open direction
+    BakeQuality quality = BakeQuality::Normal;
+};
+
+// One face's lightmap. Plain faces: a point P is at luxel (s, t) with
+//   s = dot(axisS, P) - s0, t = dot(axisT, P) - t0 (luxel i's centre at s = i).
+// Terrain (terrain = true): luxel (s, t) = (i / (n - 1) * (w - 1), j / (n - 1) * (h - 1))
+// for grid point (i, j).
+struct FaceLightmap {
+    BrushId brush = 0;
+    int face = -1;
+    bool terrain = false;
+    int w = 0, h = 0;
+    std::vector<float> rgb;      // linear, rows of w luxels
+    Vec3 axisS, axisT;           // world direction / lightmap scale (luxels per cm)
+    double s0 = 0, t0 = 0;
+};
+
+// A primitive's (or combination's) 3D lightmap: cell (i, j, k) is centred at
+// origin + (i, j, k) * cell.
+struct PrimLightmap {
+    std::uint32_t combo = 0;     // the combination, or 0 for a lone primitive:
+    MathPrimId prim = 0;         //   then this one
+    Vec3 origin;
+    double cell = 40;
+    int nx = 0, ny = 0, nz = 0;
+    std::vector<float> rgb;      // linear, x fastest, then y, then z
+};
+
+struct BakeResult {
+    std::vector<FaceLightmap> faces;
+    std::vector<PrimLightmap> prims;
+    std::vector<std::string> notes; // for the render log (warnings, lights not used...)
+    size_t luxels = 0, cells = 0, triangles = 0;
+    double seconds = 0;
+    bool cancelled = false;
+};
+
+// Progress of a bake that runs on other threads (the render window shows it; Esc stops it).
+struct BakeProgress {
+    std::atomic<long long> done{0}, total{1};
+    std::atomic<bool> cancel{false};
+};
+
+// Bakes on all of the machine's threads (`threads` 0) or as many as asked.
+BakeResult bakeLight(const BakeInput& in, BakeProgress* progress = nullptr, int threads = 0);
+
+// Hash of everything the bake depends on (the renderer keeps a bake while it is the same).
+std::uint64_t bakeKey(const BakeInput& in);
+
+// ---- VRAD's pieces, exposed for tests
+
+// A light as VRAD uses it: linear intensity (1 = full), attenuation terms (Hammer units),
+// fade distances, spot cone cosines.
+struct BakeLight {
+    LightKind kind = LightKind::Point;
+    Vec3 pos, dir;               // dir: where a spot / the sun points
+    Vec3 intensity;              // linear
+    double c = 0, l = 0, q = 1;  // 1 / (c + l d + q d^2), d in Hammer units
+    double startFade = 0, endFade = -1, capDist = 1e22; // Hammer units; end <= start: none
+    double stopdot = 1, stopdot2 = 1, exponent = 0;      // spot
+    double spreadSin = 0;        // sun
+    std::vector<std::string> notes;
+};
+BakeLight prepareLight(const Light& l, const Environment& env);
+// Distance falloff times spot cone at distance `distCm` from the light; `toSample` is the
+// unit direction from the light to the point (spots).
+double lightFalloff(const BakeLight& L, double distCm, const Vec3& toSample);
+// VRAD's mathlib: a, b, c with 1 / (a x^2 + b x + c) through three points, shifted toward a
+// straight line until it is monotonic.
+bool solveInverseQuadraticMonotonic(double x1, double y1, double x2, double y2, double x3, double y3, double& a, double& b, double& c);
+// VRAD's sky / sun sample directions (Halton, bases 2 and 3, from element 1).
+std::vector<Vec3> haltonSphere(int n);
+
+} // namespace scal

@@ -25,7 +25,19 @@ const char* lightKindName(LightKind k) {
 
 bool Light::operator==(const Light& o) const {
     return id == o.id && kind == o.kind && pos == o.pos && color == o.color && brightness == o.brightness &&
-           range == o.range && pitch == o.pitch && yaw == o.yaw && inner == o.inner && outer == o.outer && otherKeys == o.otherKeys;
+           range == o.range && pitch == o.pitch && yaw == o.yaw && inner == o.inner && outer == o.outer &&
+           falloff == o.falloff && fifty == o.fifty && hardFalloff == o.hardFalloff && constantAttn == o.constantAttn &&
+           linearAttn == o.linearAttn && quadraticAttn == o.quadraticAttn && exponent == o.exponent && sunSpread == o.sunSpread &&
+           otherKeys == o.otherKeys;
+}
+
+const char* falloffModeName(LightFalloff f) {
+    switch (f) {
+        case LightFalloff::InverseSquare: return "inverse-square";
+        case LightFalloff::FiftyZero: return "50% / 0%";
+        case LightFalloff::Custom: return "custom";
+    }
+    return "inverse-square";
 }
 
 Vec3 lightDirection(double pitch, double yaw) {

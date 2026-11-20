@@ -19,6 +19,13 @@ using LightId = std::uint32_t;
 enum class LightKind { Point, Spot, Sun };
 const char* lightKindName(LightKind k); // "point", "spot", "sun"
 
+// How a point or spot light fades with distance in the baked light (v0.12.1), as Hammer /
+// VRAD: inverse-square (Hammer's default: constant 0, linear 0, quadratic 1), the 50% / 0%
+// distances, or typed constant / linear / quadratic terms. The editor's rough light
+// preview still uses `range` (1 - d / range)^2 (agreed, see PLAN.md).
+enum class LightFalloff { InverseSquare, FiftyZero, Custom };
+const char* falloffModeName(LightFalloff f); // "inverse-square", "50% / 0%", "custom"
+
 struct Light {
     LightId id = 0;
     LightKind kind = LightKind::Point;
@@ -30,6 +37,13 @@ struct Light {
     double yaw = 0;
     double inner = 30;         // spot: full brightness inside this half-angle (degrees)
     double outer = 45;         // spot: no light outside this half-angle
+    // Baked light (v0.12.1). `range` is Hammer's _zero_percent_distance.
+    LightFalloff falloff = LightFalloff::InverseSquare;
+    double fifty = 0;          // _fifty_percent_distance (cm), 50% / 0% mode
+    bool hardFalloff = false;  // _hardfalloff: fade to nothing by the 0% distance
+    double constantAttn = 0, linearAttn = 0, quadraticAttn = 1; // custom mode
+    double exponent = 1;       // spot: _exponent (between the inner and outer cone)
+    double sunSpread = 0;      // sun: SunSpreadAngle in degrees (0 = hard shadows)
     // Keys from a loaded file that we don't edit (kept so saving never loses them).
     std::vector<std::pair<std::string, std::string>> otherKeys;
     bool operator==(const Light& o) const;
@@ -64,8 +78,13 @@ struct Environment {
     bool fogOn = false;         // the map has fog (the editor shows it only on request)
     Fog fog;
     SkyLab skylab;              // Sky Lab settings (milestone 10c; `used` = the map has them)
+    // Baked light (v0.12.1; worldspawn key _scal_bake):
+    double skyLight = 100;      // sky light, % of the sky picture's colours (no sky: the ambient colour)
+    bool minLight = false;      // also light everything a little with the ambient colour (the old flat ambient)
+    double smoothAngle = 45;    // faces closer than this (degrees) are lit smoothly (VRAD's default)
     bool operator==(const Environment& o) const {
-        return sky == o.sky && ambient == o.ambient && fogOn == o.fogOn && fog == o.fog && skylab == o.skylab;
+        return sky == o.sky && ambient == o.ambient && fogOn == o.fogOn && fog == o.fog && skylab == o.skylab &&
+               skyLight == o.skyLight && minLight == o.minLight && smoothAngle == o.smoothAngle;
     }
     bool operator!=(const Environment& o) const { return !(*this == o); }
 };

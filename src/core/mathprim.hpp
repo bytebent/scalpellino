@@ -53,6 +53,7 @@ struct MathPrim {
     std::string texture;           // "" = flat colour
     Vec3 color{200, 200, 200};     // 0..255 (tints the texture too)
     double texScale = 1;           // texture repeats over the shape
+    double lightmapScale = 40;     // baked light: size of its 3D lightmap's cells (cm; a combination uses its first piece's)
     std::vector<std::pair<std::string, std::string>> otherKeys; // kept from loaded files
     bool operator==(const MathPrim& o) const;
     bool operator!=(const MathPrim& o) const { return !(*this == o); }

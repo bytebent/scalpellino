@@ -1,4 +1,5 @@
 #include "render/viewport.hpp"
+#include "render/baked_light.hpp"
 #include "rlgl.h"
 #include "render/texture_library.hpp"
 #include "core/sky.hpp"
@@ -757,6 +758,11 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
         DrawLine3D({0, 0, 0}, {0, 0, 256}, {80, 120, 230, 255});
     }
 
+    // Baked light (renders): brushes through the lightmap shader (fog included).
+    const bool bakedBrushes = lens_ && scene.baked && scene.textures &&
+                              drawBakedBrushes(scene.brushes, *scene.baked, *scene.textures,
+                                               BakedDrawContext{{eye.x, eye.y, eye.z}, scene.exposure, scene.fog, scene.fogColor,
+                                                                scene.fogStart, scene.fogEnd, scene.fogBase, scene.fogThickness});
     // Fog: everything solid from here on is drawn through the fog shader.
     bool fogging = false;
     if (scene.fog) {
@@ -921,6 +927,7 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
     const Color selTint{235, 110, 110, 255};
     const bool textured = scene.textures != nullptr;
     for (const SceneBrush& b : scene.brushes) {
+        if (bakedBrushes) break;
         const bool sel = scene.selected.count(b.id) > 0;
         if (sel && scene.hideSelected) continue;
         if (scene.hidden.count(b.id)) continue;
@@ -962,6 +969,10 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
         ctx.fogEnd = scene.fogEnd;
         ctx.fogBase = scene.fogBase;
         ctx.fogThickness = scene.fogThickness;
+        if (lens_ && scene.baked) {
+            ctx.baked = scene.baked;
+            ctx.exposure = scene.exposure;
+        }
         std::vector<MathPrim> ps;
         for (const auto& sp : scene.prims) ps.push_back(sp.prim);
         drawMathPrims3D(ps, ctx);

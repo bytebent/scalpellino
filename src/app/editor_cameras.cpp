@@ -317,7 +317,7 @@ void Editor::drawCameraPreview() {
             // A draft render: the renderer itself (the map as it is, the View menu ignored,
             // hidden things included), at the panel's size, no anti-aliasing.
             Scene s = preview_.scene(doc_, textures_, models_, skies_);
-            preview_.light(doc_, s);
+            preview_.useBake(bakeNow(BakeQuality::Draft), (float)std::pow(2.0, cam->exposure), s);
             previewDone_ = preview_.draw(*cam, s, (int)std::floor(w), (int)std::floor(h), viewScale_ > 0 ? viewScale_ : fb, renderSettings_.smooth);
             previewRev_ = doc_.revision();
             previewCam_ = cam->id;

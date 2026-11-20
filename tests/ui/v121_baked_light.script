@@ -1,0 +1,113 @@
+# v0.12.1: baked light (M12 batch 2). Render bakes the lights the way Source's VRAD does:
+# lightmaps on brush faces and terrain, a 3D lightmap around each primitive, shadows from
+# brushes, terrain, primitives and props; sky light from the sky picture. The bake is kept
+# in memory while nothing that lights the map changes. Esc stops it.
+bottega make studio
+copy assets/models/crate.glb studio/models/Crate.glb
+rescan
+block -1024 -1024 -32 1024 1024 0
+block -512 256 0 512 288 320
+block 0 -128 0 64 -64 200
+prim sphere -300 -150 96 192 192 192
+prim torus 250 -250 40 200 200 80
+tool props
+propset model models/Crate
+prop models/Crate 500 300 0 0 0 0 1.5
+key Esc
+tool light
+lightset kind sun
+lightset pitch -35
+lightset yaw 200
+lightset brightness 300
+lightset spread 1
+lightset pos 0 0 600
+key Return
+lightset kind point
+lightset brightness 200
+lightset color 255 180 120
+lightset pos 300 150 150
+key Return
+environment sky Panorama_Sky_04
+environment skylight 40
+tool select
+key Esc
+tool camera
+cameraset lens 28
+cameraset size 640 360
+cameraset pos -900 -700 300
+key Return
+cameraedit angles -12 40 0
+tool select
+key Esc
+renderset quality normal
+# -- the first render bakes (VRAD's progress line), the log says what was baked
+render
+expect render saved
+expect renderlog Baking lights (Normal
+expect renderlog 0...1...2...3...4...5...6...7...8...9...10
+expect renderlog luxels on
+expect renderlog primitive cells
+expect renderlog 1 light fades with the inverse square
+expect renderlog 1 prop casts shadows
+expect renderlog not warning
+shot m12-05-bake-log.png
+rendercopy m12-04-baked-light.png
+closedialogs
+# -- nothing that lights the map changed (the camera may move): the bake is kept
+cameraedit angles -12 42 0
+render
+expect renderlog nothing that lights the map has changed
+closedialogs
+render
+expect renderlog nothing that lights the map has changed
+expect rendersame yes
+closedialogs
+# -- another quality: its own bake
+cameraselect none
+tool select
+key Esc
+renderset quality draft
+render
+expect renderlog Baking lights (Draft
+closedialogs
+# -- props can stop casting shadows (Source's disableshadows)
+propselect all
+propedit shadows off
+render
+expect renderlog not prop casts shadows
+expect renderlog Baking lights (Draft
+closedialogs
+propselect none
+# -- the sky light: none at all, then the minimum light (the old flat ambient)
+environment skylight 0
+render
+expect rendersame no
+closedialogs
+environment minlight on
+render
+expect rendersame no
+closedialogs
+# -- a face's lightmap scale (Face panel, Texture tool)
+tool texture
+press3d 0 120
+facelightmap 10
+render
+expect renderlog Baking lights (Draft
+closedialogs
+tool select
+key Esc
+# -- Esc stops a bake; nothing is saved
+renderset quality high
+renderstart
+key Esc
+expect render stopped
+closedialogs
+# -- the Camera Preview bakes at Draft quality
+camerapreview
+expect camerapreview 1 stale 0
+shot m12-06-preview-baked.png
+# -- saved and opened again: the new settings are kept
+save baked.map
+open baked.map
+expect lights 2
+quit

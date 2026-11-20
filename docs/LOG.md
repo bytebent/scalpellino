@@ -4,6 +4,47 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-21 — v0.12.1: baked light and shadows (M12 batch 2)
+- Built as agreed (PLAN.md Roadmap item 5, "Batch 2 decided with the user"); choices made
+  while building are under "v0.12.1, decided without asking".
+- **Core (`core/bake.*`):** VRAD's direct light, no graphics: luxel grids along each face's
+  texture axes (`Face::lightmapScale`), terrain lightmaps over the grid, 3D lightmaps around
+  primitives (cells near the surface lit at the nearest surface point, the rest filled from
+  neighbours); point / spot / sun / sky light with VRAD's formulas (`_light` ^2.2, 100-unit
+  normalization, 50% / 0% solve with `SolveInverseQuadraticMonotonic` ported, hard
+  falloff's quintic fade, cap distance, spot cosine and exponent, 162 Halton sky directions
+  cosine-weighted, sun jitter by `sin(SunSpreadAngle)`); Source's inches converted (cm / 2.54);
+  shadows by ray tests against a BVH of brush faces (nodraw too), terrain cells and props'
+  triangles plus the primitives' own interval tests; smooth normals under 45 degrees;
+  supersampling where neighbours differ; all threads, progress and cancel; a hash key.
+- **Data:** lights got falloff mode, 50% distance, hard falloff, c / l / q, spot exponent,
+  sun spread (saved as Hammer's keys; lights without them read as inverse-square); faces a
+  lightmap scale (`//@ lm` line after the faces, only when not default); primitives
+  `lightmapscale`; props `disableshadows`; Environment sky light %, minimum light,
+  smoothing angle (`_scal_bake`).
+- **Render (`render/baked_light.*`):** float atlas pages, a lightmap shader for brushes and
+  terrain layers (texture to linear x light x exposure, back to sRGB, fog), primitives' 3D
+  lightmaps read in their shader (trilinear over slices). The render job bakes on other
+  threads with VRAD's 0...10 progress line, Esc cancels; bakes kept per quality while the
+  key is the same; the Camera Preview bakes at Draft. Sky pictures are read small and
+  linear for the sky light (`SkyLibrary::picture`).
+- **UI:** light Properties (falloff, 50% distance, hard falloff, c / l / q, exponent,
+  spread), Environment (sky light %, minimum light, smoothing angle), Face panel lightmap
+  scale, primitive lightmap scale, prop "casts shadows". README and Help > Controls.
+- **Tests:** core `testBake` (falloff numbers against VRAD's, spot cone, Halton
+  directions, a shadow under a slab, sky light open / covered, minimum light, cancelling, the
+  sun and a sphere's 3D lightmap, soft sun edge, sky picture orientation, map round trip of
+  every new setting, old lights as inverse-square): 4849 checks, 0 failed. New UI script
+  `v121_baked_light.script` (bake log and progress, kept bake, rendersame, props' shadows,
+  sky light / minimum light, face lightmap scale, Esc, preview, save / open). All UI
+  scripts pass at 1x and 2x; idle 0 ticks at 1x and 2x. A 400-box map with 9 lights bakes
+  in 0.3 s (Draft), 3.6 s (Normal), 14 s (High) on 2 threads.
+- **Screenshots:** `m12-04-baked-light.png`, `m12-05-bake-log.png`,
+  `m12-06-preview-baked.png` (UI script), `m12-07-room-render.png` (a room lit by a lamp
+  and the sun through a doorway), `m12-08-terrain-spot-render.png` (terrain, a spot, a
+  smooth cylinder), `m12-09-sun-shadows-render.png` (sun shadows of a sphere and a wall).
+- Next: report; then discuss batch 3 (bounces).
+
 ### 2026-11-20 — Batch 2 (v0.12.1, baked direct light and shadows) agreed (docs only)
 - The user asked whether Scalpellino bakes light like Source / Hammer: not yet (v0.12.0
   renders use the rough light preview: no shadows, no bounce, flat ambient). Discussed

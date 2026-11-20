@@ -14,6 +14,7 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <thread>
 
 namespace scal {
 
@@ -86,6 +87,17 @@ void Editor::startRender() {
     j.name = "renders/" + stem + ".png";
 }
 
+std::shared_ptr<const BakeResult> Editor::bakeNow(BakeQuality q) {
+    BakeInput in = bakeInput(doc_, models_, skies_, q);
+    const std::uint64_t key = bakeKey(in);
+    KeptBake& k = bakes_[(int)q];
+    if (k.result && k.key == key) return k.result;
+    auto r = std::make_shared<BakeResult>(bakeLight(in));
+    k.key = key;
+    k.result = r;
+    return r;
+}
+
 void Editor::stopRender() {
     if (!renderJob_ || !renderJob_->running) return;
     renderJob_->stopWanted = true;
@@ -107,6 +119,11 @@ void Editor::stepRender() {
     if (!renderJob_ || !renderJob_->running) return;
     RenderJob& j = *renderJob_;
     if (j.stopWanted) {
+        if (j.bake) {
+            j.bake->progress.cancel = true;
+            j.bake.reset(); // waits for its threads to stop
+            renderLog("  light bake stopped");
+        }
         renderLog("Stopped (Esc). Nothing was saved.");
         j.stopped = true;
         finishRender();
@@ -154,7 +171,7 @@ void Editor::stepRender() {
                       st.hiddenBrushes ? (" (" + std::to_string(st.hiddenBrushes) + " hidden in the editor, drawn anyway)").c_str() : "",
                       st.prims, st.props, st.lights);
         renderLog(b);
-        if (!st.lights) renderLog("  no lights: only the ambient light (World > Light tool)");
+        if (!st.lights) renderLog("  no lights: only the sky light (World > Light tool)");
         if (st.terrains) renderLog("  " + std::to_string(st.terrains) + " terrain patches");
         if (st.nodrawFaces) renderLog("  " + std::to_string(st.nodrawFaces) + " nodraw faces left out");
         if (st.missingProps) renderLog("  warning: " + std::to_string(st.missingProps) + " props have no model file (left out; Rescan the Bottega?)");
@@ -169,14 +186,66 @@ void Editor::stepRender() {
             else std::snprintf(b, sizeof b, "  fog: %g to %g", f.start, f.end);
             renderLog(b);
         }
-        renderLog("Lighting (rough for now: lights and ambient, no shadows; baked light comes next)...");
+        // The light bake (VRAD's way, core/bake.hpp): kept from the last bake at this
+        // quality if nothing that lights the map has changed, else made on other threads.
+        const BakeQuality q = (BakeQuality)(int)j.settings.quality;
+        BakeInput in = bakeInput(doc_, models_, skies_, q);
+        const std::uint64_t key = bakeKey(in);
+        const KeptBake& kept = bakes_[(int)q];
+        if (!in.env.sky.empty() && !in.sky.valid() && in.env.skyLight > 0)
+            renderLog("  warning: the sky picture can't be read for the sky light; it uses the ambient colour");
+        if (kept.result && kept.key == key) {
+            j.baked = kept.result;
+            renderLog("Baked light: nothing that lights the map has changed since the last " + std::string(renderQualityName(j.settings.quality)) +
+                      " bake (kept in memory)");
+        } else {
+            std::snprintf(b, sizeof b, "Baking lights (%s, %u threads)...", renderQualityName(j.settings.quality),
+                          std::max(1u, std::thread::hardware_concurrency()));
+            renderLog(b);
+            j.bake = std::make_unique<BakeTask>();
+            j.bake->in = std::move(in);
+            j.bake->key = key;
+            j.bake->start();
+            renderLog("  0");
+        }
         break;
     }
-    case 2:
-        j.draw.light(doc_, j.scene);
-        renderLog("  done");
+    case 2: {
+        if (j.bake) {
+            // VRAD's progress line: 0...1...2...3...4...5...6...7...8...9...10
+            const long long tot = std::max(1LL, j.bake->progress.total.load());
+            const int tenth = j.bake->finished ? 10 : (int)std::min(10LL, j.bake->progress.done.load() * 10 / tot);
+            std::string line = "  0";
+            for (int i = 1; i <= tenth; ++i) line += "..." + std::to_string(i);
+            if (!j.log.empty() && j.log.back().find(line) == std::string::npos) {
+                char t[32];
+                std::snprintf(t, sizeof t, "[%6.2f s] ", GetTime() - j.start);
+                j.log.back() = t + line;
+            }
+            if (!j.bake->finished) {
+                --j.step; // wait for it
+                break;
+            }
+            j.bake->thread.join();
+            const BakeResult& r = *j.bake->result;
+            char b[256];
+            std::snprintf(b, sizeof b, "  %zu luxels on %zu faces, %zu primitive cells, %zu triangles block light; %.1f s", r.luxels, r.faces.size(),
+                          r.cells, r.triangles, r.seconds);
+            renderLog(b);
+            for (const std::string& n : r.notes) renderLog("  " + n);
+            bakes_[(int)j.bake->in.quality] = {j.bake->key, j.bake->result};
+            j.baked = j.bake->result;
+            j.bake.reset();
+        }
+        j.draw.useBake(j.baked, (float)std::pow(2.0, j.cam.exposure), j.scene);
+        if (j.cam.exposure != 0) {
+            char b[96];
+            std::snprintf(b, sizeof b, "  exposure %+g stops (x %g)", j.cam.exposure, std::pow(2.0, j.cam.exposure));
+            renderLog(b);
+        }
         renderLog("Drawing...");
         break;
+    }
     case 3: {
         if (!j.draw.draw(j.cam, j.scene, j.cam.width * j.aa, j.cam.height * j.aa, 1.0f, j.settings.smooth)) {
             renderLog("The graphics card couldn't make a picture this large. Try less anti-aliasing (Render menu).");

@@ -5,6 +5,7 @@
 #include "render/texture_library.hpp"
 #include <algorithm>
 #include <cstring>
+#include <map>
 #include <set>
 
 namespace scal {
@@ -77,6 +78,45 @@ Scene Renderer::scene(const Document& doc, TextureLibrary& textures, ModelLibrar
     st.fog = env.fogOn;
     if (stats) *stats = std::move(st);
     return s;
+}
+
+BakeInput bakeInput(const Document& doc, ModelLibrary& models, SkyLibrary& skies, BakeQuality quality) {
+    BakeInput in;
+    in.brushes = doc.brushes();
+    in.lights = doc.lights();
+    in.prims = doc.prims();
+    in.props = doc.props();
+    in.env = doc.environment();
+    in.quality = quality;
+    auto found = std::make_shared<std::map<std::string, const Model*>>();
+    for (const Prop& p : in.props)
+        if (!found->count(p.model)) (*found)[p.model] = models.find(p.model);
+    in.models = [found](const std::string& n) -> const Model* {
+        auto it = found->find(n);
+        return it == found->end() ? nullptr : it->second;
+    };
+    if (!in.env.sky.empty()) in.sky = skies.picture(in.env.sky);
+    return in;
+}
+
+void BakeTask::start() {
+    thread = std::thread([this] {
+        *result = bakeLight(in, &progress);
+        finished = true;
+    });
+}
+
+BakeTask::~BakeTask() {
+    progress.cancel = true;
+    if (thread.joinable()) thread.join();
+}
+
+void Renderer::useBake(std::shared_ptr<const BakeResult> bake, float exposure, Scene& s) {
+    baked_.upload(std::move(bake));
+    s.baked = baked_.ready() ? &baked_ : nullptr;
+    s.exposure = exposure;
+    s.lightPreview = false;
+    s.lighting = nullptr;
 }
 
 void Renderer::light(const Document& doc, Scene& s) {

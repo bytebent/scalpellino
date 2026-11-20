@@ -28,6 +28,7 @@ struct Prop {
     Vec3 pos;                      // where the model's origin is
     Vec3 rot;                      // degrees about X, Y, Z
     Vec3 scale{1, 1, 1};           // per axis, 1 = as made
+    bool castShadows = true;       // in the baked light (Source's disableshadows off)
     std::vector<std::pair<std::string, std::string>> otherKeys; // kept from loaded files
     bool operator==(const Prop& o) const;
     bool operator!=(const Prop& o) const { return !(*this == o); }

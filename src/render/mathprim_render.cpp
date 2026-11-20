@@ -1,4 +1,5 @@
 #include "render/mathprim_render.hpp"
+#include "render/baked_light.hpp"
 #include "rlgl.h"
 #include <algorithm>
 #include <cmath>
@@ -47,7 +48,13 @@ uniform sampler2D texA;
 uniform sampler2D texB;
 uniform sampler2D texC;
 uniform sampler2D texD;
-uniform int lightMode;    // 0 = editor shading, 1 = rough light preview
+uniform int lightMode;    // 0 = editor shading, 1 = rough light preview, 2 = baked (renders)
+uniform sampler2D lmTex;  // baked: the object's 3D lightmap, slices side by side
+uniform vec3 lmOrigin;    // centre of cell (0, 0, 0)
+uniform float lmCell;
+uniform vec3 lmDims;      // cells per axis
+uniform vec3 lmLayout;    // slices per row, texture width, height
+uniform float exposure;
 uniform vec3 ambient;
 uniform int lightCount;
 uniform vec4 lpos[16];    // xyz, w = kind (0 point, 1 spot, 2 sun)
@@ -523,7 +530,17 @@ void main() {
     gl_FragDepth = clamp(clip.z / clip.w * 0.5 + 0.5, 0.0, 1.0);
 
     vec3 c;
-    if (lightMode == 0) {
+    if (lightMode == 2) {
+        // Baked light: trilinear read of the 3D lightmap (two slices, each bilinear).
+        vec3 g = clamp((p - lmOrigin) / lmCell, vec3(0.0), lmDims - 1.0);
+        float z0 = floor(g.z), fz = g.z - z0, z1 = min(z0 + 1.0, lmDims.z - 1.0);
+        vec2 t0 = vec2(mod(z0, lmLayout.x) * (lmDims.x + 2.0), floor(z0 / lmLayout.x) * (lmDims.y + 2.0));
+        vec2 t1 = vec2(mod(z1, lmLayout.x) * (lmDims.x + 2.0), floor(z1 / lmLayout.x) * (lmDims.y + 2.0));
+        vec3 L = mix(texture(lmTex, (t0 + 1.5 + g.xy) / lmLayout.yz).rgb, texture(lmTex, (t1 + 1.5 + g.xy) / lmLayout.yz).rgb, fz);
+        vec3 lin = mix(base / 12.92, pow((base + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), base));
+        vec3 o = clamp(lin * L * exposure, 0.0, 1.0);
+        c = mix(o * 12.92, 1.055 * pow(o, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), o));
+    } else if (lightMode == 0) {
         float kk = 0.5 + 0.5 * max(0.0, dot(n, normalize(vec3(0.35, 0.55, 0.85))));
         if (n.z < -0.5) kk = 0.42;
         c = base * kk;
@@ -617,7 +634,13 @@ void drawMathPrims3D(const std::vector<MathPrim>& prims, const PrimDrawContext& 
     set3("camPos", ctx.camPos);
     setI("orthoOn", ctx.orthoDir ? 1 : 0);
     set3("viewDir", ctx.orthoDir ? *ctx.orthoDir : Vec3{1, 0, 0});
-    setI("lightMode", ctx.lightPreview ? 1 : 0);
+    setI("lightMode", ctx.baked ? 2 : ctx.lightPreview ? 1 : 0);
+    {
+        const float ex = ctx.exposure;
+        SetShaderValue(S.sh, S.at("exposure"), &ex, SHADER_UNIFORM_FLOAT);
+        const int unit = 5; // the lightmap's texture unit (texA..texD use 1..4)
+        SetShaderValue(S.sh, S.at("lmTex"), &unit, SHADER_UNIFORM_INT);
+    }
     set3("ambient", ctx.ambient / 255.0);
     {
         float lp[64] = {}, lc[64] = {}, ld[64] = {}, li[16] = {};
@@ -718,9 +741,38 @@ void drawMathPrims3D(const std::vector<MathPrim>& prims, const PrimDrawContext& 
             const Texture2D& tex = t < slots.size() ? ctx.textures->get(slots[t]) : Texture2D{rlGetTextureIdDefault(), 1, 1, 1, 7};
             SetShaderValueTexture(S.sh, S.at(texNames[t]), tex);
         }
+        // Baked light: this object's 3D lightmap on unit 5 (none: full light).
+        unsigned lmTex = 0;
+        if (ctx.baked) {
+            const BakedLight::PrimRef* ref = ctx.baked->prim(g[0]->combo, g[0]->id);
+            if (ref && ref->tex && ref->lm) {
+                lmTex = ref->tex;
+                set3("lmOrigin", ref->lm->origin);
+                const float cell = (float)ref->lm->cell;
+                SetShaderValue(S.sh, S.at("lmCell"), &cell, SHADER_UNIFORM_FLOAT);
+                set3("lmDims", Vec3{(double)ref->lm->nx, (double)ref->lm->ny, (double)ref->lm->nz});
+                set3("lmLayout", Vec3{(double)ref->tilesX, (double)ref->texW, (double)ref->texH});
+            } else {
+                // no lightmap for it: a 1 x 1 x 1 grid reading the default texture (white)
+                lmTex = rlGetTextureIdDefault();
+                set3("lmOrigin", box.min);
+                const float cell = 1e6f;
+                SetShaderValue(S.sh, S.at("lmCell"), &cell, SHADER_UNIFORM_FLOAT);
+                set3("lmDims", Vec3{1, 1, 1});
+                set3("lmLayout", Vec3{1, 3, 3});
+            }
+            rlActiveTextureSlot(5);
+            rlEnableTexture(lmTex);
+            rlActiveTextureSlot(0);
+        }
         // Inside the box: the camera still sees its back faces, so the shape stays visible.
         drawBox(box);
         rlDrawRenderBatchActive();
+        if (lmTex) {
+            rlActiveTextureSlot(5);
+            rlDisableTexture();
+            rlActiveTextureSlot(0);
+        }
     }
     EndShaderMode();
     rlSetCullFace(RL_CULL_FACE_BACK);

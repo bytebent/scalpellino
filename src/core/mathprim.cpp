@@ -344,7 +344,7 @@ const char* primOpName(PrimOp o) {
 
 bool MathPrim::operator==(const MathPrim& o) const {
     return id == o.id && kind == o.kind && pos == o.pos && rot == o.rot && size == o.size && round == o.round &&
-           thickness == o.thickness && blend == o.blend && op == o.op && combo == o.combo && texture == o.texture && color == o.color &&
+           thickness == o.thickness && blend == o.blend && op == o.op && combo == o.combo && texture == o.texture && color == o.color && lightmapScale == o.lightmapScale &&
            texScale == o.texScale && otherKeys == o.otherKeys;
 }
 

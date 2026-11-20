@@ -278,7 +278,15 @@ private:
         Scene scene;
         std::vector<unsigned char> rgb;
         int w = 0, h = 0;
+        std::unique_ptr<BakeTask> bake;          // the light bake, while it runs
+        std::shared_ptr<const BakeResult> baked; // its result (or the kept one)
     };
+    // Baked light kept in memory, one per quality, while the map's light doesn't change
+    // (agreed 2026-11-20: memory only). The key is core/bake.hpp bakeKey.
+    struct KeptBake { std::uint64_t key = 0; std::shared_ptr<const BakeResult> result; };
+    std::map<int, KeptBake> bakes_;
+    // The bake for `q` now, on this thread (the Camera Preview's draft), kept or made.
+    std::shared_ptr<const BakeResult> bakeNow(BakeQuality q);
     std::unique_ptr<RenderJob> renderJob_; // the last render (kept for its log)
     bool renderOpen_ = false;              // the terminal window is shown
     int rendersDone_ = 0;                  // renders saved (scripts check it)

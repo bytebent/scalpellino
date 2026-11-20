@@ -74,6 +74,7 @@ private:
 
 class TextureLibrary;
 class ModelLibrary;
+class BakedLight;
 using FaceRef = std::pair<BrushId, int>; // brush id + face index
 
 struct Scene {
@@ -160,6 +161,10 @@ struct Scene {
     // Height fog (Sky Lab: lying from base up through thickness). Renders only; the editor's
     // rough fog stays distance-only (thickness 0 = everywhere).
     double fogBase = 0, fogThickness = 0;
+    // Baked light (renders and the Camera Preview, v0.12.1): brushes and primitives read
+    // their lightmaps; light is linear, times `exposure` (2^stops).
+    const BakedLight* baked = nullptr;
+    float exposure = 1;
 };
 
 SceneBrush makeSceneBrush(const Brush& b);

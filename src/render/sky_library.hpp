@@ -9,6 +9,7 @@
 // card: only the rows down to 5 degrees past where the colour stops changing; the rest is
 // drawn in that colour (`cover`, `below`). The files stay whole panoramas.
 #include "raylib.h"
+#include "core/bake.hpp"
 #include <map>
 #include <string>
 #include <vector>
@@ -36,6 +37,9 @@ public:
     struct Cut { float cover = 1; unsigned char below[3] = {0, 0, 0}; };
     Cut cut(const std::string& name) const;
     static constexpr double kCutMarginDeg = 5;
+    // The sky as small linear colours for the baked sky light (core/bake.hpp), read from the
+    // file (whole panorama); invalid if it can't be read. Kept until a rescan.
+    const SkyPicture& picture(const std::string& name);
     // Why get() failed for `name` ("" if it didn't).
     std::string problem(const std::string& name) const;
     void unloadAll();
@@ -47,6 +51,8 @@ private:
         bool loaded = false, failed = false;
         Cut cut;
         std::string problem;
+        bool pictureDone = false;
+        SkyPicture picture;
     };
     void scanFolder(const std::string& dir, const std::string& keyRoot = "");
     std::string builtin_;

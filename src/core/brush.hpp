@@ -15,6 +15,10 @@ struct TexAxis {
     double offset = 0;  // in texels
 };
 
+// Hammer's default lightmap scale, 16 Hammer units (inches), in cm, rounded (agreed 2026-11-20).
+constexpr double kDefaultLightmapScale = 40;
+constexpr double kMinLightmapScale = 1, kMaxLightmapScale = 512;
+
 struct Face {
     Vec3 p[3];          // three plane points, as stored in the .map
     std::string texture = "default";
@@ -22,6 +26,7 @@ struct Face {
     TexAxis v{{0, -1, 0}, 0};
     double rotation = 0;
     double scaleU = 1, scaleV = 1;
+    double lightmapScale = kDefaultLightmapScale; // baked light: units (cm) per lightmap pixel (Hammer's lightmap scale)
 
     Plane plane() const { return Plane::fromPoints(p[0], p[1], p[2]); }
 };

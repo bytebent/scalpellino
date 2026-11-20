@@ -224,6 +224,14 @@ void Editor::registerScriptCommands() {
             else if (k == "inner") vals >> l.inner;
             else if (k == "outer") vals >> l.outer;
             else if (k == "pos") { vals >> l.pos.x >> l.pos.y >> l.pos.z; }
+            else if (k == "falloff") { // inverse-square | fiftyzero <50%> [hard] | custom <c> <l> <q>
+                std::string m; vals >> m;
+                if (m == "fiftyzero") { l.falloff = LightFalloff::FiftyZero; vals >> l.fifty; std::string h; vals >> h; l.hardFalloff = h == "hard"; }
+                else if (m == "custom") { l.falloff = LightFalloff::Custom; vals >> l.constantAttn >> l.linearAttn >> l.quadraticAttn; }
+                else l.falloff = LightFalloff::InverseSquare;
+            }
+            else if (k == "exponent") vals >> l.exponent;
+            else if (k == "spread") vals >> l.sunSpread;
         };
         std::string rest; std::getline(in, rest);
         if (cmd == "lightset") {
@@ -336,6 +344,7 @@ void Editor::registerScriptCommands() {
                 else if (k == "texture") { std::string t; v >> t; p.texture = t == "none" ? "" : t; }
                 else if (k == "color") v >> p.color.x >> p.color.y >> p.color.z;
                 else if (k == "texscale") v >> p.texScale;
+                else if (k == "lightmapscale") v >> p.lightmapScale;
                 out.push_back(p);
             }
         if (!out.empty()) doc_.apply(doc_.makeModifyPrims(out, "Edit primitive"));
@@ -460,6 +469,7 @@ void Editor::registerScriptCommands() {
                 else if (k == "rot") v >> c.rot.x >> c.rot.y >> c.rot.z;
                 else if (k == "scale") { double a = 1, b2, d; v >> a; if (v >> b2 >> d) c.scale = {a, b2, d}; else c.scale = {a, a, a}; }
                 else if (k == "model") v >> c.model;
+                else if (k == "shadows") { std::string o; v >> o; c.castShadows = o == "on"; }
                 out.push_back(c);
             }
         if (!out.empty()) doc_.apply(doc_.makeModifyProps(out, "Edit prop"));
@@ -486,6 +496,9 @@ void Editor::registerScriptCommands() {
         else if (k == "fogcolor") in >> e.fog.color.x >> e.fog.color.y >> e.fog.color.z;
         else if (k == "fogrange") in >> e.fog.start >> e.fog.end;
         else if (k == "fogheight") in >> e.fog.base >> e.fog.thickness;
+        else if (k == "skylight") in >> e.skyLight;
+        else if (k == "minlight") { std::string v; in >> v; e.minLight = v == "on"; }
+        else if (k == "smooth") in >> e.smoothAngle;
         if (e != doc_.environment()) doc_.apply(doc_.makeEnvironment(e, "Environment"));
     });
     add({"skylab"}, [this](const std::string&, std::istringstream& in) {
@@ -648,6 +661,12 @@ void Editor::registerScriptCommands() {
     });
     add({"texscale"}, [this](const std::string&, std::istringstream& in) {
         in >> defaultScale_;
+    });
+    add({"facelightmap"}, [this](const std::string&, std::istringstream& in) {
+        // facelightmap <scale>: the lightmap scale of the picked faces (or the selection's)
+        double s = kDefaultLightmapScale; in >> s;
+        s = std::clamp(s, kMinLightmapScale, kMaxLightmapScale);
+        editFaces("Lightmap scale", [&](Face& x, const Polygon&, TexSize, const Vec3&) { x.lightmapScale = s; });
     });
     add({"facefit"}, [this](const std::string&, std::istringstream&) {
         editFaces("Fit texture", [&](Face& x, const Polygon& p, TexSize ts, const Vec3&) { fitTexture(x, p, ts); });

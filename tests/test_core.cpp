@@ -18,6 +18,7 @@
 #include "core/replicate.hpp"
 #include "core/bottega.hpp"
 #include "core/prop.hpp"
+#include "core/bake.hpp"
 #include "io/glb_loader.hpp"
 #include "io/model_store.hpp"
 #include "io/map_format.hpp"
@@ -3693,6 +3694,260 @@ static void testMapStrictNumbers() {
     }
 }
 
+// ---------------------------------------------------------------- baked light (v0.12.1)
+
+// The lightmap value at world point p on the brush face whose normal is n (plain faces).
+static Vec3 luxelAt(const BakeResult& r, const Brush& b, const Vec3& n, const Vec3& p) {
+    for (const FaceLightmap& f : r.faces) {
+        if (f.brush != b.id || f.terrain) continue;
+        if (dot(b.faces[f.face].plane().n, n) < 0.999) continue;
+        const int i = std::clamp((int)std::lround(dot(f.axisS, p) - f.s0), 0, f.w - 1);
+        const int j = std::clamp((int)std::lround(dot(f.axisT, p) - f.t0), 0, f.h - 1);
+        const size_t k = ((size_t)j * f.w + i) * 3;
+        return {f.rgb[k], f.rgb[k + 1], f.rgb[k + 2]};
+    }
+    return {-1, -1, -1};
+}
+
+static void testBake() {
+    // VRAD's quadratic solve: through 1 at 0, 2 at d50, 256 at d0.
+    {
+        double a, b, c;
+        CHECK(solveInverseQuadraticMonotonic(0, 1, 100, 2, 300, 256, a, b, c));
+        CHECK(near(c, 1, 1e-9));
+        // (the middle point may be moved toward a line to keep it monotonic; VRAD then
+        // rescales so the 50% point is right: checked below with prepareLight)
+        CHECK(near(c + 300 * b + 300 * 300 * a, 256, 1e-6));
+    }
+    // Inverse-square (Hammer's default): full brightness at 100 Hammer units = 254 cm.
+    {
+        Light l;
+        l.color = {255, 255, 255};
+        l.brightness = 255;
+        const BakeLight L = prepareLight(l, Environment{});
+        CHECK(near(L.q, 1) && L.c == 0 && L.l == 0);
+        CHECK(near(L.intensity.x * lightFalloff(L, 254, {0, 0, -1}), 1.0, 1e-9));
+        CHECK(near(L.intensity.x * lightFalloff(L, 508, {0, 0, -1}), 0.25, 1e-9));
+        // VRAD clamps the distance to at least 1 unit.
+        CHECK(near(lightFalloff(L, 0.5, {0, 0, -1}), 1.0, 1e-9));
+        // colour to linear with ^2.2, brightness / 255
+        l.color = {128, 255, 255};
+        l.brightness = 200;
+        const BakeLight L2 = prepareLight(l, Environment{});
+        CHECK(near(L2.intensity.x / 10000, std::pow(128 / 255.0, 2.2) * 200 / 255.0, 1e-9));
+        // 50% / 0%: exactly half at the 50% distance (relative to distance 0: 1 / c).
+        l.falloff = LightFalloff::FiftyZero;
+        l.fifty = 254;
+        l.range = 1016;
+        const BakeLight L3 = prepareLight(l, Environment{});
+        CHECK(near(lightFalloff(L3, 254, {0, 0, -1}), 0.5, 1e-6));
+        CHECK(lightFalloff(L3, 0, {0, 0, -1}) > lightFalloff(L3, 254, {0, 0, -1}));
+        // hard falloff: nothing past the 0% distance, quintic fade from 3/4 of the way
+        l.hardFalloff = true;
+        const BakeLight L4 = prepareLight(l, Environment{});
+        CHECK(lightFalloff(L4, 1020, {0, 0, -1}) == 0);
+        CHECK(near(L4.startFade, 0.75 * 400 + 0.25 * 100, 1e-9));
+        CHECK(lightFalloff(L4, 1000, {0, 0, -1}) < lightFalloff(L3, 1000, {0, 0, -1}));
+        // 0% closer than 50%: warning, 0% = 2 x 50%
+        l.range = 100;
+        CHECK(!prepareLight(l, Environment{}).notes.empty());
+    }
+    // Spot: nothing outside the outer cone, the extra cosine, the exponent in between.
+    {
+        Light l;
+        l.kind = LightKind::Spot;
+        l.pitch = -90; // down
+        l.inner = 20;
+        l.outer = 40;
+        const BakeLight L = prepareLight(l, Environment{});
+        const double onAxis = lightFalloff(L, 254, {0, 0, -1});
+        CHECK(near(onAxis, 1.0 / (100.0 * 100.0), 1e-12));
+        const double a = 30 * 3.14159265358979 / 180;
+        const Vec3 mid{std::sin(a), 0, -std::cos(a)};
+        CHECK(near(lightFalloff(L, 254, mid), onAxis * std::cos(a) * (std::cos(a) - std::cos(40 * 3.14159265358979 / 180)) /
+                                                    (std::cos(20 * 3.14159265358979 / 180) - std::cos(40 * 3.14159265358979 / 180)), 1e-9));
+        const double b = 45 * 3.14159265358979 / 180;
+        CHECK(lightFalloff(L, 254, {std::sin(b), 0, -std::cos(b)}) == 0);
+        l.outer = 120; // capped at 90, with a warning
+        CHECK(!prepareLight(l, Environment{}).notes.empty());
+    }
+    // VRAD's Halton directions: unit length, element 1 = (z 0, theta 2pi/3).
+    {
+        const std::vector<Vec3> d = haltonSphere(162);
+        CHECK(d.size() == 162);
+        CHECK(near(d[0].z, 0, 1e-12) && near(std::atan2(d[0].y, d[0].x), 2 * 3.14159265358979 / 3, 1e-9));
+        bool unit = true;
+        for (const Vec3& v : d) unit = unit && near(length(v), 1, 1e-9);
+        CHECK(unit);
+    }
+    // A floor, a light above and a slab between: a shadow under the slab, light elsewhere.
+    {
+        BakeInput in;
+        Brush floor = makeBox(box({0, 0, -16}, {1024, 1024, 0}), "floor");
+        floor.id = 1;
+        Brush slab = makeBox(box({384, 384, 100}, {640, 640, 116}), "slab");
+        slab.id = 2;
+        in.brushes = {floor, slab};
+        Light l;
+        l.pos = {512, 512, 300};
+        l.brightness = 200;
+        in.lights = {l};
+        in.env.skyLight = 0;
+        in.quality = BakeQuality::Draft;
+        const BakeResult r = bakeLight(in, nullptr, 2);
+        CHECK(!r.cancelled);
+        CHECK(r.faces.size() == 12); // two boxes, every face lit
+        const Vec3 under = luxelAt(r, floor, {0, 0, 1}, {512, 512, 0});
+        const Vec3 open = luxelAt(r, floor, {0, 0, 1}, {120, 120, 0});
+        CHECK(under.x >= 0 && under.x < 0.001);
+        CHECK(open.x > 0.01);
+        // the slab's top is lit, its bottom isn't (light above)
+        CHECK(luxelAt(r, slab, {0, 0, 1}, {512, 512, 116}).x > 0.3);
+        CHECK(luxelAt(r, slab, {0, 0, -1}, {512, 512, 100}).x < 0.001);
+        // the same input bakes the same; another light doesn't
+        CHECK(bakeKey(in) == bakeKey(in));
+        BakeInput in2 = in;
+        in2.lights[0].brightness = 100;
+        CHECK(bakeKey(in2) != bakeKey(in));
+        // sky light: the ambient colour from every open direction (no sky picture);
+        // an open floor gets all of it, the floor under the slab less.
+        in.lights.clear();
+        in.env.skyLight = 100;
+        in.env.ambient = {255, 255, 255};
+        const BakeResult s = bakeLight(in, nullptr, 2);
+        CHECK(near(luxelAt(s, floor, {0, 0, 1}, {30, 30, 0}).x, 1.0, 0.03));
+        const double shaded = luxelAt(s, floor, {0, 0, 1}, {512, 512, 0}).x;
+        CHECK(shaded > 0.05 && shaded < 0.8);
+        // sky light 0: dark; the minimum light (the old flat ambient) lights everything
+        in.env.skyLight = 0;
+        in.env.minLight = true;
+        in.env.ambient = {40, 40, 48};
+        const BakeResult m = bakeLight(in, nullptr, 2);
+        CHECK(near(luxelAt(m, slab, {0, 0, -1}, {512, 512, 100}).x, std::pow(40 / 255.0, 2.2), 1e-6));
+        // cancelling stops it
+        BakeProgress pr;
+        pr.cancel = true;
+        CHECK(bakeLight(in, &pr, 2).cancelled);
+    }
+    // The sun: shadows to infinity; a primitive casts one and gets its own 3D lightmap.
+    {
+        BakeInput in;
+        Brush floor = makeBox(box({0, 0, -16}, {1024, 1024, 0}), "floor");
+        floor.id = 1;
+        in.brushes = {floor};
+        Light sun;
+        sun.kind = LightKind::Sun;
+        sun.pitch = -90;
+        sun.brightness = 255;
+        in.lights = {sun};
+        in.env.skyLight = 0;
+        MathPrim ball;
+        ball.id = 7;
+        ball.kind = PrimKind::Sphere;
+        ball.pos = {512, 512, 200};
+        ball.size = {200, 200, 200};
+        in.prims = {ball};
+        in.quality = BakeQuality::Draft;
+        const BakeResult r = bakeLight(in, nullptr, 2);
+        CHECK(near(luxelAt(r, floor, {0, 0, 1}, {100, 100, 0}).x, 1.0, 1e-6));
+        CHECK(luxelAt(r, floor, {0, 0, 1}, {512, 512, 0}).x < 0.001);
+        CHECK(r.prims.size() == 1 && r.prims[0].prim == 7 && r.prims[0].combo == 0);
+        if (r.prims.size() == 1) {
+            const PrimLightmap& p = r.prims[0];
+            CHECK(p.nx >= 4 && p.ny >= 4 && p.nz >= 4);
+            auto cellAt = [&](const Vec3& w) {
+                const int i = std::clamp((int)std::lround((w.x - p.origin.x) / p.cell), 0, p.nx - 1);
+                const int j = std::clamp((int)std::lround((w.y - p.origin.y) / p.cell), 0, p.ny - 1);
+                const int k = std::clamp((int)std::lround((w.z - p.origin.z) / p.cell), 0, p.nz - 1);
+                return p.rgb[(((size_t)k * p.ny + j) * p.nx + i) * 3];
+            };
+            CHECK(cellAt({512, 512, 300}) > 0.5);  // top: in the sun
+            CHECK(cellAt({512, 512, 100}) < 0.05); // bottom: in its own shadow
+        }
+        // soft sun: the shadow's edge gets in between values
+        in.lights[0].sunSpread = 10;
+        in.quality = BakeQuality::Normal;
+        const BakeResult soft = bakeLight(in, nullptr, 2);
+        bool between = false;
+        for (double x = 380; x <= 650; x += 8) {
+            const double v = luxelAt(soft, floor, {0, 0, 1}, {x, 512, 0}).x;
+            if (v > 0.1 && v < 0.9) between = true;
+        }
+        CHECK(between);
+    }
+    // Sky picture: linear, the middle column faces +X, the top row is straight up.
+    {
+        std::vector<unsigned char> pano(64 * 32 * 3, 0);
+        for (int y = 0; y < 32; ++y)
+            for (int x = 0; x < 64; ++x) {
+                unsigned char* p = &pano[(y * 64 + x) * 3];
+                p[0] = y < 16 ? 255 : 0;           // red sky above the horizon
+                p[2] = (x >= 24 && x < 40) ? 255 : 0; // blue band facing +X
+            }
+        const SkyPicture s = makeSkyPicture(pano.data(), 64, 32, 32);
+        CHECK(s.valid() && s.w == 32 && s.h == 16);
+        CHECK(near(s.at({0, 0, 1}).x, 1.0, 1e-6));
+        CHECK(near(s.at({0, 0, -1}).x, 0.0, 1e-6));
+        CHECK(s.at({1, 0, 0.1}).z > 0.9);
+        CHECK(s.at({-1, 0, 0.1}).z < 0.1);
+        CHECK(near(srgbToLinear(linearToSrgb(0.3)), 0.3, 1e-9));
+    }
+    // The map keeps the new settings: falloff, spot exponent, sun spread, lightmap scales,
+    // props' shadows, the environment's bake settings; old lights read as inverse-square.
+    {
+        Document d;
+        Brush b = makeBox(box({0, 0, 0}, {64, 64, 64}), "a");
+        b.faces[2].lightmapScale = 10;
+        d.apply(d.makeAdd({b}, "Create"));
+        Light pt;
+        pt.falloff = LightFalloff::FiftyZero;
+        pt.fifty = 300;
+        pt.range = 900;
+        pt.hardFalloff = true;
+        Light sp;
+        sp.kind = LightKind::Spot;
+        sp.exponent = 3;
+        sp.falloff = LightFalloff::Custom;
+        sp.constantAttn = 1;
+        sp.linearAttn = 0.5;
+        sp.quadraticAttn = 0;
+        Light sun;
+        sun.kind = LightKind::Sun;
+        sun.sunSpread = 5;
+        d.apply(d.makeAddLights({pt, sp, sun}, "Lights"));
+        MathPrim mp;
+        mp.lightmapScale = 12;
+        d.apply(d.makeAddPrims({mp}, "Prim"));
+        Prop pr;
+        pr.model = "models/x";
+        pr.castShadows = false;
+        d.apply(d.makeAddProps({pr}, "Prop"));
+        Environment e = d.environment();
+        e.skyLight = 60;
+        e.minLight = true;
+        e.smoothAngle = 30;
+        d.apply(d.makeEnvironment(e, "Env"));
+        const std::string a = writeMap(d);
+        Document d2;
+        CHECK(readMap(a, d2).ok);
+        CHECK(writeMap(d2) == a);
+        CHECK(d2.brushes()[0].faces[2].lightmapScale == 10 && d2.brushes()[0].faces[1].lightmapScale == kDefaultLightmapScale);
+        CHECK(d2.lights().size() == 3);
+        if (d2.lights().size() == 3) {
+            CHECK(d2.lights()[0].falloff == LightFalloff::FiftyZero && d2.lights()[0].fifty == 300 && d2.lights()[0].hardFalloff);
+            CHECK(d2.lights()[1].falloff == LightFalloff::Custom && d2.lights()[1].linearAttn == 0.5 && d2.lights()[1].exponent == 3);
+            CHECK(d2.lights()[2].sunSpread == 5);
+        }
+        CHECK(d2.prims().size() == 1 && d2.prims()[0].lightmapScale == 12);
+        CHECK(d2.props().size() == 1 && !d2.props()[0].castShadows);
+        CHECK(d2.environment().skyLight == 60 && d2.environment().minLight && d2.environment().smoothAngle == 30);
+        // A light from before v0.12.1 (reach only): Hammer's default.
+        Document d3;
+        CHECK(readMap("{\n\"classname\" \"worldspawn\"\n}\n{\n\"classname\" \"light\"\n\"origin\" \"0 0 0\"\n\"_zero_percent_distance\" \"500\"\n}\n", d3).ok);
+        CHECK(d3.lights().size() == 1 && d3.lights()[0].falloff == LightFalloff::InverseSquare && d3.lights()[0].range == 500);
+    }
+}
+
 int main() {
     testRenderJob();
     testGrid();
@@ -3735,6 +3990,7 @@ int main() {
     testVisibility();
     testDirty();
     testMapRoundTrip();
+    testBake();
     testMapQuakeFormat();
     testMapErrors();
     std::printf("%d checks, %d failed\n", g_checks, g_failures);

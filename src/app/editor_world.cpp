@@ -34,7 +34,8 @@ namespace {
 // The fields shared by "new light" and "selected lights". Returns a bit per edited field
 // (only when an edit is finished, so one change = one undo step).
 enum LightField : unsigned {
-    LF_Color = 1, LF_Bright = 2, LF_Range = 4, LF_Pitch = 8, LF_Yaw = 16, LF_Inner = 32, LF_Outer = 64, LF_Pos = 128
+    LF_Color = 1, LF_Bright = 2, LF_Range = 4, LF_Pitch = 8, LF_Yaw = 16, LF_Inner = 32, LF_Outer = 64, LF_Pos = 128,
+    LF_Falloff = 256, LF_Exponent = 512, LF_Spread = 1024
 };
 unsigned lightFields(Light& l, bool withPos) {
     unsigned done = 0;
@@ -47,7 +48,34 @@ unsigned lightFields(Light& l, bool withPos) {
         if (ImGui::IsItemDeactivatedAfterEdit()) { v = std::clamp(v, lo, hi); done |= bit; }
     };
     num("brightness", l.brightness, LF_Bright, 0, 100000);
-    if (l.kind != LightKind::Sun) num("reach (units)", l.range, LF_Range, 1, 1 << 20);
+    if (l.kind != LightKind::Sun) {
+        num("reach (units)", l.range, LF_Range, 1, 1 << 20);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("The editor's rough light preview ends here. In renders it is Hammer's 0%% distance:\n"
+                              "it only counts with the 50%% / 0%% falloff.");
+        // Baked light: how it fades (as Hammer / VRAD).
+        int mode = (int)l.falloff;
+        const char* modes[] = {"inverse-square (Hammer)", "50% / 0% distance", "custom"};
+        if (ImGui::Combo("falloff", &mode, modes, 3)) {
+            l.falloff = (LightFalloff)mode;
+            if (l.falloff == LightFalloff::FiftyZero && l.fifty <= 0) l.fifty = std::max(1.0, l.range * 0.25);
+            done |= LF_Falloff;
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("How the baked light fades with distance.\nInverse-square: Hammer's default, the brightness is reached at 254 units (100 Hammer units).");
+        if (l.falloff == LightFalloff::FiftyZero) {
+            num("50% distance", l.fifty, LF_Falloff, 1, 1 << 20);
+            if (ImGui::Checkbox("hard falloff (nothing past the reach)", &l.hardFalloff)) done |= LF_Falloff;
+        } else if (l.falloff == LightFalloff::Custom) {
+            num("constant", l.constantAttn, LF_Falloff, 0, 1e9);
+            num("linear", l.linearAttn, LF_Falloff, 0, 1e9);
+            num("quadratic", l.quadraticAttn, LF_Falloff, 0, 1e9);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("1 / (constant + linear d + quadratic d^2), d in Hammer units (inches)");
+        }
+    } else {
+        num("spread (degrees)", l.sunSpread, LF_Spread, 0, 90);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Hammer's SunSpreadAngle: 0 = hard shadows, more = softer");
+    }
     if (l.hasDirection()) {
         num("pitch (-90 = down)", l.pitch, LF_Pitch, -90, 90);
         num("yaw", l.yaw, LF_Yaw, -360, 360);
@@ -55,6 +83,8 @@ unsigned lightFields(Light& l, bool withPos) {
     if (l.kind == LightKind::Spot) {
         num("inner angle", l.inner, LF_Inner, 0, 89);
         num("outer angle", l.outer, LF_Outer, 1, 89);
+        num("exponent", l.exponent, LF_Exponent, 0, 100);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Hammer's _exponent: how the light fades between the inner and outer angle");
     }
     if (withPos) {
         double p[3] = {l.pos.x, l.pos.y, l.pos.z};
@@ -94,6 +124,16 @@ void Editor::drawLightPanel() {
                 if (done & LF_Inner) l.inner = std::min(v.inner, l.outer);
                 if (done & LF_Outer) { l.outer = v.outer; l.inner = std::min(l.inner, l.outer); }
                 if (done & LF_Pos) l.pos = v.pos;
+                if ((done & LF_Falloff) && l.kind != LightKind::Sun) {
+                    l.falloff = v.falloff;
+                    l.fifty = v.fifty;
+                    l.hardFalloff = v.hardFalloff;
+                    l.constantAttn = v.constantAttn;
+                    l.linearAttn = v.linearAttn;
+                    l.quadraticAttn = v.quadraticAttn;
+                }
+                if (done & LF_Exponent) l.exponent = v.exponent;
+                if ((done & LF_Spread) && l.kind == LightKind::Sun) l.sunSpread = v.sunSpread;
             });
         }
         if (lightBuf_.hasDirection()) {
@@ -202,7 +242,19 @@ void Editor::drawWorldDialogs() {
         }
         ImGui::Separator();
         color3("ambient light", e.ambient);
-        ImGui::TextDisabled("lights everything a little, even where no light reaches");
+        ImGui::TextDisabled("the editor's rough preview: lights everything a little");
+        ImGui::TextUnformatted("Baked light (renders)");
+        ImGui::PushItemWidth(120);
+        ImGui::InputDouble("sky light (%)", &e.skyLight, 0, 0, "%g");
+        e.skyLight = std::clamp(e.skyLight, 0.0, 100000.0);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Light from the sky, where it can be seen (as Source's light_environment ambient).\n"
+                              "Its colours come from the sky picture; with no sky, the ambient colour.");
+        ImGui::Checkbox("minimum light (the ambient colour everywhere)", &e.minLight);
+        ImGui::InputDouble("smoothing angle", &e.smoothAngle, 0, 0, "%g");
+        e.smoothAngle = std::clamp(e.smoothAngle, 0.0, 180.0);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Faces closer than this many degrees are lit smoothly (VRAD's default 45)");
+        ImGui::PopItemWidth();
         ImGui::Separator();
         ImGui::Checkbox("fog", &e.fogOn);
         ImGui::BeginDisabled(!e.fogOn);

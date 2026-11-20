@@ -1,5 +1,6 @@
 // Editor (part of the class, split by topic; see editor.hpp): Primitives and props: panels, combining, Snap to Land / Ground.
 #include "app/editor.hpp"
+#include "core/brush.hpp"
 #include "io/map_format.hpp"
 #include "core/hull.hpp"
 #include "core/texture.hpp"
@@ -120,6 +121,8 @@ void Editor::drawPropPanel() {
             ImGui::InputDouble("scale all by", &k, 0, 0, "%g");
             if (ImGui::IsItemDeactivatedAfterEdit() && k > 0) fns.push_back([k](Prop& p) { p.scale = p.scale * k; });
         }
+        bool shadows = b.castShadows;
+        if (ImGui::Checkbox("casts shadows (baked light)", &shadows)) fns.push_back([shadows](Prop& p) { p.castShadows = shadows; });
         if (!propTool_.model.empty() && ImGui::SmallButton("use the picked model")) {
             const std::string m = propTool_.model;
             fns.push_back([m](Prop& p) { p.model = m; });
@@ -288,6 +291,14 @@ void Editor::drawPrimPanel() {
         if (colorEdit(b.color)) { const Vec3 c = b.color; fns.push_back([c](MathPrim& p) { p.color = c; }); }
         ImGui::InputDouble("texture repeats", &b.texScale, 0, 0, "%g");
         if (ImGui::IsItemDeactivatedAfterEdit()) { const double v = std::clamp(b.texScale, 0.01, 1000.0); fns.push_back([v](MathPrim& p) { p.texScale = v; }); }
+        ImGui::InputDouble("lightmap scale", &b.lightmapScale, 0, 0, "%g");
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            const double v = std::clamp(b.lightmapScale, kMinLightmapScale, kMaxLightmapScale);
+            fns.push_back([v](MathPrim& p) { p.lightmapScale = v; });
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Baked light: the size of the cells of its 3D lightmap (cm).\n"
+                              "A combination uses its first piece's. At least 4 cells across the object.");
         ImGui::PopItemWidth();
         if (!fns.empty()) {
             std::vector<MathPrim> out;

@@ -5,14 +5,18 @@
 //  - The View menu is ignored: sky, fog, primitives, props, textures are what the map has.
 //  - Hidden brushes and visgroups are drawn (hiding is an editing aid only).
 //  - nodraw faces are left out.
-// v0.12.0: the lighting is the rough light preview's (lights and ambient, no shadows) until
-// the baked light arrives (v0.12.1).
+// v0.12.1: baked light (core/bake.hpp, render/baked_light.hpp): lightmaps on brushes and
+// terrain, 3D lightmaps on primitives; props keep the rough look until the light grid.
+#include "core/bake.hpp"
 #include "core/document.hpp"
+#include "render/baked_light.hpp"
 #include "render/lighting.hpp"
 #include "render/scene.hpp"
 #include "render/viewport.hpp"
+#include <atomic>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace scal {
@@ -20,6 +24,22 @@ namespace scal {
 class TextureLibrary;
 class ModelLibrary;
 class SkyLibrary;
+
+// What the bake needs from the map, as a picture shows it (hidden brushes too). Props'
+// models are looked up now, so the bake can run on other threads.
+BakeInput bakeInput(const Document& doc, ModelLibrary& models, SkyLibrary& skies, BakeQuality quality);
+
+// A bake running on other threads (the render window polls it; Esc cancels it).
+struct BakeTask {
+    BakeInput in;
+    std::uint64_t key = 0;
+    BakeProgress progress;
+    std::shared_ptr<BakeResult> result = std::make_shared<BakeResult>();
+    std::atomic<bool> finished{false};
+    std::thread thread;
+    void start();
+    ~BakeTask();
+};
 
 class Renderer {
 public:
@@ -36,6 +56,8 @@ public:
     // revision, and rebuilt only for brushes an edit touched. `lit`: also the lighting (the slow part; the render log shows it as a step).
     Scene scene(const Document& doc, TextureLibrary& textures, ModelLibrary& models, SkyLibrary& skies, Stats* stats = nullptr);
     void light(const Document& doc, Scene& s);
+    // Baked light instead (uploaded when it is another bake than last time).
+    void useBake(std::shared_ptr<const BakeResult> bake, float exposure, Scene& s);
 
     // Draws the picture through `cam` into the renderer's own target, w x h logical pixels
     // at `scale` pixels each (the preview: the screen's scale; a render: 1). Texture
@@ -52,6 +74,7 @@ public:
 
 private:
     std::unique_ptr<Viewport> view_;
+    BakedLight baked_;
     SceneCache brushes_{SceneCache::Options{false, true}}; // every brush, nodraw faces left out
     LightingCache lighting_;
 };

@@ -73,6 +73,14 @@ void writeBrush(std::ostringstream& o, const Brush& b) {
           << " [ " << num(f.v.axis.x) << ' ' << num(f.v.axis.y) << ' ' << num(f.v.axis.z) << ' ' << num(f.v.offset) << " ] "
           << num(f.rotation) << ' ' << num(f.scaleU) << ' ' << num(f.scaleV) << '\n';
     }
+    // Lightmap scale per face (baked light, v0.12.1), only when one isn't the default.
+    bool lm = false;
+    for (const Face& f : b.faces) if (f.lightmapScale != kDefaultLightmapScale) lm = true;
+    if (lm) {
+        o << "//@ lm";
+        for (const Face& f : b.faces) o << ' ' << num(f.lightmapScale);
+        o << '\n';
+    }
     o << "}\n";
 }
 
@@ -84,7 +92,7 @@ void writeKeys(std::ostringstream& o, const KeyValues& kv) {
 
 namespace {
 // Milestone 8 keys in worldspawn (other tools ignore "_scal_*").
-const char* const kWorldExtras[] = {"_scal_visgroups", "_scal_sky", "_scal_ambient", "_scal_fog", "_scal_cameras", "_scal_figure", "_scal_skylab"};
+const char* const kWorldExtras[] = {"_scal_visgroups", "_scal_sky", "_scal_ambient", "_scal_fog", "_scal_cameras", "_scal_figure", "_scal_skylab", "_scal_bake"};
 bool isWorldExtra(const std::string& k) {
     for (const char* e : kWorldExtras) if (k == e) return true;
     return false;
@@ -108,8 +116,26 @@ KeyValues lightKeys(const Light& l) {
     if (l.kind == LightKind::Spot) {
         kv.emplace_back("_inner_cone", num(l.inner));
         kv.emplace_back("_cone", num(l.outer));
+        kv.emplace_back("_exponent", num(l.exponent));
     }
-    if (l.kind != LightKind::Sun) kv.emplace_back("_zero_percent_distance", num(l.range));
+    if (l.kind != LightKind::Sun) {
+        // Falloff as Hammer writes it (baked light, v0.12.1).
+        if (l.falloff == LightFalloff::FiftyZero) {
+            kv.emplace_back("_fifty_percent_distance", num(l.fifty));
+            kv.emplace_back("_hardfalloff", l.hardFalloff ? "1" : "0");
+        } else if (l.falloff == LightFalloff::Custom) {
+            kv.emplace_back("_constant_attn", num(l.constantAttn));
+            kv.emplace_back("_linear_attn", num(l.linearAttn));
+            kv.emplace_back("_quadratic_attn", num(l.quadraticAttn));
+        } else {
+            kv.emplace_back("_constant_attn", "0");
+            kv.emplace_back("_linear_attn", "0");
+            kv.emplace_back("_quadratic_attn", "1");
+        }
+        kv.emplace_back("_zero_percent_distance", num(l.range));
+    } else {
+        kv.emplace_back("SunSpreadAngle", num(l.sunSpread));
+    }
     for (const auto& k : l.otherKeys) kv.push_back(k);
     return kv;
 }
@@ -132,6 +158,7 @@ KeyValues primKeys(const MathPrim& p) {
     if (!p.texture.empty()) kv.emplace_back("texture", p.texture);
     kv.emplace_back("color", vec(p.color));
     kv.emplace_back("texscale", num(p.texScale));
+    if (p.lightmapScale != 40) kv.emplace_back("lightmapscale", num(p.lightmapScale));
     for (const auto& k : p.otherKeys) kv.push_back(k);
     return kv;
 }
@@ -145,6 +172,7 @@ KeyValues propKeys(const Prop& p) {
     kv.emplace_back("origin", vec(p.pos));
     kv.emplace_back("rotation", vec(p.rot));
     kv.emplace_back("scale", vec(p.scale));
+    if (!p.castShadows) kv.emplace_back("disableshadows", "1");
     for (const auto& k : p.otherKeys) kv.push_back(k);
     return kv;
 }
@@ -240,6 +268,7 @@ bool primFromKeys(const KeyValues& kv, MathPrim& p) {
         else if (k == "texture") p.texture = v;
         else if (k == "color") readVec(v, p.color);
         else if (k == "texscale") p.texScale = numOr(v, p.texScale);
+        else if (k == "lightmapscale") p.lightmapScale = std::clamp(numOr(v, p.lightmapScale), kMinLightmapScale, kMaxLightmapScale);
         else p.otherKeys.emplace_back(k, v);
     }
     return true;
@@ -255,6 +284,7 @@ bool propFromKeys(const KeyValues& kv, Prop& p) {
         else if (k == "origin") readVec(v, p.pos);
         else if (k == "rotation") readVec(v, p.rot);
         else if (k == "scale") readVec(v, p.scale);
+        else if (k == "disableshadows") p.castShadows = numOr(v, 0) == 0;
         else p.otherKeys.emplace_back(k, v);
     }
     return true;
@@ -300,8 +330,20 @@ bool lightFromKeys(const KeyValues& kv, Light& l) {
     else if (cls == "light_environment") l.kind = LightKind::Sun;
     else return false;
     bool havePitch = false;
+    // Falloff (baked light): a 50% distance makes it 50% / 0%; else the constant / linear /
+    // quadratic terms (0 0 1, Hammer's default, is inverse-square). Lights without any of
+    // these keys (maps from before v0.12.1) are Hammer's default too (agreed 2026-11-20).
+    double fifty = 0, c = 0, li = 0, q = 1;
+    bool haveAttn = false;
     for (const auto& [k, v] : kv) {
         if (k == "origin") readVec(v, l.pos);
+        else if (k == "_fifty_percent_distance") fifty = std::max(0.0, numOr(v, 0));
+        else if (k == "_hardfalloff") l.hardFalloff = numOr(v, 0) != 0;
+        else if (k == "_constant_attn") { c = std::max(0.0, numOr(v, 0)); haveAttn = true; }
+        else if (k == "_linear_attn") { li = std::max(0.0, numOr(v, 0)); haveAttn = true; }
+        else if (k == "_quadratic_attn") { q = std::max(0.0, numOr(v, 0)); haveAttn = true; }
+        else if (k == "_exponent") l.exponent = std::max(0.0, numOr(v, l.exponent));
+        else if (k == "SunSpreadAngle") l.sunSpread = std::clamp(numOr(v, 0), 0.0, 90.0);
         else if (k == "_light") {
             double r = 255, g = 255, b = 255, br = 200;
             const int n = std::sscanf(v.c_str(), "%lf %lf %lf %lf", &r, &g, &b, &br);
@@ -315,6 +357,17 @@ bool lightFromKeys(const KeyValues& kv, Light& l) {
         else if (k == "_cone") l.outer = numOr(v, l.outer);
         else if (k == "_zero_percent_distance") l.range = numOr(v, l.range);
         else if (k != "classname") l.otherKeys.emplace_back(k, v);
+    }
+    if (fifty > 0) {
+        l.falloff = LightFalloff::FiftyZero;
+        l.fifty = fifty;
+    } else if (haveAttn && !(c == 0 && li == 0 && q == 1)) {
+        l.falloff = LightFalloff::Custom;
+        l.constantAttn = c;
+        l.linearAttn = li;
+        l.quadraticAttn = q;
+    } else {
+        l.falloff = LightFalloff::InverseSquare;
     }
     return true;
 }
@@ -336,6 +389,8 @@ std::string writeMap(const Document& doc) {
         world.emplace_back("_scal_fog", std::string(env.fogOn ? "1 " : "0 ") + vec(env.fog.color) + " " + num(env.fog.start) + " " + num(env.fog.end) +
                                             (env.fog.base != 0 || env.fog.thickness != 0 ? " " + num(env.fog.base) + " " + num(env.fog.thickness) : std::string()));
     if (env.skylab.used) world.emplace_back("_scal_skylab", skyLabToString(env.skylab));
+    if (env.skyLight != defaults.skyLight || env.minLight != defaults.minLight || env.smoothAngle != defaults.smoothAngle)
+        world.emplace_back("_scal_bake", "skylight=" + num(env.skyLight) + ";minlight=" + (env.minLight ? "1" : "0") + ";smooth=" + num(env.smoothAngle));
     if (!doc.bookmarks().empty()) {
         // x y z yaw pitch name;...
         std::string cams;
@@ -588,6 +643,17 @@ public:
         std::istringstream in(text);
         std::string first;
         in >> first;
+        if (first == "lm") { // lightmap scale per face, in face order (written after the faces)
+            std::string w;
+            size_t i = 0;
+            while (in >> w) {
+                double x = 0;
+                if (!parseNumber(w, x)) fail(tok, "lightmap scale '" + w + "' is not a number");
+                if (i < b.faces.size()) b.faces[i].lightmapScale = std::clamp(x, kMinLightmapScale, kMaxLightmapScale);
+                ++i;
+            }
+            return;
+        }
         if (first == "tl") {
             if (!b.terrain) return;
             std::string name;
@@ -762,6 +828,18 @@ MapReadResult readMap(const std::string& text, Document& doc) {
         if (k == "_scal_sky") extra.env.sky = v;
         else if (k == "_scal_skylab") extra.env.skylab = skyLabFromString(v);
         else if (k == "_scal_ambient") readVec(v, extra.env.ambient);
+        else if (k == "_scal_bake") { // "skylight=100;minlight=0;smooth=45" (unknown fields ignored)
+            std::stringstream ss(v);
+            std::string part;
+            while (std::getline(ss, part, ';')) {
+                const size_t eq = part.find('=');
+                if (eq == std::string::npos) continue;
+                const std::string f = part.substr(0, eq), val = part.substr(eq + 1);
+                if (f == "skylight") extra.env.skyLight = std::clamp(numOr(val, extra.env.skyLight), 0.0, 100000.0);
+                else if (f == "minlight") extra.env.minLight = numOr(val, 0) != 0;
+                else if (f == "smooth") extra.env.smoothAngle = std::clamp(numOr(val, extra.env.smoothAngle), 0.0, 180.0);
+            }
+        }
         else if (k == "_scal_fog") {
             int on = 0;
             Fog f;

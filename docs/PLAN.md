@@ -10,7 +10,7 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 
 ## Current status
 
-- **Released:** v0.1.0 … v0.11.2. Milestones 0–11, Random Replicate and Sky Lab are done (see the
+- **Released:** v0.1.0 … v0.12.1. Milestones 0–11, Random Replicate and Sky Lab are done (see the
   milestone sections below and the log); the user confirmed the choices of M10, Random
   Replicate and v0.10.2 (2026-11-19). **v0.10.3 is built and pushed** (asked by the user
   before Sky Lab): `editor.cpp` split by topic (step 1: code moved unchanged; step 2:
@@ -42,8 +42,10 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   to work"). **Batch 2 (v0.12.1, baked direct light and shadows) was discussed in depth
   and agreed (2026-11-20)**: VRAD's methods, checked against Valve's SDK 2013 source; see
   "Batch 2 decided with the user" under Roadmap item 5 and the choices flagged "might
-  change" under Open questions. Next: **build v0.12.1 when the user says go** (one
-  release).
+  change" under Open questions. **v0.12.1 is built and pushed** (the user said go,
+  2026-11-21): baked direct light and shadows (`core/bake.*`, `render/baked_light.*`); its
+  choices made without asking are under "v0.12.1, decided without asking". Next:
+  **report**, then discuss batch 3 (v0.12.2, bounces) in depth before building it.
 - **Review fixes (2026-11-20), merged into `main`** (fast-forward from
   `fix/review-findings` after the user's go-ahead; no new version, so only "Latest build"
   is refreshed): version releases are
@@ -117,6 +119,47 @@ Each archive's SHA-256 is in `cmake/Deps.cmake` (checked at configure time).
   numbers loosely (`atoi`, `strtod`): not in the review's list; worth the same strict
   reading some time (a bad value there only changes a generated shape).
 
+- **v0.12.1 (baked light and shadows), decided without asking (confirm with the user):**
+  - **Default lightmap scale 40 cm** (Hammer's 16 units are 40.64; rounded), allowed 1 to
+    512. Faces needing more than 512 luxels a side get a coarser lightmap (doubled until it
+    fits; the log says how many).
+  - **Sky light strength:** a new Environment field "sky light (%)", default 100 = the sky
+    picture's colours as they are (linear). With no sky picture the sky's colour is the
+    ambient colour. This replaces "the Environment ambient as a multiplier" (recorded
+    before building): a percentage was clearer. Sky Lab's IBL tick box and intensity stay
+    unused (the sky picture always lights).
+  - **Minimum light** = the ambient colour turned linear (^2.2), added everywhere: looks like
+    the old flat ambient.
+  - **Primitive lightmaps:** at least 4 cells across the object's largest side, at most 128
+    per side; cells within 1.75 cells of the surface are lit at the nearest surface point,
+    the others take their neighbours' light (so reading between cells never mixes in black).
+  - **Quality:** Draft = lightmaps 2x coarser, a quarter of the sky rays (40) and sun
+    samples, no extra samples (VRAD -fast). Normal = 162 sky rays, 30 sun samples when
+    spread, luxels that differ from a neighbour by more than 0.02 + 10% sampled again 3 x 3.
+    High = 4 x 4 extra samples and 4x the sky rays. Extra samples use a quarter of the sky
+    rays (quicker; the sky light changes slowly).
+  - **Samples:** luxels outside their face are moved onto it (a little inside its edge);
+    rays start 0.3 cm off the surface; terrain edge luxels sit 0.2% inside.
+  - **Smoothing** joins faces of different brushes too (as VRAD smooths all world faces);
+    coplanar faces count once.
+  - **The log notes the inverse-square lights once** ("N lights fade with the inverse
+    square...") instead of per light: every light has a reach, so a per-light note would
+    list them all.
+  - **Spot exponent default 1** (Hammer's FGD default); 0 or 1 = straight fade.
+  - **Sun brightness:** Sky Lab's sun diffuse multiplies it only when the map has Sky Lab
+    settings.
+  - **Exposure** (stops, on the camera) = a multiplier of 2^stops on the light.
+  - **The bake key** hashes everything that lights the map (brushes, terrain heights,
+    lights, primitives, props and their models, environment, the sky picture), so moving
+    the camera or a bookmark keeps the bake.
+  - **Camera Preview** bakes on Update, on the editor's thread (Draft; all threads), so the
+    editor waits a moment on big maps. Kept like a render's.
+  - **Lightmaps on the graphics card** are 32-bit float RGB (atlas pages 2048 wide, a
+    one-luxel border copied from the edge); a primitive's 3D lightmap is one texture with
+    its slices side by side, read trilinearly.
+  - **Switching a light to 50% / 0%** starts the 50% distance at a quarter of the reach.
+  - **Known gaps:** props aren't lit by the bake yet (v0.12.3); the render log can't show
+    "light bake stopped" if Esc comes before the bake starts (it then just stops).
 - **v0.12.0 (Render, the pipeline), decided without asking (confirm with the user):**
   - **A new Render menu** (between World and View): Render..., Update Camera Preview
     (moved there from the World menu), Quality, Anti-aliasing, Texture filtering. The
@@ -732,8 +775,9 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
          sun; shadow strength and sky dome unused (flagged).
      11. **Sky light read from the sky picture:** each of the 162 sky rays that escapes
          takes the map's sky colour in that direction (the baked Sky Lab panorama or the
-         sky image). VRAD's method, the sky's colours. How bright: the Environment
-         ambient as a multiplier (decided without asking; confirm when reporting).
+         sky image). VRAD's method, the sky's colours. How bright: a "sky light (%)"
+         field in Environment, default 100 (built so in v0.12.1; see its "decided without
+         asking").
      12. **No flat ambient by default:** a "minimum light" option (today's ambient
          everywhere) exists, off. Rooms without sky are dark until bounces (v0.12.2).
      13. **Lightmaps kept in memory only**, one cache per quality, reused while the map
@@ -767,6 +811,8 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
          steps.
      26. **One release** (v0.12.1). If primitive lightmaps stall while the brush bake
          works, tell the user and ship brushes / terrain first.
+     - **Built (v0.12.1, 2026-11-21)** as one release; choices made while building are under
+       "v0.12.1, decided without asking".
      - **Also agreed:** sun and sky light count a ray that hits nothing as sky (there are
        no sky brushes); the bake runs on the processor with all threads, in the core
        (testable without a graphics card), with ray tests against brushes, terrain,

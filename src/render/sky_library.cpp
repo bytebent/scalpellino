@@ -109,6 +109,28 @@ const Texture2D* SkyLibrary::get(const std::string& name) {
     return &e.tex;
 }
 
+const SkyPicture& SkyLibrary::picture(const std::string& name) {
+    static const SkyPicture none;
+    auto it = entries_.find(name);
+    if (it == entries_.end()) return none;
+    Entry& e = it->second;
+    if (e.pictureDone) return e.picture;
+    e.pictureDone = true;
+    Image img = LoadImage(e.path.c_str());
+    if (!img.data) return e.picture;
+    ImageFormat(&img, PIXELFORMAT_UNCOMPRESSED_R8G8B8);
+    const SkyLayout layout = skyLayout(img.width, img.height);
+    if (layout == SkyLayout::Panorama) {
+        e.picture = makeSkyPicture((const unsigned char*)img.data, img.width, img.height);
+    } else if (layout == SkyLayout::Cross) {
+        const int outW = std::min(1024, std::max(256, img.width));
+        const std::vector<unsigned char> pano = crossToPanorama((const unsigned char*)img.data, img.width, img.height, outW);
+        e.picture = makeSkyPicture(pano.data(), outW, outW / 2);
+    }
+    UnloadImage(img);
+    return e.picture;
+}
+
 SkyLibrary::Cut SkyLibrary::cut(const std::string& name) const {
     auto it = entries_.find(name);
     return it == entries_.end() || !it->second.loaded ? Cut{} : it->second.cut;
