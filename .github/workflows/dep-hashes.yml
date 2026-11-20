@@ -1,0 +1,10 @@
+name: dep-hashes
+on: push
+jobs:
+  hashes:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          for u in https://github.com/raysan5/raylib/archive/refs/tags/6.2.tar.gz https://github.com/ocornut/imgui/archive/refs/tags/v1.93.0-docking.tar.gz https://github.com/raylib-extras/rlImGui/archive/5c17e70e98ae9f50ca94bdcad0e3b3536b46a203.tar.gz; do
+            for i in 1 2; do curl -sSLf "$u" | sha256sum; done
+          done
