@@ -10,7 +10,7 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 
 ## Current status
 
-- **Released:** v0.1.0 … v0.10.2. Milestones 0–10 and Random Replicate are done (see the
+- **Released:** v0.1.0 … v0.11.0. Milestones 0–10, Random Replicate and Sky Lab are done (see the
   milestone sections below and the log); the user confirmed the choices of M10, Random
   Replicate and v0.10.2 (2026-11-19). **v0.10.3 is built and pushed** (asked by the user
   before Sky Lab): `editor.cpp` split by topic (step 1: code moved unchanged; step 2:
@@ -25,9 +25,11 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   pushed**; the choices made without asking are listed under "Sky Lab v0.10.4 / v0.10.5 /
   v0.10.6, decided without asking" for the user to confirm. v0.10.6 also fixed JPEG and
   TGA images not loading at all (raylib had them off).
-- **Next: milestone 11, cameras and Camera Preview** (Roadmap item 4). The user said go
-  (2026-11-20) and answered the open questions; the choices are under Roadmap item 4.
-  Two releases: v0.11.0 and v0.11.1.
+- **Milestone 11, cameras and Camera Preview** (Roadmap item 4; the user said go
+  2026-11-20, choices under Roadmap item 4). **v0.11.0 (camera objects and options) is
+  built and pushed**; its choices made without asking are under "v0.11.0, decided without
+  asking". Next: **v0.11.1**, saved camera presets (Bottega's `presets/camera_presets`)
+  and the Camera Preview (docked panel, editor look until M12), then report.
 - **Roadmap:** Sky Lab → cameras and Camera Preview →
   Render (Source look, with the material system) → water / cloud planes → camera effects →
   export. **Confirmed by the user (2026-11-20)** up to camera effects; **export is not
@@ -53,6 +55,41 @@ are in [`DEV.md`](DEV.md). One-step-per-release: add `docs/releases/vX.Y.Z.md` a
 | rlImGui | commit 5c17e70e98ae9f50ca94bdcad0e3b3536b46a203 |
 
 ## Open questions (parked)
+
+- **v0.11.0 (cameras), decided without asking (confirm with the user):**
+  - **Shortcut Shift+K** (K is free; C is the curve tool); the tool is in the World and
+    Tools menus and the tools strip.
+  - **Defaults:** 50 mm lens (39.6 degrees), 1920 x 1080, near 4 units, far 100000 (1 km),
+    orthographic width 1024 units, amber marker. The field of view is measured across the
+    picture's **longer** side and mm are on a **36 mm (full-frame) sensor** across that
+    side, so a portrait picture keeps the lens's angle along its height.
+  - **Active camera:** the first camera made is active; new and duplicated cameras never
+    take over; deleting the active one makes the first one left (map order) active; a
+    file with none or several active opens with the first. Unticking "active" isn't
+    possible (make another one active instead).
+  - **Names** `camera 1`, `camera 2`... (the lowest free number); a duplicate gets the next
+    free name, offset by one grid step like other duplicates.
+  - **Roll:** positive tips the camera to the right (clockwise seen from behind it). The
+    roll ring is yellow, 1.35 x the other rings, round the view direction; in a 2D view it
+    shows only when the view direction points enough toward or away from you (else it
+    would be a line you can't turn by dragging; type the roll).
+  - **Rings** turn a camera about its own position (like a light), keeping its frame (the
+    world rings also change roll when the camera is tilted, as turning a real camera does).
+  - **Aim at a clicked point:** in a 2D view the point is taken at the camera's own depth
+    (the top view aims level); in 3D the first brush or terrain surface under the cursor
+    (primitives and props aren't hit yet), else 10 m along the ray. The roll is kept.
+  - **Drawing:** pyramid 56 px long on screen toward the picture frame (an orthographic
+    camera: a box as wide as its picture, which can be large), a small triangle on the
+    top edge for "up"; marker a diamond in the camera's colour, a white dot on the active
+    one; inactive cameras dimmer.
+  - **Properties** edits one camera at a time (several selected: the count, the rings and
+    aim work on all); the camera tool lists the map's cameras with a dot to make one
+    active and a click to select it.
+  - **Saved** as `scal_camera` (keys listed in ARCHITECTURE §6 "Cameras"); angles
+    Hammer-style (pitch positive down), like lights' `angles`.
+  - **Not for cameras (like lights):** Multi- / Random Replicate, Snap to Land, hiding and
+    visgroups, Cmd+E. The 3D rectangle select includes them. Exposure is stored only;
+    depth of field waits for the camera effects.
 
 - **Sky Lab v0.10.4, decided without asking (confirm with the user):**
   - **Lock on by default:** the first time Sky Lab opens in a map with a sun light, the

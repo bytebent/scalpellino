@@ -72,6 +72,14 @@ struct Scene {
     std::optional<Light> pendingLight;   // light tool: where Return will create a light
     std::vector<Light> previewLights;    // Multi-Replicate preview
 
+    // Cameras (milestone 11): a pyramid toward the picture (a box when orthographic) and a
+    // marker in every view; the active one drawn brighter. Selected ones get the three
+    // rotation rings plus a roll ring around their view direction (activeRing 3).
+    struct SceneCamera { Camera cam; bool selected = false; };
+    std::vector<SceneCamera> cameras;
+    std::optional<Camera> pendingCamera;  // camera tool: where Return will create one
+    static constexpr double kRollRingScale = 1.35; // roll ring radius / the other rings'
+
     // Math primitives (milestone 9): exact shapes in 3D, outlines in 2D.
     struct ScenePrim { MathPrim prim; bool selected = false; };
     std::vector<ScenePrim> prims;

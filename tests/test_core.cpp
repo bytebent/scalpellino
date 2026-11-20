@@ -2457,7 +2457,7 @@ static void testPropsDocument() {
     CHECK(readMap(writeMap(f), g).ok && nearV(g.props()[0].scale, {1, 2.5, -1}));
     // reset() with props (loading a map into the editor's document).
     Document h;
-    h.reset(e.worldKeys, {}, {}, {}, {}, WorldData{{}, {}, {}, std::nullopt, {}, e.props()});
+    h.reset(e.worldKeys, {}, {}, {}, {}, WorldData{{}, {}, {}, std::nullopt, {}, e.props(), {}});
     CHECK(h.props().size() == 2 && h.props()[0].id == 1 && h.props()[1].id == 2 && !h.dirty());
 }
 
@@ -3247,6 +3247,154 @@ void testSkyLabNight() {
     }
 }
 
+// Milestone 11: cameras.
+static void testCameras() {
+    // Lens <-> field of view on a 36 mm sensor: 50 mm = 39.6 degrees, and back.
+    CHECK(near(lensToFov(50), 39.597752, 1e-5));
+    CHECK(near(fovToLens(lensToFov(24)), 24, 1e-3));
+    CHECK(near(lensToFov(36), 53.130102, 1e-5)); // tan(half) = 0.5
+    CHECK(lensPresets().size() == 5 && sizePresets().size() == 7);
+
+    // Axes: looking along +X, left = +Y, up = +Z; pitch -90 looks down.
+    Camera c;
+    Mat3 b = cameraBasis(c);
+    CHECK(nearV(b.col[0], {1, 0, 0}) && nearV(b.col[1], {0, 1, 0}) && nearV(b.col[2], {0, 0, 1}));
+    c.pitch = -30; c.yaw = 250;
+    CHECK(nearV(cameraForward(c), lightDirection(-30, 250)) && nearV(cameraBasis(c).col[0], lightDirection(-30, 250)));
+    c.pitch = 0; c.yaw = 0; c.roll = 90; // tipped right: up is now -Y (the old right)
+    CHECK(nearV(cameraBasis(c).col[2], {0, -1, 0}) && nearV(cameraBasis(c).col[0], {1, 0, 0}));
+    // setCameraBasis reads back what cameraBasis made, typed values stay typed.
+    for (Vec3 a : {Vec3{-30, 250, 10}, Vec3{45, 90, -170}, Vec3{0, 0, 180}, Vec3{-89, 359, 5}}) {
+        Camera k; k.pitch = a.x; k.yaw = a.y; k.roll = a.z;
+        Camera r; setCameraBasis(r, cameraBasis(k));
+        CHECK(near(r.pitch, k.pitch, 1e-6) && near(r.yaw, k.yaw, 1e-6) && near(r.roll, k.roll, 1e-6));
+    }
+    // Rings: about Z turns the yaw; about Y tilts a +X camera down, without roll.
+    Camera t;
+    rotateCamera(t, 2, 90);
+    CHECK(near(t.pitch, 0) && near(t.yaw, 90) && near(t.roll, 0));
+    rotateCamera(t, 2, -90);
+    rotateCamera(t, 1, 45);
+    CHECK(near(t.pitch, -45) && near(t.yaw, 0) && near(t.roll, 0));
+    // About the X axis while looking along X: that is a roll.
+    Camera rx;
+    rotateCamera(rx, 0, 30);
+    CHECK(near(rx.pitch, 0) && near(rx.yaw, 0) && near(std::fabs(rx.roll), 30));
+    // Many turns stay a proper rotation (forward / up still unit and square).
+    Camera m; m.pitch = -20; m.yaw = 30; m.roll = 10;
+    for (int i = 0; i < 24; ++i) rotateCamera(m, i % 3, 15);
+    b = cameraBasis(m);
+    CHECK(near(length(b.col[0]), 1, 1e-9) && near(dot(b.col[0], b.col[2]), 0, 1e-9));
+    rollCamera(m, 400);
+    CHECK(m.roll > -180 && m.roll <= 180);
+    // Aim at a point keeps the roll.
+    Camera a; a.pos = {0, 0, 100}; a.roll = 15;
+    CHECK(aimCamera(a, {100, 0, 0}) && near(a.pitch, -45) && near(a.yaw, 0) && near(a.roll, 15));
+    CHECK(!aimCamera(a, a.pos));
+
+    // Frame: 1920 x 1080 at 39.6 degrees, distance 100: half width = 100 * tan(19.8).
+    Camera f;
+    const auto fr = cameraFrame(f, 100);
+    const double hw = 100 * std::tan(f.fov * 0.5 * 3.14159265358979323846 / 180);
+    CHECK(nearV(fr[0], {100, hw, hw * 1080 / 1920}, 1e-9));  // top-left (left = +Y)
+    CHECK(nearV(fr[2], {100, -hw, -hw * 1080 / 1920}, 1e-9)); // bottom-right
+    // Portrait: the angle is across the height.
+    f.width = 1080; f.height = 1350;
+    double tx, ty;
+    cameraHalfTangents(f, tx, ty);
+    CHECK(near(ty, std::tan(f.fov * 0.5 * 3.14159265358979323846 / 180)) && near(tx, ty * 1080 / 1350));
+    // Orthographic: the frame keeps its size at every distance; the shape is a box.
+    Camera o; o.ortho = true; o.orthoSize = 400; o.width = 400; o.height = 200;
+    const auto o1 = cameraFrame(o, 10), o2 = cameraFrame(o, 500);
+    CHECK(near(length(o1[1] - o1[0]), 400) && near(length(o2[1] - o2[0]), 400) && near(length(o1[3] - o1[0]), 200));
+    CHECK(cameraShape(o, 50).size() == 4 + 8 + 2 && cameraShape(Camera{}, 50).size() == 4 + 4 + 2);
+    // The "up" mark stands above the top edge.
+    Camera up; const auto sh = cameraShape(up, 50);
+    CHECK(sh.back().first.z > cameraFrame(up, 50)[0].z);
+
+    // Clamping: nonsense values come back usable.
+    Camera bad; bad.fov = 0; bad.nearDist = -5; bad.farDist = 1; bad.width = 0; bad.height = 99999;
+    bad.yaw = -90; bad.roll = 270; bad.pitch = 200; bad.name = ""; bad.color = {300, -1, 20};
+    clampCamera(bad);
+    CHECK(near(bad.fov, 1) && bad.nearDist > 0 && bad.farDist > bad.nearDist && bad.width == 16 && bad.height == 16384);
+    CHECK(near(bad.yaw, 270) && near(bad.roll, -90) && near(bad.pitch, 90) && bad.name == "camera");
+    CHECK(nearV(bad.color, {255, 0, 20}));
+
+    // Document: the first camera is active, the next ones aren't; add selects only cameras.
+    Document d;
+    d.apply(d.makeAdd({makeBox(box({0, 0, 0}, {64, 64, 64}), "a")}, "box"));
+    Light l; d.apply(d.makeAddLights({l}, "light"));
+    Camera c1; c1.name = "one";
+    d.apply(d.makeAddCameras({c1}, "Create camera"));
+    CHECK(d.cameras().size() == 1 && d.cameras()[0].active && d.activeCamera() == &d.cameras()[0]);
+    CHECK(d.cameraSelection().size() == 1 && d.lightSelection().empty() && d.selection().empty());
+    Camera c2; c2.name = "two"; c2.active = true; // asks to be active: the first stays
+    d.apply(d.makeAddCameras({c2}, "Create camera"));
+    CHECK(d.cameras().size() == 2 && d.cameras()[0].active && !d.cameras()[1].active);
+    const CameraId id1 = d.cameras()[0].id, id2 = d.cameras()[1].id;
+    // Making another active deactivates the old one, in one undo step.
+    const size_t undos = d.undoCount();
+    d.apply(d.makeActivateCamera(id2));
+    CHECK(!d.findCamera(id1)->active && d.findCamera(id2)->active && d.undoCount() == undos + 1);
+    CHECK(d.makeActivateCamera(id2).cameraChanges.empty()); // already active: nothing to do
+    d.undo();
+    CHECK(d.findCamera(id1)->active && !d.findCamera(id2)->active);
+    d.redo();
+    // A modify that switches the active one off: another one takes over (always one).
+    Camera off = *d.findCamera(id2); off.active = false;
+    d.apply(d.makeModifyCameras({off}, "x"));
+    CHECK(d.findCamera(id1)->active ^ d.findCamera(id2)->active);
+    // Deleting the active camera makes the one left active; undo brings both back.
+    d.apply(d.makeActivateCamera(id2));
+    Command del = d.makeDelete({}, "Delete");
+    d.addCameraDeletes(del, {id2});
+    d.apply(std::move(del));
+    CHECK(d.cameras().size() == 1 && d.cameras()[0].active && d.cameraSelection().empty());
+    d.undo();
+    CHECK(d.cameras().size() == 2 && d.findCamera(id2)->active && !d.findCamera(id1)->active);
+    // A duplicate never takes over.
+    Camera dup = *d.findCamera(id2); dup.id = 0;
+    d.apply(d.makeAddCameras({dup}, "Duplicate"));
+    int actives = 0;
+    for (const Camera& x : d.cameras()) actives += x.active;
+    CHECK(d.cameras().size() == 3 && actives == 1 && d.findCamera(id2)->active);
+    // Adding another kind of object drops the camera selection.
+    d.apply(d.makeAddLights({l}, "light"));
+    CHECK(d.cameraSelection().empty());
+    d.undo();
+    CHECK(d.cameraSelection().size() == 1);
+
+    // .map round trip: every field, unknown keys kept, still exactly one active.
+    Document e;
+    Camera full; full.name = "hall view"; full.pos = {10, -20, 175}; full.pitch = -12.5; full.yaw = 200; full.roll = -7;
+    full.fov = lensToFov(24); full.nearDist = 30; full.farDist = 5000; full.width = 1080; full.height = 1350;
+    full.ortho = true; full.orthoSize = 800; full.exposure = -1.5; full.color = {10, 200, 30};
+    full.otherKeys = {{"_note", "keep me"}};
+    e.apply(e.makeAddCameras({full, Camera{}}, "c"));
+    Document g;
+    CHECK(readMap(writeMap(e), g).ok && g.cameras().size() == 2);
+    const Camera& r = g.cameras()[0];
+    CHECK(r.name == "hall view" && nearV(r.pos, full.pos) && near(r.pitch, -12.5) && near(r.yaw, 200) && near(r.roll, -7));
+    CHECK(near(r.fov, full.fov, 1e-6) && near(r.nearDist, 30) && near(r.farDist, 5000) && r.width == 1080 && r.height == 1350);
+    CHECK(r.ortho && near(r.orthoSize, 800) && near(r.exposure, -1.5) && nearV(r.color, {10, 200, 30}) && r.active);
+    CHECK(!g.cameras()[1].active && r.otherKeys.size() == 1 && r.otherKeys[0].second == "keep me");
+    CHECK(writeMap(g) == writeMap(e) && !g.dirty());
+    // Hammer-style angles: pitch is written positive down.
+    CHECK(writeMap(e).find("\"angles\" \"12.5 200 -7\"") != std::string::npos);
+    // A file with two active cameras (or none) opens with exactly one; bad numbers are clamped.
+    const std::string twoActive =
+        "{\n\"classname\" \"worldspawn\"\n}\n"
+        "{\n\"classname\" \"scal_camera\"\n\"active\" \"1\"\n\"fov\" \"nan\"\n\"size\" \"0 -3\"\n}\n"
+        "{\n\"classname\" \"scal_camera\"\n\"active\" \"1\"\n\"near\" \"-4\"\n}\n"
+        "{\n\"classname\" \"scal_camera\"\n}\n";
+    Document h;
+    CHECK(readMap(twoActive, h).ok && h.cameras().size() == 3);
+    CHECK(h.cameras()[0].active && !h.cameras()[1].active && !h.cameras()[2].active);
+    CHECK(near(h.cameras()[0].fov, Camera{}.fov) && h.cameras()[0].width == 1920 && h.cameras()[1].nearDist > 0);
+    Document none;
+    CHECK(readMap("{\n\"classname\" \"worldspawn\"\n}\n{\n\"classname\" \"scal_camera\"\n}\n", none).ok && none.cameras()[0].active);
+}
+
 int main() {
     testGrid();
     testBoxGeometry();
@@ -3267,6 +3415,7 @@ int main() {
     testTerrain();
     testTerrainPoints();
     testWorld();
+    testCameras();
     testSky();
     testSkyLab();
     testSkyLabClouds();

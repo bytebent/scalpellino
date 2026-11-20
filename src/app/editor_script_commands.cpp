@@ -39,7 +39,7 @@ void Editor::registerScriptCommands() {
         std::string t; in >> t;
         setTool(t == "block" ? (Tool*)&blockTool_ : t == "vertex" ? (Tool*)&vertexTool_
               : t == "texture" ? (Tool*)&textureTool_ : t == "clip" ? (Tool*)&clipTool_
-              : t == "curve" ? (Tool*)&curveTool_ : t == "terrain" ? (Tool*)&terrainTool_ : t == "light" ? (Tool*)&lightTool_ : t == "prim" ? (Tool*)&primTool_ : t == "props" ? (Tool*)&propTool_ : (Tool*)&selectTool_);
+              : t == "curve" ? (Tool*)&curveTool_ : t == "terrain" ? (Tool*)&terrainTool_ : t == "light" ? (Tool*)&lightTool_ : t == "prim" ? (Tool*)&primTool_ : t == "props" ? (Tool*)&propTool_ : t == "camera" ? (Tool*)&cameraTool_ : (Tool*)&selectTool_);
     });
     add({"press"}, [this](const std::string& cmd, std::istringstream& in) {
         int v; float x, y; in >> v >> x >> y;
@@ -233,6 +233,66 @@ void Editor::registerScriptCommands() {
         } else {
             editLights("Edit light", [&](Light& l) { std::istringstream vals(rest); setField(l, vals); });
         }
+    });
+    add({"cameraset", "cameraedit"}, [this](const std::string& cmd, std::istringstream& in) {
+        // cameraset <key> <value...>: the next camera (camera tool); cameraedit: the selected
+        // cameras (one undo step). Keys: name <n> | pos x y z | angles pitch yaw roll | fov <deg>
+        // | lens <mm> | near <d> | far <d> | size <w> <h> | ortho 0|1 | orthosize <u>
+        // | exposure <s> | color r g b | active 1 (cameraedit: makes the first selected active)
+        std::string k; in >> k;
+        std::string rest; std::getline(in, rest);
+        auto setField = [&](Camera& c) {
+            std::istringstream v(rest);
+            if (k == "name") { std::string n; std::getline(v >> std::ws, n); c.name = n; }
+            else if (k == "pos") v >> c.pos.x >> c.pos.y >> c.pos.z;
+            else if (k == "angles") v >> c.pitch >> c.yaw >> c.roll;
+            else if (k == "fov") v >> c.fov;
+            else if (k == "lens") { double mm = 50; v >> mm; c.fov = lensToFov(mm); }
+            else if (k == "near") v >> c.nearDist;
+            else if (k == "far") v >> c.farDist;
+            else if (k == "size") v >> c.width >> c.height;
+            else if (k == "ortho") { int o = 0; v >> o; c.ortho = o != 0; }
+            else if (k == "orthosize") v >> c.orthoSize;
+            else if (k == "exposure") v >> c.exposure;
+            else if (k == "color") v >> c.color.x >> c.color.y >> c.color.z;
+            clampCamera(c);
+        };
+        if (cmd == "cameraset") {
+            setField(cameraTool_.templ);
+            if (k == "pos") cameraTool_.pending = cameraTool_.templ.pos;
+            return;
+        }
+        if (k == "active") {
+            if (!doc_.cameraSelection().empty()) activateCamera(*doc_.cameraSelection().begin());
+            return;
+        }
+        std::vector<Camera> out;
+        for (CameraId id : doc_.cameraSelection())
+            if (const Camera* c = doc_.findCamera(id)) { Camera m = *c; setField(m); if (m != *c) out.push_back(m); }
+        if (!out.empty()) doc_.apply(doc_.makeModifyCameras(out, "Edit camera"));
+    });
+    add({"cameraselect"}, [this](const std::string&, std::istringstream& in) {
+        // cameraselect all | none | <index>...  (order in the map, 0-based)
+        std::set<CameraId> sel;
+        std::string w;
+        while (in >> w) {
+            if (w == "all") for (const Camera& c : doc_.cameras()) sel.insert(c.id);
+            else if (w != "none") { const size_t i = (size_t)std::atoi(w.c_str()); if (i < doc_.cameras().size()) sel.insert(doc_.cameras()[i].id); }
+        }
+        doc_.setCameraSelection(sel); doc_.setSelection({}); doc_.setLightSelection({}); doc_.setPrimSelection({}); doc_.setPropSelection({});
+    });
+    add({"cameraactive"}, [this](const std::string&, std::istringstream& in) {
+        // cameraactive <index>: makes that camera the active one (as the Properties tick box)
+        size_t i = 0; in >> i;
+        if (i < doc_.cameras().size()) activateCamera(doc_.cameras()[i].id);
+    });
+    add({"cameraaim"}, [this](const std::string&, std::istringstream& in) {
+        // cameraaim x y z: aims the selected cameras at a typed point | cameraaim click: the next
+        // click (press / wpress / press3d) aims them (World > Aim ... at a clicked point)
+        std::string w; in >> w;
+        if (w == "click") { startCameraAim(); return; }
+        Vec3 t; t.x = std::atof(w.c_str()); in >> t.y >> t.z;
+        CameraTool::aimSelected(doc_, t);
     });
     add({"prim"}, [this](const std::string&, std::istringstream& in) {
         // prim <kind> x y z  sx sy sz  [rx ry rz]: adds a math primitive (current texture)

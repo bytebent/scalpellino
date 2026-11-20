@@ -80,6 +80,13 @@ Color lightColor(const Light& l) {
 Color dim(Color c, float k) {
     return {(unsigned char)(c.r * k), (unsigned char)(c.g * k), (unsigned char)(c.b * k), c.a};
 }
+Color cameraColor(const Camera& c) {
+    auto k = [](double v) { return (unsigned char)std::clamp((int)std::lround(v), 0, 255); };
+    return {k(c.color.x), k(c.color.y), k(c.color.z), 255};
+}
+const Color kRollRing{240, 200, 60, 255};
+constexpr double kCameraLenPx = 56; // a camera's pyramid on screen (logical pixels)
+
 // Lines to draw for a light's shape (world segments): a spot's cone (length `len`), a
 // sun's arrow.
 std::vector<std::pair<Vec3, Vec3>> lightShape(const Light& l, double len) {
@@ -466,6 +473,41 @@ void Viewport::render2D(const Grid& grid, const Scene& scene) {
                 const Vec3 &a = pts[i], &b = pts[(i + 1) % pts.size()];
                 segment(phys(a[U], a[V]), phys(b[U], b[V]), thick + 1, rc);
             }
+        }
+    }
+
+    // ---- cameras: pyramid (box if orthographic), marker (a diamond), rings when selected
+    {
+        const double wpp = 1.0 / zoom_;
+        auto drawCamera = [&](const Camera& c, bool sel, bool pending) {
+            const Color col = cameraColor(c);
+            const Color lineCol = sel ? kSelected : pending ? kPreview : c.active ? col : dim(col, 0.55f);
+            for (const auto& [a, b] : cameraShape(c, kCameraLenPx * wpp))
+                segment(phys(a[U], a[V]), phys(b[U], b[V]), thick, lineCol);
+            const Vector2 m = phys(c.pos[U], c.pos[V]);
+            const float hs = (float)(5 * P), f = (float)(sel || pending ? 2 * P : P);
+            const Color frame = pending ? kPreview : sel ? kSelected : BLACK;
+            DrawPoly(m, 4, hs + f * 1.5f, 0, frame);
+            DrawPoly(m, 4, hs, 0, col);
+            if (c.active) DrawCircleV(m, (float)(1.5 * P), WHITE);
+        };
+        for (const auto& sc : scene.cameras) if (!sc.selected) drawCamera(sc.cam, false, false);
+        for (const auto& sc : scene.cameras) if (sc.selected) drawCamera(sc.cam, true, false);
+        if (scene.pendingCamera) drawCamera(*scene.pendingCamera, false, true);
+        for (const auto& sc : scene.cameras) {
+            if (!sc.selected) continue;
+            const int ax = axD();
+            const double r = Scene::kRingPx * wpp;
+            auto ring = [&](const std::vector<Vec3>& pts, Color rc) {
+                for (size_t i = 0; i < pts.size(); ++i) {
+                    const Vec3 &a = pts[i], &b = pts[(i + 1) % pts.size()];
+                    segment(phys(a[U], a[V]), phys(b[U], b[V]), thick + 1, rc);
+                }
+            };
+            ring(axisCircle(sc.cam.pos, ax, r, 64), scene.activeRing == ax ? WHITE : kAxisCol[ax]);
+            const Vec3 fwd = cameraForward(sc.cam);
+            if (std::fabs(fwd[axD()]) > 0.2) // seen nearly edge-on it can't be grabbed: type the roll
+                ring(dirCircle(sc.cam.pos, fwd, r * Scene::kRollRingScale, 64), scene.activeRing == 3 ? WHITE : kRollRing);
         }
     }
 
@@ -948,6 +990,26 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
             for (size_t i = 0; i < pts.size(); ++i) DrawLine3D(toRl(pts[i]), toRl(pts[(i + 1) % pts.size()]), rc);
         }
     }
+    // Cameras: pyramids and rings (drawn through walls, like lights).
+    auto drawCamera3D = [&](const Camera& c, bool sel, bool pending) {
+        const Color col = cameraColor(c);
+        const Color lineCol = sel ? kSelected : pending ? kPreview : c.active ? col : dim(col, 0.55f);
+        for (const auto& [a, b] : cameraShape(c, kCameraLenPx * worldPerPixel(c.pos))) DrawLine3D(toRl(a), toRl(b), lineCol);
+    };
+    for (const auto& sc : scene.cameras) drawCamera3D(sc.cam, sc.selected, false);
+    if (scene.pendingCamera) drawCamera3D(*scene.pendingCamera, false, true);
+    for (const auto& sc : scene.cameras) {
+        if (!sc.selected) continue;
+        const double r = Scene::kRingPx * worldPerPixel(sc.cam.pos);
+        for (int ax = 0; ax < 3; ++ax) {
+            const auto pts = axisCircle(sc.cam.pos, ax, r, 64);
+            const Color rc = scene.activeRing == ax ? WHITE : kAxisCol[ax];
+            for (size_t i = 0; i < pts.size(); ++i) DrawLine3D(toRl(pts[i]), toRl(pts[(i + 1) % pts.size()]), rc);
+        }
+        const auto pts = dirCircle(sc.cam.pos, cameraForward(sc.cam), r * Scene::kRollRingScale, 64);
+        const Color rc = scene.activeRing == 3 ? WHITE : kRollRing;
+        for (size_t i = 0; i < pts.size(); ++i) DrawLine3D(toRl(pts[i]), toRl(pts[(i + 1) % pts.size()]), rc);
+    }
     for (const Scene::PrimGizmo& gz : scene.gizmos) {
         const double r = std::max(gz.radius, Scene::kRingPx * worldPerPixel(gz.center));
         for (int ax = 0; ax < 3; ++ax) {
@@ -984,6 +1046,18 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
         }
     };
     for (const auto& sl : scene.lights) marker3D(sl.light, sl.selected ? kSelected : BLACK, sl.selected ? 2 * P : P);
+    auto cameraMarker3D = [&](const Camera& cam, Color frame, float f) {
+        Vector2 c;
+        if (!worldToLocal3D(cam.pos, c)) return;
+        c.x *= P;
+        c.y *= P;
+        const float hs = 5 * P;
+        DrawPoly(c, 4, hs + f * 1.5f, 0, frame);
+        DrawPoly(c, 4, hs, 0, cameraColor(cam));
+        if (cam.active) DrawCircleV(c, 1.5f * P, WHITE);
+    };
+    for (const auto& sc : scene.cameras) cameraMarker3D(sc.cam, sc.selected ? kSelected : BLACK, sc.selected ? 2 * P : P);
+    if (scene.pendingCamera) cameraMarker3D(*scene.pendingCamera, kPreview, 2 * P);
     for (const Scene::PrimGizmo& gz : scene.gizmos)
         for (const auto& [pos, ax] : gz.handles) {
             Vector2 c;

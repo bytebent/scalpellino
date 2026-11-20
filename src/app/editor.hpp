@@ -6,7 +6,7 @@
 // input, scene, views), editor_edit.cpp (commands, transform, carve, curves),
 // editor_visibility.cpp, editor_surfaces.cpp (textures, terrain), editor_objects.cpp
 // (primitives, props, landing), editor_replicate.cpp, editor_world.cpp (lights, sky,
-// bookmarks), editor_skylab.cpp (Sky Lab), editor_files.cpp (files, settings, Bottega), editor_script.cpp (test
+// bookmarks), editor_cameras.cpp (cameras), editor_skylab.cpp (Sky Lab), editor_files.cpp (files, settings, Bottega), editor_script.cpp (test
 // scripts). Shared helpers: editor_util.hpp; member templates: editor_templates.hpp.
 #include <functional>
 #include <map>
@@ -27,6 +27,7 @@
 #include "tools/curve_tool.hpp"
 #include "tools/terrain_tool.hpp"
 #include "tools/light_tool.hpp"
+#include "tools/camera_tool.hpp"
 #include "tools/prim_tool.hpp"
 #include "tools/prop_tool.hpp"
 #include "render/sky_library.hpp"
@@ -224,6 +225,15 @@ private:
     char bookmarkName_[64] = "";
     std::string worldError_;
 
+    // Cameras (milestone 11): editor_cameras.cpp
+    void drawCameraPanel();
+    void activateCamera(CameraId id);   // one undo step; nothing if it already is
+    void startCameraAim();              // the next click aims the selected cameras
+    Camera camBuf_;                     // Properties fields for the selected camera
+    CameraId camBufFor_ = 0;
+    unsigned long long camBufRev_ = ~0ull;
+    double camAim_[3] = {0, 0, 0};      // typed point to aim at
+
     // Sky Lab (milestone 10c): editor_skylab.cpp
     void openSkyLab();
     void closeSkyLab();
@@ -323,6 +333,7 @@ private:
     CurveTool curveTool_;
     TerrainTool terrainTool_;
     LightTool lightTool_;
+    CameraTool cameraTool_;
     PrimTool primTool_;
     PropTool propTool_;
     Tool* tool_ = &selectTool_;

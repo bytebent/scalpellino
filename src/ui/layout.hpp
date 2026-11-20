@@ -31,10 +31,13 @@ struct MenuState {
     bool primTool = false, primPending = false;
     int primKind = 0;
     size_t primsSelected = 0;
-    bool hasAnything = false;   // brushes, lights or primitives selected
+    bool hasAnything = false;   // brushes, lights, cameras, primitives or props selected
     bool primsInCombo = false;
     bool propTool = false, propPending = false;
     size_t propsSelected = 0;
+    bool cameraTool = false, cameraPending = false, cameraAiming = false;
+    size_t camerasSelected = 0;
+    bool selectedCameraActive = false; // the one selected camera is the active one already
 };
 
 struct MenuActions {
@@ -73,6 +76,7 @@ struct MenuActions {
     int primOp = -1;      // PrimOp for the selected primitives
     bool replicate = false, randomReplicate = false, snapLand = false, snapGround = false;
     bool toolProp = false, createProp = false;
+    bool toolCamera = false, createCamera = false, activateCamera = false, aimCamera = false;
 };
 
 // Draws the menu bar and reports clicked items.

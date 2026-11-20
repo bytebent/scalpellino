@@ -447,6 +447,11 @@ void Editor::drawFacePanel() {
         ImGui::End();
         return;
     }
+    if (tool_ == &cameraTool_ || (tool_ != &textureTool_ && doc_.selection().empty() && !doc_.cameraSelection().empty())) {
+        if (ImGui::Begin("Properties###face", nullptr, ImGuiWindowFlags_NoCollapse)) drawCameraPanel();
+        ImGui::End();
+        return;
+    }
     if (tool_ == &lightTool_ || (tool_ == &selectTool_ && !doc_.lightSelection().empty())) {
         if (ImGui::Begin("Properties###face", nullptr, ImGuiWindowFlags_NoCollapse)) drawLightPanel();
         ImGui::End();

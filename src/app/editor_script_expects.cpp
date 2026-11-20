@@ -75,6 +75,54 @@ void Editor::registerScriptExpects() {
             if (std::fabs(l->pitch - p) > 0.01 || std::fabs(l->yaw - y) > 0.01) { std::fprintf(stderr, "script FAIL (command %d): light pitch %g yaw %g\n", scriptLine_, l->pitch, l->yaw); ++scriptFailures_; }
         }
     });
+    add({"cameras", "camerasel"}, [this](const std::string&, std::istringstream& in) {
+        // expect cameras <n> | expect camerasel <n>
+        std::string w; size_t n = 0; in >> w >> n;
+        const size_t got = w == "cameras" ? doc_.cameras().size() : doc_.cameraSelection().size();
+        if (got != n) { std::fprintf(stderr, "script FAIL (command %d): expected %zu %s, got %zu\n", scriptLine_, n, w.c_str(), got); ++scriptFailures_; }
+    });
+    add({"cameraactive"}, [this](const std::string&, std::istringstream& in) {
+        // expect cameraactive <index>: that camera (order in the map) is the only active one
+        std::string w; size_t i = 0; in >> w >> i;
+        int actives = 0;
+        for (const Camera& c : doc_.cameras()) actives += c.active;
+        if (actives != 1 || i >= doc_.cameras().size() || !doc_.cameras()[i].active) {
+            std::fprintf(stderr, "script FAIL (command %d): camera %zu is not the one active camera (%d active)\n", scriptLine_, i, actives);
+            ++scriptFailures_;
+        }
+    });
+    add({"cam"}, [this](const std::string&, std::istringstream& in) {
+        // expect cam <key> <value...>: the first selected camera, keys as cameraedit
+        // (pos, angles, fov, lens, near, far, size, ortho, orthosize, exposure, color, name); +-0.01
+        std::string w, k; in >> w >> k;
+        const Camera* c = doc_.cameraSelection().empty() ? nullptr : doc_.findCamera(*doc_.cameraSelection().begin());
+        if (!c) { std::fprintf(stderr, "script FAIL (command %d): no camera selected\n", scriptLine_); ++scriptFailures_; return; }
+        std::vector<double> have;
+        if (k == "name") {
+            std::string n; std::getline(in >> std::ws, n);
+            if (n != c->name) { std::fprintf(stderr, "script FAIL (command %d): camera is called '%s'\n", scriptLine_, c->name.c_str()); ++scriptFailures_; }
+            return;
+        }
+        if (k == "pos") have = {c->pos.x, c->pos.y, c->pos.z};
+        else if (k == "angles") have = {c->pitch, c->yaw, c->roll};
+        else if (k == "fov") have = {c->fov};
+        else if (k == "lens") have = {fovToLens(c->fov)};
+        else if (k == "near") have = {c->nearDist};
+        else if (k == "far") have = {c->farDist};
+        else if (k == "size") have = {(double)c->width, (double)c->height};
+        else if (k == "ortho") have = {c->ortho ? 1.0 : 0.0};
+        else if (k == "orthosize") have = {c->orthoSize};
+        else if (k == "exposure") have = {c->exposure};
+        else if (k == "color") have = {c->color.x, c->color.y, c->color.z};
+        bool ok = !have.empty();
+        std::string got;
+        for (double h : have) {
+            double want = 0;
+            if (!(in >> want) || std::fabs(want - h) > 0.01) ok = false;
+            got += " " + std::to_string(h);
+        }
+        if (!ok) { std::fprintf(stderr, "script FAIL (command %d): camera %s is%s\n", scriptLine_, k.c_str(), got.c_str()); ++scriptFailures_; }
+    });
     add({"primpos", "primrot", "primsize"}, [this](const std::string&, std::istringstream& in) {
         // expect primpos|primrot|primsize x y z: the first selected primitive (+-0.01)
         std::string w; Vec3 v; in >> w >> v.x >> v.y >> v.z;

@@ -148,6 +148,27 @@ KeyValues propKeys(const Prop& p) {
     return kv;
 }
 
+// A camera as our own point entity ("scal_camera"; other tools ignore it). Angles as
+// Hammer writes them: "pitch yaw roll" with pitch positive DOWN.
+KeyValues cameraKeys(const Camera& c) {
+    KeyValues kv;
+    kv.emplace_back("classname", "scal_camera");
+    kv.emplace_back("name", c.name);
+    kv.emplace_back("origin", vec(c.pos));
+    kv.emplace_back("angles", num(-c.pitch) + " " + num(c.yaw) + " " + num(c.roll));
+    kv.emplace_back("fov", num(c.fov));
+    kv.emplace_back("near", num(c.nearDist));
+    kv.emplace_back("far", num(c.farDist));
+    kv.emplace_back("size", std::to_string(c.width) + " " + std::to_string(c.height));
+    kv.emplace_back("ortho", c.ortho ? "1" : "0");
+    kv.emplace_back("ortho_size", num(c.orthoSize));
+    kv.emplace_back("exposure", num(c.exposure));
+    kv.emplace_back("color", vec(c.color));
+    kv.emplace_back("active", c.active ? "1" : "0");
+    for (const auto& k : c.otherKeys) kv.push_back(k);
+    return kv;
+}
+
 // Numbers from a file: NaN and infinity (which strtod accepts) are refused like any
 // other bad number (v0.10.2), so a broken file can't put them into the map.
 bool finite3(double a, double b, double c) { return std::isfinite(a) && std::isfinite(b) && std::isfinite(c); }
@@ -201,6 +222,37 @@ bool propFromKeys(const KeyValues& kv, Prop& p) {
         else if (k == "scale") readVec(v, p.scale);
         else p.otherKeys.emplace_back(k, v);
     }
+    return true;
+}
+
+bool cameraFromKeys(const KeyValues& kv, Camera& c) {
+    bool ours = false;
+    for (const auto& [k, v] : kv) if (k == "classname" && v == "scal_camera") ours = true;
+    if (!ours) return false;
+    for (const auto& [k, v] : kv) {
+        if (k == "classname") continue;
+        if (k == "name") c.name = v;
+        else if (k == "origin") readVec(v, c.pos);
+        else if (k == "angles") {
+            Vec3 a;
+            if (readVec(v, a)) { c.pitch = -a.x; c.yaw = a.y; c.roll = a.z; }
+        } else if (k == "fov") c.fov = numOr(v, c.fov);
+        else if (k == "near") c.nearDist = numOr(v, c.nearDist);
+        else if (k == "far") c.farDist = numOr(v, c.farDist);
+        else if (k == "size") {
+            double w = 0, h = 0;
+            if (std::sscanf(v.c_str(), "%lf %lf", &w, &h) == 2 && std::isfinite(w) && std::isfinite(h) && w > 0 && h > 0 && w < 1e6 && h < 1e6) {
+                c.width = (int)std::lround(w);
+                c.height = (int)std::lround(h);
+            }
+        } else if (k == "ortho") c.ortho = numOr(v, 0) != 0;
+        else if (k == "ortho_size") c.orthoSize = numOr(v, c.orthoSize);
+        else if (k == "exposure") c.exposure = numOr(v, c.exposure);
+        else if (k == "color") readVec(v, c.color);
+        else if (k == "active") c.active = numOr(v, 0) != 0;
+        else c.otherKeys.emplace_back(k, v);
+    }
+    clampCamera(c);
     return true;
 }
 
@@ -304,6 +356,11 @@ std::string writeMap(const Document& doc) {
     for (const Prop& p : doc.props()) {
         o << "// entity " << e++ << "\n{\n";
         writeKeys(o, propKeys(p));
+        o << "}\n";
+    }
+    for (const Camera& c : doc.cameras()) {
+        o << "// entity " << e++ << "\n{\n";
+        writeKeys(o, cameraKeys(c));
         o << "}\n";
     }
     for (const RawEntity& ent : doc.otherEntities) {
@@ -625,6 +682,8 @@ MapReadResult readMap(const std::string& text, Document& doc) {
                 extra.prims.push_back(mp);
             } else if (Prop pp; brushes.empty() && propFromKeys(keys, pp)) {
                 extra.props.push_back(pp);
+            } else if (Camera cam; brushes.empty() && cameraFromKeys(keys, cam)) {
+                extra.cameras.push_back(cam);
             } else {
                 others.push_back({std::move(keys), std::move(brushes)});
             }

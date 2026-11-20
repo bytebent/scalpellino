@@ -120,11 +120,13 @@ void Document::apply(Command cmd) {
     for (const LightChange& c : cmd.lightChanges) setLight(c.id, c.after);
     for (const PrimChange& c : cmd.primChanges) setPrim(c.id, c.after);
     for (const PropChange& c : cmd.propChanges) setProp(c.id, c.after);
+    for (const CameraChange& c : cmd.cameraChanges) setCamera(c.id, c.after);
     if (cmd.envAfter) env_ = *cmd.envAfter;
     selection_ = cmd.selectionAfter;
     if (cmd.lightSelectionAfter) lightSelection_ = *cmd.lightSelectionAfter;
     if (cmd.primSelectionAfter) primSelection_ = *cmd.primSelectionAfter;
     if (cmd.propSelectionAfter) propSelection_ = *cmd.propSelectionAfter;
+    if (cmd.cameraSelectionAfter) cameraSelection_ = *cmd.cameraSelectionAfter;
     cmd.serial = ++nextSerial_;
     // New primitives or props show them again if they were hidden.
     for (const PrimChange& c : cmd.primChanges) if (c.after && !c.before) primsShown_ = true;
@@ -157,11 +159,13 @@ bool Document::undo() {
     for (auto it = cmd.lightChanges.rbegin(); it != cmd.lightChanges.rend(); ++it) setLight(it->id, it->before);
     for (auto it = cmd.primChanges.rbegin(); it != cmd.primChanges.rend(); ++it) setPrim(it->id, it->before);
     for (auto it = cmd.propChanges.rbegin(); it != cmd.propChanges.rend(); ++it) setProp(it->id, it->before);
+    for (auto it = cmd.cameraChanges.rbegin(); it != cmd.cameraChanges.rend(); ++it) setCamera(it->id, it->before);
     if (cmd.envBefore) env_ = *cmd.envBefore;
     selection_ = cmd.selectionBefore;
     if (cmd.lightSelectionBefore) lightSelection_ = *cmd.lightSelectionBefore;
     if (cmd.primSelectionBefore) primSelection_ = *cmd.primSelectionBefore;
     if (cmd.propSelectionBefore) propSelection_ = *cmd.propSelectionBefore;
+    if (cmd.cameraSelectionBefore) cameraSelection_ = *cmd.cameraSelectionBefore;
     redo_.push_back(std::move(cmd));
     bump();
     return true;
@@ -176,11 +180,13 @@ bool Document::redo() {
     for (const LightChange& c : cmd.lightChanges) setLight(c.id, c.after);
     for (const PrimChange& c : cmd.primChanges) setPrim(c.id, c.after);
     for (const PropChange& c : cmd.propChanges) setProp(c.id, c.after);
+    for (const CameraChange& c : cmd.cameraChanges) setCamera(c.id, c.after);
     if (cmd.envAfter) env_ = *cmd.envAfter;
     selection_ = cmd.selectionAfter;
     if (cmd.lightSelectionAfter) lightSelection_ = *cmd.lightSelectionAfter;
     if (cmd.primSelectionAfter) primSelection_ = *cmd.primSelectionAfter;
     if (cmd.propSelectionAfter) propSelection_ = *cmd.propSelectionAfter;
+    if (cmd.cameraSelectionAfter) cameraSelection_ = *cmd.cameraSelectionAfter;
     undo_.push_back(std::move(cmd));
     bump();
     return true;
@@ -216,6 +222,14 @@ void Document::reset(KeyValues world, std::vector<Brush> brushes, std::vector<Ra
         p.id = nextPropId_++;
         props_.push_back(std::move(p));
     }
+    cameras_.clear();
+    cameraSelection_.clear();
+    nextCameraId_ = 1;
+    for (Camera& c : extra.cameras) {
+        c.id = nextCameraId_++;
+        cameras_.push_back(std::move(c));
+    }
+    fixActiveCamera(cameras_); // a file with none or several active
     bookmarks_ = std::move(extra.bookmarks);
     figure_ = extra.figure;
     visgroups_ = std::move(visgroups);
@@ -283,6 +297,8 @@ Command Document::makeAddLights(std::vector<Light> lights, const std::string& na
     c.primSelectionAfter = std::set<MathPrimId>{};
     c.propSelectionBefore = propSelection_;
     c.propSelectionAfter = std::set<PropId>{};
+    c.cameraSelectionBefore = cameraSelection_;
+    c.cameraSelectionAfter = std::set<CameraId>{};
     for (Light& l : lights) {
         if (l.id == 0) l.id = newLightId();
         c.lightSelectionAfter->insert(l.id);
@@ -352,6 +368,8 @@ Command Document::makeAddPrims(std::vector<MathPrim> prims, const std::string& n
     c.primSelectionAfter = std::set<MathPrimId>{};
     c.propSelectionBefore = propSelection_;
     c.propSelectionAfter = std::set<PropId>{};
+    c.cameraSelectionBefore = cameraSelection_;
+    c.cameraSelectionAfter = std::set<CameraId>{};
     for (MathPrim& p : prims) {
         if (p.id == 0) p.id = newPrimId();
         c.primSelectionAfter->insert(p.id);
@@ -411,6 +429,8 @@ Command Document::makeAddProps(std::vector<Prop> props, const std::string& name)
     c.primSelectionAfter = std::set<MathPrimId>{};
     c.propSelectionBefore = propSelection_;
     c.propSelectionAfter = std::set<PropId>{};
+    c.cameraSelectionBefore = cameraSelection_;
+    c.cameraSelectionAfter = std::set<CameraId>{};
     for (Prop& p : props) {
         if (p.id == 0) p.id = newPropId();
         c.propSelectionAfter->insert(p.id);
@@ -469,6 +489,121 @@ Command Document::makeChange(const std::vector<Brush>& modified, std::vector<Bru
     }
     if (selectAfter) c.selectionAfter = *selectAfter;
     return c;
+}
+
+const Camera* Document::findCamera(CameraId id) const {
+    for (const Camera& c : cameras_)
+        if (c.id == id) return &c;
+    return nullptr;
+}
+
+const Camera* Document::activeCamera() const {
+    for (const Camera& c : cameras_)
+        if (c.active) return &c;
+    return nullptr;
+}
+
+void Document::setCamera(CameraId id, const std::optional<Camera>& c) {
+    auto it = std::find_if(cameras_.begin(), cameras_.end(), [&](const Camera& x) { return x.id == id; });
+    if (c) {
+        if (it != cameras_.end()) *it = *c;
+        else // kept in creation order, so undoing a delete puts it back where it was
+            cameras_.insert(std::lower_bound(cameras_.begin(), cameras_.end(), id,
+                                             [](const Camera& x, CameraId v) { return x.id < v; }),
+                            *c);
+        if (id >= nextCameraId_) nextCameraId_ = id + 1;
+    } else if (it != cameras_.end()) {
+        cameras_.erase(it);
+        cameraSelection_.erase(id);
+    }
+}
+
+void Document::keepOneActive(Command& c, CameraId prefer) const {
+    // The cameras as they will be after the command, in id order.
+    std::map<CameraId, Camera> after;
+    for (const Camera& x : cameras_) after[x.id] = x;
+    for (const CameraChange& ch : c.cameraChanges) {
+        if (ch.after) after[ch.id] = *ch.after;
+        else after.erase(ch.id);
+    }
+    std::vector<Camera> list;
+    if (prefer && after.count(prefer) && after[prefer].active) list.push_back(after[prefer]);
+    for (const auto& [id, x] : after) if (id != prefer || list.empty()) list.push_back(x);
+    for (CameraId id : fixActiveCamera(list)) {
+        const Camera* fixed = nullptr;
+        for (const Camera& x : list) if (x.id == id) fixed = &x;
+        bool merged = false;
+        for (CameraChange& ch : c.cameraChanges)
+            if (ch.id == id && ch.after) { ch.after->active = fixed->active; merged = true; }
+        if (!merged) c.cameraChanges.push_back({id, *findCamera(id), *fixed});
+    }
+}
+
+Command Document::makeAddCameras(std::vector<Camera> cams, const std::string& name) {
+    Command c;
+    c.name = name;
+    c.selectionBefore = selection_;
+    c.lightSelectionBefore = lightSelection_;
+    c.lightSelectionAfter = std::set<LightId>{};
+    c.primSelectionBefore = primSelection_;
+    c.primSelectionAfter = std::set<MathPrimId>{};
+    c.propSelectionBefore = propSelection_;
+    c.propSelectionAfter = std::set<PropId>{};
+    c.cameraSelectionBefore = cameraSelection_;
+    c.cameraSelectionAfter = std::set<CameraId>{};
+    const bool hadActive = activeCamera() != nullptr;
+    for (Camera& x : cams) {
+        if (x.id == 0) x.id = newCameraId();
+        if (hadActive) x.active = false; // new cameras never take over (duplicates included)
+        c.cameraSelectionAfter->insert(x.id);
+        c.cameraChanges.push_back({x.id, std::nullopt, std::move(x)});
+    }
+    keepOneActive(c);
+    return c;
+}
+
+Command Document::makeModifyCameras(const std::vector<Camera>& modified, const std::string& name) {
+    Command c;
+    c.name = name;
+    c.selectionBefore = c.selectionAfter = selection_;
+    CameraId newlyActive = 0;
+    for (const Camera& x : modified)
+        if (const Camera* old = findCamera(x.id)) {
+            c.cameraChanges.push_back({x.id, *old, x});
+            if (x.active && !old->active) newlyActive = x.id;
+        }
+    if (newlyActive) // it wins: every other camera is switched off
+        for (const Camera& x : cameras_) {
+            if (x.id == newlyActive || !x.active) continue;
+            bool merged = false;
+            for (CameraChange& ch : c.cameraChanges)
+                if (ch.id == x.id && ch.after) { ch.after->active = false; merged = true; }
+            if (!merged) { Camera off = x; off.active = false; c.cameraChanges.push_back({x.id, x, off}); }
+        }
+    keepOneActive(c, newlyActive);
+    return c;
+}
+
+Command Document::makeActivateCamera(CameraId id) {
+    std::vector<Camera> mod;
+    if (const Camera* x = findCamera(id)) { Camera a = *x; a.active = true; mod.push_back(a); }
+    Command c = makeModifyCameras(mod, "Make camera active");
+    // Nothing to do if it already was: keep the command empty.
+    if (!c.cameraChanges.empty() && c.cameraChanges[0].before == c.cameraChanges[0].after && c.cameraChanges.size() == 1)
+        c.cameraChanges.clear();
+    return c;
+}
+
+void Document::addCameraDeletes(Command& c, const std::set<CameraId>& ids) const {
+    std::set<CameraId> after = c.cameraSelectionAfter ? *c.cameraSelectionAfter : cameraSelection_;
+    if (!c.cameraSelectionBefore) c.cameraSelectionBefore = cameraSelection_;
+    for (CameraId id : ids)
+        if (const Camera* x = findCamera(id)) {
+            c.cameraChanges.push_back({id, *x, std::nullopt});
+            after.erase(id);
+        }
+    c.cameraSelectionAfter = after;
+    keepOneActive(c);
 }
 
 } // namespace scal

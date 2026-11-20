@@ -44,6 +44,7 @@ void Editor::selectNone() {
     tool_->cancel();
     doc_.setSelection({});
     doc_.setPropSelection({});
+    doc_.setCameraSelection({});
 }
 
 void Editor::duplicate() {
@@ -81,6 +82,21 @@ void Editor::duplicate() {
         doc_.apply(doc_.makeAddProps(std::move(copies), "Duplicate prop"));
         return;
     }
+    if (doc_.selection().empty() && !doc_.cameraSelection().empty()) {
+        tool_->cancel();
+        std::vector<Camera> copies;
+        for (CameraId id : doc_.cameraSelection())
+            if (const Camera* c = doc_.findCamera(id)) {
+                Camera k = *c;
+                k.id = 0;
+                k.active = false; // a copy never takes over
+                k.name = freeCameraName(doc_, copies);
+                k.pos += Vec3{grid_.size, grid_.size, 0};
+                copies.push_back(std::move(k));
+            }
+        doc_.apply(doc_.makeAddCameras(std::move(copies), "Duplicate camera"));
+        return;
+    }
     if (doc_.selection().empty() && !doc_.lightSelection().empty()) {
         tool_->cancel();
         std::vector<Light> copies;
@@ -109,12 +125,15 @@ void Editor::duplicate() {
 }
 
 void Editor::deleteSelection() {
-    if (doc_.selection().empty() && doc_.lightSelection().empty() && doc_.primSelection().empty() && doc_.propSelection().empty()) return;
+    if (doc_.selection().empty() && doc_.lightSelection().empty() && doc_.primSelection().empty() && doc_.propSelection().empty() &&
+        doc_.cameraSelection().empty())
+        return;
     tool_->cancel();
     Command c = doc_.makeDelete(doc_.selection(), "Delete");
     doc_.addLightDeletes(c, doc_.lightSelection());
     doc_.addPrimDeletes(c, doc_.primSelection());
     doc_.addPropDeletes(c, doc_.propSelection());
+    doc_.addCameraDeletes(c, doc_.cameraSelection());
     doc_.apply(std::move(c));
 }
 

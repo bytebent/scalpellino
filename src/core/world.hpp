@@ -80,6 +80,8 @@ struct CameraBookmark {
 // `n` points on a circle around `center` in the plane across world axis `axis` (0..2),
 // starting on the next axis and turning by the right-hand rule.
 std::vector<Vec3> axisCircle(const Vec3& center, int axis, double radius, int n = 64);
+// `n` points on a circle around `center` across any direction `axis` (cameras' roll ring).
+std::vector<Vec3> dirCircle(const Vec3& center, const Vec3& axis, double radius, int n = 64);
 
 // ---- very rough lighting preview (no shadows)
 

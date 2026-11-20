@@ -4,6 +4,41 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-20 — Cameras, step 1: camera objects (v0.11.0)
+- **Core** (`src/core/camera.*`): the camera (name, position, pitch / yaw / roll, field of
+  view across the longer side, lens mm on a 36 mm sensor and back, near / far, picture
+  size, orthographic and its width, exposure, marker colour, active), lens and size
+  presets, axes and angles (`cameraBasis` / `setCameraBasis` through the primitives'
+  `Mat3`), ring turns, roll, aim at a point, the picture frame at a distance, the lines
+  that draw it, clamping. Document: cameras, their selection, `CameraChange`, add /
+  modify / delete / activate commands that keep exactly one active camera. `.map`:
+  `scal_camera` point entity (angles Hammer-style), a file with none or several active
+  opens with one. `dirCircle` (a ring round any direction) in `world.hpp`.
+- **Editor:** Camera tool (Shift+K; World and Tools menus, tools strip); drawing in all
+  views (pyramid / box, "up" mark, diamond marker, white dot on the active one, rings plus
+  the yellow roll ring); picking, moving, turning and rolling in `object_edit`; Properties
+  (`editor_cameras.cpp`: name, active, position, angles, lens, presets, near / far,
+  picture size, orthographic, colour, exposure, aim at a typed point, aim at a clicked
+  point, the camera tool's list of cameras with the active dot); World menu: Make selected
+  camera active, Aim selected cameras at a clicked point; Delete, Cmd+D (new name, never
+  active), select tool, 3D rectangle select, Esc. Help → Controls and README.
+- **Script commands:** `tool camera`, `cameraset`, `cameraedit`, `cameraselect`,
+  `cameraactive`, `cameraaim x y z | click`; `expect cameras`, `camerasel`, `cameraactive`,
+  `cam <key>` (DEV.md).
+- **Bug found while testing:** the roll ring's "seen edge-on" test was inverted (it hid
+  the ring exactly where it is a full circle); fixed before the release.
+- **Tests:** core 4622 checks, 0 failed (new `testCameras`: lens and angle conversions,
+  axes, read back of angles, ring turns, roll, aim, frame and portrait sizes, orthographic,
+  clamping, one active camera through add / activate / modify / delete / undo /
+  duplicate, selection, `.map` round trip with unknown keys, files with several or no
+  active cameras). UI 26 of 26 at 1x and 2x (new `v110_cameras`: place two, undo, the
+  Z ring, the roll ring in the side view, aim clicked and typed, active switching with
+  undo, delete the active one, duplicate, typed options, select tool, drag, save and
+  open). Idle 0 ticks at 1x and 2x with two cameras in the map (one orthographic);
+  control 885 ticks.
+- **Screenshots:** `docs/screenshots/m11-01-cameras.png`, `m11-02-camera-properties.png`.
+- **Next:** v0.11.1, saved camera presets and the Camera Preview.
+
 ### 2026-11-20 — Milestone 11 decided with the user (docs only)
 - The user confirmed the roadmap order (cameras → Render with materials → water / cloud
   planes → camera effects); **export is not confirmed**.

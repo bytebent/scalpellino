@@ -66,6 +66,19 @@ std::vector<Vec3> axisCircle(const Vec3& center, int axis, double radius, int n)
     return pts;
 }
 
+std::vector<Vec3> dirCircle(const Vec3& center, const Vec3& axis, double radius, int n) {
+    const Vec3 d = normalize(axis);
+    Vec3 a = normalize(cross(d, std::fabs(d.z) < 0.9 ? Vec3{0, 0, 1} : Vec3{1, 0, 0}));
+    const Vec3 b = cross(d, a);
+    std::vector<Vec3> pts;
+    pts.reserve(n);
+    for (int i = 0; i < n; ++i) {
+        const double t = 2 * kPi * i / n;
+        pts.push_back(center + a * (std::cos(t) * radius) + b * (std::sin(t) * radius));
+    }
+    return pts;
+}
+
 Vec3 lightAt(const Environment& env, const std::vector<Light>& lights, const Vec3& p, const Vec3& n) {
     Vec3 c = env.ambient / 255.0;
     for (const Light& l : lights) {

@@ -74,6 +74,7 @@ void PrimTool::press(ToolEnv& env, const Pointer& p) {
     env.doc.setPrimSelection({});
     env.doc.setPropSelection({});
     env.doc.setLightSelection({});
+    env.doc.setCameraSelection({});
 }
 
 void PrimTool::drag(ToolEnv& env, const Pointer& p) {
@@ -109,11 +110,13 @@ bool PrimTool::key(ToolEnv& env, int key) {
         return true;
     }
     if ((key == KEY_DELETE || key == KEY_BACKSPACE) && !objects_.active() &&
-        (!env.doc.primSelection().empty() || !env.doc.lightSelection().empty() || !env.doc.propSelection().empty())) {
+        (!env.doc.primSelection().empty() || !env.doc.lightSelection().empty() || !env.doc.propSelection().empty() ||
+         !env.doc.cameraSelection().empty())) {
         Command c = env.doc.makeDelete({}, "Delete");
         env.doc.addLightDeletes(c, env.doc.lightSelection());
         env.doc.addPrimDeletes(c, env.doc.primSelection());
         env.doc.addPropDeletes(c, env.doc.propSelection());
+        env.doc.addCameraDeletes(c, env.doc.cameraSelection());
         env.doc.apply(std::move(c));
         return true;
     }

@@ -154,7 +154,14 @@ bool Editor::frame(float dt) {
     st.canUndo = doc_.canUndo();
     st.canRedo = doc_.canRedo();
     st.hasSelection = !doc_.selection().empty();
-    st.hasAnything = st.hasSelection || !doc_.lightSelection().empty() || !doc_.primSelection().empty() || !doc_.propSelection().empty();
+    st.hasAnything = st.hasSelection || !doc_.lightSelection().empty() || !doc_.primSelection().empty() || !doc_.propSelection().empty() ||
+                     !doc_.cameraSelection().empty();
+    st.cameraTool = tool_ == &cameraTool_;
+    st.cameraPending = st.cameraTool && cameraTool_.pending.has_value();
+    st.cameraAiming = st.cameraTool && cameraTool_.aiming();
+    st.camerasSelected = doc_.cameraSelection().size();
+    if (st.camerasSelected == 1)
+        if (const Camera* c = doc_.findCamera(*doc_.cameraSelection().begin())) st.selectedCameraActive = c->active;
     st.propTool = tool_ == &propTool_;
     st.propPending = st.propTool && propTool_.hasPending();
     st.propsSelected = doc_.propSelection().size();
@@ -268,6 +275,10 @@ bool Editor::frame(float dt) {
     if (m.toolLight) setTool(&lightTool_);
     if (m.toolPrim) setTool(&primTool_);
     if (m.toolProp) setTool(&propTool_);
+    if (m.toolCamera) setTool(&cameraTool_);
+    if (m.createCamera) cameraTool_.create(doc_);
+    if (m.activateCamera && doc_.cameraSelection().size() == 1) activateCamera(*doc_.cameraSelection().begin());
+    if (m.aimCamera) startCameraAim();
     if (m.createProp) onKey(KEY_ENTER);
     if (m.primKind >= 0) { primTool_.templ.kind = (PrimKind)m.primKind; setTool(&primTool_); }
     if (m.createPrim) primTool_.create(doc_, currentTexture_, &lastBox_);
@@ -413,6 +424,7 @@ void Editor::handleKeyboard() {
     if (shift_ && IsKeyPressed(KEY_C)) setTool(&curveTool_);
     if (shift_ && IsKeyPressed(KEY_G)) setTool(&terrainTool_);
     if (shift_ && IsKeyPressed(KEY_L)) setTool(&lightTool_);
+    if (shift_ && IsKeyPressed(KEY_K)) setTool(&cameraTool_);
     if (shift_ && IsKeyPressed(KEY_M)) setTool(&primTool_);
     if (shift_ && IsKeyPressed(KEY_P)) setTool(&propTool_);
     if (IsKeyPressed(KEY_H)) { if (shift_) hideUnselected(); else hideSelected(); }
@@ -430,6 +442,7 @@ Scene Editor::buildScene() {
     // The texture tool works on faces; brush selection tint would compete with it.
     if (tool_ != &textureTool_) s.selected = doc_.selection();
     for (const Light& l : doc_.lights()) s.lights.push_back({l, doc_.lightSelection().count(l.id) > 0});
+    for (const Camera& c : doc_.cameras()) s.cameras.push_back({c, doc_.cameraSelection().count(c.id) > 0});
     if (doc_.primsShown())
         for (const MathPrim& p : doc_.prims()) s.prims.push_back({p, doc_.primSelection().count(p.id) > 0});
     if (doc_.propsShown()) for (const Prop& p : doc_.props()) {
@@ -644,6 +657,7 @@ void Editor::drawToolsPanel() {
         toolButton(&curveTool_, "Shift+C");
         toolButton(&terrainTool_, "Shift+G");
         toolButton(&lightTool_, "Shift+L");
+        toolButton(&cameraTool_, "Shift+K");
         toolButton(&primTool_, "Shift+M");
     }
     ImGui::End();

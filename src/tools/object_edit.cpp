@@ -143,6 +143,20 @@ PropId pickProp(const Document& doc, const Viewport& vp, Vector2 local, const Mo
     return best;
 }
 
+CameraId pickCamera(const Document& doc, const Viewport& vp, Vector2 local) {
+    CameraId best = 0;
+    double bestKey = 1e300;
+    for (const Camera& c : doc.cameras()) {
+        Vector2 s;
+        if (!vp.project(c.pos, s)) continue;
+        const double d = std::hypot(s.x - local.x, s.y - local.y);
+        if (d > kMarkerTol) continue;
+        const double key = vp.is2D() ? d : length(c.pos - cameraPos(vp)) + d;
+        if (key < bestKey) { bestKey = key; best = c.id; }
+    }
+    return best;
+}
+
 LightId pickLight(const Document& doc, const Viewport& vp, Vector2 local) {
     LightId best = 0;
     double bestKey = 1e300;
@@ -261,6 +275,13 @@ ObjectGizmo objectGizmo(const Document& doc, const Viewport& vp, const ModelFind
         const Light* l = doc.findLight(id);
         if (l && l->hasDirection()) g.rings.push_back({l->pos, Scene::kRingPx * vp.worldPerPixel(l->pos), id});
     }
+    for (CameraId id : doc.cameraSelection())
+        if (const Camera* c = doc.findCamera(id)) {
+            ObjectGizmo::Rings r{c->pos, Scene::kRingPx * vp.worldPerPixel(c->pos), 0};
+            r.camera = id;
+            r.rollAxis = cameraForward(*c);
+            g.rings.push_back(r);
+        }
     primGizmo(selectedPrims(doc), vp, g);
     propGizmo(selectedProps(doc), vp, models, g);
     return g;
@@ -283,11 +304,14 @@ bool ObjectEdit::press(ToolEnv& env, const Pointer& p) {
         lightNow_ = lightStart_;
         primNow_ = primStart_;
         propNow_ = propStart_;
+        cameraNow_ = cameraStart_;
     };
     lightStart_.clear();
     primStart_.clear();
     propStart_.clear();
+    cameraStart_.clear();
     propsMode_ = false;
+    camerasMode_ = false;
     sizeProp_ = false;
     if (!env.cmd) {
         // 1. Size handles of a single selected primitive.
@@ -324,17 +348,33 @@ bool ObjectEdit::press(ToolEnv& env, const Pointer& p) {
                     if (d < bestR) { bestR = d; hitRing = &ring; hitAxis = axis; }
                 }
             }
+        for (const auto& ring : g.rings) { // cameras' roll rings (axis 3)
+            if (!ring.camera) continue;
+            if (vp.is2D() && std::fabs(ring.rollAxis[vp.axD()]) <= 0.2) continue; // edge-on: not drawn
+            const std::vector<Vec3> pts = dirCircle(ring.center, ring.rollAxis, ring.radius * Scene::kRollRingScale);
+            for (size_t i = 0; i < pts.size(); ++i) {
+                Vector2 a, b;
+                if (!vp.project(pts[i], a) || !vp.project(pts[(i + 1) % pts.size()], b)) continue;
+                const double d = segDist(p.local, a, b);
+                if (d < bestR) { bestR = d; hitRing = &ring; hitAxis = 3; }
+            }
+        }
         if (hitRing) {
             axis_ = hitAxis;
             pivot_ = hitRing->center;
             vp.project(pivot_, center_);
             angle0_ = std::atan2(-(p.local.y - center_.y), p.local.x - center_.x);
             Vec3 ax;
-            ax[hitAxis] = 1;
+            if (hitAxis < 3) ax[hitAxis] = 1;
+            else ax = hitRing->rollAxis;
             sign_ = (vp.is2D() ? dot(ax, towardViewer(vp)) : dot(ax, cameraPos(vp) - pivot_)) > 0 ? 1 : -1;
             lightsMode_ = hitRing->light != 0;
             propsMode_ = hitRing->props;
-            if (lightsMode_) {
+            camerasMode_ = hitRing->camera != 0;
+            if (camerasMode_) {
+                for (CameraId id : doc.cameraSelection())
+                    if (const Camera* c = doc.findCamera(id)) cameraStart_.push_back(*c);
+            } else if (lightsMode_) {
                 for (LightId id : doc.lightSelection())
                     if (const Light* l = doc.findLight(id)) lightStart_.push_back(*l);
             } else if (propsMode_) {
@@ -346,7 +386,30 @@ bool ObjectEdit::press(ToolEnv& env, const Pointer& p) {
             return true;
         }
     }
-    // 3. A light's marker.
+    // 3. A camera's marker, then a light's.
+    if (const CameraId id = pickCamera(doc, vp, p.local)) {
+        std::set<CameraId> sel = doc.cameraSelection();
+        if (env.cmd) {
+            if (!sel.erase(id)) sel.insert(id);
+            doc.setCameraSelection(sel);
+            return true;
+        }
+        if (!sel.count(id)) {
+            doc.setCameraSelection({id});
+            doc.setSelection({});
+            doc.setLightSelection({});
+            doc.setPrimSelection({});
+            doc.setPropSelection({});
+        }
+        if (!vp.is2D()) return true;
+        lightsMode_ = false;
+        camerasMode_ = true;
+        for (CameraId c : doc.cameraSelection())
+            if (const Camera* x = doc.findCamera(c)) cameraStart_.push_back(*x);
+        anchor_ = doc.findCamera(id)->pos;
+        begin(Mode::Move);
+        return true;
+    }
     if (const LightId id = pickLight(doc, vp, p.local)) {
         std::set<LightId> sel = doc.lightSelection();
         if (env.cmd) {
@@ -359,6 +422,7 @@ bool ObjectEdit::press(ToolEnv& env, const Pointer& p) {
             doc.setSelection({});
             doc.setPrimSelection({});
             doc.setPropSelection({});
+            doc.setCameraSelection({});
         }
         if (!vp.is2D()) return true;
         lightsMode_ = true;
@@ -414,6 +478,7 @@ bool ObjectEdit::press(ToolEnv& env, const Pointer& p) {
             doc.setSelection({});
             doc.setLightSelection({});
             doc.setPrimSelection({});
+            doc.setCameraSelection({});
         }
         if (!vp.is2D()) return true;
         lightsMode_ = false;
@@ -484,6 +549,7 @@ bool ObjectEdit::press(ToolEnv& env, const Pointer& p) {
         doc.setSelection({});
         doc.setLightSelection({});
         doc.setPropSelection({});
+        doc.setCameraSelection({});
     }
     if (!vp.is2D()) return true;
     lightsMode_ = false;
@@ -509,6 +575,8 @@ void ObjectEdit::drag(ToolEnv& env, const Pointer& p) {
         for (MathPrim& m : primNow_) m.pos += d;
         propNow_ = propStart_;
         for (Prop& m : propNow_) m.pos += d;
+        cameraNow_ = cameraStart_;
+        for (Camera& c : cameraNow_) c.pos += d;
         return;
     }
     if (mode_ == Mode::Ring) {
@@ -525,6 +593,11 @@ void ObjectEdit::drag(ToolEnv& env, const Pointer& p) {
         for (MathPrim& m : primNow_) rotatePrim(m, axis_, deg, pivot_);
         propNow_ = propStart_;
         for (Prop& m : propNow_) rotateProp(m, axis_, deg, pivot_);
+        cameraNow_ = cameraStart_;
+        for (Camera& c : cameraNow_) {
+            if (axis_ == 3) rollCamera(c, deg);
+            else rotateCamera(c, axis_, deg);
+        }
         return;
     }
     if (sizeProp_) { dragPropSize(env, p); return; }
@@ -623,7 +696,9 @@ void ObjectEdit::release(ToolEnv& env) {
     if (mode_ == Mode::None) return;
     const char* name = mode_ == Mode::Ring ? "Turn" : mode_ == Mode::Size ? (sizeProp_ ? "Resize prop" : "Resize primitive") : "Move";
     mode_ = Mode::None;
-    bool lc = false, pc = false, qc = false;
+    bool lc = false, pc = false, qc = false, cc = false;
+    for (size_t i = 0; i < cameraNow_.size(); ++i) cc = cc || cameraNow_[i] != cameraStart_[i];
+    if (cc) env.doc.apply(env.doc.makeModifyCameras(cameraNow_, std::string(name) == "Turn" ? "Turn camera" : "Move camera"));
     for (size_t i = 0; i < lightNow_.size(); ++i) lc = lc || lightNow_[i] != lightStart_[i];
     for (size_t i = 0; i < primNow_.size(); ++i) pc = pc || primNow_[i] != primStart_[i];
     for (size_t i = 0; i < propNow_.size(); ++i) qc = qc || propNow_[i] != propStart_[i];
@@ -636,6 +711,8 @@ void ObjectEdit::release(ToolEnv& env) {
     primNow_.clear();
     propStart_.clear();
     propNow_.clear();
+    cameraStart_.clear();
+    cameraNow_.clear();
 }
 
 void ObjectEdit::cancel() {
@@ -646,6 +723,8 @@ void ObjectEdit::cancel() {
     primNow_.clear();
     propStart_.clear();
     propNow_.clear();
+    cameraStart_.clear();
+    cameraNow_.clear();
     view_ = nullptr;
 }
 
@@ -660,6 +739,9 @@ void ObjectEdit::decorate(const Document& doc, Scene& scene) const {
     for (const Prop& m : propNow_)
         for (Scene::SceneProp& s : scene.props)
             if (s.prop.id == m.id) s.prop = m;
+    for (const Camera& c : cameraNow_)
+        for (Scene::SceneCamera& s : scene.cameras)
+            if (s.cam.id == c.id) s.cam = c;
     // The primitives' rings and handles follow what is being dragged.
     std::vector<MathPrim> sel;
     for (const Scene::ScenePrim& s : scene.prims)
@@ -713,6 +795,10 @@ const char* ObjectEdit::hint() const {
             std::snprintf(hintBuf_, sizeof hintBuf_, "moving by %g %g %g", moved_.x, moved_.y, moved_.z);
             return hintBuf_;
         case Mode::Ring: {
+            if (axis_ == 3) {
+                std::snprintf(hintBuf_, sizeof hintBuf_, "rolling the camera by %g degrees (15 degree steps)", turned_);
+                return hintBuf_;
+            }
             static const char* names[] = {"X", "Y", "Z"};
             std::snprintf(hintBuf_, sizeof hintBuf_, "turning around %s by %g degrees (15 degree steps)", names[axis_], turned_);
             return hintBuf_;

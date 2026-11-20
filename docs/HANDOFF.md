@@ -23,8 +23,9 @@ texture licenses; `releases/` has the notes for each version.
   v0.10.2 (landing fixes, 3D rectangle select, show / hide primitives and props, review
   fixes), v0.10.3 (editor split by topic, prop benchmark, faster landing and drawing),
   v0.10.4 (Sky Lab, step 1: sky modes, sun, haze, ground, bake, sun lock),
-  v0.10.5 (Sky Lab, step 2: clouds), **v0.10.6** (Sky Lab, step 3: moon, eclipses, stars,
-  comets, rings, rainbow, fog in the sky, saved skies; JPEG / TGA loading fixed).
+  v0.10.5 (Sky Lab, step 2: clouds), v0.10.6 (Sky Lab, step 3: moon, eclipses, stars,
+  comets, rings, rainbow, fog in the sky, saved skies; JPEG / TGA loading fixed),
+  **v0.11.0** (cameras, step 1: camera objects and options).
 - **Milestone 10 — Props is done (v0.10.0):** `.glb` models from Bottega's `models/`; `.mazz`
   waits for Mazzuola's final format. The user confirmed the choices made while building it
   (2026-11-19), including even scaling as the default for primitives too.
@@ -42,8 +43,9 @@ texture licenses; `releases/` has the notes for each version.
 - **Sky Lab is done** (v0.10.4–v0.10.6; PLAN.md Roadmap item 3 and its "decided without
   asking" lists). The Bryce guide PDF is the user's; ask them to attach it again if a
   later session needs it (Sky Lab is its PDF pages 786–938; printed page = PDF page − 31).
-  Next: **milestone 11, cameras and Camera Preview** (user said go, 2026-11-20; choices in
-  PLAN.md Roadmap item 4), then the renderer. The roadmap order is confirmed up to camera
+  **Milestone 11, cameras and Camera Preview** is under way (user said go, 2026-11-20;
+  choices in PLAN.md Roadmap item 4): v0.11.0 camera objects done; next v0.11.1 presets
+  and the Camera Preview, then report, then the renderer. The roadmap order is confirmed up to camera
   effects; export is not confirmed.
 - Mazzuola (`bytebent/mazzuola`) is the user's companion modeller (design only so far).
   Its models become Scalpellino props.

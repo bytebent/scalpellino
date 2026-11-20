@@ -5,6 +5,7 @@
 #include "core/world.hpp"
 #include "core/mathprim.hpp"
 #include "core/prop.hpp"
+#include "core/camera.hpp"
 #include <map>
 #include <optional>
 #include <set>
@@ -72,6 +73,13 @@ struct PropChange {
     std::optional<Prop> after;
 };
 
+// One camera before/after an edit.
+struct CameraChange {
+    CameraId id = 0;
+    std::optional<Camera> before;
+    std::optional<Camera> after;
+};
+
 struct Command {
     std::string name;
     std::vector<BrushChange> changes;
@@ -86,6 +94,8 @@ struct Command {
     std::optional<std::set<MathPrimId>> primSelectionBefore, primSelectionAfter;
     std::vector<PropChange> propChanges;
     std::optional<std::set<PropId>> propSelectionBefore, propSelectionAfter;
+    std::vector<CameraChange> cameraChanges;
+    std::optional<std::set<CameraId>> cameraSelectionBefore, cameraSelectionAfter;
     std::uint64_t serial = 0; // set by Document::apply: which edit this is (for "saved?")
 };
 
@@ -97,6 +107,7 @@ struct WorldData {
     std::optional<Vec3> figure; // scale figure position (editor-only)
     std::vector<MathPrim> prims;
     std::vector<Prop> props;
+    std::vector<Camera> cameras;
 };
 
 class Document {
@@ -149,6 +160,15 @@ public:
     PropId newPropId() { return nextPropId_++; }
     const std::set<PropId>& propSelection() const { return propSelection_; }
     void setPropSelection(std::set<PropId> s) { propSelection_ = std::move(s); }
+
+    // Cameras (milestone 11). Selected on their own like lights. Exactly one is active
+    // whenever there are any: the camera commands below keep it so.
+    const std::vector<Camera>& cameras() const { return cameras_; }
+    const Camera* findCamera(CameraId id) const;
+    const Camera* activeCamera() const;
+    CameraId newCameraId() { return nextCameraId_++; }
+    const std::set<CameraId>& cameraSelection() const { return cameraSelection_; }
+    void setCameraSelection(std::set<CameraId> s) { cameraSelection_ = std::move(s); }
 
     // View options (v0.10.2): all primitives / all props shown or hidden. Hidden ones are
     // not drawn, picked, selected or landed on; hiding drops them from the selection.
@@ -210,6 +230,14 @@ public:
     Command makeAddProps(std::vector<Prop> props, const std::string& name);
     Command makeModifyProps(const std::vector<Prop>& modified, const std::string& name);
     void addPropDeletes(Command& c, const std::set<PropId>& ids) const;
+    // Cameras: new ones get ids and become the camera selection (everything else
+    // deselected); the first camera of a map becomes the active one. Making one active
+    // (in a modify, or with makeActivateCamera) deactivates the others; deleting the active
+    // one makes the first that is left active.
+    Command makeAddCameras(std::vector<Camera> cams, const std::string& name);
+    Command makeModifyCameras(const std::vector<Camera>& modified, const std::string& name);
+    Command makeActivateCamera(CameraId id);
+    void addCameraDeletes(Command& c, const std::set<CameraId>& ids) const;
     // Mixed edit as one undo step (clip, carve, hollow). New brushes get ids. The
     // selection afterwards is `selectAfter` if given, else the old selection minus
     // deleted brushes plus the added ones.
@@ -223,6 +251,10 @@ private:
     void setLight(LightId id, const std::optional<Light>& l);
     void setPrim(MathPrimId id, const std::optional<MathPrim>& p);
     void setProp(PropId id, const std::optional<Prop>& p);
+    void setCamera(CameraId id, const std::optional<Camera>& c);
+    // Adds the changes that leave exactly one active camera after `c` (`prefer`: the one
+    // to keep active when several would be).
+    void keepOneActive(Command& c, CameraId prefer = 0) const;
     // Adds group removals to `c` for groups that would have no brushes left.
     void pruneEmptyGroups(Command& c) const;
     void bump() { ++revision_; }
@@ -241,6 +273,9 @@ private:
     std::vector<Prop> props_;
     std::set<PropId> propSelection_;
     PropId nextPropId_ = 1;
+    std::vector<Camera> cameras_;
+    std::set<CameraId> cameraSelection_;
+    CameraId nextCameraId_ = 1;
     std::vector<Light> lights_;
     std::set<LightId> lightSelection_;
     LightId nextLightId_ = 1;

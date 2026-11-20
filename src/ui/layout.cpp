@@ -44,6 +44,7 @@ MenuActions drawMenuBar(const MenuState& st) {
         if (ImGui::MenuItem("Curve (arch, ring, wall, stairs)", "Shift+C", st.curveTool)) a.toolCurve = true;
         if (ImGui::MenuItem("Terrain (sculpt, paint)", "Shift+G", st.terrainTool)) a.toolTerrain = true;
         if (ImGui::MenuItem("Light", "Shift+L", st.lightTool)) a.toolLight = true;
+        if (ImGui::MenuItem("Camera", "Shift+K", st.cameraTool)) a.toolCamera = true;
         if (ImGui::MenuItem("Math primitive", "Shift+M", st.primTool)) a.toolPrim = true;
         if (ImGui::MenuItem("Props (models)", "Shift+P", st.propTool)) a.toolProp = true;
         ImGui::Separator();
@@ -188,6 +189,13 @@ MenuActions drawMenuBar(const MenuState& st) {
         ImGui::TextDisabled("Light tool: click to place, Return creates;");
         ImGui::TextDisabled("drag a selected light's rings to aim it");
         ImGui::Separator();
+        if (ImGui::MenuItem("Camera tool", "Shift+K", st.cameraTool)) a.toolCamera = true;
+        if (ImGui::MenuItem("Create camera", "Return", false, st.cameraPending)) a.createCamera = true;
+        if (ImGui::MenuItem("Make selected camera active", nullptr, false, st.camerasSelected == 1 && !st.selectedCameraActive)) a.activateCamera = true;
+        if (ImGui::MenuItem("Aim selected cameras at a clicked point", nullptr, st.cameraAiming, st.camerasSelected > 0)) a.aimCamera = true;
+        ImGui::TextDisabled("Camera tool: click to place, Return creates; lens,");
+        ImGui::TextDisabled("picture size, aim at a typed point in Properties");
+        ImGui::Separator();
         if (ImGui::MenuItem("Environment (sky, ambient, fog)...")) a.environment = true;
         if (ImGui::MenuItem("Sky Lab...")) a.skyLab = true;
         if (ImGui::MenuItem("Rebake Sky Lab sky", nullptr, false, st.canRebakeSky)) a.rebakeSky = true;
@@ -278,6 +286,10 @@ void drawControlsWindow(bool* open) {
             {"Light tool", "Shift+L (World menu): pick point / spot / sun and settings in Properties, click in a view to place, Return creates, Esc cancels"},
             {"Select / move lights", "click a light's marker (any tool that selects: Select, Light); drag it in a 2D view; Delete removes, Cmd+D duplicates"},
             {"Aim a spot or sun", "drag the rotation rings of the selected light (3D: X red, Y green, Z blue; 2D: the ring around the view's axis), 15 degree steps; or type pitch / yaw"},
+            {"Camera tool", "Shift+K (World menu): settings in Properties (lens in degrees or mm, presets, near / far, picture size, orthographic), click in a view to place, Return creates, Esc cancels. The first camera is the active one"},
+            {"Select / move / turn cameras", "click a camera's marker (a diamond; any tool that selects); drag it in a 2D view; drag the rings (15 degree steps), the yellow ring rolls it; or type pitch / yaw / roll in Properties; Delete removes, Cmd+D duplicates"},
+            {"Active camera", "the one Render and the Camera Preview use (white dot in its marker): tick 'active' in Properties, or World > Make selected camera active; only one at a time"},
+            {"Aim a camera at a point", "Properties: type a point and Aim, or World > Aim selected cameras at a clicked point, then click a surface in 3D or a spot in a 2D view"},
             {"Sky, ambient, fog", "World > Environment (sky folders too: 2:1 panoramas or 4:3 cube crosses)"},
             {"Sky Lab", "World > Sky Lab: make a sky (sky mode, sun, moon and eclipses, stars and comets, rings, stratus and cumulus clouds, haze, fog, rainbow, ground); saved skies in the Bottega's presets/skies, Randomize sky; the 3D view shows it while the window is open; Apply bakes it into the Bottega's skies/skylab and sets it as the map's sky (one undo step), OK applies and closes, Cancel (Esc) drops the changes. With a sun light in the map, tick the lock to keep the sky's sun on it; if the light turns later, World > Rebake Sky Lab sky"},
             {"Show sky / light preview / fog / figure", "View menu (3D view: sky, rough light preview, fog; scale figure)"},

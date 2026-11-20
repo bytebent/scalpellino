@@ -379,6 +379,36 @@ Static models next to brushes, lights and primitives. `core/model.hpp`, `core/pr
   the map is unsaved when the newest command isn't the one it was saved at (or a
   visgroup, bookmark or the figure, which aren't undoable, changed since the save).
 
+### Cameras (milestone 11, v0.11.0 built; presets and the Camera Preview in v0.11.1)
+The objects Render and the Camera Preview look through. `core/camera.hpp`,
+`Document::cameras()`, `tools/camera_tool`, `app/editor_cameras.cpp`.
+- **Camera:** name, position, pitch / yaw (as a light's) and roll; field of view in degrees
+  across the picture's longer side, or as a lens length in mm on a 36 mm sensor (they
+  convert; presets 14, 24, 50, 85, 135 mm); near and far distance; picture size (presets
+  or typed); orthographic with a width across; exposure (stored for the renderer's HDR);
+  marker colour; active. Depth of field comes with the camera effects.
+- **One active camera:** whenever a map has cameras, exactly one is active. The first one
+  made is; new and duplicated cameras never take over; making one active switches the
+  others off (one undo step); deleting the active one makes the first left active; a file
+  with none or several opens with exactly one.
+- **Placing:** the Camera tool (Shift+K, World and Tools menus): settings in Properties,
+  click in a view (as the Light tool), Return creates, Esc cancels. Names `camera 1`,
+  `camera 2`...
+- **Editing:** cameras are objects like lights (`tools/object_edit`): click the marker (a
+  diamond in the camera's colour; the active one has a white dot) in any tool that
+  selects; drag it in 2D; three rings turn it about its position (15 degree steps) and a
+  yellow ring around its view direction rolls it (in a 2D view only when the view
+  direction points enough toward or away from you); everything typed in Properties.
+  **Aim at a point:** typed (Properties), or World > Aim selected cameras at a clicked
+  point, then a click: a surface in 3D, a spot in a 2D view (at the camera's own depth, so
+  the top view aims level). Delete, Cmd+D, 3D rectangle select include cameras.
+- **Drawing:** a pyramid from the camera to its picture frame (56 px long on screen; a box
+  for an orthographic camera, as wide as its picture), a small triangle on the frame's top
+  edge for "up"; inactive cameras dimmer.
+- **Files:** our own point entity `scal_camera` (name, origin, angles "pitch yaw roll" with
+  pitch positive down as Hammer writes it, fov, near, far, size "w h", ortho, ortho_size,
+  exposure, color, active; unknown keys kept).
+
 ### Scale reference
 Toggleable ghost human figure (175 units = 1.75 m tall, blocky, see-through) to judge
 proportions. Its feet position is saved with the map (World → Scale figure position, or
@@ -390,7 +420,7 @@ it appears below the top view's centre). Editor-only, never exported.
 - **Math primitives** — exact shapes, combinable (milestone 9).
 - **Props** — static models (`.glb` and Mazzuola's `.mazz`) with their textures; placed,
   turned and sized like primitives. No physics (milestone 10).
-- **Cameras** (planned) — objects placed and aimed like a spot light, with many options
+- **Cameras** (v0.11.0) — objects placed and aimed like a spot light, with many options
   and presets: lens (field of view or mm, roll, near / far distance, orthographic mode),
   image size, aim at a point, depth of field and exposure later; the user can save their
   own presets (saved in Bottega's `presets/camera_presets`). Full list in PLAN.md. A map can hold several; exactly one is
@@ -422,6 +452,7 @@ That's all. No gameplay entities (doors, triggers, physics, scripting).
 - **Native: Valve 220 `.map`.** Plain text, readable by func_godot and TrenchBroom.
   Editor-only data (visgroups, camera bookmarks, curve-generator parameters) stored as
   extra keys other tools ignore.
+- **Cameras** (v0.11.0): `scal_camera` point entities (see §6 "Cameras").
 - **Props** (v0.10.0): `scal_prop` point entities with `model` ("models/tree"), `origin`,
   `rotation` (degrees X Y Z), `scale` (3 numbers) and any other keys, kept as they are.
 - **nodraw:** faces textured `nodraw` (also recognised: `tools/toolsnodraw`, `common/nodraw`)

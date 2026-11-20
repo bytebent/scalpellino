@@ -93,6 +93,16 @@ lightset pitch -35
 lightset yaw 135
 lightset pos 0 0 600
 key Return
+# -- cameras (v0.11.0): the active one, and an orthographic one
+tool camera
+cameraset lens 35
+cameraset pos -700 -700 260
+key Return
+cameraedit angles -15 45 0
+cameraset ortho 1
+cameraset orthosize 800
+cameraset pos 700 -700 500
+key Return
 tool select
 key Esc
 # -- world: sky, ambient, fog, a bookmark, the scale figure
@@ -116,6 +126,8 @@ camera -900 -1000 800 48 -30
 expect prims 5
 expect props 3
 expect lights 3
+expect cameras 2
+expect cameraactive 0
 expect terrains 1
 expect sky Panorama_Sky_04
 expect bookmarks 1

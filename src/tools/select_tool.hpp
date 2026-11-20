@@ -50,6 +50,7 @@ private:
     std::set<MathPrimId> prim0_;
     std::set<PropId> prop0_;
     std::set<LightId> light0_;
+    std::set<CameraId> camera0_;
 };
 
 } // namespace scal

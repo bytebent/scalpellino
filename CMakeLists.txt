@@ -47,7 +47,8 @@ add_library(scal_core STATIC
   src/core/prop.cpp
   src/core/landing.cpp
   src/core/replicate.cpp
-  src/core/bottega.cpp)
+  src/core/bottega.cpp
+  src/core/camera.cpp)
 target_include_directories(scal_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 find_package(Threads REQUIRED)
 target_link_libraries(scal_core PUBLIC Threads::Threads) # Sky Lab bakes on all threads
@@ -84,6 +85,7 @@ if(SCAL_BUILD_APP)
     src/app/editor_surfaces.cpp
     src/app/editor_visibility.cpp
     src/app/editor_world.cpp
+    src/app/editor_cameras.cpp
     src/app/editor_skylab.cpp
     src/app/settings.cpp
     src/render/scene.cpp
@@ -103,6 +105,7 @@ if(SCAL_BUILD_APP)
     src/tools/terrain_tool.cpp
     src/tools/object_edit.cpp
     src/tools/light_tool.cpp
+    src/tools/camera_tool.cpp
     src/tools/prim_tool.cpp
     src/tools/prop_tool.cpp
     src/ui/layout.cpp

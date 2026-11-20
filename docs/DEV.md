@@ -111,6 +111,15 @@ inside the view. Lines starting with # are comments.
                                   sun_color 255 200 150, lock_sun 1...; ambient r g b)
   expect skylab <field> <value...>   (the map's Sky Lab settings)   expect skyoutofdate yes|no
   expect skylabwindow open|closed [<preview width>]   expect undos <n>   (undo steps)
+  tool camera   cameraset|cameraedit name <n> | pos x y z | angles pitch yaw roll | fov <deg> | lens <mm>
+               | near|far <d> | size <w> <h> | ortho 0|1 | orthosize <u> | exposure <s> | color r g b
+               (cameraset = the next camera, pos places it; cameraedit = the selected cameras, one
+                undo step; cameraedit active 1 makes the first selected one active)
+  cameraselect all|none|<index...>   cameraactive <index>   cameraaim x y z | click
+               (click: the next press aims the selected cameras, as World > Aim ... at a clicked point)
+  expect cameras|camerasel <n>   expect cameraactive <index>   (the only active one)
+  expect cam pos|angles|fov|lens|near|far|size|ortho|orthosize|exposure|color <values> | name <n>
+               (the first selected camera, +-0.01)
   bookmark add <name> | go <index>   expect sky <name>   expect bookmarks <n>   expect camera x y z
   bottega none | <path> | make <path>   rescan   bottegadialog   (in memory only; make = create + use)
   expect bottega ready|empty|notbottega|missing|newer|damaged|none

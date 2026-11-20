@@ -29,6 +29,7 @@ void LightTool::press(ToolEnv& env, const Pointer& p) {
     doc.setLightSelection({});
     doc.setPrimSelection({});
     doc.setPropSelection({});
+    doc.setCameraSelection({});
 }
 
 void LightTool::drag(ToolEnv& env, const Pointer& p) {

@@ -1,7 +1,10 @@
 #pragma once
-// Selecting, moving, turning and sizing objects (lights, math primitives and props), shared
-// by the select tool, the light tool, the primitive tool and the props tool. Brush tools
-// never touch them.
+// Selecting, moving, turning and sizing objects (lights, cameras, math primitives and props),
+// shared by the select tool and the object tools (light, camera, primitive, props). Brush
+// tools never touch them.
+//  - cameras (milestone 11) are picked by their marker like lights, moved the same way and
+//    turned with the three rings about their own position, plus a yellow roll ring around
+//    their view direction.
 //  - click a light's marker or a primitive (any view) to select it; brushes and the
 //    other kind are deselected. A primitive in a combination selects the whole
 //    combination; Option+click selects just the piece under the cursor (a piece already
@@ -25,6 +28,8 @@ namespace scal {
 
 // Light whose marker is under `local` (nearest to the camera in 3D), or 0.
 LightId pickLight(const Document& doc, const Viewport& vp, Vector2 local);
+// Camera whose marker is under `local` (nearest to the camera in 3D), or 0.
+CameraId pickCamera(const Document& doc, const Viewport& vp, Vector2 local);
 // Primitive under `local`: what a click selects (first member of a combination), or 0.
 // `dist` gets the distance along the view ray in 3D; `piece` the piece itself that was
 // hit. With `outlinesFirst`, an outline near the cursor wins (so a piece hidden inside
@@ -40,7 +45,8 @@ PropId pickProp(const Document& doc, const Viewport& vp, Vector2 local, const Mo
 // Rings and size handles of the current selection, as drawn and picked.
 struct ObjectGizmo {
     // light 0 and !props = the primitives
-    struct Rings { Vec3 center; double radius; LightId light = 0; bool props = false; };
+    // camera != 0: a camera's rings (and its roll ring, `radius` * Scene::kRollRingScale)
+    struct Rings { Vec3 center; double radius; LightId light = 0; bool props = false; CameraId camera = 0; Vec3 rollAxis; };
     std::vector<Rings> rings;
     struct Handle { Vec3 pos; int code; bool prop; }; // size handle: axis*2 + (0 = -, 1 = +)
     std::vector<Handle> handles;
@@ -77,12 +83,13 @@ private:
     Vec3 anchor_;           // move: the clicked object's position
     int handle_ = -1;       // size: axis*2 + side
     double amount_ = 0;     // size: change so far
-    bool lightsMode_ = false, propsMode_ = false, sizeProp_ = false;
+    bool lightsMode_ = false, propsMode_ = false, sizeProp_ = false, camerasMode_ = false;
     bool perAxis_ = false;  // size: Shift held at the press (or now): one axis, not evenly
     const ModelFinder* models_ = nullptr;
     std::vector<Light> lightStart_, lightNow_;
     std::vector<MathPrim> primStart_, primNow_;
     std::vector<Prop> propStart_, propNow_;
+    std::vector<Camera> cameraStart_, cameraNow_;
     mutable char hintBuf_[140] = "";
 };
 
