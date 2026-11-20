@@ -4,6 +4,17 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-20 — M12 split into batches; batch 1 decided (docs only)
+- New chat. Agreed with the user: M12 in 7 batches (v0.12.0 pipeline, v0.12.1 direct
+  light and shadows, v0.12.2 bounces, v0.12.3 light grid, v0.12.4 materials, v0.12.5
+  probes, v0.12.6 mirrors), each discussed first, built on the user's go, then reported.
+- Batch 1 decided: the editor waits during a render; Render button at the left of the
+  status bar plus a Render menu, Cmd+Shift+K; picture size always the camera's (no size
+  field in the window); presets Draft / Normal / High, anti-aliasing, texture filtering
+  as render options; saved to the Bottega's `renders/` (asks for a Bottega if none); the
+  window is only the terminal, Esc stops. Recorded in PLAN.md (Roadmap item 5),
+  ARCHITECTURE §9 / §15, HANDOFF.md. No code changed.
+
 ### 2026-11-20 — The user tried the cameras; Camera Preview decisions (docs only)
 - The user noticed the preview is the 3D view seen through the camera, not a render
   (as agreed for M11 until the renderer exists), and that it follows some View menu

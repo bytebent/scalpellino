@@ -34,6 +34,8 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   open point is the reflection probes' details. The user tried the cameras (2026-11-20):
   the preview must be a draft render ignoring the View menu (Roadmap item 5); they will
   start a **new chat** for the next milestones.
+- **M12 is split into 7 batches (v0.12.0 … v0.12.6), agreed 2026-11-20** (Roadmap item 5).
+  Batch 1 (the render pipeline) is discussed and decided; **waiting for the user's go**.
 - **Roadmap:** Sky Lab → cameras and Camera Preview →
   Render (Source look, with the material system) → water / cloud planes → camera effects →
   export. **Confirmed by the user (2026-11-20)** up to camera effects; **export is not
@@ -569,6 +571,43 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
      - **Hidden things are in the preview and the render:** Hide selected / hidden
        visgroups are an editing aid only (as Hammer still compiles hidden visgroups). A
        "leave out of the render" setting could come later if wanted (not asked for).
+   - **Split into batches, agreed with the user (2026-11-20).** One release each; each
+     batch is discussed in depth before it starts and built only when the user says go,
+     then reported:
+     1. **v0.12.0 the render pipeline:** render window, terminal log + log file, PNG to
+        Bottega `renders/`; the Camera Preview becomes a draft render (same code, Draft
+        settings), ignoring the View menu and including hidden things. Lighting is the
+        rough light preview's (always on) until batch 2.
+     2. **v0.12.1 baked direct light and shadows:** lightmaps on brush faces and terrain
+        (point, spot, sun, sky light); primitives and props cast shadows.
+     3. **v0.12.2 bounces:** radiosity ("baking lights 1 .. 10"), bounce colour from the
+        textures.
+     4. **v0.12.3 light grid:** primitives and props pick up the baked light.
+     5. **v0.12.4 material system:** material files, GLSL shaders in Bottega `shaders/`,
+        specular, emissive, detail textures, alpha cutout, rim lighting; editor
+        placeholder.
+     6. **v0.12.5 reflection probes:** placed by hand, "building cubemaps", reflection
+        kind per material, probe quality in the render options.
+     7. **v0.12.6 mirror reflections** on flat surfaces.
+     HDR stays a later refinement. Batches 5–7 have open design points (material file
+     format, probe details), settled in their own discussions.
+   - **Batch 1 decided with the user (2026-11-20):**
+     - **The editor waits while rendering** (it doesn't have to stay usable); only the
+       terminal window updates. The render uses the map as it is when Render is clicked.
+     - **Where:** a **Render button at the left end of the status bar** and a new
+       **Render menu** (Render..., Update Camera Preview); shortcut **Cmd+Shift+K**.
+     - **Picture size = the active camera's size**; the render window has no size field
+       (change it on the camera). This replaces "image size in the render window" below.
+     - **Render options:** quality presets Draft / Normal / High (later also the light
+       bake and probe quality), anti-aliasing (drawn larger, scaled down), texture
+       filtering (a render option, smooth with mipmaps by default; not the editor's Crisp
+       / Smooth switch).
+     - **Saved in the Bottega's `renders/`** as `<map>_<camera>_<date-time>.png` with the
+       log next to it (`.log`); no Bottega set: it asks for one (as Sky Lab).
+     - **The window** is just the terminal showing the process; **Esc stops** a render,
+       Close when done. No other buttons.
+     - Draws what the map has: textures (nodraw skipped), primitives, props, hidden
+       things, the map's sky, distance fog and Sky Lab's height fog.
 6. **Water, cloud and endless planes** (confirmed) — materials made with the system above.
 7. **Camera effects** (confirmed, lowest priority per the user) — dithering, palette,
    bloom and similar.
