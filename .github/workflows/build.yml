@@ -87,6 +87,9 @@ jobs:
   #        commit and publishes it through the tag route below. If its build fails there
   #        is no release, which is right: a version must not ship other code.
   #  - a vX.Y.Z tag (pushed, or started by the step above) publishes the tagged commit.
+  #    Started on a tag, GitHub runs the workflow file AS IT WAS at that commit, so this
+  #    route works for notes commits that already have this file (from the review fixes
+  #    on); an older commit's workflow skips the release job and nothing is published.
   # (v0.3.1 shipped later code once because the newest build simply took any notes file
   # without a release.)
   release:
@@ -134,7 +137,9 @@ jobs:
             [ -f "$notes" ] || continue
             tag="$(basename "$notes" .md)"
             gh release view "$tag" >/dev/null 2>&1 && continue
-            added="$(git log --diff-filter=A --format=%H -1 -- "$notes")"
+            # The main commit that brought the notes in (--first-parent: a merge commit,
+            # not the branch commit behind it).
+            added="$(git log --first-parent --diff-filter=A --format=%H -1 -- "$notes")"
             if [ -z "$added" ]; then
               echo "::warning::$tag: can't find the commit that added $notes; not released."
               continue

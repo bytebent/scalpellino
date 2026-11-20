@@ -78,8 +78,12 @@ Each archive's SHA-256 is in `cmake/Deps.cmake` (checked at configure time).
 
 - **The v0.3.1 release holds the wrong code** (split / carve / hollow from after v0.3.1;
   the release bug fixed on `fix/review-findings`). Not changed: replacing a published
-  release is the user's call. Once the fix is on `main`, deleting the v0.3.1 release and
-  its tag makes the next push to `main` rebuild it from the commit that added its notes.
+  release is the user's call. The automatic rebuild can't do it: started on the v0.3.1
+  tag, GitHub runs that commit's old `build.yml`, whose release job only runs on pushes.
+  By hand: delete the v0.3.1 release (keep the tag, it already points at the right
+  commit), run the workflow on the tag (its `macos` job makes the zip), download the zip
+  and attach it to a new v0.3.1 release made from the tag with its notes. Or just leave a
+  note in v0.3.1's release text.
 - **Curve generator parameters** in a `.map` (`core/curves.cpp curveFromKeys`) still read
   numbers loosely (`atoi`, `strtod`): not in the review's list; worth the same strict
   reading some time (a bad value there only changes a generated shape).

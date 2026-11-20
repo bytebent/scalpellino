@@ -48,6 +48,14 @@ too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
   `testMapStrictNumbers`; the caches are compiled into the test binary, they only use the
   core). UI 29 of 29 at 1x and 2x. Idle 0 ticks at 1x. No screenshots (nothing visible
   changed).
+- **Second check before merging** (the user asked): the notes commit is now found along
+  `main` only (`git log --first-parent`), so after a merge the release is built from the
+  merge commit, not the branch commit behind it (which lacks what landed on `main`
+  meanwhile); checked with a scratch repo holding a merge. Also: a tag run uses the old
+  commit's workflow file, so the rebuild route can't redo v0.3.1 (its workflow only
+  releases on pushes); the earlier PLAN note saying it could was wrong and is corrected
+  (manual steps there). Every notes file up to v0.12.0 has a release, so merging starts
+  no version builds.
 - **Next:** the user reviews / merges the branch.
 
 ### 2026-11-20 — The user tried v0.12.0 (docs only)

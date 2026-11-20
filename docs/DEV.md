@@ -249,7 +249,10 @@ Numbers (v0.10.3; before in brackets, v0.10.2):
   published under an older version (this happened once: v0.3.1 holds code from after it).
   If the tag build fails, there is no release and the next pushes warn about it; fix
   and re-run that run (Actions → build → ref `vX.Y.Z`). Pushing a `vX.Y.Z` tag by hand
-  also publishes that commit.
+  also publishes that commit. "The commit that added the notes" is counted along
+  `main` (`--first-parent`): with a merge, it is the merge commit. A tag run uses the
+  workflow file as it was at that commit, so this only works for commits that have this
+  release logic (not for versions up to v0.12.0, which are all released anyway).
 - Apple Silicon builds are on demand only: Actions tab → **apple-silicon** → Run workflow.
 
 ## Releasing
