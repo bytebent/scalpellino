@@ -158,6 +158,14 @@ void Editor::registerScriptExpects() {
         const bool bad = (st == "open") != skyLabOpen_ || (width >= 0 && skyLabPreviewW_ != width);
         if (bad) { std::fprintf(stderr, "script FAIL (command %d): Sky Lab window %s, preview %d wide\n", scriptLine_, skyLabOpen_ ? "open" : "closed", skyLabPreviewW_); ++scriptFailures_; }
     });
+    add({"fog"}, [this](const std::string&, std::istringstream& in) {
+        // expect fog on|off [<base> <thickness>]: the map's fog
+        std::string w, v; double base = 0, thick = 0; in >> w >> v;
+        const bool withHeight = (bool)(in >> base >> thick);
+        const Environment& e = doc_.environment();
+        const bool bad = (v == "on") != e.fogOn || (withHeight && (std::fabs(e.fog.base - base) > 1e-6 || std::fabs(e.fog.thickness - thick) > 1e-6));
+        if (bad) { std::fprintf(stderr, "script FAIL (command %d): fog %s, base %g thickness %g\n", scriptLine_, e.fogOn ? "on" : "off", e.fog.base, e.fog.thickness); ++scriptFailures_; }
+    });
     add({"skyoutofdate"}, [this](const std::string&, std::istringstream& in) {
         // expect skyoutofdate yes|no
         std::string w, v; in >> w >> v;

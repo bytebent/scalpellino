@@ -53,6 +53,11 @@ Editor::Editor(const EditorOptions& opt) : opt_(opt) {
 #endif
         if (!opt_.automated()) loadSkyFolders();
         skies_.setBuiltinFolder(skyDir);
+#if defined(__APPLE__)
+        moonBuiltinPath_ = appDir + "../Resources/moon/moon_lroc_color.jpg";
+#else
+        moonBuiltinPath_ = appDir + "moon/moon_lroc_color.jpg";
+#endif
         modelFinder_ = models_.finder();
         if (!opt_.automated()) loadBottegaSetting(); // automated runs never read user settings
         if (!textures_.exists(currentTexture_) && !textures_.names().empty()) currentTexture_ = textures_.names()[0];

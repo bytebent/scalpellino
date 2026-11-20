@@ -18,13 +18,14 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   "Benchmark"), and what it showed: Snap to Land among many props, 2D views drawing
   everything, the 3D view's draw call per prop. Reported; the user tested it on their Mac
   and it is fine (2026-11-19). Next session: Sky Lab.
-- **Now: Sky Lab** (the user said go, 2026-11-19; design agreed, see Roadmap item 3).
-  v0.10.4 (window, live 3D preview, bake, sky modes, sun, haze band, ground, sun lock,
-  Rebake) and **v0.10.5 (clouds) are built and pushed**; the choices made without asking
-  are listed under "Sky Lab v0.10.4 / v0.10.5, decided without asking" for the user to
-  confirm. Next: report, then v0.10.6 night sky and effects (moon, stars, comets, rings,
-  rainbow, Blend with Sun, fog in the sky with base height and thickness, eclipses,
-  presets and Randomize Sky; the moon also lights the clouds at night).
+- **Sky Lab is done** (milestone 10c, design agreed 2026-11-19, Roadmap item 3): v0.10.4
+  (window, live 3D preview, bake, sky modes, sun, haze band, ground, sun lock, Rebake),
+  v0.10.5 (clouds) and **v0.10.6 (moon, eclipses, stars, comets, rings, rainbow, fog in
+  the sky, Blend with Sun, saved skies, Randomize Sky, scene effects stored) are built and
+  pushed**; the choices made without asking are listed under "Sky Lab v0.10.4 / v0.10.5 /
+  v0.10.6, decided without asking" for the user to confirm. v0.10.6 also fixed JPEG and
+  TGA images not loading at all (raylib had them off). Next: report; then cameras and
+  Camera Preview (Roadmap item 4) when the user says go.
 - **Roadmap:** Sky Lab → cameras and Camera Preview →
   Render (Source look, with the material system) → water / cloud planes → camera effects →
   export. The renderer part is a
@@ -95,6 +96,33 @@ are in [`DEV.md`](DEV.md). One-step-per-release: add `docs/releases/vX.Y.Z.md` a
   - Cloud shadows and the darker scene under heavy cover are stored for the renderer.
   - **Bakes use all of the machine's threads** (the core now links threads). 2048 wide
     with both layers: 0.4 s on 2 threads here; 8192: 5.5 s.
+- **Sky Lab v0.10.6 (night sky and effects), decided without asking (confirm):**
+  - **Moon phase** 0..100 is the month (0 new, 50 full); **the lit side always faces the
+    sun**, as in the real sky (so 25 and 75 look alike). The moon has its own size,
+    intensity and glow (Bryce shares the sun's); horizon illusion is shared.
+  - **Own moon images** go in the Bottega's `skies/moons/` (left out of the sky list);
+    2:1 = a map wrapped on the ball, square = a photo of the face; bigger than 1024 wide
+    is scaled down. The built-in moon shows "NASA's Scientific Visualization Studio".
+  - **Stars:** the random field has real-sky brightnesses and colours (Bryce: all the same
+    brightness); comets work with both fields (Bryce: random only). Instead of Bryce's
+    trackball, **latitude and star time** (the sidereal hour) place the sky; north is +Y,
+    east +X. Stars show only where the sky is dark (night, a total eclipse).
+  - **Rings** round both the sun and the moon; radius 50 = 22 degrees, the secondary at
+    about 46.
+  - **Rainbow:** "radius" is the bow's width, as Bryce's guide says (the bow itself stays
+    at 42 degrees, the secondary at 51).
+  - **Fog in the sky:** the eye is at height 0; thickness 0 (all older maps) keeps the fog
+    out of the sky; the sky is out of date when the map's fog changes (Rebake).
+  - **Blend with Sun** works on Soft and Darker skies; its defaults (on, colour 60,
+    luminance 100) give exactly the v0.10.4 / v0.10.5 skies (checked byte for byte).
+  - **Saved skies** are named files in the Bottega's `presets/skies` (not Bryce's seven
+    memory dots); loading one keeps this map's sun lock and baked size. Randomize keeps
+    the lock, the baked size and the moon texture.
+  - Stored for the renderer: Volumetric World, colour perspective (default 0 1 88, from the
+    guide's example), IBL with an intensity.
+  - **Found and fixed:** raylib was built without JPEG and TGA, so `.jpg` / `.tga`
+    textures, skies and JPEG textures inside models silently loaded as nothing. Both are
+    on now.
 - **Milestone 8, answered by the user (2026-11-16):** sky in the 3D view toggled from the
   View menu; a very rough light preview, not computed while off; fog on/off, off by
   default; the sun's direction separate from the sky; selected lights get xyz rotation
@@ -349,7 +377,7 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
    filtering follows Scalpellino's Crisp / Smooth switch.
 2. **Random Replicate (done, v0.10.1)** (Bryce) — scatter copies with random offset / turn /
    size ranges, for props and primitives (brushes: offset only, as with Multi-Replicate).
-3. **Sky Lab** (Bryce; agreed with the user in a separate chat, missed here until they
+3. **Sky Lab** — **done (v0.10.4 to v0.10.6)**. (Bryce; agreed with the user in a separate chat, missed here until they
    pointed it out) — make skies instead of only loading images. **Everything Bryce's Sky
    Lab has** (user: "it is amazing"): sun and moon (position, size, glow, colour, moon
    phase, halos / rings), stars and comets, cloud layers (cumulus / stratus, height,

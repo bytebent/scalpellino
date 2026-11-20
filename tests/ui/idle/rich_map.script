@@ -130,5 +130,10 @@ skylab open
 skylabset sun_altitude 12
 skylabset stratus 1 35 30 90 20 6
 skylabset cumulus 1 45 35 150 30 6
+skylabset moon_visible 1
+skylabset stars 1
+skylabset star_field earth
+skylabset rings 1
+skylabset rainbow 1
 expect skylabwindow open 1024
 shot idle-ready.png

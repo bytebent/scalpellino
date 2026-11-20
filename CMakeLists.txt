@@ -41,6 +41,7 @@ add_library(scal_core STATIC
   src/core/world.cpp
   src/core/sky.cpp
   src/core/skylab.cpp
+  src/core/star_catalogue.cpp
   src/core/mathprim.cpp
   src/core/model.cpp
   src/core/prop.cpp
@@ -121,10 +122,15 @@ if(SCAL_BUILD_APP)
   file(GLOB SCAL_BUILTIN_SKIES ${CMAKE_CURRENT_SOURCE_DIR}/assets/skies/*.png
                                ${CMAKE_CURRENT_SOURCE_DIR}/assets/skies/*.txt)
 
+  # The built-in moon (Sky Lab, v0.10.6).
+  file(GLOB SCAL_BUILTIN_MOON ${CMAKE_CURRENT_SOURCE_DIR}/assets/moon/*.jpg
+                              ${CMAKE_CURRENT_SOURCE_DIR}/assets/moon/*.txt)
+
   if(APPLE)
     set_source_files_properties(${SCAL_BUILTIN_TEXTURES} PROPERTIES MACOSX_PACKAGE_LOCATION Resources/textures)
     set_source_files_properties(${SCAL_BUILTIN_SKIES} PROPERTIES MACOSX_PACKAGE_LOCATION Resources/skies)
-    add_executable(Scalpellino MACOSX_BUNDLE ${SCAL_APP_SOURCES} ${SCAL_BUILTIN_TEXTURES} ${SCAL_BUILTIN_SKIES})
+    set_source_files_properties(${SCAL_BUILTIN_MOON} PROPERTIES MACOSX_PACKAGE_LOCATION Resources/moon)
+    add_executable(Scalpellino MACOSX_BUNDLE ${SCAL_APP_SOURCES} ${SCAL_BUILTIN_TEXTURES} ${SCAL_BUILTIN_SKIES} ${SCAL_BUILTIN_MOON})
     set_target_properties(Scalpellino PROPERTIES
       MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/cmake/Info.plist.in
       MACOSX_BUNDLE_BUNDLE_NAME "Scalpellino"
@@ -139,7 +145,9 @@ if(SCAL_BUILD_APP)
       COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:Scalpellino>/textures
       COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SCAL_BUILTIN_TEXTURES} $<TARGET_FILE_DIR:Scalpellino>/textures
       COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:Scalpellino>/skies
-      COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SCAL_BUILTIN_SKIES} $<TARGET_FILE_DIR:Scalpellino>/skies)
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SCAL_BUILTIN_SKIES} $<TARGET_FILE_DIR:Scalpellino>/skies
+      COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:Scalpellino>/moon
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SCAL_BUILTIN_MOON} $<TARGET_FILE_DIR:Scalpellino>/moon)
   endif()
 
   target_include_directories(Scalpellino PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)

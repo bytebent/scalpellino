@@ -4,6 +4,49 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-20 — Sky Lab, step 3: night sky and effects (v0.10.6)
+- **Core:** the moon (free place, phase with the lit side toward the sun, size, intensity,
+  glow, earthshine, softness, colour, texture: a 2:1 map on a ball or a square photo,
+  brightened to a bright grey average); solar eclipse (cover from circle overlap, the sky
+  darkened by what is left of the sun, a corona when nearly total, the moon's face dark);
+  lunar eclipse (Earth's shadow across, eclipse colour); halo rings round sun and moon
+  (red inside, blue outside, secondary); stars (Earth's sky from the Yale Bright Star
+  Catalogue compiled in, or a random field with the real sky's brightnesses; latitude and
+  star time; placed once, drawn row by row; only where the sky is dark); comets (head and
+  a slightly curved tail away from the sun); the rainbow (42 and 51 degrees, colours in
+  order, only while the sun is up); Blend with Sun for haze and fog; fog in the sky from
+  the map's fog with base height and thickness (`SkyExtras`); scene effects stored. The
+  moon lights clouds and the night sky. `solarEclipseCover`. Fog in the map: two more
+  numbers, written only when set. Skies of v0.10.4 / v0.10.5 come out byte for byte the
+  same (checked against the v0.10.5 code on 7 skies).
+- **Bugs found while testing:** stars near the zenith came out as long bars (the pixel
+  direction was clamped, breaking the distance) — fixed; a moon exactly centred on the sun
+  gave 99.99996% cover (acos precision) — the angle now comes from the chord. **JPEG and
+  TGA never loaded** (raylib leaves them off): `.jpg` / `.tga` textures and skies and JPEG
+  textures inside models were silently empty. Both turned on in `cmake/Deps.cmake`.
+- **Editor:** the Sun & Moon tab in sections (Sun, Moon with its own compass, "Move moon
+  onto sun" and the NASA credit, Eclipses with the cover shown, Stars and comets, Rings,
+  Scene lighting); Atmosphere in sections (Haze, Fog shared with World > Environment,
+  Rainbow, Blend with Sun, Scene effects); tabs scroll inside a fixed height; saved skies
+  (Load, Save sky) and Randomize sky; the moon image loaded once; the built-in moon
+  bundled with the app; moon images kept out of the sky list; out of date also when the
+  map's fog changes; World > Environment gained fog base height and thickness. Script
+  commands `skylabsection`, `skylabpreset`, `skylabrandom`, fog in `skylabset`,
+  `environment fogheight`, `expect fog`.
+- **Tests:** core 4572 checks, 0 failed (new `testSkyLabNight`: text form and clamping,
+  old maps, fog in the map, eclipse cover, total / partial eclipse darkness, moon phases
+  and its lit side, a square moon texture, lunar eclipse red, stars at night and not by
+  day, Sirius in its place, comets, rings, rainbow colour order and none at night, fog in
+  the sky, Blend with Sun). UI 25 of 25 at 1x and 2x (new `v106_night`: the night sky,
+  comets, eclipses, rainbow, fog, saved skies, Randomize, fog out of date and Rebake, undo,
+  save and open). Idle 0 ticks at 1x and 2x with moon, stars, rings and rainbow in the open
+  Sky Lab window; control 908 ticks. Bake 2048 with moon, stars and clouds: 0.5 s on 2
+  threads here; 8192: 6.9 s.
+- **Screenshots:** `docs/screenshots/m10c-11-moon-stars.png`, `m10c-12-comets.png`,
+  `m10c-13-solar-eclipse.png`, `m10c-14-lunar-eclipse.png`, `m10c-15-rainbow.png`,
+  `m10c-16-fog-in-sky.png`.
+- **Next:** report; then cameras and Camera Preview when the user says go.
+
 ### 2026-11-20 — Sky Lab, step 2: clouds (v0.10.5)
 - **Moon credit** fixed as the user asked: "NASA's Scientific Visualization Studio"
   (THIRD_PARTY.md, new `assets/moon/CREDIT.txt`, PLAN.md; separate commit).

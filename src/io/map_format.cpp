@@ -246,7 +246,8 @@ std::string writeMap(const Document& doc) {
     if (!env.sky.empty()) world.emplace_back("_scal_sky", env.sky);
     if (env.ambient != defaults.ambient) world.emplace_back("_scal_ambient", vec(env.ambient));
     if (env.fogOn || !(env.fog == defaults.fog))
-        world.emplace_back("_scal_fog", std::string(env.fogOn ? "1 " : "0 ") + vec(env.fog.color) + " " + num(env.fog.start) + " " + num(env.fog.end));
+        world.emplace_back("_scal_fog", std::string(env.fogOn ? "1 " : "0 ") + vec(env.fog.color) + " " + num(env.fog.start) + " " + num(env.fog.end) +
+                                            (env.fog.base != 0 || env.fog.thickness != 0 ? " " + num(env.fog.base) + " " + num(env.fog.thickness) : std::string()));
     if (env.skylab.used) world.emplace_back("_scal_skylab", skyLabToString(env.skylab));
     if (!doc.bookmarks().empty()) {
         // x y z yaw pitch name;...
@@ -659,8 +660,12 @@ MapReadResult readMap(const std::string& text, Document& doc) {
         else if (k == "_scal_fog") {
             int on = 0;
             Fog f;
-            if (std::sscanf(v.c_str(), "%d %lf %lf %lf %lf %lf", &on, &f.color.x, &f.color.y, &f.color.z, &f.start, &f.end) == 6 &&
-                finite3(f.color.x, f.color.y, f.color.z) && std::isfinite(f.start) && std::isfinite(f.end)) {
+            // 6 numbers, or 8 with the height (base, thickness) from v0.10.6
+            const int got = std::sscanf(v.c_str(), "%d %lf %lf %lf %lf %lf %lf %lf", &on, &f.color.x, &f.color.y, &f.color.z, &f.start, &f.end, &f.base, &f.thickness);
+            if ((got == 6 || got == 8) && finite3(f.color.x, f.color.y, f.color.z) && std::isfinite(f.start) && std::isfinite(f.end) &&
+                std::isfinite(f.base) && std::isfinite(f.thickness)) {
+                if (got == 6) f.base = f.thickness = 0;
+                f.thickness = std::max(0.0, f.thickness);
                 extra.env.fogOn = on != 0;
                 extra.env.fog = f;
             }

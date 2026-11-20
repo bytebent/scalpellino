@@ -49,7 +49,12 @@ struct Fog {
     Vec3 color{150, 160, 175}; // 0..255
     double start = 1000;       // fully clear up to here (units = cm)
     double end = 10000;        // fully fogged from here
-    bool operator==(const Fog& o) const { return color == o.color && start == o.start && end == o.end; }
+    // Height (Sky Lab, from Bryce): the fog lies from `base` up through `thickness`
+    // (units = cm). Thickness 0 = no height (the fog doesn't show in the sky).
+    double base = 0, thickness = 0;
+    bool operator==(const Fog& o) const {
+        return color == o.color && start == o.start && end == o.end && base == o.base && thickness == o.thickness;
+    }
 };
 
 // Map-wide settings (World menu > Environment). The editor shows them only roughly.

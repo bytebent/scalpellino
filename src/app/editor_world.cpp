@@ -210,6 +210,10 @@ void Editor::drawWorldDialogs() {
         ImGui::PushItemWidth(120);
         ImGui::InputDouble("clear up to (units)", &e.fog.start, 0, 0, "%g");
         ImGui::InputDouble("fully fogged from", &e.fog.end, 0, 0, "%g");
+        ImGui::InputDouble("base height", &e.fog.base, 0, 0, "%g");
+        ImGui::InputDouble("thickness (0 = no height)", &e.fog.thickness, 0, 0, "%g");
+        e.fog.thickness = std::max(0.0, e.fog.thickness);
+        ImGui::TextDisabled("base height and thickness: where Sky Lab skies show the fog");
         ImGui::PopItemWidth();
         ImGui::EndDisabled();
         ImGui::TextDisabled("the 3D view shows fog only when View > 3D view: fog is on");

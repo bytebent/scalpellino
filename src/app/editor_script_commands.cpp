@@ -407,6 +407,7 @@ void Editor::registerScriptCommands() {
     });
     add({"environment"}, [this](const std::string&, std::istringstream& in) {
         // environment sky <name|none> | ambient r g b | fog on|off | fogcolor r g b | fogrange <start> <end>
+        //   | fogheight <base> <thickness>
         std::string k; in >> k;
         Environment e = doc_.environment();
         if (k == "sky") { std::string n; in >> n; e.sky = n == "none" ? "" : n; }
@@ -414,6 +415,7 @@ void Editor::registerScriptCommands() {
         else if (k == "fog") { std::string v; in >> v; e.fogOn = v == "on"; }
         else if (k == "fogcolor") in >> e.fog.color.x >> e.fog.color.y >> e.fog.color.z;
         else if (k == "fogrange") in >> e.fog.start >> e.fog.end;
+        else if (k == "fogheight") in >> e.fog.base >> e.fog.thickness;
         if (e != doc_.environment()) doc_.apply(doc_.makeEnvironment(e, "Environment"));
     });
     add({"skylab"}, [this](const std::string&, std::istringstream& in) {
@@ -425,6 +427,22 @@ void Editor::registerScriptCommands() {
         } else if (op == "cancel") closeSkyLab();
         else if (op == "rebake") rebakeSky();
     });
+    add({"skylabpreset"}, [this](const std::string&, std::istringstream& in) {
+        // skylabpreset save|load <name>
+        std::string op, name; in >> op; std::getline(in >> std::ws, name);
+        const bool done = op == "save" ? saveSkyPreset(name) : loadSkyPreset(name);
+        if (!done) { std::fprintf(stderr, "script FAIL (command %d): sky preset %s %s\n", scriptLine_, op.c_str(), name.c_str()); ++scriptFailures_; }
+    });
+    add({"skylabrandom"}, [this](const std::string&, std::istringstream& in) {
+        // skylabrandom [<seed>]: Randomize Sky (with that seed)
+        unsigned seed = 0;
+        if (in >> seed) skyLabRandomSeed_ = seed;
+        randomizeSky();
+    });
+    add({"skylabsection"}, [this](const std::string&, std::istringstream& in) {
+        // skylabsection <first word of a section title>: opens it (screenshots)
+        std::getline(in >> std::ws, skyLabSection_);
+    });
     add({"skylabtab"}, [this](const std::string&, std::istringstream& in) {
         // skylabtab sun|clouds|atmosphere
         std::string t; in >> t;
@@ -435,6 +453,11 @@ void Editor::registerScriptCommands() {
         // mode darker, sun_color 255 200 150...); "ambient r g b" sets the ambient field
         std::string k, v; in >> k; std::getline(in >> std::ws, v);
         if (k == "ambient") { std::istringstream a(v); a >> skyLabAmbient_.x >> skyLabAmbient_.y >> skyLabAmbient_.z; return; }
+        // The window's fog: fog on|off, fog_color r g b, fog_range start end, fog_height base thickness
+        if (k == "fog") { skyLabFogOn_ = v == "on" || v == "1"; return; }
+        if (k == "fog_color") { std::istringstream a(v); a >> skyLabFog_.color.x >> skyLabFog_.color.y >> skyLabFog_.color.z; return; }
+        if (k == "fog_range") { std::istringstream a(v); a >> skyLabFog_.start >> skyLabFog_.end; return; }
+        if (k == "fog_height") { std::istringstream a(v); a >> skyLabFog_.base >> skyLabFog_.thickness; return; }
         const bool was = skyLabBuf_.lockSun;
         skyLabBuf_ = skyLabFromString(skyLabToString(skyLabBuf_) + ";" + k + "=" + v);
         if (skyLabBuf_.lockSun && !was)

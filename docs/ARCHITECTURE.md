@@ -236,7 +236,7 @@ from the Camera Preview and the renderer (see §9).
 - **Camera bookmarks** (World menu): name + 3D camera position/yaw/pitch; go / delete.
   Editor-only, saved with the map, not undone (like visgroups).
 
-### Sky Lab (milestone 10c, in progress: v0.10.4 and v0.10.5 built; from Bryce)
+### Sky Lab (milestone 10c, done: v0.10.4 to v0.10.6; from Bryce)
 Makes skies instead of only loading images. Agreed with the user 2026-11-19; full list in
 PLAN.md (Roadmap item 3).
 - **Settings** (`core/skylab.hpp`): everything Bryce's Sky Lab has, saved in the map as the
@@ -248,7 +248,10 @@ PLAN.md (Roadmap item 3).
   size, giving an RGB panorama in the layout of `core/sky.hpp` (middle faces +X). Below the
   horizon the haze colour fades to a ground colour. Clouds are two layers of noise on
   shells over the planet (stratus above cumulus), each octave faded where it is finer
-  than a pixel. Rows can be made on several threads; the result is the same.
+  than a pixel. Rows can be made on several threads; the result is the same. Stars and
+  comets are placed once and drawn row by row (Earth's sky from a compiled-in catalogue);
+  the moon is a lit ball with a texture handed in by the app (the core loads no images);
+  the map's fog comes in with it (`SkyExtras`).
 - **Baking:** Apply writes the panorama as a PNG to Bottega's `skies/` (Sky Lab asks for a
   Bottega if none is set) and sets the map's sky to it; one undo step. A missing PNG is
   rebaked from the map's settings.
@@ -539,7 +542,7 @@ docs/         this file, roadmap
 | 9 | Math primitives (Bryce-style): sphere, cube (rounded), cylinder, cone, torus, capsule, disc; exact per-pixel drawing; combining (add / subtract / intersect) and blending; single pieces movable; object handles shared with lights; 1 unit = 1 cm; Snap to Land / Ground; Multi-Replicate | done (v0.9.0 … v0.9.3) |
 | 10 | Props: static models (`.glb` first, then `.mazz`) with their textures, from Bottega's `models/`, placed / turned / sized as objects (uniform scale by default), Snap to Land, instanced; no physics. Preceded by the idle CPU test and Bottega basics (folder setting, Rescan, marker file) | done (v0.10.0; `.mazz` later) |
 | 10b | Random Replicate (Bryce): random offset / turn / size ranges for props and primitives | done (v0.10.1) |
-| 10c | Sky Lab (Bryce, all of it): generated skies (sun, moon, stars, clouds, atmosphere) with live preview in the 3D view, baked to panoramas in Bottega's `skies/`; settings kept in the map; tick box to lock the sun to the map's sun light; eclipses. Steps: v0.10.4 window / bake / sky modes / sun / haze / lock, v0.10.5 clouds, v0.10.6 night sky and effects | in progress |
+| 10c | Sky Lab (Bryce, all of it): generated skies (sun, moon, stars, clouds, atmosphere) with live preview in the 3D view, baked to panoramas in Bottega's `skies/`; settings kept in the map; tick box to lock the sun to the map's sun light; eclipses. Steps: v0.10.4 window / bake / sky modes / sun / haze / lock, v0.10.5 clouds, v0.10.6 night sky and effects | done (v0.10.6) |
 | 11 | Cameras and Camera Preview (proposed order): camera objects (many, one active), options and presets, the on-request preview | |
 | 12 | Render, the Source look, with materials (proposed): render window, terminal log, light baking, reflection probes, mirrors, the material system (GLSL shaders from Bottega's `shaders/`, reflection kind per material), PNG to `renders/` | |
 | 13 | Water, cloud and endless planes (proposed): materials made with the system above | |

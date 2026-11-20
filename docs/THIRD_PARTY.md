@@ -24,8 +24,14 @@ All are fetched at build time at pinned versions (see `cmake/Deps.cmake`).
 | `tests/ui/assets/skies/Cubemap_Sky_21.png` (test only, scaled down) | Screaming Brain Studios (provided by the project owner) | CC0 1.0 / public domain |
 | `assets/moon/moon_lroc_color.jpg` (colour map of the Moon, scaled to 1024x512) | NASA's Scientific Visualization Studio (provided by the project owner) | NASA material, not copyrighted in the United States. Credit: **NASA's Scientific Visualization Studio** — see `assets/moon/CREDIT.txt` |
 
-`assets/textures/nodraw.png` is our own (CC0), text set in Roboto. The moon map is not
-used yet (Sky Lab's moon, v0.10.6).
+`assets/textures/nodraw.png` is our own (CC0), text set in Roboto. The moon map is Sky
+Lab's built-in moon (v0.10.6); Sky Lab shows its credit next to it.
+
+## Data
+
+| Files | Source | License |
+|---|---|---|
+| `src/core/star_catalogue.cpp` (generated: 8404 stars to magnitude 6.5, position, magnitude, colour temperature) | The Yale Bright Star Catalogue, 5th revised edition (Hoffleit & Warren, 1991), via the JSON conversion by Bretton Wade (`brettonw/YaleBrightStarCatalog`) | Catalogue data: freely distributed astronomical data; the JSON conversion: MIT (Copyright (c) 2016 Bretton Wade) |
 
 Tile_19 and Bricks_24 were converted from 16-bit RGBA to 8-bit RGB PNG, and Tile_13 and Grass_20
 from RGBA to RGB (fully opaque, no visual change), to keep the app small. The skies are

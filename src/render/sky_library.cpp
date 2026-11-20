@@ -42,6 +42,8 @@ void SkyLibrary::scanFolder(const std::string& dir, const std::string& keyRoot) 
     if (dir.empty() || !fs::is_directory(dir, ec)) return;
     for (auto it = fs::recursive_directory_iterator(dir, fs::directory_options::skip_permission_denied, ec);
          !ec && it != fs::recursive_directory_iterator(); it.increment(ec)) {
+        // Moon images (Sky Lab) live in skies/moons/ and are not skies.
+        if (it->is_directory(ec) && it->path().filename() == "moons") { it.disable_recursion_pending(); continue; }
         if (!it->is_regular_file(ec)) continue;
         std::string ext = it->path().extension().string();
         std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return (char)std::tolower(c); });

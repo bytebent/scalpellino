@@ -3008,6 +3008,245 @@ void testSkyLabClouds() {
     CHECK(nightC.x < 0 || nightC.x + nightC.y + nightC.z < 60);
 }
 
+
+// Sky Lab night sky and effects (v0.10.6): moon, eclipses, stars, comets, rings, rainbow,
+// fog in the sky, Blend with Sun; stored and read back; older maps unchanged.
+void testSkyLabNight() {
+    // Text form.
+    SkyLab s;
+    s.used = true;
+    s.moonVisible = true; s.moonAzimuth = 12; s.moonAltitude = 34; s.moonPhase = 27; s.moonSize = 3.5;
+    s.moonIntensity = 66; s.moonGlow = 11; s.earthshine = 44; s.moonSoftness = 9; s.moonColor = {250, 240, 230};
+    s.moonTexture = "skies/moons/my;moon=x.png";
+    s.coronaIntensity = 70; s.coronaSize = 12; s.lunarEclipse = 35; s.eclipseColor = {200, 50, 20};
+    s.rings = true; s.ringIntensity = 45; s.ringRadius = 60; s.secondaryRing = true;
+    s.stars = true; s.earthStars = true; s.starIntensity = 77; s.starAmount = 1234; s.starSeed = 99; s.starLatitude = -33; s.starTime = 13.5;
+    s.comets = true; s.cometIntensity = 22; s.cometAmount = 4;
+    s.rainbow = true; s.rainbowRadius = 45; s.rainbowOpacity = 70; s.secondaryBow = false;
+    s.blendSun = false; s.blendColor = 20; s.blendLuminance = 30; s.blendHaze = false; s.blendFog = true;
+    s.volumetric = true; s.volumetricQuality = 80; s.volumetricDensity = 10; s.colorPerspective = true; s.colorPerspectiveRgb = {79, 2, 30};
+    s.ibl = true; s.iblIntensity = 150; s.bakedFog = "1 2 3 4 5 6 7";
+    const SkyLab back = skyLabFromString(skyLabToString(s));
+    CHECK(back.moonTexture == "skies/moons/my_moon_x.png"); // no separators inside a value
+    SkyLab expect = s;
+    expect.moonTexture = back.moonTexture;
+    CHECK(back == expect);
+    CHECK(back.earthStars && back.starAmount == 1234 && back.starTime == 13.5 && !back.secondaryBow && back.bakedFog == "1 2 3 4 5 6 7");
+    // Clamped; a v0.10.5 map has none of it and the default Blend with Sun.
+    const SkyLab c = skyLabFromString("lunar_eclipse=150;star_amount=20000;moon_phase=-5;comet_amount=99;star_time=25");
+    CHECK(c.lunarEclipse == 100 && c.starAmount == 10000 && c.moonPhase == 0 && c.cometAmount == 50 && near(c.starTime, 1));
+    const SkyLab old = skyLabFromString("mode=soft;haze=1;stratus=1 35 30 90 20 6");
+    CHECK(!old.moonVisible && !old.stars && !old.rings && !old.rainbow && old.blendSun && old.blendColor == 60 && old.moonTexture == "builtin");
+
+    // The fog's height in the map: written only when set; read back.
+    {
+        Document d;
+        Environment env = d.environment();
+        env.fogOn = true;
+        d.apply(d.makeEnvironment(env, "fog"));
+        const std::string plain = writeMap(d);
+        CHECK(plain.find("\"_scal_fog\" \"1 150 160 175 1000 10000\"") != std::string::npos);
+        env.fog.base = -200;
+        env.fog.thickness = 640;
+        d.apply(d.makeEnvironment(env, "fog"));
+        Document d2;
+        CHECK(readMap(writeMap(d), d2).ok);
+        CHECK(d2.environment().fog.base == -200 && d2.environment().fog.thickness == 640);
+        Document d3;
+        CHECK(readMap(plain, d3).ok && d3.environment().fog.thickness == 0);
+    }
+
+    // Solar eclipse cover.
+    SkyLab e;
+    e.moonVisible = true;
+    e.moonAzimuth = e.sunAzimuth;
+    e.moonAltitude = e.sunAltitude;
+    e.moonSize = e.diskSize;
+    CHECK(near(solarEclipseCover(e), 1));
+    e.moonSize = e.diskSize / 2;
+    CHECK(std::fabs(solarEclipseCover(e) - 0.25) < 0.01); // a ring of sun round a smaller moon
+    e.moonSize = e.diskSize;
+    e.moonAltitude = e.sunAltitude + 10;
+    CHECK(solarEclipseCover(e) == 0);
+    e.moonAltitude = e.sunAltitude + e.diskSize / 2;
+    const double half = solarEclipseCover(e);
+    CHECK(half > 0.2 && half < 0.6);
+    e.moonVisible = false;
+    CHECK(solarEclipseCover(e) == 0);
+
+    const int W = 512, H = 256;
+    auto px = [&](const std::vector<unsigned char>& img, const Vec3& dir) {
+        double u = 0, v = 0;
+        skyUV(normalize(dir), u, v);
+        const int i = std::min(W - 1, (int)(u * W)), j = std::min(H - 1, (int)(v * H));
+        const unsigned char* p = &img[((size_t)j * W + i) * 3];
+        return Vec3{(double)p[0], (double)p[1], (double)p[2]};
+    };
+    auto sum = [](const Vec3& c) { return c.x + c.y + c.z; };
+    auto dirAt = [](double azDeg, double altDeg) {
+        const double a = azDeg * 3.14159265358979 / 180, b = altDeg * 3.14159265358979 / 180;
+        return Vec3{std::cos(b) * std::cos(a), std::cos(b) * std::sin(a), std::sin(b)};
+    };
+    // A total solar eclipse darkens the sky; half of one much less.
+    {
+        SkyLab day;
+        const double zen = sum(px(generateSky(day, W), {0, 0, 1}));
+        SkyLab tot = day;
+        tot.moonVisible = true;
+        tot.moonAzimuth = day.sunAzimuth;
+        tot.moonAltitude = day.sunAltitude;
+        tot.moonSize = day.diskSize * 1.05;
+        const double totZen = sum(px(generateSky(tot, W), {0, 0, 1}));
+        SkyLab part = tot;
+        part.moonAltitude = day.sunAltitude + day.diskSize * 0.5;
+        const double partZen = sum(px(generateSky(part, W), {0, 0, 1}));
+        CHECK(totZen * 4 < zen);
+        CHECK(partZen > totZen * 2 && partZen <= zen);
+    }
+    // The moon at night: full is bright, new is dark (earthshine), the lit side of a half
+    // moon faces the sun; a texture shows; a lunar eclipse turns it red.
+    {
+        SkyLab n;
+        n.sunAltitude = -30;
+        n.sunAzimuth = 90; // north (+Y): seen from +X, to the left
+        n.moonVisible = true;
+        n.moonAzimuth = 0;
+        n.moonAltitude = 30;
+        n.moonSize = 20;
+        n.moonGlow = 0;
+        n.moonTexture = "none";
+        n.moonPhase = 50;
+        const double sky = sum(px(generateSky(n, W), dirAt(0, 60)));
+        const double full = sum(px(generateSky(n, W), dirAt(0, 30)));
+        n.moonPhase = 0;
+        const double fresh = sum(px(generateSky(n, W), dirAt(0, 30)));
+        CHECK(full > 400 && fresh < full / 3 && full > sky + 300);
+        n.moonPhase = 25;
+        const std::vector<unsigned char> halfImg = generateSky(n, W);
+        CHECK(sum(px(halfImg, dirAt(5, 30))) > sum(px(halfImg, dirAt(-5, 30))) + 150); // +5 degrees azimuth = toward +Y = the sun's side
+        // A square texture is the face: left half red, right half blue.
+        std::vector<unsigned char> tex(64 * 64 * 3);
+        for (int y = 0; y < 64; ++y)
+            for (int x = 0; x < 64; ++x) {
+                unsigned char* p = &tex[((size_t)y * 64 + x) * 3];
+                p[0] = x < 32 ? 255 : 0; p[1] = 0; p[2] = x < 32 ? 0 : 255;
+            }
+        SkyExtras ex;
+        ex.moon = {64, 64, tex.data()};
+        n.moonPhase = 50;
+        n.moonTexture = "builtin";
+        const std::vector<unsigned char> t = generateSky(n, W, ex);
+        const Vec3 left = px(t, dirAt(5, 30)), right = px(t, dirAt(-5, 30)); // facing +X: +Y is left
+        CHECK(left.x > left.z + 100 && right.z > right.x + 100);
+        n.moonTexture = "none";
+        n.lunarEclipse = 100;
+        const Vec3 red = px(generateSky(n, W), dirAt(0, 30));
+        CHECK(red.x > red.z * 1.5 && sum(red) < full);
+    }
+    // Stars: show at night, not by day; Earth's sky puts Sirius where it belongs.
+    {
+        auto bright = [&](const std::vector<unsigned char>& img) {
+            int n = 0;
+            for (size_t k = 0; k < img.size(); k += 3) n += img[k] + img[k + 1] + img[k + 2] > 200;
+            return n;
+        };
+        SkyLab n;
+        n.sunAltitude = -30;
+        const int none = bright(generateSky(n, W));
+        n.stars = true;
+        const int some = bright(generateSky(n, W));
+        CHECK(some > none + 50);
+        n.comets = true;
+        n.cometAmount = 8;
+        n.cometIntensity = 100;
+        CHECK(bright(generateSky(n, W)) > some);
+        SkyLab day;
+        SkyLab dayStars = day;
+        dayStars.stars = true;
+        CHECK(generateSky(dayStars, W) == generateSky(day, W));
+        // Only Sirius (the brightest): at star time 6.75 h, latitude 45, due south, 28 degrees up.
+        SkyLab sirius;
+        sirius.sunAltitude = -30;
+        sirius.stars = true;
+        sirius.earthStars = true;
+        sirius.starAmount = 1;
+        sirius.starIntensity = 100;
+        sirius.starLatitude = 45;
+        sirius.starTime = 101.287 / 15;
+        const std::vector<unsigned char> img = generateSky(sirius, 1024);
+        int best = -1;
+        size_t at = 0;
+        for (size_t k = 0; k < img.size(); k += 3)
+            if (img[k] + img[k + 1] + img[k + 2] > best) { best = img[k] + img[k + 1] + img[k + 2]; at = k / 3; }
+        double u = 0, v = 0;
+        skyUV(dirAt(270, 90 - 45 - 16.716), u, v); // south = -Y = azimuth 270
+        CHECK(std::abs((int)(at % 1024) - (int)(u * 1024)) <= 2 && std::abs((int)(at / 1024) - (int)(v * 512)) <= 2);
+    }
+    // Rings: brighter at their radius, not far inside it.
+    {
+        SkyLab r;
+        r.sunAltitude = 30;
+        r.sunAzimuth = 0;
+        SkyLab ring = r;
+        ring.rings = true;
+        ring.ringIntensity = 100;
+        const std::vector<unsigned char> a = generateSky(r, W), b = generateSky(ring, W);
+        CHECK(sum(px(b, dirAt(0, 30 + 22))) > sum(px(a, dirAt(0, 30 + 22))) + 20);
+        CHECK(std::fabs(sum(px(b, dirAt(0, 30 + 11))) - sum(px(a, dirAt(0, 30 + 11)))) < 6);
+    }
+    // Rainbow: 42 degrees from the point opposite the sun, red outside, blue inside.
+    {
+        SkyLab r;
+        r.sunAzimuth = 180;
+        r.sunAltitude = 10;
+        r.hazeOn = false;
+        SkyLab bow = r;
+        bow.rainbow = true;
+        bow.rainbowOpacity = 100;
+        bow.secondaryBow = false;
+        const std::vector<unsigned char> a = generateSky(r, W), b = generateSky(bow, W);
+        // Straight ahead (+X, opposite the sun at -X), the antisolar point is 10 degrees down.
+        // (the band: 39..44 degrees at the default width; violet inside, red outside)
+        const Vec3 outer = px(b, dirAt(0, 43.4 - 10)) - px(a, dirAt(0, 43.4 - 10));
+        const Vec3 inner = px(b, dirAt(0, 39.8 - 10)) - px(a, dirAt(0, 39.8 - 10));
+        CHECK(outer.x > outer.z + 10);
+        CHECK(inner.z > inner.x + 10);
+        SkyLab night = bow;
+        night.sunAltitude = -10;
+        SkyLab nightPlain = night;
+        nightPlain.rainbow = false;
+        CHECK(generateSky(night, W) == generateSky(nightPlain, W)); // no rainbow without the sun
+    }
+    // Fog in the sky: none without a thickness; with one, the horizon is the fog colour,
+    // overhead much less, the ground (the eye inside the layer) all fog.
+    {
+        SkyLab f;
+        f.hazeOn = false;
+        SkyExtras fog;
+        fog.fogOn = true;
+        fog.fogColor = {200, 0, 0};
+        fog.fogStart = 0;
+        fog.fogEnd = 5000;
+        CHECK(generateSky(f, W, fog) == generateSky(f, W));
+        fog.fogThickness = 500;
+        const std::vector<unsigned char> img = generateSky(f, W, fog);
+        const Vec3 horizon = px(img, dirAt(200, 0.5)), up = px(img, {0, 0, 1}), down = px(img, dirAt(200, -30));
+        CHECK(horizon.x > 190 && horizon.y < 15);
+        CHECK(up.z > up.x);
+        CHECK(down.x > 190 && down.y < 15);
+    }
+    // Blend with Sun: at night the haze darkens with it, stays bright without it.
+    {
+        SkyLab n;
+        n.sunAltitude = -20;
+        n.hazeDensity = 80;
+        n.hazeColor = {230, 230, 230};
+        SkyLab off = n;
+        off.blendSun = false;
+        CHECK(sum(px(generateSky(off, W), dirAt(200, 1))) > sum(px(generateSky(n, W), dirAt(200, 1))) + 200);
+    }
+}
+
 int main() {
     testGrid();
     testBoxGeometry();
@@ -3031,6 +3270,7 @@ int main() {
     testSky();
     testSkyLab();
     testSkyLabClouds();
+    testSkyLabNight();
     testBottega();
     testMathPrims();
     testPrimBlend();

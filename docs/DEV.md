@@ -101,6 +101,12 @@ inside the view. Lines starting with # are comments.
   environment sky <name|none> | ambient r g b | fog on|off | fogcolor r g b | fogrange <start> <end>
   skylab open|apply|ok|cancel|rebake   (apply / ok bake; the next command waits for the bake)
   skylabtab sun|clouds|atmosphere   (opens that tab of the Sky Lab window)
+  skylabsection <title start>   (opens that section of the tab and scrolls to it: Moon, Stars...)
+  skylabset fog on|off | fog_color r g b | fog_range <start> <end> | fog_height <base> <thickness>
+                                  (the window's fog, applied to the map with the sky)
+  skylabpreset save|load <name>   (a saved sky in the Bottega's presets/skies)
+  skylabrandom [<seed>]           (Randomize Sky)
+  environment ... fogheight <base> <thickness>   expect fog on|off [<base> <thickness>]
   skylabset <field> <value...>   (a Sky Lab field as saved in the map: mode darker, sun_altitude 6,
                                   sun_color 255 200 150, lock_sun 1...; ambient r g b)
   expect skylab <field> <value...>   (the map's Sky Lab settings)   expect skyoutofdate yes|no

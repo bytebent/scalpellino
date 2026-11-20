@@ -22,6 +22,9 @@ FetchContent_Declare(rlimgui
   DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
 
 FetchContent_MakeAvailable(raylib imgui rlimgui)
+# raylib leaves JPEG and TGA off by default; Scalpellino lists and loads both (textures,
+# skies, the built-in moon, JPEG textures inside models).
+target_compile_definitions(raylib PRIVATE SUPPORT_FILEFORMAT_JPG=1 SUPPORT_FILEFORMAT_TGA=1)
 
 # ImGui + rlImGui have no CMake build of their own; build them as one static lib.
 add_library(scal_imgui STATIC

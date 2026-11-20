@@ -243,7 +243,6 @@ private:
     SkyLab skyLabBuf_;               // the settings being edited
     Vec3 skyLabAmbient_;             // the environment's ambient, edited in Sky Lab
     Texture2D skyLabTex_{};          // the live preview (also the 3D view's sky while open)
-    SkyLab skyLabPreviewOf_;
     int skyLabPreviewW_ = 0;
     unsigned long long skyLabPreviews_ = 0; // how many previews were made (tests)
     struct SkyBake {
@@ -253,10 +252,31 @@ private:
         SkyLab settings;
         std::string name;
         bool closeAfter = false;
+        bool fogOn = false;   // the fog it was made with (set on the map with the sky)
+        Fog fog;
+        bool setFog = false;  // made from the Sky Lab window: its fog goes to the map
     };
     std::unique_ptr<SkyBake> skyBake_;
     std::string skyLabMsg_;
+    // v0.10.6: the fog (shared with World > Environment), the moon image, saved skies.
+    bool skyLabFogOn_ = false;
+    Fog skyLabFog_;
+    std::string skyLabPreviewKey_;    // what the preview was made from
+    std::string moonBuiltinPath_;     // the built-in moon (NASA's map) inside the app
+    std::vector<unsigned char> moonPixels_;
+    int moonW_ = 0, moonH_ = 0;
+    std::string moonLoaded_;          // which moon image moonPixels_ holds
+    unsigned skyLabRandomSeed_ = 1;   // Randomize Sky
+    char skyPresetName_[64] = "";
+    // The fog and moon a sky needs (loads the moon image if it changed).
+    SkyExtras skyExtras(const SkyLab& s, bool fogOn, const Fog& fog);
+    std::vector<std::string> moonImages() const;   // Bottega skies/moons/ (keys)
+    std::vector<std::string> skyPresets() const;   // Bottega presets/skies/ (names)
+    bool saveSkyPreset(const std::string& name);
+    bool loadSkyPreset(const std::string& name);
+    void randomizeSky();
     int skyLabTab_ = -1; // a tab to open (0 Sun & Moon, 1 Clouds, 2 Atmosphere), for tests
+    std::string skyLabSection_; // a section to open (its title's start), for tests
 
     // Overlap finder + navigation
     void findOverlapsNow();

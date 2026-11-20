@@ -1,0 +1,99 @@
+# v0.10.6: Sky Lab night sky and effects. The moon (NASA's built-in map), Earth's stars,
+# comets, a solar and a lunar eclipse, rings, a rainbow, fog in the sky (shared with World >
+# Environment; out of date when it changes), saved skies and Randomize Sky.
+bottega make studio
+block -2048 -2048 -32 2048 2048 0
+block 128 -64 0 192 0 256
+tool select
+key Esc
+camera -700 -650 140 42 22
+viewset sky off
+skylab open
+# -- night: the moon over the camera's view and Earth's stars
+skylabset sun_altitude -25
+skylabset moon_visible 1
+skylabset moon_azimuth 40
+skylabset moon_altitude 22
+skylabset moon_phase 38
+skylabset moon_size 6
+skylabset stars 1
+skylabset star_field earth
+skylabset star_amount 5000
+skylabset star_time 20
+skylabsection Moon
+expect skylabwindow open 1024
+shot m10c-11-moon-stars.png
+# -- a random field with comets
+skylabset star_field random
+skylabset comets 1
+skylabset comet_amount 12
+skylabset comet_intensity 90
+skylabsection Stars
+shot m10c-12-comets.png
+skylabset comets 0
+# -- a total solar eclipse: the moon on the sun, a little bigger
+skylabset sun_azimuth 40
+skylabset sun_altitude 22
+skylabset moon_azimuth 40
+skylabset moon_altitude 22
+skylabset moon_size 2.7
+skylabset disk_size 2.5
+skylabsection Eclipses
+shot m10c-13-solar-eclipse.png
+# -- a lunar eclipse
+skylabset sun_azimuth 220
+skylabset sun_altitude -30
+skylabset moon_size 7
+skylabset moon_phase 50
+skylabset lunar_eclipse 70
+shot m10c-14-lunar-eclipse.png
+skylabset lunar_eclipse 0
+# -- day: rings round the sun and a rainbow opposite it
+skylabset moon_visible 0
+skylabset stars 0
+skylabset sun_azimuth 222
+skylabset sun_altitude 14
+skylabset rainbow 1
+skylabset rainbow_opacity 70
+skylabset rings 1
+skylabset ring_intensity 70
+skylabset cumulus 1 30 35 150 30 6
+skylabtab atmosphere
+skylabsection Rainbow
+shot m10c-15-rainbow.png
+# -- fog lying in a layer shows in the sky; Apply puts the fog on the map
+skylabset rainbow 0
+skylabset rings 0
+skylabset fog on
+skylabset fog_color 205 210 220
+skylabset fog_range 0 6000
+skylabset fog_height 0 700
+skylabsection Fog
+shot m10c-16-fog-in-sky.png
+# -- saved skies and Randomize Sky
+skylabpreset save Foggy day
+skylabrandom 5
+skylabrandom 6
+skylabpreset load Foggy day
+skylab ok
+expect skylabwindow closed
+expect fog on 0 700
+expect skylab cumulus 1 30 35 150 30 6
+expect skylab rainbow 0
+expect skyoutofdate no
+# -- the fog changed in World > Environment: the sky is out of date; Rebake
+environment fogheight 0 1200
+expect fog on 0 1200
+expect skyoutofdate yes
+skylab rebake
+expect skyoutofdate no
+undo
+expect skyoutofdate yes
+redo
+# -- saved and opened again
+save night-test.map
+open night-test.map
+expect fog on 0 1200
+expect skyoutofdate no
+expect skylab moon_visible 0
+quit
