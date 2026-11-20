@@ -78,20 +78,34 @@ jobs:
 
   # Publishes the Mac builds on the repo's Releases page:
   #  - every push to main updates the "latest" pre-release (newest working build)
-  #  - a version release (v0.1.0, ...) is created for every docs/releases/vX.Y.Z.md that
-  #    has no release yet (at the commit that pushed it); pushing a vX.Y.Z tag also works
+  #  - a version release (v0.1.0, ...) is made for every docs/releases/vX.Y.Z.md that has no
+  #    release yet, always from a build of the commit that ADDED that notes file:
+  #      * this run is that commit's build: publish these zips;
+  #      * otherwise (that commit's build failed, or its release job was skipped or
+  #        cancelled because main moved on): never attach this newer build. Tag the notes
+  #        commit and start this workflow on the tag; that run builds exactly the tagged
+  #        commit and publishes it through the tag route below. If its build fails there
+  #        is no release, which is right: a version must not ship other code.
+  #  - a vX.Y.Z tag (pushed, or started by the step above) publishes the tagged commit.
+  # (v0.3.1 shipped later code once because the newest build simply took any notes file
+  # without a release.)
   release:
     needs: [macos, linux]
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    if: >-
+      (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))) ||
+      (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write  # releases and tags
+      actions: write   # starting this workflow on a tag (GITHUB_TOKEN pushes start no runs)
     # One release job at a time; a stale run must never replace a newer "latest".
     concurrency:
       group: release
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the history, to find the commit that added each notes file
       - uses: actions/download-artifact@v4
         with:
           pattern: Scalpellino-*
@@ -100,31 +114,58 @@ jobs:
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           ls -la dist
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+              echo "${GITHUB_REF_NAME} is already released. Nothing to do."
+              exit 0
+            fi
             notes="docs/releases/${GITHUB_REF_NAME}.md"
             [ -f "$notes" ] || notes="docs/releases/INSTALL.md"
             gh release create "${GITHUB_REF_NAME}" dist/*.zip \
               --title "Scalpellino ${GITHUB_REF_NAME}" --notes-file "$notes" --verify-tag
-          else
-            head="$(git ls-remote origin refs/heads/main | cut -f1)"
-            if [ "$head" != "${GITHUB_SHA}" ]; then
-              echo "main has moved on (${head::7}); a newer run will publish. Skipping."
-              exit 0
-            fi
-            subject="$(git log -1 --format=%s)"
-            { echo "Newest working build from \`main\` (${GITHUB_SHA::7}): ${subject}"; echo; cat docs/releases/INSTALL.md; } > latest-notes.md
-            gh release delete latest --yes --cleanup-tag || true
-            gh release create latest dist/*.zip --prerelease --target "${GITHUB_SHA}" \
-              --title "Latest build" --notes-file latest-notes.md
-            # Version releases from notes files that don't have a release yet.
-            for notes in docs/releases/v*.md; do
-              [ -f "$notes" ] || continue
-              tag="$(basename "$notes" .md)"
-              if ! gh release view "$tag" >/dev/null 2>&1; then
-                gh release create "$tag" dist/*.zip --target "${GITHUB_SHA}" --latest \
-                  --title "Scalpellino ${tag}" --notes-file "$notes"
-              fi
-            done
+            exit 0
           fi
+
+          # Version releases from notes files that don't have a release yet.
+          for notes in docs/releases/v*.md; do
+            [ -f "$notes" ] || continue
+            tag="$(basename "$notes" .md)"
+            gh release view "$tag" >/dev/null 2>&1 && continue
+            added="$(git log --diff-filter=A --format=%H -1 -- "$notes")"
+            if [ -z "$added" ]; then
+              echo "::warning::$tag: can't find the commit that added $notes; not released."
+              continue
+            fi
+            if [ "$added" = "${GITHUB_SHA}" ]; then
+              echo "$tag: this run built ${added::7}, the commit that added its notes. Publishing."
+              gh release create "$tag" dist/*.zip --target "${GITHUB_SHA}" --latest \
+                --title "Scalpellino ${tag}" --notes-file "$notes"
+              continue
+            fi
+            # Not this commit: build the right one on its own tag.
+            existing="$(gh api "repos/${GH_REPO}/git/ref/tags/${tag}" --jq .object.sha 2>/dev/null || true)"
+            if [ -z "$existing" ]; then
+              echo "$tag: its notes came in ${added::7}, not this commit; tagging that commit and building it."
+              gh api "repos/${GH_REPO}/git/refs" -f ref="refs/tags/${tag}" -f sha="$added" >/dev/null
+              gh workflow run build.yml --ref "$tag"
+            elif [ "$existing" = "$added" ]; then
+              echo "::warning::$tag is tagged at ${added::7} but not released: its tag build is running or failed. Re-run that run (Actions, ref $tag) once it is fixed."
+            else
+              echo "::error::$tag is tagged at ${existing::7}, but its notes came in ${added::7}. Not releasing; check the tag by hand."
+            fi
+          done
+
+          # The "latest" pre-release: only from the newest commit on main.
+          head="$(git ls-remote origin refs/heads/main | cut -f1)"
+          if [ "$head" != "${GITHUB_SHA}" ]; then
+            echo "main has moved on (${head::7}); a newer run will publish \"latest\". Skipping it."
+            exit 0
+          fi
+          subject="$(git log -1 --format=%s)"
+          { echo "Newest working build from \`main\` (${GITHUB_SHA::7}): ${subject}"; echo; cat docs/releases/INSTALL.md; } > latest-notes.md
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest dist/*.zip --prerelease --target "${GITHUB_SHA}" \
+            --title "Latest build" --notes-file latest-notes.md

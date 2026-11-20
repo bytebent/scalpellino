@@ -6,7 +6,9 @@
 #include "core/world.hpp"
 #include "core/mathprim.hpp"
 #include "core/prop.hpp"
+#include <iterator>
 #include <map>
+#include <memory>
 #include <optional>
 #include <set>
 #include <unordered_map>
@@ -30,12 +32,52 @@ struct SceneBrush {
     std::vector<Vec3> cellNormals;
 };
 
+// The brushes a Scene draws: the cache's list, shared rather than copied (a scene is built
+// for each of the four views on every redraw), with a few brushes swapped for other
+// versions (terrain being sculpted). Iterates like a vector of SceneBrush.
+class SceneBrushes {
+public:
+    using List = std::vector<SceneBrush>;
+    SceneBrushes() = default;
+    SceneBrushes(std::shared_ptr<const List> base) : base_(std::move(base)) {}
+    // Draws `b` in place of the listed brush with the same id (ignored if there is none).
+    void swapIn(SceneBrush b);
+    size_t size() const { return base_ ? base_->size() : 0; }
+    bool empty() const { return size() == 0; }
+    const SceneBrush& operator[](size_t i) const;
+
+    class iterator {
+    public:
+        using iterator_category = std::forward_iterator_tag;
+        using value_type = SceneBrush;
+        using difference_type = std::ptrdiff_t;
+        using pointer = const SceneBrush*;
+        using reference = const SceneBrush&;
+        iterator(const SceneBrushes* o, size_t i) : o_(o), i_(i) {}
+        reference operator*() const { return (*o_)[i_]; }
+        pointer operator->() const { return &(*o_)[i_]; }
+        iterator& operator++() { ++i_; return *this; }
+        iterator operator++(int) { iterator t = *this; ++i_; return t; }
+        bool operator==(const iterator& b) const { return i_ == b.i_; }
+        bool operator!=(const iterator& b) const { return i_ != b.i_; }
+    private:
+        const SceneBrushes* o_;
+        size_t i_;
+    };
+    iterator begin() const { return {this, 0}; }
+    iterator end() const { return {this, size()}; }
+
+private:
+    std::shared_ptr<const List> base_;
+    std::vector<std::pair<size_t, SceneBrush>> swaps_; // base index -> brush drawn instead
+};
+
 class TextureLibrary;
 class ModelLibrary;
 using FaceRef = std::pair<BrushId, int>; // brush id + face index
 
 struct Scene {
-    std::vector<SceneBrush> brushes;
+    SceneBrushes brushes;
     std::set<BrushId> selected;
     std::optional<AABB> handleBox;  // draw resize handles + size labels for this box (2D)
     std::optional<AABB> previewBox; // block tool: brush about to be created
@@ -122,14 +164,34 @@ struct Scene {
 
 SceneBrush makeSceneBrush(const Brush& b);
 
-// Keeps polygons of the VISIBLE brushes, rebuilt only when the document changes.
+// Drops a brush's nodraw faces (plain polygons only; terrain cells stay). Returns how many.
+size_t dropNoDraw(SceneBrush& b);
+
+// The drawing data of the map's brushes (the editor: the visible ones). When the document
+// changes, only brushes whose Document::brushStamp changed are rebuilt; the others are
+// kept (ARCHITECTURE §4, edit flow).
 class SceneCache {
 public:
-    const std::vector<SceneBrush>& get(const Document& doc);
+    struct Options {
+        bool visibleOnly = true;  // leave out hidden brushes (the editor; renders draw all)
+        bool dropNoDraw = false;  // leave out nodraw faces (renders)
+    };
+    SceneCache() = default;
+    explicit SceneCache(Options o) : opt_(o) {}
+    const std::vector<SceneBrush>& get(const Document& doc) { return *shared(doc); }
+    // The same list, shared (a Scene keeps it this way; it stays valid after later edits).
+    std::shared_ptr<const std::vector<SceneBrush>> shared(const Document& doc);
+    size_t rebuiltLast() const { return rebuilt_; } // brushes the last update rebuilt
+    size_t nodrawFaces() const { return nodraw_; }   // with dropNoDraw: faces left out
 
 private:
+    Options opt_;
     unsigned long long revision_ = ~0ull;
-    std::vector<SceneBrush> brushes_;
+    std::shared_ptr<std::vector<SceneBrush>> list_ = std::make_shared<std::vector<SceneBrush>>();
+    std::shared_ptr<std::vector<SceneBrush>> prev_;
+    std::vector<std::uint64_t> stamps_; // per list entry: the brush's stamp when it was built
+    std::vector<size_t> dropped_;       // per list entry: nodraw faces left out
+    size_t rebuilt_ = 0, nodraw_ = 0;
 };
 
 } // namespace scal

@@ -744,12 +744,22 @@ void Editor::registerScriptCommands() {
     });
     add({"bench"}, [this](const std::string&, std::istringstream& in) {
         // bench props <count> <model> [spacing] | bench clear (removes every prop)
+        // bench brushes <count> [<terrains> [<power>]]   bench clearbrushes
         std::string what; in >> what;
         if (what == "props") {
             int n = 100; std::string model; double spacing = 150;
             in >> n >> model;
             if (!(in >> spacing)) spacing = 150;
             benchProps(n, model, spacing);
+        } else if (what == "brushes") {
+            int n = 1000, t = 0, power = 5;
+            in >> n;
+            if (in >> t) { if (!(in >> power)) power = 5; } else t = 0;
+            benchBrushes(n, t, power);
+        } else if (what == "clearbrushes") {
+            std::set<BrushId> all;
+            for (const Brush& b : doc_.brushes()) all.insert(b.id);
+            doc_.apply(doc_.makeDelete(all, "Bench clear"));
         } else if (what == "clear") {
             std::set<PropId> all;
             for (const Prop& p : doc_.props()) all.insert(p.id);

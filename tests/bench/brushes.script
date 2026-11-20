@@ -1,0 +1,10 @@
+# Brush and terrain benchmark (development tool, not a test): see docs/DEV.md "Benchmark".
+key Esc
+bench brushes 1000
+bench clearbrushes
+bench brushes 4000
+bench clearbrushes
+bench brushes 1000 8 5
+bench clearbrushes
+bench brushes 4000 16 5
+quit

@@ -456,7 +456,7 @@ void Editor::handleKeyboard() {
 
 Scene Editor::buildScene() {
     Scene s;
-    s.brushes = cache_.get(doc_);
+    s.brushes = cache_.shared(doc_); // shared, not copied: this runs for each view on every redraw
     s.models = &models_;
     // The texture tool works on faces; brush selection tint would compete with it.
     if (tool_ != &textureTool_) s.selected = doc_.selection();
@@ -498,9 +498,7 @@ Scene Editor::buildScene() {
         }
     }
     tool_->decorate(doc_, s);
-    for (SceneBrush& r : s.replaced)
-        for (SceneBrush& b : s.brushes)
-            if (b.id == r.id) { b = std::move(r); break; }
+    for (SceneBrush& r : s.replaced) s.brushes.swapIn(std::move(r));
     s.replaced.clear();
     if (pivotMode_ != 0) s.pivot = pivotPoint();
     if (textured3D_) s.textures = &textures_;

@@ -2,6 +2,7 @@
 #include "core/terrain.hpp"
 #include <algorithm>
 #include <cctype>
+#include <cerrno>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -180,11 +181,45 @@ bool readVec(const std::string& s, Vec3& v) {
     return true;
 }
 
+// Strict number reading (as Mazzuola's): the whole text must be the number, so "abc",
+// "1.5x" or "" are refused instead of read as 0 or 1.5. Spaces around it are allowed.
+bool onlySpaceFrom(const char* p) {
+    while (*p == ' ' || *p == '\t') ++p;
+    return *p == 0;
+}
+bool parseNumber(const std::string& s, double& v) {
+    const char* b = s.c_str();
+    while (*b == ' ' || *b == '\t') ++b;
+    if (!*b) return false;
+    char* end = nullptr;
+    errno = 0;
+    const double x = std::strtod(b, &end);
+    if (end == b || !onlySpaceFrom(end) || errno == ERANGE || !std::isfinite(x)) return false;
+    v = x;
+    return true;
+}
+bool parseInt(const std::string& s, long lo, long hi, long& v) {
+    const char* b = s.c_str();
+    while (*b == ' ' || *b == '\t') ++b;
+    if (!*b) return false;
+    char* end = nullptr;
+    errno = 0;
+    const long x = std::strtol(b, &end, 10);
+    if (end == b || !onlySpaceFrom(end) || errno == ERANGE || x < lo || x > hi) return false;
+    v = x;
+    return true;
+}
+bool parseId(const std::string& s, std::uint32_t& v) { // 0 .. 2^32-1
+    long x = 0;
+    if (!parseInt(s, 0, 4294967295L, x)) return false;
+    v = (std::uint32_t)x;
+    return true;
+}
+
 // The number in `s`, or `keep` if it isn't a finite number.
 double numOr(const std::string& s, double keep) {
-    char* end = nullptr;
-    const double v = std::strtod(s.c_str(), &end);
-    return end != s.c_str() && std::isfinite(v) ? v : keep;
+    double v = 0;
+    return parseNumber(s, v) ? v : keep;
 }
 
 bool primFromKeys(const KeyValues& kv, MathPrim& p) {
@@ -200,7 +235,7 @@ bool primFromKeys(const KeyValues& kv, MathPrim& p) {
         else if (k == "round") p.round = numOr(v, p.round);
         else if (k == "thickness") p.thickness = numOr(v, p.thickness);
         else if (k == "blend") p.blend = numOr(v, p.blend);
-        else if (k == "combo") p.combo = (std::uint32_t)std::strtoul(v.c_str(), nullptr, 10);
+        else if (k == "combo") { std::uint32_t c = 0; if (parseId(v, c)) p.combo = c; } // bad: no combination
         else if (k == "op") p.op = v == "subtract" ? PrimOp::Subtract : v == "intersect" ? PrimOp::Intersect : PrimOp::Add;
         else if (k == "texture") p.texture = v;
         else if (k == "color") readVec(v, p.color);
@@ -518,14 +553,15 @@ public:
             Token t = lex_.peek();
             if (t.kind == Token::Punct && t.text == "}") { lex_.next(); break; }
             if (t.kind == Token::Punct && t.text == "(") { b.faces.push_back(face()); continue; }
-            if (t.kind == Token::Meta) { meta(lex_.next().text, b); continue; }
+            if (t.kind == Token::Meta) { meta(lex_.next(), b); continue; }
             fail(t, "unexpected '" + t.text + "' in brush (patches are not supported)");
         }
         if (b.terrain) {
             Terrain& tr = *b.terrain;
+            // The size comes from the power, so check the power before using it.
+            if (tr.power < kMinTerrainPower || tr.power > kMaxTerrainPower) fail(lex_.peek(), "terrain size is out of range");
             const size_t nn = (size_t)tr.size() * tr.size();
-            if (tr.power < kMinTerrainPower || tr.power > kMaxTerrainPower || tr.heights.size() != nn)
-                fail(lex_.peek(), "terrain data is incomplete");
+            if (tr.heights.size() != nn) fail(lex_.peek(), "terrain data is incomplete");
             auto allFinite = [](const std::vector<double>& v) {
                 return std::all_of(v.begin(), v.end(), [](double x) { return std::isfinite(x); });
             };
@@ -547,7 +583,8 @@ public:
     // "//@ visgroup=3 hidden=1" -> brush fields. "//@ terrain ...", "//@ th ...",
     // "//@ tl <texture>", "//@ ta ..." -> terrain (header, height row, painted texture,
     // its blend row).
-    static void meta(const std::string& text, Brush& b) {
+    void meta(const Token& tok, Brush& b) {
+        const std::string& text = tok.text;
         std::istringstream in(text);
         std::string first;
         in >> first;
@@ -564,8 +601,9 @@ public:
             std::vector<double>& v = first == "th" ? b.terrain->heights : b.terrain->layers.back().alpha;
             std::string w;
             while (in >> w) {
-                const double x = std::strtod(w.c_str(), nullptr);
-                if (!std::isfinite(x)) { v.push_back(std::nan("")); continue; } // refused below
+                double x = 0;
+                if (!parseNumber(w, x))
+                    fail(tok, std::string(first == "th" ? "terrain height" : "terrain blend") + " '" + w + "' is not a number");
                 v.push_back(x);
             }
             return;
@@ -577,8 +615,14 @@ public:
                 const size_t eq = kv.find('=');
                 if (eq == std::string::npos) continue;
                 const std::string k = kv.substr(0, eq), v = kv.substr(eq + 1);
-                if (k == "face") t.face = std::atoi(v.c_str());
-                else if (k == "power") t.power = std::atoi(v.c_str());
+                long x = 0;
+                if (k == "face") {
+                    if (!parseInt(v, 0, 1 << 20, x)) fail(tok, "bad terrain face '" + v + "'");
+                    t.face = (int)x;
+                } else if (k == "power") {
+                    if (!parseInt(v, kMinTerrainPower, kMaxTerrainPower, x)) fail(tok, "terrain size is out of range ('" + v + "')");
+                    t.power = (int)x;
+                }
                 else if (k == "tex2") t.layers.push_back({v, {}}); // v0.7.0 files
                 else if (k == "start") {
                     double x = 0, y = 0, z = 0;
@@ -595,7 +639,9 @@ public:
             const size_t eq = kv.find('=');
             if (eq == std::string::npos) continue;
             const std::string k = kv.substr(0, eq), v = kv.substr(eq + 1);
-            if (k == "visgroup") b.visgroup = (std::uint32_t)std::strtoul(v.c_str(), nullptr, 10);
+            if (k == "visgroup") {
+                if (!parseId(v, b.visgroup)) fail(tok, "bad visgroup '" + v + "'");
+            }
             else if (k == "hidden") b.hidden = v == "1";
         }
     }
@@ -702,7 +748,7 @@ MapReadResult readMap(const std::string& text, Document& doc) {
                 const size_t a = entry.find('|'), b = entry.rfind('|');
                 if (a == std::string::npos || b == a) continue;
                 Visgroup v;
-                v.id = (std::uint32_t)std::strtoul(entry.substr(0, a).c_str(), nullptr, 10);
+                if (!parseId(entry.substr(0, a), v.id)) continue; // a bad id: the visgroup is dropped
                 v.name = entry.substr(a + 1, b - a - 1);
                 v.visible = entry.substr(b + 1) != "0";
                 if (v.id) visgroups.push_back(v);

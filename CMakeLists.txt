@@ -64,7 +64,9 @@ target_link_libraries(scal_io PUBLIC scal_core)
 
 if(SCAL_BUILD_TESTS)
   enable_testing()
-  add_executable(scal_core_tests tests/test_core.cpp)
+  # The brush caches (render/scene, render/lighting) use only the core, so they are tested
+  # here too.
+  add_executable(scal_core_tests tests/test_core.cpp src/render/scene.cpp src/render/lighting.cpp)
   target_link_libraries(scal_core_tests PRIVATE scal_core scal_io)
   add_test(NAME core COMMAND scal_core_tests)
 endif()

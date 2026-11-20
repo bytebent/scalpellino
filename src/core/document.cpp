@@ -87,6 +87,7 @@ const Light* Document::findLight(LightId id) const {
 }
 
 void Document::setLight(LightId id, const std::optional<Light>& l) {
+    touchLighting();
     auto it = std::find_if(lights_.begin(), lights_.end(), [&](const Light& x) { return x.id == id; });
     if (l) {
         if (it != lights_.end()) *it = *l;
@@ -107,9 +108,11 @@ void Document::setBrush(BrushId id, const std::optional<Brush>& b) {
         if (it != brushes_.end()) *it = *b;
         else brushes_.push_back(*b);
         if (id >= nextId_) nextId_ = id + 1;
+        stampBrush(id);
     } else if (it != brushes_.end()) {
         brushes_.erase(it);
         selection_.erase(id);
+        brushStamps_.erase(id);
     }
 }
 
@@ -121,7 +124,7 @@ void Document::apply(Command cmd) {
     for (const PrimChange& c : cmd.primChanges) setPrim(c.id, c.after);
     for (const PropChange& c : cmd.propChanges) setProp(c.id, c.after);
     for (const CameraChange& c : cmd.cameraChanges) setCamera(c.id, c.after);
-    if (cmd.envAfter) env_ = *cmd.envAfter;
+    if (cmd.envAfter) { env_ = *cmd.envAfter; touchLighting(); }
     selection_ = cmd.selectionAfter;
     if (cmd.lightSelectionAfter) lightSelection_ = *cmd.lightSelectionAfter;
     if (cmd.primSelectionAfter) primSelection_ = *cmd.primSelectionAfter;
@@ -131,9 +134,73 @@ void Document::apply(Command cmd) {
     // New primitives or props show them again if they were hidden.
     for (const PrimChange& c : cmd.primChanges) if (c.after && !c.before) primsShown_ = true;
     for (const PropChange& c : cmd.propChanges) if (c.after && !c.before) propsShown_ = true;
-    undo_.push_back(std::move(cmd));
+    for (std::size_t b : redoBytes_) historyBytes_ -= b;
     redo_.clear();
+    redoBytes_.clear();
+    const std::size_t bytes = commandBytes(cmd);
+    undo_.push_back(std::move(cmd));
+    undoBytes_.push_back(bytes);
+    historyBytes_ += bytes;
+    trimHistory();
     bump();
+}
+
+namespace {
+std::size_t strBytes(const std::string& s) { return sizeof(std::string) + (s.capacity() > 15 ? s.capacity() : 0); }
+std::size_t keysBytes(const KeyValues& kv) {
+    std::size_t n = kv.capacity() * sizeof(kv[0]);
+    for (const auto& [k, v] : kv) n += strBytes(k) + strBytes(v) - 2 * sizeof(std::string);
+    return n;
+}
+std::size_t brushBytes(const Brush& b) {
+    std::size_t n = sizeof(Brush) + b.faces.capacity() * sizeof(Face);
+    for (const Face& f : b.faces) n += strBytes(f.texture) - sizeof(std::string);
+    if (b.terrain) {
+        n += b.terrain->heights.capacity() * sizeof(double) + b.terrain->layers.capacity() * sizeof(TerrainLayer);
+        for (const TerrainLayer& l : b.terrain->layers)
+            n += l.alpha.capacity() * sizeof(double) + strBytes(l.texture) - sizeof(std::string);
+    }
+    return n;
+}
+template <class T> std::size_t optBytes(const std::optional<T>& o, std::size_t (*f)(const T&)) { return o ? f(*o) : 0; }
+std::size_t lightBytes(const Light& l) { return sizeof(Light) + keysBytes(l.otherKeys); }
+std::size_t primBytes(const MathPrim& p) { return sizeof(MathPrim) + strBytes(p.texture) + keysBytes(p.otherKeys); }
+std::size_t propBytes(const Prop& p) { return sizeof(Prop) + strBytes(p.model) + keysBytes(p.otherKeys); }
+std::size_t cameraBytes(const Camera& c) { return sizeof(Camera) + strBytes(c.name) + keysBytes(c.otherKeys); }
+std::size_t groupBytes(const Group& g) { return sizeof(Group) + keysBytes(g.keys); }
+template <class S> std::size_t setBytes(const S& s) { return s.size() * 40; } // a set node, roughly
+template <class S> std::size_t optSetBytes(const std::optional<S>& s) { return s ? setBytes(*s) : 0; }
+} // namespace
+
+std::size_t Document::commandBytes(const Command& c) {
+    std::size_t n = sizeof(Command) + strBytes(c.name);
+    for (const BrushChange& x : c.changes) n += sizeof(x) + optBytes(x.before, brushBytes) + optBytes(x.after, brushBytes);
+    for (const GroupChange& x : c.groupChanges) n += sizeof(x) + optBytes(x.before, groupBytes) + optBytes(x.after, groupBytes);
+    for (const LightChange& x : c.lightChanges) n += sizeof(x) + optBytes(x.before, lightBytes) + optBytes(x.after, lightBytes);
+    for (const PrimChange& x : c.primChanges) n += sizeof(x) + optBytes(x.before, primBytes) + optBytes(x.after, primBytes);
+    for (const PropChange& x : c.propChanges) n += sizeof(x) + optBytes(x.before, propBytes) + optBytes(x.after, propBytes);
+    for (const CameraChange& x : c.cameraChanges) n += sizeof(x) + optBytes(x.before, cameraBytes) + optBytes(x.after, cameraBytes);
+    if (c.envBefore) n += sizeof(Environment);
+    if (c.envAfter) n += sizeof(Environment);
+    n += setBytes(c.selectionBefore) + setBytes(c.selectionAfter);
+    n += optSetBytes(c.lightSelectionBefore) + optSetBytes(c.lightSelectionAfter);
+    n += optSetBytes(c.primSelectionBefore) + optSetBytes(c.primSelectionAfter);
+    n += optSetBytes(c.propSelectionBefore) + optSetBytes(c.propSelectionAfter);
+    n += optSetBytes(c.cameraSelectionBefore) + optSetBytes(c.cameraSelectionAfter);
+    return n;
+}
+
+// Drops the oldest undo steps while the history is over its limit (the newest undo step
+// stays). Redo steps only exist right after undos and are cleared by the next edit, so
+// they are counted but never dropped here. "Unsaved changes" still works: the saved
+// serial simply isn't in the history any more, so the map stays marked as changed.
+void Document::trimHistory() {
+    std::size_t drop = 0;
+    while (drop + 1 < undo_.size() && historyBytes_ > historyLimit_) historyBytes_ -= undoBytes_[drop++];
+    if (!drop) return;
+    historyFloor_ = undo_[drop - 1].serial;
+    undo_.erase(undo_.begin(), undo_.begin() + (long)drop);
+    undoBytes_.erase(undoBytes_.begin(), undoBytes_.begin() + (long)drop);
 }
 
 void Document::setPrimsShown(bool on) {
@@ -154,13 +221,15 @@ bool Document::undo() {
     if (undo_.empty()) return false;
     Command cmd = std::move(undo_.back());
     undo_.pop_back();
+    redoBytes_.push_back(undoBytes_.back());
+    undoBytes_.pop_back();
     for (auto it = cmd.changes.rbegin(); it != cmd.changes.rend(); ++it) setBrush(it->id, it->before);
     for (auto it = cmd.groupChanges.rbegin(); it != cmd.groupChanges.rend(); ++it) setGroup(it->id, it->before);
     for (auto it = cmd.lightChanges.rbegin(); it != cmd.lightChanges.rend(); ++it) setLight(it->id, it->before);
     for (auto it = cmd.primChanges.rbegin(); it != cmd.primChanges.rend(); ++it) setPrim(it->id, it->before);
     for (auto it = cmd.propChanges.rbegin(); it != cmd.propChanges.rend(); ++it) setProp(it->id, it->before);
     for (auto it = cmd.cameraChanges.rbegin(); it != cmd.cameraChanges.rend(); ++it) setCamera(it->id, it->before);
-    if (cmd.envBefore) env_ = *cmd.envBefore;
+    if (cmd.envBefore) { env_ = *cmd.envBefore; touchLighting(); }
     selection_ = cmd.selectionBefore;
     if (cmd.lightSelectionBefore) lightSelection_ = *cmd.lightSelectionBefore;
     if (cmd.primSelectionBefore) primSelection_ = *cmd.primSelectionBefore;
@@ -175,13 +244,15 @@ bool Document::redo() {
     if (redo_.empty()) return false;
     Command cmd = std::move(redo_.back());
     redo_.pop_back();
+    undoBytes_.push_back(redoBytes_.back());
+    redoBytes_.pop_back();
     for (const GroupChange& g : cmd.groupChanges) setGroup(g.id, g.after);
     for (const BrushChange& c : cmd.changes) setBrush(c.id, c.after);
     for (const LightChange& c : cmd.lightChanges) setLight(c.id, c.after);
     for (const PrimChange& c : cmd.primChanges) setPrim(c.id, c.after);
     for (const PropChange& c : cmd.propChanges) setProp(c.id, c.after);
     for (const CameraChange& c : cmd.cameraChanges) setCamera(c.id, c.after);
-    if (cmd.envAfter) env_ = *cmd.envAfter;
+    if (cmd.envAfter) { env_ = *cmd.envAfter; touchLighting(); }
     selection_ = cmd.selectionAfter;
     if (cmd.lightSelectionAfter) lightSelection_ = *cmd.lightSelectionAfter;
     if (cmd.primSelectionAfter) primSelection_ = *cmd.primSelectionAfter;
@@ -238,14 +309,21 @@ void Document::reset(KeyValues world, std::vector<Brush> brushes, std::vector<Ra
     nextGroupId_ = 1;
     for (const auto& [id, g] : groups_) nextGroupId_ = std::max(nextGroupId_, id + 1);
     brushes_.clear();
+    brushStamps_.clear();
     nextId_ = 1;
     for (Brush& b : brushes) {
         b.id = nextId_++;
+        stampBrush(b.id);
         brushes_.push_back(std::move(b));
     }
+    touchLighting();
     selection_.clear();
     undo_.clear();
     redo_.clear();
+    undoBytes_.clear();
+    redoBytes_.clear();
+    historyBytes_ = 0;
+    historyFloor_ = 0;
     bump();
     savedSerial_ = historyTop();
     sideEdits_ = false;

@@ -33,7 +33,7 @@ public:
     };
 
     // The scene a picture holds (see the top of this file). Brushes are kept per document
-    // revision. `lit`: also the lighting (the slow part; the render log shows it as a step).
+    // revision, and rebuilt only for brushes an edit touched. `lit`: also the lighting (the slow part; the render log shows it as a step).
     Scene scene(const Document& doc, TextureLibrary& textures, ModelLibrary& models, SkyLibrary& skies, Stats* stats = nullptr);
     void light(const Document& doc, Scene& s);
 
@@ -52,9 +52,7 @@ public:
 
 private:
     std::unique_ptr<Viewport> view_;
-    std::vector<SceneBrush> brushes_;
-    Stats brushStats_;
-    unsigned long long revision_ = ~0ull;
+    SceneCache brushes_{SceneCache::Options{false, true}}; // every brush, nodraw faces left out
     LightingCache lighting_;
 };
 

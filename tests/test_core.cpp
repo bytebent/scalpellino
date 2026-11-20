@@ -21,6 +21,8 @@
 #include "io/glb_loader.hpp"
 #include "io/model_store.hpp"
 #include "io/map_format.hpp"
+#include "render/lighting.hpp"
+#include "render/scene.hpp"
 #include <cmath>
 #include <random>
 #include <cstdio>
@@ -3507,6 +3509,190 @@ static void testRenderJob() {
     CHECK(cleanFileName("ok-name_1") == "ok-name_1");
 }
 
+// Review fixes: drawing data is rebuilt only for the brushes an edit touched; a scene shares
+// the cached list instead of copying it.
+static void testBrushCaches() {
+    Document d;
+    std::vector<Brush> bs;
+    for (int i = 0; i < 3; ++i) {
+        AABB bb; bb.add({i * 100.0, 0, 0}); bb.add({i * 100.0 + 64, 64, 64});
+        bs.push_back(makeBox(bb, "a"));
+    }
+    d.apply(d.makeAdd(bs, "Add"));
+    const BrushId a = d.brushes()[0].id, b = d.brushes()[1].id;
+    CHECK(d.brushStamp(a) != 0 && d.brushStamp(a) != d.brushStamp(b));
+    SceneCache cache;
+    LightingCache lit;
+    CHECK(cache.get(d).size() == 3 && cache.rebuiltLast() == 3);
+    lit.get(d, cache.get(d));
+    CHECK(lit.rebuiltLast() == 3);
+    // Selection alone: nothing rebuilt.
+    d.setSelection({a});
+    CHECK(cache.get(d).size() == 3 && cache.rebuiltLast() == 3); // same revision, not updated
+
+    // A scene holds the list; an edit then must not change what it holds.
+    auto held = cache.shared(d);
+    Brush moved = *d.find(a);
+    moved.translate({0, 0, 32}, false);
+    const std::uint64_t before = d.brushStamp(a);
+    d.apply(d.makeModify({moved}, "Move"));
+    CHECK(d.brushStamp(a) != before && d.brushStamp(b) != 0);
+    CHECK(cache.get(d).size() == 3 && cache.rebuiltLast() == 1);
+    CHECK(near(cache.get(d)[0].bounds.min.z, 32) && near((*held)[0].bounds.min.z, 0));
+    held.reset();
+    lit.get(d, cache.get(d));
+    CHECK(lit.rebuiltLast() == 1);
+    // Undo and redo: one brush each.
+    d.undo();
+    CHECK(cache.get(d).size() == 3 && cache.rebuiltLast() == 1 && near(cache.get(d)[0].bounds.min.z, 0));
+    d.redo();
+    CHECK(cache.get(d).size() == 3 && cache.rebuiltLast() == 1 && near(cache.get(d)[0].bounds.min.z, 32));
+    lit.get(d, cache.get(d));
+    CHECK(lit.rebuiltLast() == 1);
+    // Delete: nothing rebuilt, the list shrinks; the light preview drops it too.
+    d.apply(d.makeDelete({b}, "Delete"));
+    CHECK(cache.get(d).size() == 2 && cache.rebuiltLast() == 0);
+    const size_t litSize = lit.get(d, cache.get(d)).size();
+    CHECK(litSize == 2 && lit.rebuiltLast() == 0);
+    if (litSize != 2 || lit.rebuiltLast()) std::printf("  lit %zu rebuilt %zu\n", litSize, lit.rebuiltLast());
+    d.undo();
+    CHECK(cache.get(d).size() == 3 && cache.rebuiltLast() == 1);
+    // A new light changes every brush's light.
+    Light l; l.kind = LightKind::Point; l.pos = {0, 0, 200};
+    d.apply(d.makeAddLights({l}, "Light"));
+    CHECK(cache.get(d).size() == 3 && cache.rebuiltLast() == 0);
+    lit.get(d, cache.get(d));
+    CHECK(lit.rebuiltLast() == 3);
+    // Same polygons as building every brush afresh.
+    for (size_t i = 0; i < d.brushes().size(); ++i) {
+        const SceneBrush fresh = makeSceneBrush(d.brushes()[i]);
+        CHECK(cache.get(d)[i].id == fresh.id && cache.get(d)[i].polys.size() == fresh.polys.size());
+        CHECK(nearV(cache.get(d)[i].bounds.min, fresh.bounds.min) && nearV(cache.get(d)[i].bounds.max, fresh.bounds.max));
+    }
+    // Hidden brushes leave the editor's list but stay in a render's (nodraw left out there).
+    Brush h = *d.find(b);
+    h.hidden = true;
+    h.faces[0].texture = "nodraw";
+    d.apply(d.makeModify({h}, "Hide"));
+    CHECK(cache.get(d).size() == 2);
+    SceneCache all(SceneCache::Options{false, true});
+    CHECK(all.get(d).size() == 3 && all.nodrawFaces() == 1);
+
+    // A scene's list with a brush swapped in (terrain being sculpted).
+    SceneBrushes sb(cache.shared(d));
+    SceneBrush other = makeSceneBrush(moved);
+    other.bounds.max.z = 999;
+    sb.swapIn(other);
+    size_t n = 0, swapped = 0;
+    for (const SceneBrush& x : sb) { ++n; if (x.bounds.max.z == 999) ++swapped; }
+    CHECK(n == 2 && swapped == 1 && sb[0].bounds.max.z == 999);
+    CHECK(SceneBrushes().empty() && SceneBrushes().begin() == SceneBrushes().end());
+
+    // Opening a map gives every brush a stamp.
+    Document e;
+    CHECK(readMap(writeMap(d), e).ok);
+    for (const Brush& x : e.brushes()) CHECK(e.brushStamp(x.id) != 0);
+}
+
+// Review fixes: the undo history has a memory limit; the oldest steps go first.
+static void testHistoryLimit() {
+    Document d;
+    AABB bb; bb.add({0, 0, -64}); bb.add({1024, 1024, 0});
+    Brush t = makeBox(bb, "a");
+    CHECK(makeTerrain(t, topQuadFace(t), 5).empty());
+    d.apply(d.makeAdd({t}, "Add"));
+    d.markSaved();
+    const std::size_t one = Document::commandBytes(d.makeModify({d.brushes()[0]}, "x"));
+    CHECK(one > 2 * 33 * 33 * sizeof(double)); // before and after heights at least
+    d.setHistoryLimit(one * 10);
+    for (int i = 0; i < 40; ++i) {
+        Brush b = d.brushes()[0];
+        b.terrain->heights[(size_t)i] += 8;
+        d.apply(d.makeModify({b}, "Sculpt"));
+        CHECK(d.historyBytes() <= one * 10 + one);
+    }
+    CHECK(d.undoCount() >= 5 && d.undoCount() <= 11);
+    CHECK(d.historyBytes() <= one * 10);
+    // Undoing every step left doesn't reach the saved state: still unsaved.
+    while (d.undo()) {}
+    CHECK(d.dirty());
+    CHECK(near(d.brushes()[0].terrain->heights[39], 0) && near(d.brushes()[0].terrain->heights[0], 8));
+    // Redo all, then a new edit clears redo and its memory.
+    while (d.redo()) {}
+    const std::size_t full = d.historyBytes();
+    d.undo(); d.undo();
+    CHECK(d.historyBytes() == full); // redo steps still count
+    Brush b = d.brushes()[0];
+    b.terrain->heights[100] = 1;
+    d.apply(d.makeModify({b}, "Sculpt"));
+    CHECK(!d.canRedo() && d.historyBytes() <= full);
+    // The newest step stays even when it alone is over the limit.
+    d.setHistoryLimit(1);
+    CHECK(d.undoCount() == 1 && d.canUndo());
+    // Default limit: 64 MB.
+    CHECK(Document::kHistoryBytes == 64u * 1024 * 1024);
+    Document fresh;
+    CHECK(fresh.historyBytes() == 0);
+}
+
+// Review fixes: damaged numbers in terrain rows and whole-number fields are refused, not
+// read as 0 (or as the number they start with).
+static void testMapStrictNumbers() {
+    Document d;
+    AABB bb; bb.add({0, 0, -64}); bb.add({256, 256, 0});
+    Brush t = makeBox(bb, "a");
+    CHECK(makeTerrain(t, topQuadFace(t), 1).empty());
+    t.visgroup = 0;
+    d.apply(d.makeAdd({t}, "Add"));
+    MathPrim p; p.kind = PrimKind::Cube; p.size = {10, 10, 10}; p.combo = 4;
+    d.apply(d.makeAddPrims({p}, "Add"));
+    const std::string good = writeMap(d);
+    Document ok;
+    CHECK(readMap(good, ok).ok);
+    auto with = [&](const std::string& from, const std::string& to) {
+        std::string s = good;
+        const size_t at = s.find(from);
+        CHECK(at != std::string::npos);
+        if (at != std::string::npos) s.replace(at, from.size(), to);
+        return s;
+    };
+    auto refused = [&](const std::string& text, const char* what) {
+        Document e;
+        const MapReadResult r = readMap(text, e);
+        CHECK(!r.ok && r.error.find(what) != std::string::npos);
+        if (r.ok || r.error.find(what) == std::string::npos) std::printf("  got: %s\n", r.error.c_str());
+    };
+    const size_t th = good.find("//@ th ");
+    CHECK(th != std::string::npos);
+    const std::string row = good.substr(th, good.find('\n', th) - th);
+    const size_t firstNum = row.find(' ', 4) + 1;
+    const std::string firstVal = row.substr(firstNum, row.find(' ', firstNum) - firstNum);
+    for (const char* bad : {"abc", "1.5x", "0x", "--1"}) {
+        std::string r = row;
+        r.replace(firstNum, firstVal.size(), bad);
+        refused(with(row, r), "terrain height");
+    }
+    refused(with("power=1", "power=99"), "terrain size");
+    refused(with("power=1", "power=1000000"), "terrain size");
+    refused(with("power=1", "power=abc"), "terrain size");
+    refused(with("power=1", "power=1x"), "terrain size");
+    refused(with("face=", "face=x"), "terrain face");
+    // A visgroup on a brush.
+    const std::string withVis = with("//@ terrain", "//@ visgroup=2x\n//@ terrain");
+    refused(withVis, "visgroup");
+    {
+        Document e;
+        CHECK(readMap(with("//@ terrain", "//@ visgroup=2\n//@ terrain"), e).ok && e.brushes()[0].visgroup == 2);
+    }
+    // A combination number in an object's keys: ignored, like other bad values in keys.
+    {
+        Document e;
+        CHECK(readMap(with("\"combo\" \"4\"", "\"combo\" \"4x\""), e).ok && e.prims().size() == 1 && e.prims()[0].combo == 0);
+        Document f;
+        CHECK(readMap(good, f).ok && f.prims()[0].combo == 4);
+    }
+}
+
 int main() {
     testRenderJob();
     testGrid();
@@ -3541,6 +3727,9 @@ int main() {
     testProps();
     testRay();
     testUndo();
+    testBrushCaches();
+    testHistoryLimit();
+    testMapStrictNumbers();
     testMakeChange();
     testGroups();
     testVisibility();

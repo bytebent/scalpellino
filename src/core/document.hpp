@@ -10,6 +10,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -204,6 +205,25 @@ public:
     void markSaved() { savedSerial_ = historyTop(); sideEdits_ = false; }
     // Increments on every change (renderers use it to know when to rebuild).
     unsigned long long revision() const { return revision_; }
+    // Which edit last touched this brush (0 = no such brush). Caches of drawing data keep
+    // it per brush and rebuild only the brushes whose stamp changed, so an edit, undo or
+    // redo costs what it touched, not the whole map (ARCHITECTURE §4, edit flow).
+    std::uint64_t brushStamp(BrushId id) const {
+        auto it = brushStamps_.find(id);
+        return it == brushStamps_.end() ? 0 : it->second;
+    }
+    // Changes whenever a light or the environment changes (the light preview's input
+    // besides the brushes).
+    std::uint64_t lightingStamp() const { return lightingStamp_; }
+
+    // Memory the undo and redo history may use (the brushes, terrain and objects each
+    // step keeps before and after); the oldest steps are dropped first. The newest step
+    // always stays, however big. Taken from Mazzuola (same 64 MB).
+    static constexpr std::size_t kHistoryBytes = 64u * 1024 * 1024;
+    std::size_t historyBytes() const { return historyBytes_; }
+    void setHistoryLimit(std::size_t bytes) { historyLimit_ = bytes; trimHistory(); } // tests
+    // Rough size of a command in memory.
+    static std::size_t commandBytes(const Command& c);
 
     // Replaces all content (used when loading). Clears history.
     // Brush `group` fields must refer to entries of `groups` (ids are kept).
@@ -258,8 +278,13 @@ private:
     // Adds group removals to `c` for groups that would have no brushes left.
     void pruneEmptyGroups(Command& c) const;
     void bump() { ++revision_; }
+    void stampBrush(BrushId id) { brushStamps_[id] = ++stampCounter_; }
+    void touchLighting() { lightingStamp_ = ++stampCounter_; }
+    void trimHistory();
     void sideEdit() { bump(); sideEdits_ = true; }
-    std::uint64_t historyTop() const { return undo_.empty() ? 0 : undo_.back().serial; }
+    // Serial of the state the history's top undoes to; with every step dropped by the memory
+    // limit, the newest dropped one (so undoing all the way doesn't look like the saved state).
+    std::uint64_t historyTop() const { return undo_.empty() ? historyFloor_ : undo_.back().serial; }
 
     std::vector<Brush> brushes_;
     std::set<BrushId> selection_;
@@ -283,8 +308,12 @@ private:
     std::vector<CameraBookmark> bookmarks_;
     std::optional<Vec3> figure_;
     std::vector<Command> undo_, redo_;
+    std::vector<std::size_t> undoBytes_, redoBytes_; // commandBytes of each step
+    std::size_t historyBytes_ = 0, historyLimit_ = kHistoryBytes;
+    std::unordered_map<BrushId, std::uint64_t> brushStamps_;
+    std::uint64_t stampCounter_ = 0, lightingStamp_ = 0;
     unsigned long long revision_ = 0;
-    std::uint64_t nextSerial_ = 0, savedSerial_ = 0;
+    std::uint64_t nextSerial_ = 0, savedSerial_ = 0, historyFloor_ = 0;
     bool sideEdits_ = false;
     bool primsShown_ = true, propsShown_ = true;
 };

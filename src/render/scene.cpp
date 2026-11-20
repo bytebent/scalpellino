@@ -1,5 +1,7 @@
 #include "render/scene.hpp"
+#include "core/texture.hpp"
 #include <algorithm>
+#include <unordered_map>
 
 namespace scal {
 
@@ -59,15 +61,80 @@ SceneBrush makeSceneBrush(const Brush& b) {
     return s;
 }
 
-const std::vector<SceneBrush>& SceneCache::get(const Document& doc) {
-    if (doc.revision() != revision_) {
-        brushes_.clear();
-        brushes_.reserve(doc.brushes().size());
-        for (const Brush& b : doc.brushes())
-            if (doc.visible(b)) brushes_.push_back(makeSceneBrush(b)); // hidden: not drawn, not pickable
-        revision_ = doc.revision();
+size_t dropNoDraw(SceneBrush& b) {
+    const size_t plain = b.terrain ? b.terrainFirst : b.polys.size();
+    size_t dropped = 0;
+    for (size_t i = 0; i < plain; ++i) {
+        const Polygon& p = b.polys[i];
+        if (p.face >= 0 && p.face < (int)b.faces.size() && isNoDraw(b.faces[p.face].texture)) ++dropped;
     }
-    return brushes_;
+    if (!dropped) return 0;
+    std::vector<Polygon> kept;
+    kept.reserve(b.polys.size() - dropped);
+    for (size_t i = 0; i < b.polys.size(); ++i) {
+        const Polygon& p = b.polys[i];
+        if (i < plain && p.face >= 0 && p.face < (int)b.faces.size() && isNoDraw(b.faces[p.face].texture)) continue;
+        kept.push_back(std::move(b.polys[i]));
+    }
+    b.polys = std::move(kept);
+    if (b.terrain) b.terrainFirst -= dropped;
+    return dropped;
+}
+
+std::shared_ptr<const std::vector<SceneBrush>> SceneCache::shared(const Document& doc) {
+    if (doc.revision() == revision_) return list_;
+    // Old entries by id. If no scene holds the old list any more, entries are moved out of
+    // it; otherwise copied (the holder keeps a list that doesn't change under it).
+    std::unordered_map<BrushId, size_t> old;
+    old.reserve(list_->size());
+    for (size_t i = 0; i < list_->size(); ++i) old.emplace((*list_)[i].id, i);
+    const bool own = list_.use_count() == 1;
+    auto list = std::make_shared<std::vector<SceneBrush>>();
+    std::vector<std::uint64_t> stamps;
+    std::vector<size_t> dropped;
+    list->reserve(doc.brushes().size());
+    rebuilt_ = nodraw_ = 0;
+    for (const Brush& b : doc.brushes()) {
+        if (opt_.visibleOnly && !doc.visible(b)) continue; // hidden: not drawn, not pickable
+        const std::uint64_t stamp = doc.brushStamp(b.id);
+        auto it = old.find(b.id);
+        if (it != old.end() && stamps_[it->second] == stamp) {
+            SceneBrush& sb = (*list_)[it->second];
+            list->push_back(own ? std::move(sb) : sb);
+            dropped.push_back(dropped_[it->second]);
+        } else {
+            list->push_back(makeSceneBrush(b));
+            dropped.push_back(opt_.dropNoDraw ? dropNoDraw(list->back()) : 0);
+            ++rebuilt_;
+        }
+        stamps.push_back(stamp);
+        nodraw_ += dropped.back();
+    }
+    // The old list stays alive until the next update, so a `get` reference taken before
+    // this edit (a tool's ToolEnv) still points at a vector, not freed memory.
+    prev_ = std::move(list_);
+    list_ = std::move(list);
+    stamps_ = std::move(stamps);
+    dropped_ = std::move(dropped);
+    revision_ = doc.revision();
+    return list_;
+}
+
+void SceneBrushes::swapIn(SceneBrush b) {
+    if (!base_) return;
+    for (size_t i = 0; i < base_->size(); ++i)
+        if ((*base_)[i].id == b.id) {
+            for (auto& [at, s] : swaps_)
+                if (at == i) { s = std::move(b); return; }
+            swaps_.emplace_back(i, std::move(b));
+            return;
+        }
+}
+
+const SceneBrush& SceneBrushes::operator[](size_t i) const {
+    for (const auto& [at, s] : swaps_)
+        if (at == i) return s;
+    return (*base_)[i];
 }
 
 } // namespace scal

@@ -11,9 +11,9 @@ design in [`ARCHITECTURE.md`](ARCHITECTURE.md), status in [`PLAN.md`](PLAN.md), 
 - **Linux** (CI and the AI workspace): needs `libxrandr-dev libxinerama-dev libxcursor-dev
   libxi-dev libgl1-mesa-dev xvfb` (CI also installs `libgl1-mesa-dri libxkbcommon-dev`).
   The binary is `build/Scalpellino`.
-- **Dependencies** (raylib, Dear ImGui, rlImGui) are fetched by CMake at pinned versions,
-  see `cmake/Deps.cmake` and the table in `PLAN.md`. To update one, change the URL and note
-  it in the LOG.
+- **Dependencies** (raylib, Dear ImGui, rlImGui) are fetched by CMake at pinned versions
+  and checked against their SHA-256 (`URL_HASH`), see `cmake/Deps.cmake` and the table in
+  `PLAN.md`. To update one, change the URL and the hash and note it in the LOG.
 - **AI workspace:** GitHub archive downloads are blocked, so FetchContent fails. Clone the
   three deps with git at the pinned refs into a scratch folder and configure with
   `-DFETCHCONTENT_SOURCE_DIR_RAYLIB=… -DFETCHCONTENT_SOURCE_DIR_IMGUI=…
@@ -186,8 +186,27 @@ policy), and it must hold **with a map open**, not only with an empty app.
 
 ## Benchmark
 
-A development tool, not a test: `tests/bench/run.sh build/Scalpellino` (Linux + Xvfb,
-about 1.5 minutes). It makes a heavy model (`tests/bench/make_model.py`, a 5000-triangle
+A development tool, not a test: `tests/bench/run.sh <absolute path to Scalpellino> [props|brushes]`
+(Linux + Xvfb; both by default). Two benchmarks:
+
+**Brushes and terrain** (`tests/bench/brushes.script`, about 10 s): a square of boxes,
+optionally with terrain patches (32 x 32 cells, raised with noise and painted). Each line:
+building one view's scene, a whole redraw of the four views as when flying the camera
+(each view builds its scene), and an edit that moves one brush followed by the editor's,
+the light preview's and the renderer's caches catching up (what every edit, undo and redo
+costs). Script command: `bench brushes <count> [<terrains> [<power>]]`, `bench clearbrushes`.
+
+| | 1000 boxes | 4000 boxes | 1000 + 8 terrains | 4000 + 16 terrains |
+|---|---|---|---|---|
+| scene, one view | 0.00 ms (0.7) | 0.00 ms (4.3) | 0.00 ms (1.9) | 0.00 ms (6.0) |
+| edit of 1 brush, caches rebuilt | 1.4 ms (28) | 7.7 ms (125) | 1.9 ms (44) | 9.1 ms (154) |
+| redraw, 4 views | 58 ms (48) | 111 ms (135) | 77 ms (89) | 155 ms (170) |
+
+(Review fixes branch; before in brackets.) The redraw is almost all software rasterising
+here and varies by ±15% between runs; the scene copy it no longer makes (4 per redraw)
+weighs more on a real GPU, where drawing is fast.
+
+**Props** (`tests/bench/props.script`, about 1.5 minutes). It makes a heavy model (`tests/bench/make_model.py`, a 5000-triangle
 rock), runs `tests/bench/props.script` and prints one line per size: 500 / 2000 / 5000
 crates and 300 / 1000 rocks. Each line has the time to build the scene, draw the 3D view
 from above one corner (everything in view) and close up (most props behind or beside the
@@ -221,15 +240,25 @@ Numbers (v0.10.3; before in brackets, v0.10.2):
 - **linux:** build, core tests, UI scripts at 1× and 2×, the idle CPU check (control, 1×, 2×),
   screenshots as an artifact.
 - **release:** after both pass, on pushes to `main`: replaces the "Latest build"
-  pre-release, and makes a version release for every `docs/releases/vX.Y.Z.md` that has no
-  release yet.
+  pre-release (only from the newest commit on `main`), and makes a version release for
+  every `docs/releases/vX.Y.Z.md` that has no release yet, **always from a build of the
+  commit that added that notes file**. If this run is that commit's build, it publishes
+  its own zips. If not (that build failed, or its release job was skipped or cancelled
+  because main moved on), it tags the notes commit and starts this workflow on the tag;
+  that run builds exactly that commit and publishes it. A later commit's build is never
+  published under an older version (this happened once: v0.3.1 holds code from after it).
+  If the tag build fails, there is no release and the next pushes warn about it; fix
+  and re-run that run (Actions → build → ref `vX.Y.Z`). Pushing a `vX.Y.Z` tag by hand
+  also publishes that commit.
 - Apple Silicon builds are on demand only: Actions tab → **apple-silicon** → Run workflow.
 
 ## Releasing
 
 Add `docs/releases/vX.Y.Z.md` (copy the Download and First launch part from the last one)
-and push to `main`. CI makes the tag and release after the builds pass (about 7–8
-minutes). Tag pushes are blocked in the AI workspace, so this file-driven route is the one
+in the commit that holds the version's code, and push to `main`. CI makes the tag and
+release from **that commit** after its builds pass (about 7–8 minutes), even if more
+commits were pushed meanwhile (see CI above). So the notes go in with the code (or after
+it), never before. Tag pushes are blocked in the AI workspace, so this file-driven route is the one
 to use.
 The app's version (in the Mac app's Info.plist) is taken from the newest of these files
 by CMake, so there is nothing else to bump.

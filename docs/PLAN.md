@@ -40,6 +40,14 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   the Camera Preview as a draft render, height fog in renders. Its choices made without
   asking are under "v0.12.0, decided without asking". Next: **report**, then discuss
   batch 2 (baked direct light and shadows) in depth before building it.
+- **Review fixes (2026-11-20), on branch `fix/review-findings`, not on `main` and not
+  released** (the user asked for a branch, no main release yet): version releases are
+  built from the commit that added their notes; scenes share the brush list instead of
+  copying it per view; edits rebuild only the touched brushes (editor, light preview,
+  renderer); 64 MB undo history limit; strict numbers in terrain rows, terrain face /
+  size, visgroup and combo; terrain size checked before use; dependency SHA-256 checks.
+  A brush and terrain benchmark was added (DEV.md "Benchmark"). Next: the user merges it
+  (or asks for changes). See the LOG entry.
 - **Roadmap:** Sky Lab → cameras and Camera Preview →
   Render (Source look, with the material system) → water / cloud planes → camera effects →
   export. **Confirmed by the user (2026-11-20)** up to camera effects; **export is not
@@ -64,7 +72,17 @@ are in [`DEV.md`](DEV.md). One-step-per-release: add `docs/releases/vX.Y.Z.md` a
 | Dear ImGui | v1.93.0-docking |
 | rlImGui | commit 5c17e70e98ae9f50ca94bdcad0e3b3536b46a203 |
 
+Each archive's SHA-256 is in `cmake/Deps.cmake` (checked at configure time).
+
 ## Open questions (parked)
+
+- **The v0.3.1 release holds the wrong code** (split / carve / hollow from after v0.3.1;
+  the release bug fixed on `fix/review-findings`). Not changed: replacing a published
+  release is the user's call. Once the fix is on `main`, deleting the v0.3.1 release and
+  its tag makes the next push to `main` rebuild it from the commit that added its notes.
+- **Curve generator parameters** in a `.map` (`core/curves.cpp curveFromKeys`) still read
+  numbers loosely (`atoi`, `strtod`): not in the review's list; worth the same strict
+  reading some time (a bad value there only changes a generated shape).
 
 - **v0.12.0 (Render, the pipeline), decided without asking (confirm with the user):**
   - **A new Render menu** (between World and View): Render..., Update Camera Preview

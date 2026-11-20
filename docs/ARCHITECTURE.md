@@ -563,11 +563,18 @@ would be a separate tool in the far future.
 ## 11. Undo
 
 Each command stores before/after copies of the brushes/entities it touches. Simple,
-robust, cheap (brushes are tiny).
+robust, cheap (brushes are tiny; terrain is not: a 32 x 32 patch with paint is tens of
+KB per copy). The history has a memory limit, 64 MB as in Mazzuola
+(`Document::kHistoryBytes`): past it the oldest steps are dropped; the newest step always
+stays. Undoing everything that is left then doesn't count as the saved state.
+
+Caches of drawing data (editor views, light preview, renderer) follow the edit flow in §4:
+`Document::brushStamp` changes for every brush a command (or its undo / redo) touches, and
+only those brushes are rebuilt. Scenes share the cached list instead of copying it.
 
 ## 12. Dependencies
 
-Fetched automatically by CMake, versions pinned:
+Fetched automatically by CMake, versions pinned and checked against a SHA-256 fingerprint:
 - raylib — window, input, drawing
 - Dear ImGui (docking branch) + rlImGui — UI
 - cgltf — reading `.glb` models (vendored in `third_party/cgltf`, MIT, v1.15; later also glTF writing)

@@ -1,5 +1,6 @@
 #include "render/lighting.hpp"
 #include <algorithm>
+#include <set>
 #include <cmath>
 
 namespace scal {
@@ -11,13 +12,29 @@ constexpr int kMaxSplit = 32;
 
 const LightingMap& LightingCache::get(const Document& doc, const std::vector<SceneBrush>& brushes) {
     if (doc.revision() == revision_) return map_;
-    map_.clear();
+    if (doc.lightingStamp() != lightingStamp_) { map_.clear(); stamps_.clear(); } // all lit again
+    lightingStamp_ = doc.lightingStamp();
+    rebuilt_ = 0;
+    // Entries of brushes no longer listed go.
+    {
+        std::set<BrushId> listed;
+        for (const SceneBrush& b : brushes) listed.insert(b.id);
+        for (auto it = map_.begin(); it != map_.end();)
+            if (!listed.count(it->first)) { stamps_.erase(it->first); it = map_.erase(it); }
+            else ++it;
+    }
     const Environment& env = doc.environment();
     const std::vector<Light>& lights = doc.lights();
     // A little off the surface, so a light right on it still counts.
     auto at = [&](const Vec3& p, const Vec3& n) { return lightAt(env, lights, p + n * 0.5, n); };
     for (const SceneBrush& b : brushes) {
+        const std::uint64_t stamp = doc.brushStamp(b.id);
+        auto st = stamps_.find(b.id);
+        if (st != stamps_.end() && st->second == stamp && map_.count(b.id)) continue; // unchanged
+        stamps_[b.id] = stamp;
+        ++rebuilt_;
         std::vector<LitPoly>& polys = map_[b.id];
+        polys.clear();
         polys.resize(b.polys.size());
         for (size_t pi = 0; pi < b.polys.size(); ++pi) {
             const Polygon& p = b.polys[pi];

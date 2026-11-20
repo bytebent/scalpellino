@@ -362,6 +362,8 @@ private:
     void registerScriptCommands();
     // Development: fill the map with props and time scene, drawing, picking, landing.
     void benchProps(int count, const std::string& model, double spacing);
+    // Development: fill the map with boxes and terrain and time scene, redraw, edits.
+    void benchBrushes(int count, int terrains, int power);
     void registerScriptExpects();
     std::map<std::string, ScriptFn> scriptCommands_, scriptExpects_;
     int scriptDragView_ = -1; // the view a scripted press / drag happens in

@@ -4,6 +4,52 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-20 — Review fixes (branch `fix/review-findings`, not released)
+- The user passed on a review (another AI's) with six findings; each checked against the
+  code first, all six confirmed and fixed. On a branch, no `main` push, no release.
+- **Releases from the wrong commit** (`build.yml`): a version release took the zips of
+  whichever successful `main` build first saw a notes file without a release. Now it is
+  only published from a build of the commit that added the notes file: this run's own
+  zips if it is that commit, otherwise the notes commit is tagged and the workflow is
+  started on the tag (GITHUB_TOKEN tag pushes start no runs; `workflow_dispatch` does),
+  which builds and publishes exactly that commit. "Latest" is still only from the newest
+  `main` commit, but its check no longer skips the version releases. Checked locally by
+  running the publish step against a scratch repo with a stand-in `gh`: notes commit's
+  own run, later commit without tag, tag already there (warn), tag at another commit
+  (error, no release), already released.
+- **Measured first:** new brush / terrain benchmark (`bench brushes`, DEV.md). Before:
+  building one view's scene copied every brush (6 ms with 4000 boxes and 16 terrains,
+  four times per redraw); an edit of one brush took 154 ms to rebuild the caches.
+- **Scenes share the brush list** (`SceneBrushes` in `render/scene.hpp`): a scene keeps
+  the cache's list by `shared_ptr` and swaps in the few brushes a tool replaces (terrain
+  being sculpted) instead of copying all of them. Scene build 6 ms → 0.00 ms.
+- **Only touched brushes rebuild:** `Document::brushStamp(id)` changes in `setBrush`
+  (apply, undo, redo) and on open; `lightingStamp()` when lights or the environment
+  change. `SceneCache` (editor; and the renderer's, with hidden brushes kept and nodraw
+  left out) and `LightingCache` keep each brush's data with its stamp and rebuild only
+  those whose stamp changed (lighting: all when a light or the environment changed). The
+  old list stays alive until the next update, so a `ToolEnv` reference taken before an
+  edit never points at freed memory. Edit of 1 brush: 154 ms → 9 ms (4000 boxes + 16
+  terrains), 28 → 1.4 ms (1000 boxes).
+- **Undo history limit** (`Document::kHistoryBytes`, 64 MB, as Mazzuola): each step's
+  size is estimated (`commandBytes`: brushes with terrain and paint, objects, selections);
+  the oldest steps are dropped past the limit, the newest always stays. Undoing all that
+  is left reports unsaved changes (`historyTop` falls back to the newest dropped step).
+- **Strict numbers in .map** (as Mazzuola's reader): terrain height and blend rows
+  (`abc`, `1.5x` now refuse the file with the line and the bad text), terrain `face` and
+  `power`, brush `visgroup` refuse the file; `combo` and the other object key values
+  (`numOr`) ignore a bad value as before, but no longer read `1.5x` as 1.5; the visgroup
+  list drops entries with a bad id. Curve generator keys were not in the review (parked).
+- **Terrain size checked before use:** `power` is range-checked before `(1 << power) + 1`.
+- **Dependency fingerprints:** `URL_HASH SHA256=…` for raylib, ImGui, rlImGui in
+  `cmake/Deps.cmake`. The workspace can't download the archives, so a throwaway workflow
+  on the branch printed each hash (two downloads each, identical); removed again.
+- **Tests:** core 4791 checks, 0 failed (new `testBrushCaches`, `testHistoryLimit`,
+  `testMapStrictNumbers`; the caches are compiled into the test binary, they only use the
+  core). UI 29 of 29 at 1x and 2x. Idle 0 ticks at 1x. No screenshots (nothing visible
+  changed).
+- **Next:** the user reviews / merges the branch.
+
 ### 2026-11-20 — The user tried v0.12.0 (docs only)
 - "Seems to work! so far!" The v0.12.0 choices are not explicitly confirmed yet (still
   listed in PLAN.md). Next: discuss batch 2 (baked direct light and shadows).

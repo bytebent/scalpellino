@@ -9,47 +9,19 @@
 
 namespace scal {
 
-namespace {
-// Drops a brush's nodraw faces (plain polygons only; terrain cells stay). Returns how many.
-size_t dropNoDraw(SceneBrush& b) {
-    const size_t plain = b.terrain ? b.terrainFirst : b.polys.size();
-    std::vector<Polygon> kept;
-    kept.reserve(b.polys.size());
-    size_t dropped = 0;
-    for (size_t i = 0; i < b.polys.size(); ++i) {
-        const Polygon& p = b.polys[i];
-        if (i < plain && p.face >= 0 && p.face < (int)b.faces.size() && isNoDraw(b.faces[p.face].texture)) {
-            ++dropped;
-            continue;
-        }
-        kept.push_back(p);
-    }
-    if (dropped) {
-        b.polys = std::move(kept);
-        if (b.terrain) b.terrainFirst -= dropped;
-    }
-    return dropped;
-}
-} // namespace
 
 Scene Renderer::scene(const Document& doc, TextureLibrary& textures, ModelLibrary& models, SkyLibrary& skies, Stats* stats) {
-    if (doc.revision() != revision_) {
-        brushes_.clear();
-        brushStats_ = Stats{};
-        brushes_.reserve(doc.brushes().size());
-        for (const Brush& b : doc.brushes()) {
-            SceneBrush sb = makeSceneBrush(b);
-            brushStats_.nodrawFaces += dropNoDraw(sb);
-            ++brushStats_.brushes;
-            if (!doc.visible(b)) ++brushStats_.hiddenBrushes;
-            if (b.terrain) ++brushStats_.terrains;
-            brushes_.push_back(std::move(sb));
-        }
-        revision_ = doc.revision();
+    // Brushes: only the ones an edit touched are rebuilt (SceneCache).
+    auto brushes = brushes_.shared(doc);
+    Stats st;
+    st.nodrawFaces = brushes_.nodrawFaces();
+    for (const Brush& b : doc.brushes()) {
+        ++st.brushes;
+        if (!doc.visible(b)) ++st.hiddenBrushes;
+        if (b.terrain) ++st.terrains;
     }
-    Stats st = brushStats_;
     Scene s;
-    s.brushes = brushes_;
+    s.brushes = brushes;
     s.textures = &textures;
     s.models = &models;
     for (const Light& l : doc.lights()) s.lights.push_back({l, false});
@@ -71,7 +43,7 @@ Scene Renderer::scene(const Document& doc, TextureLibrary& textures, ModelLibrar
     auto want = [&](const std::string& name) {
         if (!name.empty() && !isNoDraw(name) && !textures.exists(name)) missing.insert(name);
     };
-    for (const SceneBrush& b : brushes_) {
+    for (const SceneBrush& b : *brushes) {
         for (const Polygon& p : b.polys)
             if (p.face >= 0 && p.face < (int)b.faces.size()) want(b.faces[p.face].texture);
         for (const auto& l : b.layers) want(l.texture);
@@ -109,7 +81,7 @@ Scene Renderer::scene(const Document& doc, TextureLibrary& textures, ModelLibrar
 
 void Renderer::light(const Document& doc, Scene& s) {
     s.lightPreview = true;
-    s.lighting = &lighting_.get(doc, brushes_);
+    s.lighting = &lighting_.get(doc, brushes_.get(doc));
 }
 
 bool Renderer::draw(const Camera& cam, const Scene& s, int w, int h, float scale, bool smooth) {
