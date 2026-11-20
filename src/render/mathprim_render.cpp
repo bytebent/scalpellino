@@ -389,6 +389,22 @@ int memberIv(int i, vec3 o, vec3 d, out Iv a, out Iv b) {
 
 const int MAXI = 8;
 
+uniform vec2 fogHeight; // the fog's base and thickness (thickness 0: everywhere)
+// How fogged a point is: the stretch of the line of sight inside the fog layer, through the
+// fog's start and end distances (as Sky Lab's fog in the sky).
+float fogAmount(vec3 p) {
+    float d = length(p - camPos);
+    float path = d;
+    if (fogHeight.y > 0.0) {
+        float lo = fogHeight.x, hi = fogHeight.x + fogHeight.y, z0 = camPos.z, z1 = p.z;
+        if (abs(z1 - z0) < 0.001) path = (z0 >= lo && z0 <= hi) ? d : 0.0;
+        else {
+            float a = clamp((lo - z0) / (z1 - z0), 0.0, 1.0), b = clamp((hi - z0) / (z1 - z0), 0.0, 1.0);
+            path = abs(b - a) * d;
+        }
+    }
+    return clamp((path - fogRange.x) / max(fogRange.y - fogRange.x, 1.0), 0.0, 1.0);
+}
 void main() {
     vec3 o = camPos;
     vec3 d = normalize(fragPos - camPos);
@@ -533,7 +549,7 @@ void main() {
         c = min(base * L, vec3(1.0));
     }
     if (fogOn == 1) {
-        float f = clamp((length(p - camPos) - fogRange.x) / max(fogRange.y - fogRange.x, 1.0), 0.0, 1.0);
+        float f = fogAmount(p);
         c = mix(c, fogColor, f);
     }
     finalColor = vec4(c, 1.0);
@@ -630,6 +646,8 @@ void drawMathPrims3D(const std::vector<MathPrim>& prims, const PrimDrawContext& 
     {
         const float fr[2] = {(float)ctx.fogStart, (float)ctx.fogEnd};
         SetShaderValue(S.sh, S.at("fogRange"), fr, SHADER_UNIFORM_VEC2);
+        const float fh[2] = {(float)ctx.fogBase, (float)ctx.fogThickness};
+        SetShaderValue(S.sh, S.at("fogHeight"), fh, SHADER_UNIFORM_VEC2);
     }
     static const char* texNames[4] = {"texA", "texB", "texC", "texD"};
     for (const auto& g : groups) {

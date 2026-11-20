@@ -81,6 +81,71 @@ void Editor::registerScriptExpects() {
         const size_t got = w == "cameras" ? doc_.cameras().size() : doc_.cameraSelection().size();
         if (got != n) { std::fprintf(stderr, "script FAIL (command %d): expected %zu %s, got %zu\n", scriptLine_, n, w.c_str(), got); ++scriptFailures_; }
     });
+    add({"render"}, [this](const std::string&, std::istringstream& in) {
+        // expect render saved|stopped|failed|none: how the last render ended
+        std::string w, want; in >> w >> want;
+        const char* got = !renderJob_ ? "none" : renderJob_->running ? "running" : renderJob_->done ? "saved"
+                          : renderJob_->stopped ? "stopped" : "failed";
+        if (want != got) { std::fprintf(stderr, "script FAIL (command %d): render %s, expected %s\n", scriptLine_, got, want.c_str()); ++scriptFailures_; }
+    });
+    add({"renders"}, [this](const std::string&, std::istringstream& in) {
+        // expect renders <n>: PNGs saved so far (and each one is on disk with its log)
+        std::string w; int n = 0; in >> w >> n;
+        int onDisk = 0;
+        std::error_code ec;
+        for (const std::string& f : renderFiles_)
+            if (std::filesystem::exists(f, ec) && std::filesystem::exists(std::filesystem::path(f).replace_extension(".log"), ec)) ++onDisk;
+        if (rendersDone_ != n || onDisk != n) {
+            std::fprintf(stderr, "script FAIL (command %d): %d renders saved (%d on disk with a log), expected %d\n", scriptLine_, rendersDone_, onDisk, n);
+            ++scriptFailures_;
+        }
+    });
+    add({"renderlog"}, [this](const std::string&, std::istringstream& in) {
+        // expect renderlog [not] <text>: a line of the last render's log holds the text
+        std::string w, text; in >> w; std::getline(in >> std::ws, text);
+        bool neg = false;
+        if (text.rfind("not ", 0) == 0) { neg = true; text = text.substr(4); }
+        bool found = false;
+        if (renderJob_) for (const std::string& l : renderJob_->log) found = found || l.find(text) != std::string::npos;
+        if (found == neg) { std::fprintf(stderr, "script FAIL (command %d): render log %s \"%s\"\n", scriptLine_, neg ? "has" : "lacks", text.c_str()); ++scriptFailures_; }
+    });
+    add({"rendersize"}, [this](const std::string&, std::istringstream& in) {
+        // expect rendersize <w> <h>: the last saved PNG's size
+        std::string w; int ew = 0, eh = 0; in >> w >> ew >> eh;
+        int gw = 0, gh = 0;
+        if (!renderFiles_.empty()) {
+            Image img = LoadImage(renderFiles_.back().c_str());
+            gw = img.width; gh = img.height;
+            UnloadImage(img);
+        }
+        if (gw != ew || gh != eh) { std::fprintf(stderr, "script FAIL (command %d): render is %d x %d, expected %d x %d\n", scriptLine_, gw, gh, ew, eh); ++scriptFailures_; }
+    });
+    add({"rendersame"}, [this](const std::string&, std::istringstream& in) {
+        // expect rendersame yes|no: the last two saved PNGs are the same picture (the
+        // average difference under 0.5 of 255), or clearly not (over 2)
+        std::string w, want; in >> w >> want;
+        double diff = -1;
+        if (renderFiles_.size() >= 2) {
+            Image a = LoadImage(renderFiles_[renderFiles_.size() - 2].c_str()), b = LoadImage(renderFiles_.back().c_str());
+            if (a.data && b.data && a.width == b.width && a.height == b.height) {
+                ImageFormat(&a, PIXELFORMAT_UNCOMPRESSED_R8G8B8);
+                ImageFormat(&b, PIXELFORMAT_UNCOMPRESSED_R8G8B8);
+                const unsigned char* pa = (const unsigned char*)a.data; const unsigned char* pb = (const unsigned char*)b.data;
+                double sum = 0;
+                const size_t n = (size_t)a.width * a.height * 3;
+                for (size_t i = 0; i < n; ++i) sum += std::abs((int)pa[i] - (int)pb[i]);
+                diff = sum / (double)n;
+            }
+            UnloadImage(a); UnloadImage(b);
+        }
+        const bool ok = diff >= 0 && (want == "yes" ? diff < 0.5 : diff > 2);
+        if (!ok) { std::fprintf(stderr, "script FAIL (command %d): the last two renders differ by %.3f on average (rendersame %s)\n", scriptLine_, diff, want.c_str()); ++scriptFailures_; }
+    });
+    add({"renderwindow"}, [this](const std::string&, std::istringstream& in) {
+        // expect renderwindow open|closed
+        std::string w, want; in >> w >> want;
+        if ((want == "open") != renderOpen_) { std::fprintf(stderr, "script FAIL (command %d): render window %s\n", scriptLine_, renderOpen_ ? "open" : "closed"); ++scriptFailures_; }
+    });
     add({"camerapreview"}, [this](const std::string&, std::istringstream& in) {
         // expect camerapreview <times drawn> [stale 0|1]
         std::string w; int n = 0; in >> w >> n;

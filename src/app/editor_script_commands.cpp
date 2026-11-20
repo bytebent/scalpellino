@@ -714,6 +714,28 @@ void Editor::registerScriptCommands() {
     add({"open"}, [this](const std::string&, std::istringstream& in) {
         std::string p; in >> p; openMap(p);
     });
+    add({"render", "renderstart"}, [this](const std::string& cmd, std::istringstream&) {
+        // render: Render (Cmd+Shift+K); the next command waits until it has finished.
+        // renderstart: the same without waiting (to press Esc while it runs).
+        startRender();
+        scriptWaitRender_ = cmd == "render";
+    });
+    add({"renderset"}, [this](const std::string&, std::istringstream& in) {
+        // renderset quality draft|normal|high | aa <1..4> | filter smooth|crisp  (Render menu)
+        std::string k, v; in >> k >> v;
+        if (k == "quality") applyQuality(renderSettings_, v == "draft" ? RenderQuality::Draft : v == "high" ? RenderQuality::High : RenderQuality::Normal);
+        else if (k == "aa") renderSettings_.aa = std::clamp(std::atoi(v.c_str()), 1, kMaxRenderAA);
+        else if (k == "filter") renderSettings_.smooth = v != "crisp";
+        else { std::fprintf(stderr, "script FAIL (command %d): renderset %s\n", scriptLine_, k.c_str()); ++scriptFailures_; }
+    });
+    add({"rendercopy"}, [this](const std::string&, std::istringstream& in) {
+        // rendercopy <file.png>: copies the last saved render here (for screenshots)
+        std::string to; in >> to;
+        std::error_code ec;
+        if (!renderJob_ || !renderJob_->done) ec = std::make_error_code(std::errc::no_such_file_or_directory);
+        else std::filesystem::copy_file(renderJob_->png, to, std::filesystem::copy_options::overwrite_existing, ec);
+        if (ec) { std::fprintf(stderr, "script FAIL (command %d): rendercopy: %s\n", scriptLine_, ec.message().c_str()); ++scriptFailures_; }
+    });
     add({"shot"}, [this](const std::string&, std::istringstream& in) {
         in >> shotRequest_;
     });

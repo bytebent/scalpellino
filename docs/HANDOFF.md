@@ -27,7 +27,7 @@ texture licenses; `releases/` has the notes for each version.
   comets, rings, rainbow, fog in the sky, saved skies; JPEG / TGA loading fixed),
   v0.11.0 (cameras, step 1: camera objects and options), v0.11.1 (cameras, step 2:
   Camera Preview and presets; milestone 11 done), **v0.11.2** (built-in Sky Lab skies;
-  plain sky bottoms out of graphics memory).
+  plain sky bottoms out of graphics memory), **v0.12.0** (Render, step 1: the pipeline).
 - **Milestone 10 — Props is done (v0.10.0):** `.glb` models from Bottega's `models/`; `.mazz`
   waits for Mazzuola's final format. The user confirmed the choices made while building it
   (2026-11-19), including even scaling as the default for primitives too.
@@ -48,7 +48,8 @@ texture licenses; `releases/` has the notes for each version.
   **Milestone 11, cameras and Camera Preview, is done** (v0.11.0, v0.11.1), plus v0.11.2
   (an aside). Next: **Render with materials** (M12), split into 7 batches (PLAN.md
   Roadmap item 5). **How the user wants M12 run:** discuss each batch in depth first,
-  build it only when they say go, then report.
+  build it only when they say go, then report. **v0.12.0 (batch 1, the render pipeline)
+  is done**; next: report, then discuss batch 2 (baked direct light and shadows).
   Read PLAN.md Roadmap item 5 first: the Camera Preview becomes a draft render (the real
   renderer at lower settings), ignores the View menu and shows hidden things (the user
   tried v0.11.x and asked for this; the current preview is only the editor's 3D look). The roadmap order is confirmed up to camera

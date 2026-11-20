@@ -193,7 +193,6 @@ MenuActions drawMenuBar(const MenuState& st) {
         if (ImGui::MenuItem("Create camera", "Return", false, st.cameraPending)) a.createCamera = true;
         if (ImGui::MenuItem("Make selected camera active", nullptr, false, st.camerasSelected == 1 && !st.selectedCameraActive)) a.activateCamera = true;
         if (ImGui::MenuItem("Aim selected cameras at a clicked point", nullptr, st.cameraAiming, st.camerasSelected > 0)) a.aimCamera = true;
-        if (ImGui::MenuItem("Update Camera Preview", "Cmd+K", false, st.hasCameras)) a.updatePreview = true;
         ImGui::TextDisabled("Camera tool: click to place, Return creates; lens,");
         ImGui::TextDisabled("picture size, aim at a typed point in Properties");
         ImGui::Separator();
@@ -202,6 +201,39 @@ MenuActions drawMenuBar(const MenuState& st) {
         if (ImGui::MenuItem("Rebake Sky Lab sky", nullptr, false, st.canRebakeSky)) a.rebakeSky = true;
         if (ImGui::MenuItem("Camera bookmarks...")) a.bookmarks = true;
         if (ImGui::MenuItem("Scale figure position...")) a.figurePos = true;
+        ImGui::EndMenu();
+    }
+    if (ImGui::BeginMenu("Render")) {
+        if (ImGui::MenuItem("Render...", "Cmd+Shift+K", false, st.hasCameras)) a.render = true;
+        if (ImGui::MenuItem("Update Camera Preview", "Cmd+K", false, st.hasCameras)) a.updatePreview = true;
+        if (!st.hasCameras) ImGui::TextDisabled("Place a camera first (World > Camera tool)");
+        ImGui::TextDisabled("The active camera's picture, at its size, saved in");
+        ImGui::TextDisabled("the Bottega's renders folder with its log");
+        ImGui::Separator();
+        if (ImGui::BeginMenu("Quality")) {
+            static const char* q[] = {"Draft", "Normal", "High"};
+            for (int i = 0; i < 3; ++i)
+                if (ImGui::MenuItem(q[i], nullptr, st.renderQuality == i)) a.renderQuality = i;
+            ImGui::TextDisabled("sets the anti-aliasing (Draft off, Normal 2x, High 3x);");
+            ImGui::TextDisabled("later also the baked light and reflections");
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("Anti-aliasing")) {
+            if (ImGui::MenuItem("Off", nullptr, st.renderAA == 1)) a.renderAA = 1;
+            for (int i = 2; i <= 4; ++i) {
+                char b[48];
+                std::snprintf(b, sizeof b, "%dx (drawn %d times larger)", i, i);
+                if (ImGui::MenuItem(b, nullptr, st.renderAA == i)) a.renderAA = i;
+            }
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("Texture filtering")) {
+            if (ImGui::MenuItem("Smooth", nullptr, st.renderSmooth)) a.renderSmooth = 1;
+            if (ImGui::MenuItem("Crisp pixels", nullptr, !st.renderSmooth)) a.renderSmooth = 0;
+            ImGui::TextDisabled("for renders and the Camera Preview;");
+            ImGui::TextDisabled("the editor's own: Texture > Filtering");
+            ImGui::EndMenu();
+        }
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("View")) {
@@ -290,7 +322,9 @@ void drawControlsWindow(bool* open) {
             {"Camera tool", "Shift+K (World menu): settings in Properties (lens in degrees or mm, presets, near / far, picture size, orthographic), click in a view to place, Return creates, Esc cancels. The first camera is the active one"},
             {"Select / move / turn cameras", "click a camera's marker (a diamond; any tool that selects); drag it in a 2D view; drag the rings (15 degree steps), the yellow ring rolls it; or type pitch / yaw / roll in Properties; Delete removes, Cmd+D duplicates"},
             {"Active camera", "the one Render and the Camera Preview use (white dot in its marker): tick 'active' in Properties, or World > Make selected camera active; only one at a time"},
-            {"Camera Preview", "panel under Properties while the map has a camera: the active camera's view; drawn only when you ask: Cmd+K, its Update button or World > Update Camera Preview"},
+            {"Camera Preview", "panel under Properties while the map has a camera: a draft render of the active camera's view (the map as it is, whatever the View menu shows); drawn only when you ask: Cmd+K, its Update button or Render > Update Camera Preview"},
+            {"Render", "the Render button (left of the status bar), Render > Render... or Cmd+Shift+K: the active camera's picture at its size, saved in the Bottega's renders folder with its log; a terminal window shows the steps; Esc stops it"},
+            {"Render options", "Render menu: Quality (Draft / Normal / High), Anti-aliasing, Texture filtering"},
             {"Camera presets", "Properties (camera tool or a selected camera): Save preset / Load a preset (lens, near / far, size, orthographic, exposure), kept in the Bottega's presets/camera_presets"},
             {"Aim a camera at a point", "Properties: type a point and Aim, or World > Aim selected cameras at a clicked point, then click a surface in 3D or a spot in a 2D view"},
             {"Sky, ambient, fog", "World > Environment (sky folders too: 2:1 panoramas or 4:3 cube crosses)"},
@@ -332,17 +366,28 @@ void drawControlsWindow(bool* open) {
     ImGui::End();
 }
 
-void drawStatusBar(const char* text) {
+bool drawStatusBar(const char* text, bool canRender) {
     const float h = ImGui::GetFrameHeight();
     const ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings |
                                    ImGuiWindowFlags_MenuBar;
+    bool clicked = false;
     if (ImGui::BeginViewportSideBar("##statusbar", ImGui::GetMainViewport(), ImGuiDir_Down, h, flags)) {
         if (ImGui::BeginMenuBar()) {
+            ImGui::BeginDisabled(!canRender);
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.55f, 0.32f, 0.12f, 1));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.70f, 0.42f, 0.16f, 1));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.80f, 0.50f, 0.20f, 1));
+            clicked = ImGui::SmallButton("Render");
+            ImGui::PopStyleColor(3);
+            ImGui::EndDisabled();
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+                ImGui::SetTooltip(canRender ? "Render the active camera's picture (Cmd+Shift+K)" : "Place a camera first (World > Camera tool)");
             ImGui::TextUnformatted(text);
             ImGui::EndMenuBar();
         }
     }
     ImGui::End();
+    return clicked;
 }
 
 void dockspace(bool forceReset, const char* tools, const char* topLeft, const char* topRight,

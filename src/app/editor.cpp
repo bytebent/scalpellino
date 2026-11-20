@@ -60,6 +60,7 @@ Editor::Editor(const EditorOptions& opt) : opt_(opt) {
 #endif
         modelFinder_ = models_.finder();
         if (!opt_.automated()) loadBottegaSetting(); // automated runs never read user settings
+        if (!opt_.automated()) loadRenderSettings();
         if (!textures_.exists(currentTexture_) && !textures_.names().empty()) currentTexture_ = textures_.names()[0];
     }
     lastBox_.min = {0, 0, 0};
@@ -112,6 +113,11 @@ void Editor::onRelease(int view, Vector2 local, bool real) {
 }
 
 void Editor::onKey(int key) {
+    // A render running: the editor waits; Esc stops it.
+    if (renderNeedsFrame()) {
+        if (key == KEY_ESCAPE) stopRender();
+        return;
+    }
     // Multi-Replicate's window stays open while you look around: Return / Esc in the views
     // create or cancel.
     if (replicating_ && !scriptPreview_ && (key == KEY_ENTER || key == KEY_KP_ENTER || key == KEY_ESCAPE)) {
@@ -212,8 +218,11 @@ bool Editor::frame(float dt) {
     st.facesPicked = tool_ == &textureTool_ && textureTool_.faces(doc_).size() > 1;
     st.canApplyTexture = !doc_.selection().empty() || (tool_ == &textureTool_ && !textureTool_.faces(doc_).empty());
     const MenuActions m = drawMenuBar(st);
+    st.renderQuality = (int)renderSettings_.quality;
+    st.renderAA = renderSettings_.aa;
+    st.renderSmooth = renderSettings_.smooth;
     const std::string status = statusText();
-    drawStatusBar(status.c_str());
+    const bool renderClicked = drawStatusBar(status.c_str(), !doc_.cameras().empty());
     dockspace(resetLayout_, "Tools###tools", views_[0]->title(), views_[1]->title(),
               views_[2]->title(), views_[3]->title(), "Textures###textures", "Face###face", showPanels_,
               "Visgroups###visgroups", "Props###props", "Camera Preview###camerapreview");
@@ -281,6 +290,10 @@ bool Editor::frame(float dt) {
     if (m.activateCamera && doc_.cameraSelection().size() == 1) activateCamera(*doc_.cameraSelection().begin());
     if (m.aimCamera) startCameraAim();
     if (m.updatePreview && !doc_.cameras().empty()) requestCameraPreview();
+    if ((m.render || renderClicked) && !doc_.cameras().empty()) startRender();
+    if (m.renderQuality >= 0) { applyQuality(renderSettings_, (RenderQuality)m.renderQuality); saveRenderSettings(); }
+    if (m.renderAA >= 1) { renderSettings_.aa = m.renderAA; saveRenderSettings(); }
+    if (m.renderSmooth >= 0) { renderSettings_.smooth = m.renderSmooth == 1; saveRenderSettings(); }
     if (m.createProp) onKey(KEY_ENTER);
     if (m.primKind >= 0) { primTool_.templ.kind = (PrimKind)m.primKind; setTool(&primTool_); }
     if (m.createPrim) primTool_.create(doc_, currentTexture_, &lastBox_);
@@ -366,6 +379,8 @@ bool Editor::frame(float dt) {
     drawRandomReplicateWindow();
     drawSkyLabWindow();
     stepSkyBake();
+    drawRenderWindow();
+    stepRender();
     drawBottegaDialog();
     drawControlsWindow(&controlsOpen_);
     drawOverlapsWindow();
@@ -379,7 +394,7 @@ bool Editor::frame(float dt) {
 
     runNativeDialog();
     updateTitle();
-    return flying_ || rmbLook_ || !script_.empty() || !opt_.screenshot.empty() || skyLabNeedsFrame();
+    return flying_ || rmbLook_ || !script_.empty() || !opt_.screenshot.empty() || skyLabNeedsFrame() || renderNeedsFrame();
 }
 
 void Editor::handleKeyboard() {
@@ -408,6 +423,7 @@ void Editor::handleKeyboard() {
         if (IsKeyPressed(KEY_R)) { if (shift_) openRandomReplicate(); else rescanBottega(); }
         if (IsKeyPressed(KEY_U)) showAll();
         if (IsKeyPressed(KEY_K) && !shift_ && !doc_.cameras().empty()) requestCameraPreview();
+        if (IsKeyPressed(KEY_K) && shift_ && !doc_.cameras().empty()) startRender();
         if (IsKeyPressed(KEY_ZERO)) allViewsToOrigin();
         if (shift_ && IsKeyPressed(KEY_O)) { findOverlapsNow(); return; }
         if (IsKeyPressed(KEY_S)) { if (shift_) requestSaveAs(); else save(); }

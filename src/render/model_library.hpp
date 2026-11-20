@@ -20,6 +20,7 @@ struct PropDrawContext {
     bool fog = false;
     Vec3 fogColor;                 // 0..255
     double fogStart = 0, fogEnd = 1;
+    double fogBase = 0, fogThickness = 0; // height fog (renders); thickness 0 = everywhere
 };
 
 class ModelLibrary {
@@ -38,6 +39,7 @@ public:
     void rescan();
     // Nearest (crisp, default) or smooth texture filtering, like the texture library.
     void setSmooth(bool smooth);
+    bool smooth() const { return smooth_; }
 
     // Model for `name` (loaded on first use), or null.
     const Model* find(const std::string& name) { return store_.find(name); }
@@ -78,7 +80,7 @@ private:
         Shader shader{};
         Material material{};
         bool ok = false;
-        int locHasTex = -1, locCutoff = -1, locCam = -1, locFogOn = -1, locFogColor = -1, locFogRange = -1;
+        int locHasTex = -1, locCutoff = -1, locCam = -1, locFogOn = -1, locFogColor = -1, locFogRange = -1, locFogHeight = -1;
     };
     bool loadShaderSet(ShaderSet& s, const char* vs);
     ShaderSet plain_, inst_;

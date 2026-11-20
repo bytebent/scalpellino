@@ -20,6 +20,7 @@ struct PrimDrawContext {
     bool fog = false;
     Vec3 fogColor;
     double fogStart = 0, fogEnd = 1;
+    double fogBase = 0, fogThickness = 0; // height fog (renders); thickness 0 = everywhere
 };
 
 void drawMathPrims3D(const std::vector<MathPrim>& prims, const PrimDrawContext& ctx);

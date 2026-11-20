@@ -1,0 +1,120 @@
+# v0.12.0: Render (M12 batch 1, the pipeline). Render draws the active camera's picture at
+# the camera's size into the Bottega's renders/ with its log; the editor waits, the
+# terminal window shows the steps, Esc stops it. The map as it is: the View menu is
+# ignored, hidden brushes are drawn, nodraw faces left out. The Camera Preview is the
+# same renderer at Draft settings.
+block -1024 -1024 -32 1024 1024 0
+block 128 -128 0 384 128 256
+prim sphere 0 -320 96 192 192 192
+tool light
+lightset kind point
+lightset brightness 300
+lightset range 900
+lightset pos -100 -200 300
+key Return
+environment sky Panorama_Sky_04
+environment fog on
+environment fogcolor 170 190 220
+environment fogrange 400 3000
+environment fogheight 0 120
+tool select
+key Esc
+camera -900 -800 500 40 -25
+# -- no camera: the window says so, nothing saved
+render
+expect render failed
+expect renderwindow open
+expect renderlog No camera in the map
+closedialogs
+expect renderwindow closed
+# -- a camera; no Bottega yet: Render asks for one instead
+tool camera
+cameraset lens 35
+cameraset size 640 360
+cameraset pos -700 -500 180
+key Return
+cameraedit angles -8 35 0
+render
+expect renderwindow closed
+expect renders 0
+closedialogs
+bottega make studio
+# -- a render: saved with its log, the camera's size, Normal = anti-aliasing 2x
+tool select
+key Esc
+render
+expect render saved
+expect renders 1
+expect rendersize 640 360
+expect renderwindow open
+expect renderlog anti-aliasing 2x: drawn at 1280 x 720
+expect renderlog Picture 640 x 360 (the camera's size), quality Normal
+expect renderlog fog: 400 to 3000, lying from 0 up through 120
+expect renderlog sky: Panorama_Sky_04
+expect renderlog Done in
+expect renderlog not warning
+shot m12-02-render-log.png
+rendercopy m12-01-render.png
+closedialogs
+expect renderwindow closed
+# -- the View menu doesn't change the picture, hidden brushes are drawn
+viewset sky off
+viewset fog off
+viewset prims off
+viewset props off
+viewset preview on
+rendermode flat
+block -200 300 0 -100 400 300
+hide
+expect visible 2
+render
+expect renderlog 1 hidden in the editor, drawn anyway
+closedialogs
+showall
+viewset sky on
+viewset prims on
+viewset props on
+viewset preview off
+rendermode textured
+render
+expect rendersame yes
+closedialogs
+# -- nodraw faces are left out
+selectall
+applynodraw
+render
+expect renderlog nodraw faces left out
+expect rendersame no
+closedialogs
+undo
+# -- options: Draft (no anti-aliasing), 4x, crisp textures; the size follows the camera
+tool camera
+cameraselect all
+cameraedit size 320 180
+tool select
+key Esc
+renderset quality draft
+render
+expect rendersize 320 180
+expect renderlog no anti-aliasing
+closedialogs
+renderset aa 4
+renderset filter crisp
+render
+expect renderlog anti-aliasing 4x: drawn at 1280 x 720
+expect renderlog textures crisp
+expect renders 6
+closedialogs
+# -- Esc stops a render; nothing is saved
+renderstart
+key Esc
+expect render stopped
+expect renderlog Stopped (Esc)
+expect renders 6
+closedialogs
+# -- the Camera Preview is a draft render: hidden things and the map's sky whatever the View menu
+viewset sky off
+camerapreview
+expect camerapreview 1 stale 0
+shot m12-03-preview-draft-render.png
+quit

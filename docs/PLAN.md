@@ -35,7 +35,11 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   the preview must be a draft render ignoring the View menu (Roadmap item 5); they will
   start a **new chat** for the next milestones.
 - **M12 is split into 7 batches (v0.12.0 … v0.12.6), agreed 2026-11-20** (Roadmap item 5).
-  Batch 1 (the render pipeline) is discussed and decided; **waiting for the user's go**.
+  **Batch 1, the render pipeline, is built and pushed (v0.12.0)**: Render button / menu /
+  Cmd+Shift+K, terminal window, PNG and log in the Bottega's `renders/`, render options,
+  the Camera Preview as a draft render, height fog in renders. Its choices made without
+  asking are under "v0.12.0, decided without asking". Next: **report**, then discuss
+  batch 2 (baked direct light and shadows) in depth before building it.
 - **Roadmap:** Sky Lab → cameras and Camera Preview →
   Render (Source look, with the material system) → water / cloud planes → camera effects →
   export. **Confirmed by the user (2026-11-20)** up to camera effects; **export is not
@@ -61,6 +65,34 @@ are in [`DEV.md`](DEV.md). One-step-per-release: add `docs/releases/vX.Y.Z.md` a
 | rlImGui | commit 5c17e70e98ae9f50ca94bdcad0e3b3536b46a203 |
 
 ## Open questions (parked)
+
+- **v0.12.0 (Render, the pipeline), decided without asking (confirm with the user):**
+  - **A new Render menu** (between World and View): Render..., Update Camera Preview
+    (moved there from the World menu), Quality, Anti-aliasing, Texture filtering. The
+    status bar button is orange and greyed out while the map has no camera.
+  - **The options are the user's settings** (`render.txt` next to the layout), not saved in
+    the map. Defaults: Normal, 2x, smooth.
+  - **Quality** sets the anti-aliasing for now: Draft off, Normal 2x, High 3x; the
+    anti-aliasing menu also has 4x. Choosing a quality overrides the anti-aliasing chosen
+    before. Too large to draw (over 16384 pixels a side or 50 million pixels, e.g. 4K at
+    3x): it uses less and the log says so.
+  - **Anti-aliasing** averages in linear light (as light adds up), not in the stored values.
+  - **Smooth filtering** = trilinear with mipmaps; crisp = nearest pixel. The preview uses
+    the render option too, not the editor's Texture > Filtering.
+  - **File names:** an unsaved map is `untitled`; letters, digits, - and _ kept, the rest
+    becomes _ (`camera 1` -> `camera_1`); local time; two renders in the same second get
+    `_2`. Only a saved render writes its log; stopped or failed ones leave no files.
+  - **The window:** modal, the log with a timestamp per line (seconds since the start),
+    warnings in orange; Close (or Esc / Return) once finished; it keeps the last log until
+    the next render. No camera: the window says so. One step per frame (map, lighting,
+    drawing, scaling down, saving), so Esc stops between steps (not in the middle of the
+    drawing).
+  - **What a picture holds:** missing models are left out (a warning), missing textures are
+    drawn as the checker (a warning), a map without lights gets a note (only the ambient).
+    While Sky Lab is open, renders and the preview use the map's baked sky, not the
+    window's live one (the old preview used the live one).
+  - **Height fog in renders:** the stretch of the line of sight inside the fog layer, from
+    the camera's real height (the baked sky assumes an eye at height 0).
 
 - **v0.11.2 (built-in skies, sky memory), decided without asking (confirm with the user):**
   - The built-in skies are the 13 distinct skies of the Sky Lab test scripts, named
@@ -608,6 +640,8 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
        Close when done. No other buttons.
      - Draws what the map has: textures (nodraw skipped), primitives, props, hidden
        things, the map's sky, distance fog and Sky Lab's height fog.
+     - **Built (v0.12.0)**; choices made while building are under "v0.12.0, decided
+       without asking".
 6. **Water, cloud and endless planes** (confirmed) — materials made with the system above.
 7. **Camera effects** (confirmed, lowest priority per the user) — dithering, palette,
    bloom and similar.

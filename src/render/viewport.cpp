@@ -162,14 +162,30 @@ uniform vec3 camPos;
 uniform vec3 fogColor;
 uniform vec2 fogRange;
 out vec4 finalColor;
+uniform vec2 fogHeight; // the fog's base and thickness (thickness 0: everywhere)
+// How fogged a point is: the stretch of the line of sight inside the fog layer, through the
+// fog's start and end distances (as Sky Lab's fog in the sky).
+float fogAmount(vec3 p) {
+    float d = length(p - camPos);
+    float path = d;
+    if (fogHeight.y > 0.0) {
+        float lo = fogHeight.x, hi = fogHeight.x + fogHeight.y, z0 = camPos.z, z1 = p.z;
+        if (abs(z1 - z0) < 0.001) path = (z0 >= lo && z0 <= hi) ? d : 0.0;
+        else {
+            float a = clamp((lo - z0) / (z1 - z0), 0.0, 1.0), b = clamp((hi - z0) / (z1 - z0), 0.0, 1.0);
+            path = abs(b - a) * d;
+        }
+    }
+    return clamp((path - fogRange.x) / max(fogRange.y - fogRange.x, 1.0), 0.0, 1.0);
+}
 void main() {
     vec4 c = texture(texture0, fragTexCoord) * colDiffuse * fragColor;
-    float f = clamp((length(fragPos - camPos) - fogRange.x) / max(fogRange.y - fogRange.x, 1.0), 0.0, 1.0);
+    float f = fogAmount(fragPos);
     finalColor = vec4(mix(c.rgb, fogColor, f), c.a);
 })";
 struct FogShader {
     Shader shader{};
-    int camPos = -1, color = -1, range = -1;
+    int camPos = -1, color = -1, range = -1, height = -1;
     bool tried = false, ok = false;
 };
 FogShader& fogShader() {
@@ -182,6 +198,7 @@ FogShader& fogShader() {
             f.camPos = GetShaderLocation(f.shader, "camPos");
             f.color = GetShaderLocation(f.shader, "fogColor");
             f.range = GetShaderLocation(f.shader, "fogRange");
+            f.height = GetShaderLocation(f.shader, "fogHeight");
         }
     }
     return f;
@@ -753,6 +770,8 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
             SetShaderValue(fs.shader, fs.camPos, cam, SHADER_UNIFORM_VEC3);
             SetShaderValue(fs.shader, fs.color, col, SHADER_UNIFORM_VEC3);
             SetShaderValue(fs.shader, fs.range, range, SHADER_UNIFORM_VEC2);
+            const float height[2] = {(float)scene.fogBase, (float)scene.fogThickness};
+            SetShaderValue(fs.shader, fs.height, height, SHADER_UNIFORM_VEC2);
             fogging = true;
         }
     }
@@ -941,6 +960,8 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
         ctx.fogColor = scene.fogColor;
         ctx.fogStart = scene.fogStart;
         ctx.fogEnd = scene.fogEnd;
+        ctx.fogBase = scene.fogBase;
+        ctx.fogThickness = scene.fogThickness;
         std::vector<MathPrim> ps;
         for (const auto& sp : scene.prims) ps.push_back(sp.prim);
         drawMathPrims3D(ps, ctx);
@@ -953,6 +974,8 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
         pctx.fogColor = scene.fogColor;
         pctx.fogStart = scene.fogStart;
         pctx.fogEnd = scene.fogEnd;
+        pctx.fogBase = scene.fogBase;
+        pctx.fogThickness = scene.fogThickness;
         std::vector<Prop> ps;
         for (const auto& sp : scene.props) ps.push_back(sp.prop);
         scene.models->draw(ps, pctx);

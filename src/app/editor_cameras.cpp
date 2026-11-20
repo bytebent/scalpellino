@@ -288,46 +288,6 @@ void Editor::drawCameraPanel() {
 
 namespace scal {
 
-Scene Editor::cameraPreviewScene() {
-    // What a picture holds: no selection, editor marks, ghosts or the figure. Sky and fog as
-    // the map has them (whatever the View menu shows); the rough light preview when it is on.
-    Scene s;
-    s.brushes = cache_.get(doc_);
-    s.models = &models_;
-    s.textures = &textures_;
-    for (const Light& l : doc_.lights()) s.lights.push_back({l, false}); // lights the primitives
-    if (doc_.primsShown())
-        for (const MathPrim& p : doc_.prims()) s.prims.push_back({p, false});
-    if (doc_.propsShown())
-        for (const Prop& p : doc_.props()) {
-            Scene::SceneProp sp;
-            sp.prop = p;
-            const Model* m = models_.find(p.model);
-            sp.local = propLocalBounds(m);
-            sp.missing = m == nullptr;
-            s.props.push_back(std::move(sp));
-        }
-    s.lightPreview = lightPreview_;
-    s.ambient = doc_.environment().ambient;
-    if (lightPreview_) s.lighting = &lighting_.get(doc_, cache_.get(doc_));
-    if (skyLabOpen_ && skyLabTex_.id) s.skyTexture = skyLabTex_.id;
-    else if (!doc_.environment().sky.empty())
-        if (const Texture2D* t = skies_.get(doc_.environment().sky)) {
-            s.skyTexture = t->id;
-            const SkyLibrary::Cut cut = skies_.cut(doc_.environment().sky);
-            s.skyCover = cut.cover;
-            s.skyBelow = {(double)cut.below[0], (double)cut.below[1], (double)cut.below[2]};
-        }
-    const Environment& env = doc_.environment();
-    if (env.fogOn) {
-        s.fog = true;
-        s.fogColor = env.fog.color;
-        s.fogStart = env.fog.start;
-        s.fogEnd = env.fog.end;
-    }
-    return s;
-}
-
 void Editor::drawCameraPreview() {
     if (doc_.cameras().empty()) { // no panel without a camera; a new map starts blank
         previewDone_ = false;
@@ -337,7 +297,7 @@ void Editor::drawCameraPreview() {
     if (ImGui::Begin("Camera Preview###camerapreview", nullptr, ImGuiWindowFlags_NoCollapse)) {
         const Camera* cam = doc_.activeCamera();
         if (ImGui::Button("Update")) previewWanted_ = true;
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Draw the active camera's view now (Cmd+K)");
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("A draft render of the active camera's view, now (Cmd+K)");
         ImGui::SameLine();
         if (cam) {
             if (cam->ortho) ImGui::Text("%s  %d x %d  orthographic", cam->name.c_str(), cam->width, cam->height);
@@ -353,26 +313,26 @@ void Editor::drawCameraPreview() {
             const double aspect = (double)cam->width / cam->height;
             double w = avail.x, h = w / aspect;
             if (h > avail.y) { h = avail.y; w = h * aspect; }
-            if (!preview_) preview_ = std::make_unique<Viewport>(ViewKind::Persp);
             const float fb = ImGui::GetIO().DisplayFramebufferScale.x > 0 ? ImGui::GetIO().DisplayFramebufferScale.x : 1.0f;
-            preview_->resize((int)std::floor(w), (int)std::floor(h), viewScale_ > 0 ? viewScale_ : fb);
-            preview_->setLens(*cam);
-            preview_->render(grid_, cameraPreviewScene());
-            previewDone_ = true;
+            // A draft render: the renderer itself (the map as it is, the View menu ignored,
+            // hidden things included), at the panel's size, no anti-aliasing.
+            Scene s = preview_.scene(doc_, textures_, models_, skies_);
+            preview_.light(doc_, s);
+            previewDone_ = preview_.draw(*cam, s, (int)std::floor(w), (int)std::floor(h), viewScale_ > 0 ? viewScale_ : fb, renderSettings_.smooth);
             previewRev_ = doc_.revision();
             previewCam_ = cam->id;
             ++previewUpdates_;
         }
-        if (previewDone_ && preview_) {
+        if (previewDone_ && preview_.target()) {
             // The last picture, kept at its own shape inside the panel until the next update.
-            const double aspect = (double)preview_->width() / std::max(1, preview_->height());
+            const double aspect = (double)preview_.width() / std::max(1, preview_.height());
             double w = avail.x, h = w / aspect;
             if (h > avail.y) { h = avail.y; w = h * aspect; }
             const ImVec2 at = ImGui::GetCursorScreenPos();
             ImGui::SetCursorScreenPos(ImVec2(at.x + (float)std::floor((avail.x - w) * 0.5), at.y));
-            ImGui::Image(ImTextureID(preview_->target().texture.id), ImVec2((float)w, (float)h), ImVec2(0, 1), ImVec2(1, 0));
+            ImGui::Image(ImTextureID(preview_.target()->texture.id), ImVec2((float)w, (float)h), ImVec2(0, 1), ImVec2(1, 0));
         } else {
-            ImGui::TextWrapped("The active camera's view shows here when you ask for it: Update, or Cmd+K. "
+            ImGui::TextWrapped("A quick draft render of the active camera's view shows here when you ask for it: Update, or Cmd+K. "
                                "It doesn't follow every change, so the editor stays quick.");
         }
     }

@@ -61,6 +61,22 @@ uniform int fogOn;
 uniform vec3 fogColor;
 uniform vec2 fogRange;
 out vec4 finalColor;
+uniform vec2 fogHeight; // the fog's base and thickness (thickness 0: everywhere)
+// How fogged a point is: the stretch of the line of sight inside the fog layer, through the
+// fog's start and end distances (as Sky Lab's fog in the sky).
+float fogAmount(vec3 p) {
+    float d = length(p - camPos);
+    float path = d;
+    if (fogHeight.y > 0.0) {
+        float lo = fogHeight.x, hi = fogHeight.x + fogHeight.y, z0 = camPos.z, z1 = p.z;
+        if (abs(z1 - z0) < 0.001) path = (z0 >= lo && z0 <= hi) ? d : 0.0;
+        else {
+            float a = clamp((lo - z0) / (z1 - z0), 0.0, 1.0), b = clamp((hi - z0) / (z1 - z0), 0.0, 1.0);
+            path = abs(b - a) * d;
+        }
+    }
+    return clamp((path - fogRange.x) / max(fogRange.y - fogRange.x, 1.0), 0.0, 1.0);
+}
 void main() {
     vec4 c = colDiffuse;
     if (hasTex == 1) c *= texture(texture0, uv);
@@ -72,7 +88,7 @@ void main() {
     if (n.z < -0.5) k = 0.42;
     vec3 rgb = c.rgb * k;
     if (fogOn == 1) {
-        float f = clamp((length(wpos - camPos) - fogRange.x) / max(fogRange.y - fogRange.x, 1.0), 0.0, 1.0);
+        float f = fogAmount(wpos);
         rgb = mix(rgb, fogColor, f);
     }
     finalColor = vec4(rgb, 1.0);
@@ -141,6 +157,7 @@ bool ModelLibrary::loadShaderSet(ShaderSet& s, const char* vs) {
     s.locFogOn = GetShaderLocation(s.shader, "fogOn");
     s.locFogColor = GetShaderLocation(s.shader, "fogColor");
     s.locFogRange = GetShaderLocation(s.shader, "fogRange");
+    s.locFogHeight = GetShaderLocation(s.shader, "fogHeight");
     s.material = LoadMaterialDefault(); // its maps are reused for every draw
     s.material.shader = s.shader;
     return true;
@@ -255,6 +272,8 @@ void ModelLibrary::draw(const std::vector<Prop>& props, const PropDrawContext& c
     {
         const float fr[2] = {(float)ctx.fogStart, (float)ctx.fogEnd};
         SetShaderValue(sh.shader, sh.locFogRange, fr, SHADER_UNIFORM_VEC2);
+        const float fh[2] = {(float)ctx.fogBase, (float)ctx.fogThickness};
+        SetShaderValue(sh.shader, sh.locFogHeight, fh, SHADER_UNIFORM_VEC2);
     }
     // The view frustum from the camera's matrices (Gribb / Hartmann): props wholly
     // outside it are skipped (v0.10.3).

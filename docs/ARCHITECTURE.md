@@ -500,27 +500,38 @@ Preview and in renders.
 - **2D views:** wireframe, redrawn only on change.
 - **3D view modes:** wireframe, flat-color, textured, plus the rough light preview, sky and
   fog toggles (milestone 8). Materials show as a simple placeholder here (planned).
-- **Camera Preview** (v0.11.1): a docked panel under Properties showing the active camera's
-  view, only while the map has a camera. Updated **only on a keybind or button** (Cmd+K,
-  its Update button, World > Update Camera Preview), never live; it says when the map has
-  changed since. Drawn by a `Viewport` given the camera as its lens (`setLens`: its field
-  of view, near / far, orthographic with parallel rays for the primitives' shader) at the
-  picture's shape, as large as the panel, with nothing of the editor's (grid, axes,
-  markers, outlines, selection, the figure). For now it is the editor's 3D look:
-  textures, the map's sky and fog (whatever the View menu shows), the rough light preview
-  when it is on; hidden things stay hidden. **Agreed for M12 (2026-11-20):** the preview
-  becomes a **draft render**, the renderer itself at lower settings, and it and the
-  render **ignore the View menu** (everything as the map has it) and **include hidden
-  things** (hiding is an editing aid). The current preview's View-menu dependence is
-  fixed then, not before.
-- **Render** (planned, M12 in 7 batches, see PLAN.md Roadmap item 5): the Render button
-  (left end of the status bar; Render menu; Cmd+Shift+K) opens the render window (render
-  options: Draft / Normal / High, anti-aliasing, texture filtering; the picture size is
-  the active camera's). A terminal-style log shows the steps as they run (baking the
-  lights, building the reflection cubemaps, drawing...); it takes as long as it needs and
-  the editor waits (Esc stops it). The result is a PNG saved to the Bottega's `renders/`
-  (`<map>_<camera>_<date-time>.png`, the log beside it). Only what the camera sees is
-  drawn (frustum, back faces, nodraw).
+- **Camera Preview** (v0.11.1; a draft render since v0.12.0): a docked panel under
+  Properties showing the active camera's view, only while the map has a camera. Updated
+  **only on a keybind or button** (Cmd+K, its Update button, Render > Update Camera
+  Preview), never live; it says when the map has changed since. It is the **renderer
+  itself at Draft settings** (no anti-aliasing), at the picture's shape, as large as the
+  panel, so it can't disagree with a render.
+- **Render** (M12 in 7 batches, see PLAN.md Roadmap item 5; v0.12.0 the pipeline): the
+  Render button (left end of the status bar), Render > Render... or Cmd+Shift+K. The
+  picture size is the active camera's; the options are in the Render menu (Quality Draft /
+  Normal / High, anti-aliasing, texture filtering), kept in the user's settings
+  (`render.txt`), not in the map. A modal terminal window shows the steps as they run
+  (gathering the map, lighting, drawing, scaling down, saving; later baking the lights,
+  building the reflection cubemaps); the editor waits, one step per frame, and Esc stops
+  it between steps. The result is a PNG in the Bottega's `renders/`
+  (`<map>_<camera>_<date-time>.png`, the log beside it as `.log`); no Bottega: it asks
+  for one.
+  - **Code:** `render/renderer.*` builds the picture's scene and draws it through a
+    `Viewport` given the camera as its lens (`setLens`: field of view, near / far,
+    orthographic with parallel rays for the primitives' shader; nothing of the editor's:
+    grid, axes, markers, outlines, selection, figure). `core/render_job.*` holds what
+    needs no graphics (options, anti-aliasing size limits, the downscale, file names).
+    The job runs in `app/editor_render.cpp`.
+  - **What a picture holds:** the map as it is, the View menu ignored: every brush
+    (hidden ones and hidden visgroups too: hiding is an editing aid), nodraw faces left
+    out, primitives, props, the map's sky, its fog including Sky Lab's height (the line
+    of sight's stretch inside the fog layer, as in the baked sky; the editor's own fog
+    stays distance-only).
+  - **Anti-aliasing:** drawn n x n times larger, averaged down in linear light; lowered
+    automatically when the drawn picture would pass 16384 pixels a side or 50 million
+    pixels.
+  - **Lighting in v0.12.0:** the rough light preview's (lights and ambient, no shadows),
+    always on. Baked lightmaps replace it in v0.12.1.
 - **The Source look** comes from **how Source renders**: fast, on the graphics card, with
   baked lightmaps (light, shadows, bounce), baked reflection probes, real textures and
   fog. It is **never faked with filters** laid over the picture (user: that is not the
@@ -605,7 +616,7 @@ docs/         this file, roadmap
 | 10b | Random Replicate (Bryce): random offset / turn / size ranges for props and primitives | done (v0.10.1) |
 | 10c | Sky Lab (Bryce, all of it): generated skies (sun, moon, stars, clouds, atmosphere) with live preview in the 3D view, baked to panoramas in Bottega's `skies/`; settings kept in the map; tick box to lock the sun to the map's sun light; eclipses. Steps: v0.10.4 window / bake / sky modes / sun / haze / lock, v0.10.5 clouds, v0.10.6 night sky and effects | done (v0.10.6) |
 | 11 | Cameras and Camera Preview: camera objects (many, one active), options and presets, the on-request preview in a docked panel (editor look until M12 replaces it). Steps: v0.11.0 camera objects and options, v0.11.1 presets and the preview | done (v0.11.0, v0.11.1) |
-| 12 | Render, the Source look, with materials: render window, terminal log, light baking, reflection probes, mirrors, the material system (GLSL shaders from Bottega's `shaders/`, reflection kind per material), PNG to `renders/`. Steps: v0.12.0 pipeline, v0.12.1 direct light and shadows, v0.12.2 bounces, v0.12.3 light grid, v0.12.4 materials, v0.12.5 probes, v0.12.6 mirrors | next |
+| 12 | Render, the Source look, with materials: render window, terminal log, light baking, reflection probes, mirrors, the material system (GLSL shaders from Bottega's `shaders/`, reflection kind per material), PNG to `renders/`. Steps: v0.12.0 pipeline, v0.12.1 direct light and shadows, v0.12.2 bounces, v0.12.3 light grid, v0.12.4 materials, v0.12.5 probes, v0.12.6 mirrors | in progress (v0.12.0) |
 | 13 | Water, cloud and endless planes: materials made with the system above | |
 | 14 | Camera effects (lowest priority): dithering, palette, bloom | |
 | 15 | Export: `.glb`, optional and last (not confirmed by the user) | |

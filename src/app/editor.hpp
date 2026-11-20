@@ -36,6 +36,8 @@
 #include "core/landing.hpp"
 #include "render/texture_library.hpp"
 #include "render/model_library.hpp"
+#include "render/renderer.hpp"
+#include "core/render_job.hpp"
 #include <deque>
 #include <memory>
 #include <string>
@@ -240,18 +242,48 @@ private:
     char camPresetName_[64] = "";
     std::string camMsg_;
     // Camera Preview (v0.11.1): a docked panel under Properties, only while the map has a
-    // camera. Drawn only when asked (Cmd+K, its Update button, View menu): the active
-    // camera's view in the editor's 3D look, at the picture's shape. M12's renderer takes
-    // over what it shows.
+    // camera. Drawn only when asked (Cmd+K, its Update button, Render menu): since v0.12.0 a
+    // draft render (the renderer at Draft settings, the map as it is, the View menu
+    // ignored), at the picture's shape, as large as the panel.
     void drawCameraPreview();
     void requestCameraPreview() { previewWanted_ = true; }
-    Scene cameraPreviewScene();
-    std::unique_ptr<Viewport> preview_;
+    Renderer preview_;
     bool previewWanted_ = false;       // draw it at the next panel draw (which knows the size)
     bool previewDone_ = false;         // there is a picture to show
     unsigned long long previewRev_ = 0; // the document when it was drawn
     CameraId previewCam_ = 0;
     int previewUpdates_ = 0;           // times drawn (scripts check it)
+
+    // Render (milestone 12): editor_render.cpp
+    void startRender();               // Render button / menu / Cmd+Shift+K: opens the terminal window
+    void stopRender();                // Esc while it runs
+    void stepRender();                // one step per frame while running
+    void finishRender();              // writes the log file, frees the picture
+    void drawRenderWindow();
+    bool renderNeedsFrame() const;
+    void renderLog(const std::string& line);
+    void loadRenderSettings();
+    void saveRenderSettings() const;
+    RenderSettings renderSettings_;   // Render menu options (the user's settings, not the map)
+    struct RenderJob {
+        double start = 0;             // GetTime() when it began
+        RenderSettings settings;
+        Camera cam;                   // the active camera when Render was clicked
+        int step = 0, aa = 1;
+        bool running = false, done = false, stopped = false, failed = false, stopWanted = false;
+        bool scrollDown = false;
+        std::vector<std::string> log;
+        std::string png, logFile, name; // full paths; name: "renders/<stem>.png" for the log
+        Renderer draw;
+        Scene scene;
+        std::vector<unsigned char> rgb;
+        int w = 0, h = 0;
+    };
+    std::unique_ptr<RenderJob> renderJob_; // the last render (kept for its log)
+    bool renderOpen_ = false;              // the terminal window is shown
+    int rendersDone_ = 0;                  // renders saved (scripts check it)
+    std::vector<std::string> renderFiles_; // the saved PNGs, oldest first (scripts compare them)
+    bool scriptWaitRender_ = false;
 
     // Sky Lab (milestone 10c): editor_skylab.cpp
     void openSkyLab();

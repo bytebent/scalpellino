@@ -39,6 +39,8 @@ struct MenuState {
     size_t camerasSelected = 0;
     bool selectedCameraActive = false; // the one selected camera is the active one already
     bool hasCameras = false;
+    int renderQuality = 1, renderAA = 2; // Render menu (core/render_job.hpp)
+    bool renderSmooth = true;
 };
 
 struct MenuActions {
@@ -79,13 +81,18 @@ struct MenuActions {
     bool toolProp = false, createProp = false;
     bool toolCamera = false, createCamera = false, activateCamera = false, aimCamera = false;
     bool updatePreview = false;
+    bool render = false;      // Render... (Cmd+Shift+K)
+    int renderQuality = -1;   // RenderQuality index
+    int renderAA = -1;        // 1..4
+    int renderSmooth = -1;    // 0 crisp, 1 smooth
 };
 
 // Draws the menu bar and reports clicked items.
 MenuActions drawMenuBar(const MenuState& st);
 
-// Status bar along the bottom.
-void drawStatusBar(const char* text);
+// Status bar along the bottom, with the Render button at its left end. True when it was
+// clicked. `canRender`: the map has a camera.
+bool drawStatusBar(const char* text, bool canRender);
 
 // Creates the dockspace; builds the default layout (tools strip on the left, 2x2 views)
 // on first run or when reset. Window names must match the windows' titles.

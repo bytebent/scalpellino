@@ -115,6 +115,9 @@ struct Scene {
     bool fog = false;
     Vec3 fogColor;
     double fogStart = 0, fogEnd = 1;
+    // Height fog (Sky Lab: lying from base up through thickness). Renders only; the editor's
+    // rough fog stays distance-only (thickness 0 = everywhere).
+    double fogBase = 0, fogThickness = 0;
 };
 
 SceneBrush makeSceneBrush(const Brush& b);

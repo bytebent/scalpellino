@@ -121,6 +121,12 @@ inside the view. Lines starting with # are comments.
   camerapreview   (Cmd+K: draws the Camera Preview with the next frame)
   camerapreset save|load <name>   (from / into the selected camera, else the next camera)
   expect camerapreview <times drawn> [stale 0|1]   expect camerapresets <n>
+  render   (Cmd+Shift+K; the next command waits until it has finished)   renderstart (doesn't wait)
+  renderset quality draft|normal|high | aa <1..4> | filter smooth|crisp   (Render menu)
+  rendercopy <file.png>   (the last saved render, copied here: screenshots)
+  expect render saved|stopped|failed|none   expect renders <n>   (saved, each on disk with its log)
+  expect renderlog [not] <text>   expect rendersize <w> <h>   expect renderwindow open|closed
+  expect rendersame yes|no   (the last two saved renders: the same picture, or clearly not)
                (click: the next press aims the selected cameras, as World > Aim ... at a clicked point)
   expect cameras|camerasel <n>   expect cameraactive <index>   (the only active one)
   expect cam pos|angles|fov|lens|near|far|size|ortho|orthosize|exposure|color <values> | name <n>

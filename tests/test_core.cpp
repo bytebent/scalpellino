@@ -1,5 +1,6 @@
 // Core + IO tests. No framework: each CHECK prints on failure; exit code = failures.
 #include "core/sky_presets.hpp"
+#include "core/render_job.hpp"
 #include "core/brush.hpp"
 #include "core/document.hpp"
 #include "core/grid.hpp"
@@ -3463,7 +3464,51 @@ static void testSkyPresetsAndCut() {
     }
 }
 
+// Render (M12, v0.12.0): options, anti-aliasing size, downscale, file names.
+static void testRenderJob() {
+    RenderSettings s;
+    CHECK(s.quality == RenderQuality::Normal && s.aa == 2 && s.smooth);
+    applyQuality(s, RenderQuality::Draft);
+    CHECK(s.aa == 1);
+    applyQuality(s, RenderQuality::High);
+    CHECK(s.aa == 3 && s.quality == RenderQuality::High);
+    s.smooth = false;
+    s.aa = 4;
+    CHECK(renderSettingsFromString(renderSettingsToString(s)) == s);
+    const RenderSettings bad = renderSettingsFromString("quality loud\naa 9\naa x\nfilter fuzzy\nnonsense\n");
+    CHECK(bad == RenderSettings{});
+    CHECK(renderSettingsFromString("aa 1\n").aa == 1);
+
+    CHECK(fitAA(1920, 1080, 3) == 3);
+    CHECK(fitAA(3840, 2160, 3) == 2);           // 4K at 3x is 75 M pixels: too many
+    CHECK(fitAA(3840, 2160, 4, 16384, 1LL << 40) == 4);
+    CHECK(fitAA(5000, 100, 4) == 3);            // 20000 wide would pass the side limit
+    CHECK(fitAA(20000, 100, 2) == 0);
+    CHECK(fitAA(0, 100, 2) == 0);
+    CHECK(fitAA(100, 100, 9) == 4);             // never above the largest
+
+    // Downscale: f = 1 drops the alpha; 2x2 of black and white averages in linear light.
+    std::vector<unsigned char> px = {10, 20, 30, 0, 40, 50, 60, 128};
+    CHECK((downscaleRGB(px, 2, 1, 1) == std::vector<unsigned char>{10, 20, 30, 40, 50, 60}));
+    std::vector<unsigned char> chk = {0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 255};
+    const auto half = downscaleRGB(chk, 2, 2, 2);
+    CHECK(half.size() == 3 && half[0] == 188 && half[1] == 188 && half[2] == 188); // not 128: half the light
+    std::vector<unsigned char> flat(6 * 3 * 4, 77);
+    const auto third = downscaleRGB(flat, 6, 3, 3);
+    CHECK(third.size() == 2 * 1 * 3 && third[0] == 77 && third[5] == 77);
+    CHECK(downscaleRGB(flat, 6, 3, 0).empty());
+    CHECK(downscaleRGB(flat, 60, 3, 3).empty()); // too few pixels given
+
+    std::tm t{};
+    t.tm_year = 2026 - 1900; t.tm_mon = 10; t.tm_mday = 20; t.tm_hour = 9; t.tm_min = 5; t.tm_sec = 7;
+    CHECK(renderFileStem("/maps/My Room.map", "camera 1", t) == "My_Room_camera_1_2026-11-20_09-05-07");
+    CHECK(renderFileStem("", "", t) == "untitled_camera_2026-11-20_09-05-07");
+    CHECK(renderFileStem("C:\\maps\\a.b.map", "x/y", t) == "a_b_x_y_2026-11-20_09-05-07");
+    CHECK(cleanFileName("ok-name_1") == "ok-name_1");
+}
+
 int main() {
+    testRenderJob();
     testGrid();
     testBoxGeometry();
     testFarAway();
