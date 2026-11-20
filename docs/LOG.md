@@ -65,6 +65,14 @@ too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
   no version release; "Latest build" is refreshed.
 - **Next:** watch the first version release made with the new release logic.
 
+### 2026-11-20 — Docs check against the chat; batch 2 proposal recorded (docs only)
+- The user asked whether anything decided in the chat was missing from the docs (the repo
+  had changed: the review fixes were merged). Checked after updating to `main`: the batch
+  split, batch 1's decisions and the way of working were in. Missing / fixed: the batch 2
+  proposal and its 5 open questions (now in PLAN.md "Batch 2 under discussion"), the
+  status line (report done, batch 2 being discussed), and two older PLAN lines that still
+  put the picture size in the render window (now point to the decision: the camera's).
+
 ### 2026-11-20 — The user tried v0.12.0 (docs only)
 - "Seems to work! so far!" The v0.12.0 choices are not explicitly confirmed yet (still
   listed in PLAN.md). Next: discuss batch 2 (baked direct light and shadows).

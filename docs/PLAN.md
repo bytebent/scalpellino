@@ -38,8 +38,10 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   **Batch 1, the render pipeline, is built and pushed (v0.12.0)**: Render button / menu /
   Cmd+Shift+K, terminal window, PNG and log in the Bottega's `renders/`, render options,
   the Camera Preview as a draft render, height fog in renders. Its choices made without
-  asking are under "v0.12.0, decided without asking". Next: **report**, then discuss
-  batch 2 (baked direct light and shadows) in depth before building it.
+  asking are under "v0.12.0, decided without asking". Reported; the user tried it ("seems
+  to work"). **Batch 2 (baked direct light and shadows) is being discussed: proposal and
+  5 questions waiting for the user's answers** under "Batch 2 under discussion" (Open
+  questions). Not built until the user says go.
 - **Review fixes (2026-11-20), merged into `main`** (fast-forward from
   `fix/review-findings` after the user's go-ahead; no new version, so only "Latest build"
   is refreshed): version releases are
@@ -76,6 +78,30 @@ are in [`DEV.md`](DEV.md). One-step-per-release: add `docs/releases/vX.Y.Z.md` a
 Each archive's SHA-256 is in `cmake/Deps.cmake` (checked at configure time).
 
 ## Open questions (parked)
+
+- **Batch 2 under discussion (v0.12.1, baked direct light and shadows), proposed
+  2026-11-20, waiting for the user's answers:**
+  - **Proposal (technical, no decision needed):** a "Baking lights..." step with a
+    percentage in the terminal; lightmaps on brush faces and terrain from every light,
+    with shadow tests; baked on the processor, all cores (like Sky Lab's bake, testable
+    without a graphics card); brushes, terrain, primitives and props all cast shadows;
+    lights fade with distance exactly as now (brightness, range), so the rough editor
+    preview still matches in brightness; the bake kept in memory while the map doesn't
+    change (a second render or the preview skips it). No bounces yet (batch 3): shadows
+    are lit only by the ambient.
+  - **Q1 shadow detail:** patch size by Quality: Draft 64 cm (also the Camera Preview),
+    Normal 16 cm, High 8 cm (Source's default about 30 cm). Also a per-face setting in the
+    Face panel like Hammer's lightmap scale, or only Quality for now?
+  - **Q2 soft shadows:** sun uses Sky Lab's shadow softness (already stored in the map);
+    point and spot lights get a new **size** field (small = sharp, the default; larger =
+    softer). Proposed.
+  - **Q3 ambient:** becomes **sky light that walls block** (as Source; rooms darker than
+    outdoors, indoor scenes need real lights), or stays the same everywhere? Proposed:
+    sky light.
+  - **Q4 primitives and props:** cast shadows in batch 2 but stay lit the rough way (no
+    shadows falling on them) until the light grid (batch 4). Proposed; or sooner?
+  - **Q5 brighter than the texture:** allow light up to about 2x the texture (as Source's
+    overbright), so lamps can make a wall brighter than its texture. Proposed: yes.
 
 - **The v0.3.1 release holds the wrong code** (split / carve / hollow from after v0.3.1;
   the release bug fixed on `fix/review-findings`). Not changed: replacing a published
@@ -604,8 +630,8 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
        `presets/camera_presets`) and the Camera Preview. Docs updated before starting
        (user).
      - Depth of field stays with the camera effects (item 7); exposure is stored for HDR.
-5. **Render, the Source look, with materials** (confirmed; next) — the render window (image size,
-   options) that opens on Render, a terminal-style log (+ log file), baking the lights
+5. **Render, the Source look, with materials** (confirmed; next) — the render window (the
+   terminal; options in the Render menu, the size is the camera's, see "Batch 1 decided") that opens on Render, a terminal-style log (+ log file), baking the lights
    (shadows), reflection probes, mirror reflections on flat surfaces, a PNG saved to
    `renders/` (Bottega's once it exists). Only what the camera sees is drawn (frustum,
    back faces, nodraw). **The material system is part of this milestone** (a surface's
@@ -751,8 +777,9 @@ read and write. Agreed so far:
   - **Docs still to rewrite to match:** ARCHITECTURE §9 and the roadmap rows for M11 and
     M12 (they describe a viewport mode and a "low-res look"). Not done yet.
   - **Camera settings (user):** the camera has many options, with presets: field of view
-    and, among others, the image size. The user decides the image size, both on the
-    camera and in the **render window**, which opens when Render is clicked.
+    and, among others, the image size. The user decides the image size on the camera.
+    (Earlier also in the render window; **replaced 2026-11-20: the render always uses the
+    camera's size**, see Roadmap item 5, "Batch 1 decided".)
   - **One active camera (user):** a map can hold several cameras, but only one is
     **active**; the Camera Preview and Render use only that one. Making another camera
     active deactivates the old one.
