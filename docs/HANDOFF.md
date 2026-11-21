@@ -29,7 +29,7 @@ texture licenses; `releases/` has the notes for each version.
   Camera Preview and presets; milestone 11 done), **v0.11.2** (built-in Sky Lab skies;
   plain sky bottoms out of graphics memory), **v0.12.0** (Render, step 1: the pipeline),
   **v0.12.1** (Render, step 2: baked light and shadows), **v0.12.2** (Render, step 3:
-  bounced light).
+  bounced light), **v0.12.3** (Render, step 4: lit props and the light grid).
 - **Milestone 10 — Props is done (v0.10.0):** `.glb` models from Bottega's `models/`; `.mazz`
   waits for Mazzuola's final format. The user confirmed the choices made while building it
   (2026-11-19), including even scaling as the default for primitives too.

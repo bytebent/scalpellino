@@ -9,6 +9,7 @@
 #include <cstring>
 #include <functional>
 #include <map>
+#include <memory>
 #include <optional>
 #include <thread>
 #include <unordered_map>
@@ -243,7 +244,9 @@ struct Gather {
     Vec3 skyColor(const Vec3& d) const { return sky && sky->valid() ? sky->at(d) * skyScale : skyFlat * skyScale; }
 
     // Light at a point `p` with shading normal `n` and geometric normal `ng`.
-    Vec3 at(const Vec3& p, const Vec3& n, const Vec3& ng, bool fast) const {
+    // `extra`: more things that block light (a prop's own triangles when it casts no shadows).
+    Vec3 at(const Vec3& p, const Vec3& n, const Vec3& ng, bool fast, const Tracer* extra = nullptr) const {
+        auto blocked = [&](const Vec3& o, const Vec3& d, double t) { return tracer->occluded(o, d, t) || (extra && extra->occluded(o, d, t)); };
         const Vec3 o = p + ng * kOffset;
         Vec3 sum = minLight;
         for (const BakeLight& L : lights) {
@@ -256,7 +259,7 @@ struct Gather {
                 for (size_t k = 0; k < ns; ++k) {
                     Vec3 d = -L.dir;
                     if (k > 0) d = normalize(d + jit[k - 1] * L.spreadSin);
-                    if (!tracer->occluded(o, d, kFar)) vis += 1;
+                    if (!blocked(o, d, kFar)) vis += 1;
                 }
                 sum += L.intensity * (dt * vis / (double)ns);
                 continue;
@@ -271,7 +274,7 @@ struct Gather {
             if (f <= 0) continue;
             const Vec3 c = L.intensity * (dt * f);
             if (maxc(c) < 1e-5) continue; // VRAD's minimum: too faint to show
-            if (tracer->occluded(o, to, dist - 0.5)) continue;
+            if (blocked(o, to, dist - 0.5)) continue;
             sum += c;
         }
         if (skyOn) {
@@ -283,7 +286,7 @@ struct Gather {
                 const double dt = dot(n, d);
                 if (dt <= 1e-6) continue;
                 sumdot += dt;
-                if (!tracer->occluded(o, d, kFar)) acc += skyColor(d) * dt;
+                if (!blocked(o, d, kFar)) acc += skyColor(d) * dt;
             }
             if (sumdot > 0) sum += acc / sumdot;
         }
@@ -653,6 +656,35 @@ std::vector<Vec3> haltonSphere(int n) {
     return out;
 }
 
+Vec3 ambientCubeAt(const Vec3* cube, const Vec3& n) {
+    const double x2 = n.x * n.x, y2 = n.y * n.y, z2 = n.z * n.z;
+    return cube[n.x < 0 ? 1 : 0] * x2 + cube[n.y < 0 ? 3 : 2] * y2 + cube[n.z < 0 ? 5 : 4] * z2;
+}
+
+int LightGrid::nearest(const Vec3& p) const {
+    if (empty()) return -1;
+    // Grow a box of samples around the closest grid point until a valid one is found.
+    const int ci = std::clamp((int)std::lround((p.x - origin.x) / spacing.x), 0, nx - 1);
+    const int cj = std::clamp((int)std::lround((p.y - origin.y) / spacing.y), 0, ny - 1);
+    const int ck = std::clamp((int)std::lround((p.z - origin.z) / spacing.z), 0, nz - 1);
+    const int maxR = std::max({nx, ny, nz});
+    for (int r = 0; r <= maxR; ++r) {
+        int best = -1;
+        double bd = 1e300;
+        for (int k = std::max(0, ck - r); k <= std::min(nz - 1, ck + r); ++k)
+            for (int j = std::max(0, cj - r); j <= std::min(ny - 1, cj + r); ++j)
+                for (int i = std::max(0, ci - r); i <= std::min(nx - 1, ci + r); ++i) {
+                    const size_t s = ((size_t)k * ny + j) * nx + i;
+                    if (!valid[s]) continue;
+                    const Vec3 d = at(i, j, k) - p;
+                    const double dd = dot(d, d);
+                    if (dd < bd) { bd = dd; best = (int)s; }
+                }
+        if (best >= 0) return best;
+    }
+    return -1;
+}
+
 BakeLight prepareLight(const Light& l, const Environment& env) {
     BakeLight L;
     L.kind = l.kind;
@@ -788,7 +820,7 @@ std::uint64_t bakeKey(const BakeInput& in) {
         h.i((long long)p.op); h.i(p.combo); h.d(p.lightmapScale);
     }
     for (const Prop& p : in.props) {
-        h.s(p.model); h.v(p.pos); h.v(p.rot); h.v(p.scale); h.i(p.castShadows);
+        h.s(p.model); h.v(p.pos); h.v(p.rot); h.v(p.scale); h.i(p.castShadows); h.i(p.modelLighting); h.i(p.id);
         h.i(in.models && in.models(p.model) ? 1 : 0);
     }
     h.v(in.env.ambient); h.d(in.env.skyLight); h.i(in.env.minLight); h.d(in.env.smoothAngle); h.d(in.env.bounceScale);
@@ -896,7 +928,7 @@ BakeResult bakeLight(const BakeInput& in, BakeProgress* progress, int threads) {
                 pa.origin += ctr * area;
                 pa.normal += n * area;
                 const int tag = (int)owners.size();
-                owners.push_back({2, pid, 0});
+                owners.push_back({2, pid, (int)(&p - in.props.data())});
                 tracer.addTri(a, b, c, tag);
             }
         }
@@ -1750,6 +1782,258 @@ BakeResult bakeLight(const BakeInput& in, BakeProgress* progress, int threads) {
             });
         runJobs(fjobs);
         res.secondsBounce = since() - res.secondsDirect - res.secondsTransfers;
+    }
+
+    // ======== props and the light grid (v0.12.3)
+    // What a ray from o along d brings back: the hit patch's light times its reflectivity
+    // (VRAD's ambient-cube rays), or the sky if it hits nothing; `blocker` also stops it.
+    auto rayLight = [&](const Vec3& o, const Vec3& d, bool sky, const Tracer* blocker) -> Vec3 {
+        Tracer::Hit h;
+        const bool hit = tracer.closestHit(o, d, kFar, h);
+        if (blocker) {
+            Tracer::Hit e;
+            if (blocker->closestHit(o, d, hit ? h.t : kFar, e)) return {};
+        }
+        if (!hit) return sky && G.skyOn ? G.skyColor(d) : Vec3{};
+        if (patches.empty()) return {};
+        const int id = patchOfHit(h, o + d * h.t);
+        if (id < 0) return {};
+        const Patch& pa = patches[id];
+        if (dot(pa.normal, d) >= 0) return {};
+        return mul(pa.direct + pa.total, pa.refl);
+    };
+    const std::vector<Vec3> dirs162 = haltonSphere(fast ? std::max(8, kSkySamples / 4) : kSkySamples);
+    static const Vec3 kAxes[6] = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
+    // An ambient cube at p: each of the 6 directions weighs the rays by how much they face it.
+    auto cubeAt = [&](const Vec3& p, Vec3 out[6]) {
+        Vec3 acc[6];
+        double w[6] = {0, 0, 0, 0, 0, 0};
+        for (const Vec3& d : dirs162) {
+            const Vec3 c = rayLight(p, d, true, nullptr);
+            for (int a = 0; a < 6; ++a) {
+                const double k = dot(d, kAxes[a]);
+                if (k <= 0) continue;
+                acc[a] += c * k;
+                w[a] += k;
+            }
+        }
+        for (int a = 0; a < 6; ++a) out[a] = w[a] > 0 ? acc[a] / w[a] : Vec3{};
+    };
+    // Anything between o and o + d * maxT other than prop `self`'s own triangles?
+    auto occludedBut = [&](Vec3 o, const Vec3& d, double maxT, int self) {
+        for (int guard = 0; guard < 64; ++guard) {
+            Tracer::Hit h;
+            if (!tracer.closestHit(o, d, maxT, h)) return false;
+            if (h.prim < 0 && h.tag >= 0 && owners[h.tag].kind == 2 && owners[h.tag].b == self) {
+                o = o + d * (h.t + 0.01);
+                maxT -= h.t + 0.01;
+                if (maxT <= 0) return false;
+                continue;
+            }
+            return true;
+        }
+        return false;
+    };
+    auto insideSolid = [&](const Vec3& p) {
+        for (const Brush& b : in.brushes) {
+            bool in = !b.faces.empty();
+            for (const Face& f : b.faces) {
+                const Plane pl = f.plane();
+                if (dot(pl.n, p) - pl.d > -0.01) { in = false; break; }
+            }
+            if (in) return true;
+        }
+        for (const PrimWork& w : primWork)
+            if (w.dist(p) < 0) return true;
+        return false;
+    };
+    // ---- the grid: Half-Life 2's 48 x 48 x 96 Hammer units over the map
+    if (!cancelled()) {
+        const auto tg = std::chrono::steady_clock::now();
+        AABB bounds;
+        for (const Brush& b : in.brushes)
+            for (const Face& f : b.faces)
+                for (const Vec3& v : f.p) bounds.add(v);
+        for (const Brush& b : in.brushes) {
+            for (const Polygon& p : b.polygons())
+                for (const Vec3& v : p.verts) bounds.add(v);
+        }
+        for (const PrimWork& w : primWork) {
+            bounds.add(w.out->origin);
+            bounds.add(w.out->origin + Vec3{(double)w.out->nx, (double)w.out->ny, (double)w.out->nz} * w.out->cell);
+        }
+        for (const Prop& p : in.props) {
+            const Model* m = in.models ? in.models(p.model) : nullptr;
+            if (m) bounds.add(propBounds(p, m));
+        }
+        LightGrid& g = res.grid;
+        g.spacing = Vec3{48, 48, 96} * kCmPerHammerUnit;
+        if (bounds.valid()) {
+            const Vec3 sz = bounds.size();
+            g.nx = std::max(1, (int)std::ceil(sz.x / g.spacing.x) + 1);
+            g.ny = std::max(1, (int)std::ceil(sz.y / g.spacing.y) + 1);
+            g.nz = std::max(1, (int)std::ceil(sz.z / g.spacing.z) + 1);
+            const Vec3 used{(g.nx - 1) * g.spacing.x, (g.ny - 1) * g.spacing.y, (g.nz - 1) * g.spacing.z};
+            g.origin = bounds.center() - used / 2.0;
+            if (g.samples() > 2000000) {
+                res.notes.push_back("the map is too big for the light grid (over 2 million samples); none made");
+                g.nx = g.ny = g.nz = 0;
+            }
+        }
+        g.valid.assign(g.samples(), 0);
+        g.cube.assign(g.samples() * 6, Vec3{});
+        std::vector<std::function<void()>> gjobs;
+        const size_t N = g.samples();
+        for (size_t start = 0; start < N; start += 64)
+            gjobs.push_back([&, start] {
+                for (size_t s = start; s < std::min(N, start + 64) && !cancelled(); ++s) {
+                    const int i = (int)(s % g.nx), j = (int)((s / g.nx) % g.ny), k = (int)(s / ((size_t)g.nx * g.ny));
+                    const Vec3 p = g.at(i, j, k);
+                    if (insideSolid(p)) continue;
+                    cubeAt(p, &g.cube[s * 6]);
+                    g.valid[s] = 1;
+                }
+                tick(1);
+            });
+        if (progress) progress->total = progress->total.load() + (long long)gjobs.size();
+        runJobs(gjobs);
+        res.secondsGrid = std::chrono::duration<double>(std::chrono::steady_clock::now() - tg).count();
+    }
+
+    // ---- props
+    if (!cancelled() && in.models) {
+        const auto tp = std::chrono::steady_clock::now();
+        std::vector<std::function<void()>> pjobs;
+        res.props.reserve(in.props.size());
+        std::vector<const Prop*> withModel;
+        for (const Prop& p : in.props)
+            if (in.models(p.model)) withModel.push_back(&p);
+        res.props.resize(withModel.size());
+        long long verts = 0;
+        for (size_t k = 0; k < withModel.size(); ++k) {
+            const Prop& p = *withModel[k];
+            const Model* m = in.models(p.model);
+            PropLighting& pl = res.props[k];
+            pl.id = p.id;
+            pl.modelStyle = p.modelLighting;
+            if (!p.modelLighting)
+                for (const ModelMesh& mm : m->meshes) verts += (long long)mm.vertices();
+            pjobs.push_back([&, k, m] {
+                const Prop& p = *withModel[k];
+                PropLighting& pl = res.props[k];
+                const int self = (int)(&p - in.props.data());
+                if (p.modelLighting) {
+                    // Like a Source model: measured at its bounding box centre (moved up out
+                    // of a brush if it is inside one); the grid's nearest sample; the 2
+                    // strongest lights it can see, the others folded into the cube.
+                    const AABB bb = propBounds(p, m);
+                    Vec3 o = bb.center();
+                    for (int step = 0; step < 16 && insideSolid(o); ++step) o.z += std::max(4.0, bb.size().z / 16);
+                    pl.origin = o;
+                    const int near = res.grid.nearest(o);
+                    if (near >= 0)
+                        for (int a = 0; a < 6; ++a) pl.cube[a] = res.grid.cube[(size_t)near * 6 + a];
+                    else
+                        cubeAt(o, pl.cube);
+                    struct Cand { double strength; Vec3 c; Vec3 toLight; size_t li; };
+                    std::vector<Cand> cands;
+                    for (size_t li = 0; li < G.lights.size(); ++li) {
+                        const BakeLight& L = G.lights[li];
+                        Vec3 to;
+                        Vec3 c;
+                        if (L.kind == LightKind::Sun) {
+                            to = -L.dir;
+                            if (occludedBut(o, to, kFar, self)) continue;
+                            c = L.intensity;
+                        } else {
+                            const Vec3 d = L.pos - o;
+                            const double dist = length(d);
+                            if (dist < 1e-6) continue;
+                            to = d / dist;
+                            const double f = lightFalloff(L, dist, -to);
+                            if (f <= 0) continue;
+                            if (occludedBut(o, to, dist - 0.5, self)) continue;
+                            c = L.intensity * f;
+                        }
+                        cands.push_back({maxc(c), c, to, li});
+                    }
+                    std::stable_sort(cands.begin(), cands.end(), [](const Cand& a, const Cand& b) { return a.strength > b.strength; });
+                    for (size_t ci = 0; ci < cands.size(); ++ci) {
+                        if (ci < 2) {
+                            const BakeLight& L = G.lights[cands[ci].li];
+                            ModelLight ml;
+                            ml.kind = L.kind;
+                            ml.pos = L.pos;
+                            ml.dir = L.dir;
+                            ml.intensity = L.intensity;
+                            ml.c = L.c; ml.l = L.l; ml.q = L.q;
+                            ml.startFade = L.startFade; ml.endFade = L.endFade; ml.capDist = L.capDist;
+                            ml.stopdot = L.stopdot; ml.stopdot2 = L.stopdot2; ml.exponent = L.exponent;
+                            pl.lights.push_back(ml);
+                        } else {
+                            for (int a = 0; a < 6; ++a) pl.cube[a] += cands[ci].c * std::max(0.0, dot(cands[ci].toLight, kAxes[a]));
+                        }
+                    }
+                    return;
+                }
+                // Baked per vertex (VRAD's -StaticPropLighting). A prop that casts no
+                // shadows still shadows itself: its own triangles in a tracer of its own.
+                std::unique_ptr<Tracer> own;
+                if (!p.castShadows) {
+                    own = std::make_unique<Tracer>();
+                    for (const ModelMesh& mesh : m->meshes) {
+                        auto P = [&](std::uint32_t v) { return propToWorld(p, {mesh.pos[3 * v], mesh.pos[3 * v + 1], mesh.pos[3 * v + 2]}); };
+                        const size_t nv = mesh.vertices();
+                        for (size_t t = 0; t + 2 < mesh.index.size(); t += 3)
+                            if (mesh.index[t] < nv && mesh.index[t + 1] < nv && mesh.index[t + 2] < nv)
+                                own->addTri(P(mesh.index[t]), P(mesh.index[t + 1]), P(mesh.index[t + 2]));
+                    }
+                    own->build();
+                }
+                const Mat3 R = rotationMatrix(p.rot);
+                pl.vertexRgb.resize(m->meshes.size());
+                for (size_t mi = 0; mi < m->meshes.size() && !cancelled(); ++mi) {
+                    const ModelMesh& mesh = m->meshes[mi];
+                    const size_t nv = mesh.vertices();
+                    std::vector<float>& out = pl.vertexRgb[mi];
+                    out.assign(nv * 3, 0.0f);
+                    for (size_t v = 0; v < nv; ++v) {
+                        const Vec3 P = propToWorld(p, {mesh.pos[3 * v], mesh.pos[3 * v + 1], mesh.pos[3 * v + 2]});
+                        Vec3 n{0, 0, 1};
+                        if (mesh.normal.size() >= 3 * nv) {
+                            const Vec3 ln{mesh.normal[3 * v] / std::max(1e-9, p.scale.x), mesh.normal[3 * v + 1] / std::max(1e-9, p.scale.y),
+                                          mesh.normal[3 * v + 2] / std::max(1e-9, p.scale.z)};
+                            const Vec3 wn = R.col[0] * ln.x + R.col[1] * ln.y + R.col[2] * ln.z;
+                            if (length(wn) > 1e-12) n = normalize(wn);
+                        }
+                        // a little off the surface along the normal (VRAD nudges its samples)
+                        const Vec3 at = P + n * 0.5;
+                        Vec3 c = G.at(at, n, n, fast, own.get());
+                        if (!patches.empty()) {
+                            Vec3 acc;
+                            double sumdot = 0;
+                            const Vec3 o = at + n * kOffset;
+                            for (const Vec3& d : dirs162) {
+                                const double cs = dot(n, d);
+                                if (cs <= 1e-6) continue;
+                                sumdot += cs;
+                                acc += rayLight(o, d, false, own.get()) * cs;
+                            }
+                            if (sumdot > 0) c += acc / sumdot;
+                        }
+                        out[3 * v] = (float)c.x;
+                        out[3 * v + 1] = (float)c.y;
+                        out[3 * v + 2] = (float)c.z;
+                        if ((v & 255) == 255) tick(256);
+                    }
+                    tick((long long)(nv & 255));
+                }
+            });
+        }
+        res.propVertices = (size_t)verts;
+        if (progress) progress->total = progress->total.load() + verts + 1;
+        runJobs(pjobs);
+        res.secondsProps = std::chrono::duration<double>(std::chrono::steady_clock::now() - tp).count();
     }
 
     // ---- primitives: cells far from the surface take their neighbours' light, so reading

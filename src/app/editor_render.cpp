@@ -91,10 +91,11 @@ std::shared_ptr<const BakeResult> Editor::bakeNow(BakeQuality q) {
     BakeInput in = bakeInput(doc_, models_, skies_, q, &textures_);
     const std::uint64_t key = bakeKey(in);
     KeptBake& k = bakes_[(int)q];
-    if (k.result && k.key == key) return k.result;
+    if (k.result && k.key == key) return lastBake_ = k.result;
     auto r = std::make_shared<BakeResult>(bakeLight(in));
     k.key = key;
     k.result = r;
+    lastBake_ = r;
     return r;
 }
 
@@ -196,6 +197,7 @@ void Editor::stepRender() {
             renderLog("  warning: the sky picture can't be read for the sky light; it uses the ambient colour");
         if (kept.result && kept.key == key) {
             j.baked = kept.result;
+            lastBake_ = kept.result;
             renderLog("Baked light: nothing that lights the map has changed since the last " + std::string(renderQualityName(j.settings.quality)) +
                       " bake (kept in memory)");
         } else {
@@ -239,9 +241,25 @@ void Editor::stepRender() {
                 renderLog(b);
                 for (const std::string& l : r.bounces) renderLog("  " + l);
             }
+            // props and the light grid (v0.12.3)
+            if (!r.props.empty()) {
+                size_t model = 0;
+                for (const PropLighting& p : r.props) model += p.modelStyle ? 1 : 0;
+                std::snprintf(b, sizeof b, "  props: %zu baked per vertex (%zu vertices), %zu like Source models; %.1f s", r.props.size() - model,
+                              r.propVertices, model, r.secondsProps);
+                renderLog(b);
+            }
+            if (!r.grid.empty()) {
+                size_t open = 0;
+                for (char v : r.grid.valid) open += v ? 1 : 0;
+                std::snprintf(b, sizeof b, "  light grid: %zu samples (%zu in the open), every 48 x 48 x 96 Hammer units; %.1f s", r.grid.samples(), open,
+                              r.secondsGrid);
+                renderLog(b);
+            }
             for (const std::string& n : r.notes) renderLog("  " + n);
             bakes_[(int)j.bake->in.quality] = {j.bake->key, j.bake->result};
             j.baked = j.bake->result;
+            lastBake_ = j.baked;
             j.bake.reset();
         }
         j.draw.useBake(j.baked, (float)std::pow(2.0, j.cam.exposure), j.scene);

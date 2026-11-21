@@ -533,8 +533,10 @@ Preview and in renders.
   - **Lighting since v0.12.1: baked** (`core/bake.*`: no graphics; `render/baked_light.*`:
     float atlas pages and the lightmap shader; primitives read their 3D lightmap in their
     shader). The render job bakes on other threads, kept in memory per quality while the
-    bake key (a hash of everything that lights the map) is the same. Props keep the rough
-    look until v0.12.3. Bounces (v0.12.2): VRAD's radiosity on patches (brush faces,
+    bake key (a hash of everything that lights the map) is the same. Props (v0.12.3): baked
+    per vertex, or "like a Source model" (the light grid's nearest ambient cube + 2
+    lights), drawn by `ModelLibrary` from a float texture of vertex light; the light grid
+    (HL2's 48 x 48 x 96) is in `BakeResult::grid`. Bounces (v0.12.2): VRAD's radiosity on patches (brush faces,
     terrain, primitives, props), blended onto the lightmaps. Before v0.12.1 renders used the rough light preview's light. Done
     the way VRAD does them (agreed
     2026-11-20; details and formulas in PLAN.md Roadmap item 5): lightmaps per brush
@@ -633,7 +635,7 @@ docs/         this file, roadmap
 | 10b | Random Replicate (Bryce): random offset / turn / size ranges for props and primitives | done (v0.10.1) |
 | 10c | Sky Lab (Bryce, all of it): generated skies (sun, moon, stars, clouds, atmosphere) with live preview in the 3D view, baked to panoramas in Bottega's `skies/`; settings kept in the map; tick box to lock the sun to the map's sun light; eclipses. Steps: v0.10.4 window / bake / sky modes / sun / haze / lock, v0.10.5 clouds, v0.10.6 night sky and effects | done (v0.10.6) |
 | 11 | Cameras and Camera Preview: camera objects (many, one active), options and presets, the on-request preview in a docked panel (editor look until M12 replaces it). Steps: v0.11.0 camera objects and options, v0.11.1 presets and the preview | done (v0.11.0, v0.11.1) |
-| 12 | Render, the Source look, with materials: render window, terminal log, light baking, reflection probes, mirrors, the material system (GLSL shaders from Bottega's `shaders/`, reflection kind per material), PNG to `renders/`. Steps: v0.12.0 pipeline, v0.12.1 direct light and shadows, v0.12.2 bounces, v0.12.3 light grid, v0.12.4 materials, v0.12.5 probes, v0.12.6 mirrors | in progress (v0.12.2) |
+| 12 | Render, the Source look, with materials: render window, terminal log, light baking, reflection probes, mirrors, the material system (GLSL shaders from Bottega's `shaders/`, reflection kind per material), PNG to `renders/`. Steps: v0.12.0 pipeline, v0.12.1 direct light and shadows, v0.12.2 bounces, v0.12.3 light grid, v0.12.4 materials, v0.12.5 probes, v0.12.6 mirrors | in progress (v0.12.3) |
 | 13 | Water, cloud and endless planes: materials made with the system above | |
 | 14 | Camera effects (lowest priority): dithering, palette, bloom | |
 | 15 | Export: `.glb`, optional and last (not confirmed by the user) | |

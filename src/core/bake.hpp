@@ -16,6 +16,12 @@
 //    gathered until a bounce adds less than 1/255), and blended back onto the lightmaps.
 //    Primitives and props reflect light too (patches of their own; Source doesn't), and
 //    primitives gather it into their 3D lightmaps (VRAD's ambient-cube gather).
+//  - Props (v0.12.3): baked per vertex (VRAD's -StaticPropLighting: direct light with
+//    shadows, sky light, and the bounce gathered from the patches), or "like a Source
+//    model": the nearest sample of the light grid (ambient cubes) plus the 2 strongest
+//    lights, drawn with Half-Lambert; the other lights are folded into its cube.
+//  - The light grid (v0.12.3): ambient cubes every 48 x 48 x 96 Hammer units over the map
+//    (Half-Life 2's grid), each from 162 rays: what the surfaces hit reflect, and the sky.
 //  - Light is linear: 1 = the texture as it is (VRAD's 255).
 #include "core/brush.hpp"
 #include "core/mathprim.hpp"
@@ -89,6 +95,41 @@ struct PrimLightmap {
     std::vector<float> rgb;      // linear, x fastest, then y, then z
 };
 
+// One light as a model gets it when drawn (Source's 2 strongest lights), with the falloff
+// terms VRAD uses (distances in Hammer units).
+struct ModelLight {
+    LightKind kind = LightKind::Point;
+    Vec3 pos, dir, intensity;
+    double c = 0, l = 0, q = 1, startFade = 0, endFade = -1, capDist = 1e22;
+    double stopdot = 1, stopdot2 = 1, exponent = 0;
+};
+
+// A prop's light. Baked: per mesh, per model vertex, linear RGB. Like a Source model:
+// where it was measured, its ambient cube (+x, -x, +y, -y, +z, -z) and up to 2 lights.
+struct PropLighting {
+    PropId id = 0;
+    bool modelStyle = false;
+    std::vector<std::vector<float>> vertexRgb;
+    Vec3 origin;
+    Vec3 cube[6];
+    std::vector<ModelLight> lights;
+};
+
+// Half-Life 2's grid of ambient cubes: sample (i, j, k) at origin + (i, j, k) * spacing;
+// samples inside brushes or primitives are not valid.
+struct LightGrid {
+    Vec3 origin, spacing;
+    int nx = 0, ny = 0, nz = 0;
+    std::vector<char> valid;
+    std::vector<Vec3> cube;      // 6 per sample
+    size_t samples() const { return (size_t)nx * ny * nz; }
+    bool empty() const { return samples() == 0; }
+    Vec3 at(int i, int j, int k) const { return origin + Vec3{i * spacing.x, j * spacing.y, k * spacing.z}; }
+    int nearest(const Vec3& p) const; // the nearest valid sample, -1 if none
+};
+// Source's ambient cube read along normal n: n.x^2 A[x+/-] + n.y^2 A[y+/-] + n.z^2 A[z+/-].
+Vec3 ambientCubeAt(const Vec3* cube, const Vec3& n);
+
 struct BakeResult {
     std::vector<FaceLightmap> faces;
     std::vector<PrimLightmap> prims;
@@ -96,6 +137,10 @@ struct BakeResult {
     std::vector<std::string> bounces; // VRAD's "Bounce #n added RGB(r, g, b)" lines
     size_t luxels = 0, cells = 0, triangles = 0;
     size_t patches = 0, transfers = 0;
+    std::vector<PropLighting> props; // every prop with a model, in input order
+    LightGrid grid;
+    size_t propVertices = 0;
+    double secondsProps = 0, secondsGrid = 0;
     double secondsDirect = 0, secondsTransfers = 0, secondsBounce = 0; // where the time went
     double seconds = 0;
     bool cancelled = false;

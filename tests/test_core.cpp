@@ -19,6 +19,7 @@
 #include "core/bottega.hpp"
 #include "core/prop.hpp"
 #include "core/bake.hpp"
+#include <array>
 #include "io/glb_loader.hpp"
 #include "io/model_store.hpp"
 #include "io/map_format.hpp"
@@ -4032,6 +4033,137 @@ static void testBounce() {
     CHECK(bakeKey(k2) != bakeKey(in));
 }
 
+// ---------------------------------------------------------------- props and the light grid (v0.12.3)
+// A 100-unit cube model: 6 faces of 4 vertices each, normals out.
+static Model cubeModel() {
+    Model m;
+    m.name = "models/cube";
+    m.materials.push_back({});
+    ModelMesh mesh;
+    const Vec3 n[6] = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
+    for (int f = 0; f < 6; ++f) {
+        Vec3 a, b;
+        defaultTexAxes(n[f], a, b);
+        a = normalize(a - n[f] * dot(a, n[f]));
+        b = cross(n[f], a);
+        const std::uint32_t base = (std::uint32_t)(mesh.pos.size() / 3);
+        for (int c = 0; c < 4; ++c) {
+            const double u = (c == 1 || c == 2) ? 50 : -50, v = (c >= 2) ? 50 : -50;
+            const Vec3 p = n[f] * 50 + a * u + b * v;
+            mesh.pos.insert(mesh.pos.end(), {(float)p.x, (float)p.y, (float)(p.z + 50)});
+            mesh.normal.insert(mesh.normal.end(), {(float)n[f].x, (float)n[f].y, (float)n[f].z});
+            mesh.uv.insert(mesh.uv.end(), {0.0f, 0.0f});
+        }
+        mesh.index.insert(mesh.index.end(), {base, base + 1, base + 2, base, base + 2, base + 3});
+    }
+    m.meshes.push_back(mesh);
+    for (size_t i = 0; i + 2 < mesh.pos.size(); i += 3) m.bounds.add({mesh.pos[i], mesh.pos[i + 1], mesh.pos[i + 2]});
+    return m;
+}
+
+static void testPropLight() {
+    CHECK(near(ambientCubeAt(std::array<Vec3, 6>{Vec3{1, 0, 0}, Vec3{2, 0, 0}, Vec3{3, 0, 0}, Vec3{4, 0, 0}, Vec3{5, 0, 0}, Vec3{6, 0, 0}}.data(),
+                             {0, 0, 1}).x, 5));
+    CHECK(near(ambientCubeAt(std::array<Vec3, 6>{Vec3{1, 0, 0}, Vec3{2, 0, 0}, Vec3{3, 0, 0}, Vec3{4, 0, 0}, Vec3{5, 0, 0}, Vec3{6, 0, 0}}.data(),
+                             normalize(Vec3{-1, 0, -1})).x, 0.5 * 2 + 0.5 * 6, 1e-9));
+    static const Model cube = cubeModel();
+    BakeInput in;
+    in.models = [](const std::string& n) -> const Model* { return n == "models/cube" ? &cube : nullptr; };
+    Brush floor = makeBox(box({-1024, -1024, -16}, {1024, 1024, 0}), "floor");
+    floor.id = 1;
+    // a slab over half of the second cube
+    Brush slab = makeBox(box({300, -200, 300}, {600, 0, 320}), "slab");
+    slab.id = 2;
+    in.brushes = {floor, slab};
+    Light sun;
+    sun.kind = LightKind::Sun;
+    sun.pitch = -90;
+    sun.brightness = 255;
+    in.lights = {sun};
+    in.env.skyLight = 50;
+    in.env.ambient = {255, 255, 255};
+    in.quality = BakeQuality::Draft;
+    Prop a;
+    a.id = 10;
+    a.model = "models/cube";
+    a.pos = {-300, 0, 0};
+    Prop b = a;
+    b.id = 11;
+    b.pos = {400, 0, 0}; // half under the slab (y -50..0 under it, 0..50 not)
+    Prop c = a;
+    c.id = 12;
+    c.pos = {0, 400, 0};
+    c.modelLighting = true;
+    in.props = {a, b, c};
+    const BakeResult r = bakeLight(in, nullptr, 2);
+    CHECK(r.props.size() == 3);
+    if (r.props.size() != 3) return;
+    CHECK(r.propVertices == 48);
+    // per vertex: the top in the sun (1 + some sky), the bottom gets no sun
+    const PropLighting& pa = r.props[0];
+    CHECK(pa.id == 10 && !pa.modelStyle && pa.vertexRgb.size() == 1 && pa.vertexRgb[0].size() == 24 * 3);
+    auto vtx = [&](const PropLighting& p, int face, int corner) { return p.vertexRgb[0][(face * 4 + corner) * 3]; };
+    CHECK(vtx(pa, 4, 0) > 1.0);
+    CHECK(vtx(pa, 5, 0) < 0.5);
+    // shadows on props: the second cube's top is shadowed by the slab where it is under it
+    const PropLighting& pb = r.props[1];
+    double under = 1e9, open = -1;
+    for (int c2 = 0; c2 < 4; ++c2) {
+        const double y = cube.meshes[0].pos[(4 * 4 + c2) * 3 + 1];
+        if (y < 0) under = std::min(under, (double)vtx(pb, 4, c2));
+        else open = std::max(open, (double)vtx(pb, 4, c2));
+    }
+    CHECK(under < 0.7 && open > 1.0);
+    // like a Source model: an ambient cube and the sun as its strongest light
+    const PropLighting& pc = r.props[2];
+    CHECK(pc.modelStyle && pc.vertexRgb.empty());
+    CHECK(pc.lights.size() == 1 && pc.lights[0].kind == LightKind::Sun);
+    CHECK(pc.cube[4].x > 0.1); // sky light from above
+    CHECK(near(pc.origin.z, 50, 1e-6));
+    // the grid: samples over the map, none inside the floor; open samples see the sky above
+    const LightGrid& g = r.grid;
+    CHECK(!g.empty() && near(g.spacing.x, 48 * 2.54) && near(g.spacing.z, 96 * 2.54));
+    bool anyInvalid = false, skyUp = false;
+    for (int k = 0; k < g.nz; ++k)
+        for (int j = 0; j < g.ny; ++j)
+            for (int i = 0; i < g.nx; ++i) {
+                const size_t s = ((size_t)k * g.ny + j) * g.nx + i;
+                const Vec3 p = g.at(i, j, k);
+                if (p.z < -1 && p.z > -15 && std::fabs(p.x) < 1000 && std::fabs(p.y) < 1000) anyInvalid = anyInvalid || !g.valid[s];
+                if (g.valid[s] && p.z > 10 && g.cube[s * 6 + 4].x > 0.3) skyUp = true;
+            }
+    CHECK(skyUp);
+    CHECK(g.nearest({0, 400, 50}) >= 0);
+    // a prop that casts no shadows: the floor under it is lit
+    Brush f2 = floor;
+    BakeInput in2 = in;
+    in2.props = {a};
+    in2.props[0].pos = {0, 0, 200};
+    in2.maxBounces = 0;
+    in2.env.skyLight = 0;
+    const BakeResult shadowed = bakeLight(in2, nullptr, 2);
+    in2.props[0].castShadows = false;
+    const BakeResult unshadowed = bakeLight(in2, nullptr, 2);
+    CHECK(luxelAt(shadowed, floor, {0, 0, 1}, {0, 0, 0}).x < 0.01);
+    CHECK(luxelAt(unshadowed, floor, {0, 0, 1}, {0, 0, 0}).x > 0.9);
+    // ... but it is still lit itself
+    CHECK(unshadowed.props.size() == 1 && unshadowed.props[0].vertexRgb[0][(4 * 4) * 3] > 0.9);
+    // the key follows the lighting choice
+    BakeInput k2 = in;
+    k2.props[0].modelLighting = true;
+    CHECK(bakeKey(k2) != bakeKey(in));
+    // the map keeps it (Source's disablevertexlighting)
+    Document d;
+    Prop pr;
+    pr.model = "models/x";
+    pr.modelLighting = true;
+    d.apply(d.makeAddProps({pr}, "Prop"));
+    Document d2;
+    CHECK(readMap(writeMap(d), d2).ok);
+    CHECK(d2.props().size() == 1 && d2.props()[0].modelLighting);
+    CHECK(writeMap(d).find("disablevertexlighting") != std::string::npos);
+}
+
 int main() {
     testRenderJob();
     testGrid();
@@ -4076,6 +4208,7 @@ int main() {
     testMapRoundTrip();
     testBake();
     testBounce();
+    testPropLight();
     testMapQuakeFormat();
     testMapErrors();
     std::printf("%d checks, %d failed\n", g_checks, g_failures);

@@ -53,7 +53,11 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   in `docs/screenshots/m12-13` to `m12-16`. Reported (CI green, released); the user is
   fine with the slow bakes. **Batch 4 (v0.12.3, prop lighting and the light
   grid) was discussed and agreed (2026-11-21)**: see "Batch 4 decided with the user" under
-  Roadmap item 5. Next: **build v0.12.3 when the user says go**.
+  Roadmap item 5. **v0.12.3 is built and pushed** (the user
+  said go, 2026-11-21): props lit by the bake and the light grid; its choices made without
+  asking are under "v0.12.3, decided without asking"; the busy maps rendered again
+  (`docs/screenshots/m12-20` to `m12-23`). Next: **report**, then discuss batch 5 (v0.12.4,
+  the material system) in depth.
 - **Review fixes (2026-11-20), merged into `main`** (fast-forward from
   `fix/review-findings` after the user's go-ahead; no new version, so only "Latest build"
   is refreshed): version releases are
@@ -132,6 +136,27 @@ Each archive's SHA-256 is in `cmake/Deps.cmake` (checked at configure time).
   numbers loosely (`atoi`, `strtod`): not in the review's list; worth the same strict
   reading some time (a bad value there only changes a generated shape).
 
+- **v0.12.3 (props and the light grid), decided without asking (confirm with the user):**
+  - **Per-vertex samples** start 0.5 units off along the vertex normal (then the usual 0.3);
+    the bounce at a vertex is gathered like the primitives' cells (162 rays to the patches,
+    Draft 40).
+  - **A prop that casts no shadows** shadows itself through a ray test of its own triangles.
+    For props lit like a Source model, the lights' visibility ignores the prop's own
+    triangles (it is measured from inside it).
+  - **Like a Source model:** a light counts if a ray from the lighting origin reaches it
+    (Source chooses by visibility data, without a ray); they are ranked by their strength
+    at the origin; the 2 strongest are drawn per pixel with Half-Lambert and VRAD's falloff,
+    the others are added to the cube by how much each side faces them.
+  - **Lighting origin moved out of solids:** up in 16 steps of a 16th of the prop's height.
+  - **The grid** covers everything (brushes, primitives, props), centred on it, at most 2
+    million samples (else none, with a note). Samples inside primitives are skipped too.
+    Each side of a cube averages the rays by how much they face it; rays that hit nothing
+    take the sky (picture x sky light %), rays that hit a surface its patch's light x its
+    reflectivity; with bounce strength 0 (no patches) the cubes hold only the sky.
+  - **Drawing:** in renders props are drawn one call per prop (not instanced), their vertex
+    light read from a float texture by vertex number. The editor's drawing is unchanged.
+  - **The grid view:** 12-unit cubes, sRGB (clipped), in the editor's 3D view only; it shows
+    the last bake made or reused (a render or a Camera Preview Update).
 - **v0.12.2 (bounces), decided without asking (confirm with the user):**
   - **Face patches:** VRAD's split along the widest world axis while a piece is 4 luxels or
     more across (maxchop = minchop = 4); Draft's coarser lightmaps make them twice as big.
@@ -760,7 +785,7 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
         also receive baked light already** (their own 3D lightmaps; agreed 2026-11-20).
      3. **v0.12.2 bounces:** radiosity ("Bounce #n added RGB(...)"), bounce colour from
         the textures.
-     4. **v0.12.3 prop lighting and the light grid:** baked per-vertex light for props
+     4. **v0.12.3 prop lighting and the light grid (built):** baked per-vertex light for props
         (VRAD's `-StaticPropLighting`), or per prop "like a Source model" (the nearest
         sample of a real 3D grid of ambient cubes + its 2 strongest lights); primitives
         already have their lightmaps from v0.12.1.
@@ -947,6 +972,8 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
          better).
      12. **Camera Preview** bakes props too, at Draft (a quarter of the rays).
      13. **One release** (v0.12.3).
+     - **Built (v0.12.3, 2026-11-21)**; choices made while building are under "v0.12.3,
+       decided without asking".
      - **Also agreed:** sun and sky light count a ray that hits nothing as sky (there are
        no sky brushes); the bake runs on the processor with all threads, in the core
        (testable without a graphics card), with ray tests against brushes, terrain,

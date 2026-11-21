@@ -30,6 +30,7 @@ public:
     void release();
     bool ready() const { return result_ != nullptr; }
     const BakeResult* result() const { return result_.get(); }
+    const std::shared_ptr<const BakeResult>& shared() const { return result_; }
 
     struct FaceRef { int page = 0; int x = 0, y = 0; const FaceLightmap* lm = nullptr; };
     const FaceRef* face(BrushId b, int face, bool terrain) const;

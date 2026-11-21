@@ -1,4 +1,5 @@
 #include "render/model_library.hpp"
+#include "core/bake.hpp"
 #include "rlgl.h"
 #include <algorithm>
 #include <cmath>
@@ -91,6 +92,127 @@ void main() {
         float f = fogAmount(wpos);
         rgb = mix(rgb, fogColor, f);
     }
+    finalColor = vec4(rgb, 1.0);
+})";
+
+// Baked light (renders, v0.12.3): the light comes per vertex from a float texture (each
+// prop's chunks one after another; gl_VertexID counts the chunk's vertices), or, "like a
+// Source model", from its ambient cube and up to 2 lights with Half-Lambert. Linear:
+// texture x light x exposure, back to sRGB, then fog.
+const char* kVSBaked = R"(#version 330
+in vec3 vertexPosition;
+in vec2 vertexTexCoord;
+in vec3 vertexNormal;
+uniform mat4 mvp;
+uniform mat4 matModel;
+uniform mat4 matNormal;
+uniform sampler2D vlight;
+uniform int base;       // < 0: like a Source model
+out vec2 uv;
+out vec3 nrm;
+out vec3 wpos;
+out vec3 vl;
+void main() {
+    uv = vertexTexCoord;
+    nrm = normalize(mat3(matNormal) * vertexNormal);
+    wpos = (matModel * vec4(vertexPosition, 1.0)).xyz;
+    vl = vec3(0.0);
+    if (base >= 0) {
+        int id = base + gl_VertexID;
+        vl = texelFetch(vlight, ivec2(id % 4096, id / 4096), 0).rgb;
+    }
+    gl_Position = mvp * vec4(vertexPosition, 1.0);
+})";
+const char* kFSBaked = R"(#version 330
+in vec2 uv;
+in vec3 nrm;
+in vec3 wpos;
+in vec3 vl;
+uniform sampler2D texture0;
+uniform vec4 colDiffuse;
+uniform int hasTex;
+uniform float cutoff;
+uniform int base;
+uniform float exposure;
+uniform vec3 cube[6];
+uniform int lightCount;
+uniform int lkind[2];        // 0 point, 1 spot, 2 sun
+uniform vec3 lpos[2];
+uniform vec3 ldir[2];
+uniform vec3 lcol[2];
+uniform vec3 latt[2];        // constant, linear, quadratic (Hammer units)
+uniform vec3 lfade[2];       // start, end, cap
+uniform vec3 lspot[2];       // stopdot, stopdot2, exponent
+uniform vec3 camPos;
+uniform int fogOn;
+uniform vec3 fogColor;
+uniform vec2 fogRange;
+uniform vec2 fogHeight;
+out vec4 finalColor;
+vec3 toLinear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c)); }
+vec3 toSrgb(vec3 l) { l = clamp(l, 0.0, 1.0); return mix(l * 12.92, 1.055 * pow(l, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), l)); }
+float fogAmount(vec3 p) {
+    float d = length(p - camPos);
+    float path = d;
+    if (fogHeight.y > 0.0) {
+        float lo = fogHeight.x, hi = fogHeight.x + fogHeight.y, z0 = camPos.z, z1 = p.z;
+        if (abs(z1 - z0) < 0.001) path = (z0 >= lo && z0 <= hi) ? d : 0.0;
+        else {
+            float a = clamp((lo - z0) / (z1 - z0), 0.0, 1.0), b = clamp((hi - z0) / (z1 - z0), 0.0, 1.0);
+            path = abs(b - a) * d;
+        }
+    }
+    return clamp((path - fogRange.x) / max(fogRange.y - fogRange.x, 1.0), 0.0, 1.0);
+}
+vec3 modelLight(vec3 n) {
+    vec3 n2 = n * n;
+    vec3 c = n2.x * (n.x < 0.0 ? cube[1] : cube[0]) + n2.y * (n.y < 0.0 ? cube[3] : cube[2]) + n2.z * (n.z < 0.0 ? cube[5] : cube[4]);
+    for (int i = 0; i < 2; ++i) {
+        if (i >= lightCount) break;
+        vec3 L;
+        float f = 1.0;
+        if (lkind[i] == 2) L = -ldir[i];
+        else {
+            vec3 d = lpos[i] - wpos;
+            float dcm = length(d);
+            L = d / max(dcm, 1e-4);
+            float dist = dcm / 2.54;
+            bool fade = lfade[i].y > lfade[i].x;
+            if (fade && dist > lfade[i].y) continue;
+            dist = max(dist, 1.0);
+            float e = min(dist, lfade[i].z);
+            float den = latt[i].x + latt[i].y * e + latt[i].z * e * e;
+            if (den <= 0.0) continue;
+            f = 1.0 / den;
+            if (lkind[i] == 1) {
+                float d2 = dot(-L, ldir[i]);
+                if (d2 <= lspot[i].y) continue;
+                f *= d2;
+                if (d2 <= lspot[i].x) {
+                    float m = clamp((d2 - lspot[i].y) / max(lspot[i].x - lspot[i].y, 1e-6), 0.0, 1.0);
+                    if (lspot[i].z != 0.0 && lspot[i].z != 1.0) m = pow(m, lspot[i].z);
+                    f *= m;
+                }
+            }
+            if (fade) {
+                float t = 1.0 - clamp((dist - lfade[i].x) / (lfade[i].y - lfade[i].x), 0.0, 1.0);
+                f *= t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
+            }
+        }
+        float hl = 0.5 * dot(n, L) + 0.5;   // Half-Lambert
+        c += lcol[i] * f * hl * hl;
+    }
+    return c;
+}
+void main() {
+    vec4 t = colDiffuse;
+    if (hasTex == 1) t *= texture(texture0, uv);
+    if (cutoff >= 0.0 && t.a < cutoff) discard;
+    vec3 n = normalize(nrm);
+    if (!gl_FrontFacing) n = -n;
+    vec3 light = base >= 0 ? vl : modelLight(n);
+    vec3 rgb = toSrgb(toLinear(t.rgb) * light * exposure);
+    if (fogOn == 1) rgb = mix(rgb, fogColor, fogAmount(wpos));
     finalColor = vec4(rgb, 1.0);
 })";
 
@@ -205,6 +327,11 @@ void ModelLibrary::freeGpu(Gpu& g) {
 void ModelLibrary::unloadAll() {
     for (auto& [n, g] : gpu_) freeGpu(g);
     gpu_.clear();
+    if (bakeTex_) rlUnloadTexture(bakeTex_);
+    bakeTex_ = 0;
+    bakeSrc_.reset();
+    bakeBase_.clear();
+    bakeIndex_.clear();
 }
 
 ModelLibrary::Gpu* ModelLibrary::gpuFor(const std::string& name) {
@@ -252,10 +379,152 @@ ModelLibrary::Gpu* ModelLibrary::gpuFor(const std::string& name) {
     return &(gpu_[name] = std::move(g));
 }
 
+void ModelLibrary::prepareBake(const std::vector<Prop>& props, const std::shared_ptr<const BakeResult>& bake) {
+    if (bake == bakeSrc_) return;
+    if (bakeTex_) rlUnloadTexture(bakeTex_);
+    bakeTex_ = 0;
+    bakeBase_.clear();
+    bakeIndex_.clear();
+    bakeSrc_ = bake;
+    if (!bake) return;
+    std::map<std::uint32_t, const Prop*> byId;
+    for (const Prop& p : props) byId[p.id] = &p;
+    std::vector<float> data;
+    for (size_t k = 0; k < bake->props.size(); ++k) {
+        const PropLighting& pl = bake->props[k];
+        bakeIndex_[pl.id] = k;
+        if (pl.modelStyle) continue;
+        auto it = byId.find(pl.id);
+        if (it == byId.end()) continue;
+        const Model* m = store_.find(it->second->model);
+        if (!m || pl.vertexRgb.size() != m->meshes.size()) continue;
+        std::vector<int>& bases = bakeBase_[pl.id];
+        // The same chunks as gpuFor(): each mesh's triangles, kChunkVertices at a time.
+        for (size_t mi = 0; mi < m->meshes.size(); ++mi) {
+            const ModelMesh& mm = m->meshes[mi];
+            const std::vector<float>& vr = pl.vertexRgb[mi];
+            for (size_t at = 0; at < mm.index.size(); at += kChunkVertices) {
+                const size_t n = std::min(kChunkVertices, mm.index.size() - at);
+                bases.push_back((int)(data.size() / 3));
+                for (size_t i = 0; i < n; ++i) {
+                    const size_t v = mm.index[at + i];
+                    if (3 * v + 2 < vr.size()) data.insert(data.end(), {vr[3 * v], vr[3 * v + 1], vr[3 * v + 2]});
+                    else data.insert(data.end(), {1.0f, 1.0f, 1.0f});
+                }
+            }
+        }
+    }
+    const size_t texels = data.size() / 3;
+    const int w = 4096, h = (int)std::max<size_t>(1, (texels + w - 1) / w);
+    data.resize((size_t)w * h * 3, 1.0f);
+    bakeTex_ = rlLoadTexture(data.data(), w, h, PIXELFORMAT_UNCOMPRESSED_R32G32B32, 1);
+    if (bakeTex_) {
+        rlTextureParameters(bakeTex_, RL_TEXTURE_MIN_FILTER, RL_TEXTURE_FILTER_NEAREST);
+        rlTextureParameters(bakeTex_, RL_TEXTURE_MAG_FILTER, RL_TEXTURE_FILTER_NEAREST);
+    }
+}
+
+void ModelLibrary::drawBaked(const std::vector<Prop>& props, const PropDrawContext& ctx) {
+    BakedSet& sh = baked_;
+    if (!sh.tried) {
+        sh.tried = true;
+        sh.shader = LoadShaderFromMemory(kVSBaked, kFSBaked);
+        sh.ok = sh.shader.id != 0 && sh.shader.id != rlGetShaderIdDefault();
+        if (sh.ok) {
+            sh.material = LoadMaterialDefault();
+            sh.material.shader = sh.shader;
+        }
+    }
+    if (!sh.ok) return;
+    prepareBake(props, ctx.bake);
+    rlDrawRenderBatchActive();
+    rlDisableBackfaceCulling();
+    Shader& S = sh.shader;
+    auto setI = [&](const char* n, int v) { SetShaderValue(S, sh.at(n), &v, SHADER_UNIFORM_INT); };
+    auto setF = [&](const char* n, float v) { SetShaderValue(S, sh.at(n), &v, SHADER_UNIFORM_FLOAT); };
+    auto set3 = [&](const char* n, const Vec3& v) {
+        const float f[3] = {(float)v.x, (float)v.y, (float)v.z};
+        SetShaderValue(S, sh.at(n), f, SHADER_UNIFORM_VEC3);
+    };
+    set3("camPos", ctx.camPos);
+    setI("fogOn", ctx.fog ? 1 : 0);
+    set3("fogColor", ctx.fogColor / 255.0);
+    {
+        const float fr[2] = {(float)ctx.fogStart, (float)ctx.fogEnd}, fh[2] = {(float)ctx.fogBase, (float)ctx.fogThickness};
+        SetShaderValue(S, sh.at("fogRange"), fr, SHADER_UNIFORM_VEC2);
+        SetShaderValue(S, sh.at("fogHeight"), fh, SHADER_UNIFORM_VEC2);
+    }
+    setF("exposure", ctx.exposure);
+    const int unit = 6;
+    setI("vlight", unit);
+    rlActiveTextureSlot(unit);
+    rlEnableTexture(bakeTex_ ? bakeTex_ : rlGetTextureIdDefault());
+    rlActiveTextureSlot(0);
+    for (const Prop& p : props) {
+        Gpu* g = gpuFor(p.model);
+        if (!g) continue;
+        auto ii = bakeIndex_.find(p.id);
+        const PropLighting* pl = ii != bakeIndex_.end() && ii->second < bakeSrc_->props.size() ? &bakeSrc_->props[ii->second] : nullptr;
+        auto bi = bakeBase_.find(p.id);
+        const bool perVertex = pl && !pl->modelStyle && bi != bakeBase_.end() && bi->second.size() == g->chunks.size();
+        if (!perVertex) {
+            // like a Source model (or no bake for it: full light from every side)
+            float cube[18];
+            for (int a = 0; a < 6; ++a) {
+                const Vec3 c = pl && pl->modelStyle ? pl->cube[a] : Vec3{1, 1, 1};
+                cube[3 * a] = (float)c.x; cube[3 * a + 1] = (float)c.y; cube[3 * a + 2] = (float)c.z;
+            }
+            SetShaderValueV(S, sh.at("cube"), cube, SHADER_UNIFORM_VEC3, 6);
+            const int n = pl && pl->modelStyle ? (int)std::min<size_t>(2, pl->lights.size()) : 0;
+            setI("lightCount", n);
+            int kind[2] = {0, 0};
+            float pos[6] = {}, dir[6] = {}, col[6] = {}, att[6] = {}, fade[6] = {}, spot[6] = {};
+            for (int i = 0; i < n; ++i) {
+                const ModelLight& L = pl->lights[i];
+                kind[i] = L.kind == LightKind::Sun ? 2 : L.kind == LightKind::Spot ? 1 : 0;
+                const Vec3 v[6] = {L.pos, L.dir, L.intensity, {L.c, L.l, L.q}, {L.startFade, L.endFade, std::min(L.capDist, 1e30)}, {L.stopdot, L.stopdot2, L.exponent}};
+                float* dst[6] = {pos, dir, col, att, fade, spot};
+                for (int a = 0; a < 6; ++a) {
+                    dst[a][3 * i] = (float)v[a].x; dst[a][3 * i + 1] = (float)v[a].y; dst[a][3 * i + 2] = (float)v[a].z;
+                }
+            }
+            SetShaderValueV(S, sh.at("lkind"), kind, SHADER_UNIFORM_INT, 2);
+            SetShaderValueV(S, sh.at("lpos"), pos, SHADER_UNIFORM_VEC3, 2);
+            SetShaderValueV(S, sh.at("ldir"), dir, SHADER_UNIFORM_VEC3, 2);
+            SetShaderValueV(S, sh.at("lcol"), col, SHADER_UNIFORM_VEC3, 2);
+            SetShaderValueV(S, sh.at("latt"), att, SHADER_UNIFORM_VEC3, 2);
+            SetShaderValueV(S, sh.at("lfade"), fade, SHADER_UNIFORM_VEC3, 2);
+            SetShaderValueV(S, sh.at("lspot"), spot, SHADER_UNIFORM_VEC3, 2);
+        }
+        const Matrix mat = propMatrix(p);
+        for (size_t c = 0; c < g->chunks.size(); ++c) {
+            const Chunk& ch = g->chunks[c];
+            const size_t mi = (size_t)ch.material;
+            if (mi >= g->tint.size()) continue;
+            setI("base", perVertex ? bi->second[c] : -1);
+            sh.material.maps[MATERIAL_MAP_DIFFUSE].texture = g->textured[mi] ? g->textures[mi] : Texture2D{};
+            sh.material.maps[MATERIAL_MAP_DIFFUSE].color = g->tint[mi];
+            setI("hasTex", g->textured[mi] ? 1 : 0);
+            setF("cutoff", g->cutoff[mi]);
+            DrawMesh(ch.mesh, sh.material, mat);
+            ++drawCalls_;
+        }
+    }
+    rlActiveTextureSlot(unit);
+    rlDisableTexture();
+    rlActiveTextureSlot(0);
+    rlEnableBackfaceCulling();
+}
+
 void ModelLibrary::draw(const std::vector<Prop>& props, const PropDrawContext& ctx) {
     drawCalls_ = 0;
     culled_ = 0;
     if (props.empty()) return;
+    if (ctx.bake) {
+        initShader();
+        drawBaked(props, ctx);
+        return;
+    }
     initShader();
     if (!shaderOk_) return;
     ShaderSet& sh = inst_.ok ? inst_ : plain_;

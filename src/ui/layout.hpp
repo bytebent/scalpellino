@@ -26,6 +26,7 @@ struct MenuState {
     bool lightTool = false, lightPending = false, lightsSelected = false;
     int lightKind = 0;
     bool showSky = true, lightPreview = false, showFog = false, showFigure = false;
+    bool showLightGrid = false, haveLightGrid = false; // the last bake's light grid (v0.12.3)
     bool canRebakeSky = false; // Sky Lab: the sky is out of date or its file is missing
     bool primsShown = true, propsShown = true;
     bool primTool = false, primPending = false;
@@ -72,7 +73,7 @@ struct MenuActions {
     bool toolLight = false, createLight = false, environment = false, bookmarks = false, figurePos = false;
     bool skyLab = false, rebakeSky = false;
     int lightKind = -1;   // LightKind index; also switches to the light tool
-    bool toggleSky = false, toggleLightPreview = false, toggleFog = false, toggleFigure = false;
+    bool toggleSky = false, toggleLightPreview = false, toggleFog = false, toggleFigure = false, toggleLightGrid = false;
     bool togglePrims = false, toggleProps = false;
     bool toolPrim = false, createPrim = false, combine = false, separate = false;
     int primKind = -1;    // PrimKind index; also switches to the primitive tool

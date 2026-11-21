@@ -259,6 +259,10 @@ MenuActions drawMenuBar(const MenuState& st) {
         if (ImGui::MenuItem("3D view: flat colours", nullptr, !st.textured3D)) a.textured3D = 0;
         if (ImGui::MenuItem("3D view: sky", nullptr, st.showSky)) a.toggleSky = true;
         if (ImGui::MenuItem("3D view: rough light preview", nullptr, st.lightPreview)) a.toggleLightPreview = true;
+        if (ImGui::MenuItem("3D view: light grid (the last bake)", nullptr, st.showLightGrid, st.haveLightGrid)) a.toggleLightGrid = true;
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("Each sample of the baked light grid as a small cube, coloured by the light from its 6 sides.\n"
+                              "Made by a render or a Camera Preview Update.");
         if (ImGui::MenuItem("3D view: fog", nullptr, st.showFog)) a.toggleFog = true;
         if (ImGui::MenuItem("Scale figure (1.75 m)", nullptr, st.showFigure)) a.toggleFigure = true;
         ImGui::Separator();
@@ -326,7 +330,7 @@ void drawControlsWindow(bool* open) {
             {"Render", "the Render button (left of the status bar), Render > Render... or Cmd+Shift+K: the active camera's picture at its size, saved in the Bottega's renders folder with its log; a terminal window shows the steps; Esc stops it"},
             {"Render options", "Render menu: Quality (Draft / Normal / High: also how finely the light is baked), Anti-aliasing, Texture filtering"},
             {"Baked light", "part of every render (and the Camera Preview, at Draft): lightmaps with shadows and bounced light, as Source's VRAD bakes them; kept in memory while nothing that lights the map changes. Lights: falloff (inverse-square, 50% / 0%, custom), spot exponent, sun spread in Properties; sky light %, minimum light, bounce strength and smoothing angle in World > Environment"},
-            {"Lightmap scale", "Texture tool, Face panel: units per lightmap pixel for the picked faces (default 40, Hammer's 16 units); primitives: in Properties; props: 'casts shadows' in Properties"},
+            {"Lightmap scale", "Texture tool, Face panel: units per lightmap pixel for the picked faces (default 40, Hammer's 16 units); primitives: in Properties; props: 'casts shadows' and 'lighting' (baked per vertex / like a Source model) in Properties; View > 3D view: light grid shows the last bake's ambient cubes"},
             {"Camera presets", "Properties (camera tool or a selected camera): Save preset / Load a preset (lens, near / far, size, orthographic, exposure), kept in the Bottega's presets/camera_presets"},
             {"Aim a camera at a point", "Properties: type a point and Aim, or World > Aim selected cameras at a clicked point, then click a surface in 3D or a spot in a 2D view"},
             {"Sky, ambient, fog", "World > Environment (sky folders too: 2:1 panoramas or 4:3 cube crosses)"},

@@ -123,6 +123,16 @@ void Editor::drawPropPanel() {
         }
         bool shadows = b.castShadows;
         if (ImGui::Checkbox("casts shadows (baked light)", &shadows)) fns.push_back([shadows](Prop& p) { p.castShadows = shadows; });
+        int lightMode = b.modelLighting ? 1 : 0;
+        const char* modes[] = {"baked per vertex", "like a Source model"};
+        ImGui::SetNextItemWidth(170);
+        if (ImGui::Combo("lighting", &lightMode, modes, 2)) {
+            const bool ml = lightMode == 1;
+            fns.push_back([ml](Prop& p) { p.modelLighting = ml; });
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Renders: baked per vertex (VRAD's static prop lighting, with shadows), or like a Source model:\n"
+                              "the light grid's nearest ambient cube and the 2 strongest lights, no shadows on itself.");
         if (!propTool_.model.empty() && ImGui::SmallButton("use the picked model")) {
             const std::string m = propTool_.model;
             fns.push_back([m](Prop& p) { p.model = m; });

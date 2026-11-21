@@ -212,6 +212,8 @@ bool Editor::frame(float dt) {
     st.primsShown = doc_.primsShown();
     st.propsShown = doc_.propsShown();
     st.lightPreview = lightPreview_;
+    st.showLightGrid = showLightGrid_;
+    st.haveLightGrid = lastBake_ && !lastBake_->grid.empty();
     st.showFog = showFog_;
     st.showFigure = showFigure_;
     st.groupSelected = selectedGroup() != 0;
@@ -318,6 +320,7 @@ bool Editor::frame(float dt) {
     if (m.toggleSky) showSky_ = !showSky_;
     if (m.togglePrims) { tool_->cancel(); doc_.setPrimsShown(!doc_.primsShown()); }
     if (m.toggleProps) { tool_->cancel(); doc_.setPropsShown(!doc_.propsShown()); }
+    if (m.toggleLightGrid) showLightGrid_ = !showLightGrid_;
     if (m.toggleLightPreview) { lightPreview_ = !lightPreview_; if (!lightPreview_) lighting_.clear(); }
     if (m.toggleFog) showFog_ = !showFog_;
     if (m.toggleFigure) {
@@ -512,6 +515,7 @@ Scene Editor::buildScene() {
         }
     if (showFigure_) s.figure = doc_.figure() ? *doc_.figure() : Vec3{};
     if (lightPreview_) s.lighting = &lighting_.get(doc_, cache_.get(doc_));
+    if (showLightGrid_ && lastBake_ && !lastBake_->grid.empty()) s.lightGrid = &lastBake_->grid;
     const Environment& env = doc_.environment();
     if (showFog_ && env.fogOn) {
         s.fog = true;

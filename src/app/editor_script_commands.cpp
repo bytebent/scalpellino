@@ -470,6 +470,7 @@ void Editor::registerScriptCommands() {
                 else if (k == "scale") { double a = 1, b2, d; v >> a; if (v >> b2 >> d) c.scale = {a, b2, d}; else c.scale = {a, a, a}; }
                 else if (k == "model") v >> c.model;
                 else if (k == "shadows") { std::string o; v >> o; c.castShadows = o == "on"; }
+                else if (k == "lighting") { std::string o; v >> o; c.modelLighting = o == "model"; }
                 out.push_back(c);
             }
         if (!out.empty()) doc_.apply(doc_.makeModifyProps(out, "Edit prop"));
@@ -482,6 +483,7 @@ void Editor::registerScriptCommands() {
         else if (k == "preview") { lightPreview_ = on; if (!on) lighting_.clear(); }
         else if (k == "fog") showFog_ = on;
         else if (k == "figure") showFigure_ = on;
+        else if (k == "grid") showLightGrid_ = on;
         else if (k == "prims") { tool_->cancel(); doc_.setPrimsShown(on); }
         else if (k == "props") { tool_->cancel(); doc_.setPropsShown(on); }
     });

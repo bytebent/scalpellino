@@ -221,6 +221,8 @@ private:
     std::set<LightId> lightBufFor_;
     unsigned long long lightBufRev_ = ~0ull;
     bool showSky_ = true, lightPreview_ = false, showFog_ = false, showFigure_ = false;
+    bool showLightGrid_ = false;                        // View: the last bake's light grid
+    std::shared_ptr<const BakeResult> lastBake_;        // the last bake made or reused
     bool askEnvironment_ = false, askBookmarks_ = false, askFigure_ = false;
     Environment envBuf_;
     double figureBuf_[3] = {0, 0, 0};

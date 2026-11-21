@@ -6,7 +6,7 @@ namespace scal {
 
 bool Prop::operator==(const Prop& o) const {
     return id == o.id && model == o.model && pos == o.pos && rot == o.rot && scale == o.scale &&
-           castShadows == o.castShadows && otherKeys == o.otherKeys;
+           castShadows == o.castShadows && modelLighting == o.modelLighting && otherKeys == o.otherKeys;
 }
 
 AABB propLocalBounds(const Model* m) {

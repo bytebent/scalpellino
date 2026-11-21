@@ -10,13 +10,20 @@
 #include "core/prop.hpp"
 #include "io/model_store.hpp"
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
 namespace scal {
 
+struct BakeResult;
+
 struct PropDrawContext {
     Vec3 camPos;
+    // Renders (v0.12.3): props lit by the bake (per vertex, or like a Source model), linear,
+    // times `exposure`. Null: the editor's shading.
+    std::shared_ptr<const BakeResult> bake;
+    float exposure = 1;
     bool fog = false;
     Vec3 fogColor;                 // 0..255
     double fogStart = 0, fogEnd = 1;
@@ -84,6 +91,25 @@ private:
     };
     bool loadShaderSet(ShaderSet& s, const char* vs);
     ShaderSet plain_, inst_;
+    // Baked light (renders): one more shader, one draw per prop, and the props' vertex
+    // light in a float texture (each prop's chunks one after another).
+    struct BakedSet {
+        Shader shader{};
+        Material material{};
+        bool ok = false, tried = false;
+        std::map<std::string, int> locs;
+        int at(const char* n) {
+            auto it = locs.find(n);
+            if (it != locs.end()) return it->second;
+            return locs[n] = GetShaderLocation(shader, n);
+        }
+    } baked_;
+    std::shared_ptr<const BakeResult> bakeSrc_;
+    unsigned bakeTex_ = 0;
+    std::map<std::uint32_t, std::vector<int>> bakeBase_;   // prop id -> base per chunk
+    std::map<std::uint32_t, size_t> bakeIndex_;            // prop id -> its PropLighting
+    void prepareBake(const std::vector<Prop>& props, const std::shared_ptr<const BakeResult>& bake);
+    void drawBaked(const std::vector<Prop>& props, const PropDrawContext& ctx);
     bool shaderTried_ = false, shaderOk_ = false;
     size_t drawCalls_ = 0;
 public:

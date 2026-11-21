@@ -173,6 +173,7 @@ KeyValues propKeys(const Prop& p) {
     kv.emplace_back("rotation", vec(p.rot));
     kv.emplace_back("scale", vec(p.scale));
     if (!p.castShadows) kv.emplace_back("disableshadows", "1");
+    if (p.modelLighting) kv.emplace_back("disablevertexlighting", "1");
     for (const auto& k : p.otherKeys) kv.push_back(k);
     return kv;
 }
@@ -285,6 +286,7 @@ bool propFromKeys(const KeyValues& kv, Prop& p) {
         else if (k == "rotation") readVec(v, p.rot);
         else if (k == "scale") readVec(v, p.scale);
         else if (k == "disableshadows") p.castShadows = numOr(v, 0) == 0;
+        else if (k == "disablevertexlighting") p.modelLighting = numOr(v, 0) != 0;
         else p.otherKeys.emplace_back(k, v);
     }
     return true;

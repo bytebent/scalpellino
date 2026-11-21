@@ -1,0 +1,67 @@
+# v0.12.3: props lit by the bake (M12 batch 4). Each prop is baked per vertex (VRAD's
+# static prop lighting: shadows, sky light, bounce), or lit "like a Source model" (the
+# light grid's nearest ambient cube and its 2 strongest lights). The light grid can be
+# seen in the 3D view (View menu).
+bottega make studio
+copy assets/models/crate.glb studio/models/Crate.glb
+rescan
+texture Tile_19
+block -1024 -1024 -32 1024 1024 0
+texture Bricks_24
+block -300 200 0 300 232 300
+block -200 -200 250 200 0 270
+prop models/Crate -100 -100 0 0 0 20 2
+prop models/Crate 250 -100 0 0 0 -15 2
+prop models/Crate -450 -350 0 0 0 0 2
+tool light
+lightset kind sun
+lightset pitch -50
+lightset yaw 70
+lightset brightness 400
+lightset spread 1
+lightset pos 0 -900 700
+key Return
+lightset kind point
+lightset color 255 150 80
+lightset brightness 200
+lightset pos 0 -350 120
+key Return
+environment sky Panorama_Sky_04
+environment skylight 60
+tool select
+key Esc
+tool camera
+cameraset lens 24
+cameraset size 640 360
+cameraset pos 500 -800 350
+key Return
+cameraedit angles -18 115 0
+tool select
+key Esc
+renderset quality normal
+render
+expect render saved
+expect renderlog props: 3 baked per vertex
+expect renderlog light grid:
+expect renderlog not warning
+closedialogs
+# the third crate like a Source model
+propselect 2
+propedit lighting model
+render
+expect renderlog props: 2 baked per vertex
+expect renderlog 1 like Source models
+rendercopy m12-17-props-baked.png
+shot m12-18-props-log.png
+closedialogs
+propselect none
+# the light grid in the 3D view
+viewset grid on
+shot m12-19-light-grid.png
+viewset grid off
+camerapreview
+expect camerapreview 1 stale 0
+save props.map
+open props.map
+expect props 3
+quit

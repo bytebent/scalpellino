@@ -75,6 +75,7 @@ private:
 class TextureLibrary;
 class ModelLibrary;
 class BakedLight;
+struct LightGrid;
 using FaceRef = std::pair<BrushId, int>; // brush id + face index
 
 struct Scene {
@@ -165,6 +166,8 @@ struct Scene {
     // their lightmaps; light is linear, times `exposure` (2^stops).
     const BakedLight* baked = nullptr;
     float exposure = 1;
+    // The editor's 3D view: the last bake's light grid as small cubes (View menu).
+    const LightGrid* lightGrid = nullptr;
 };
 
 SceneBrush makeSceneBrush(const Brush& b);

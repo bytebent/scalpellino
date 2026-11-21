@@ -987,9 +987,49 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
         pctx.fogEnd = scene.fogEnd;
         pctx.fogBase = scene.fogBase;
         pctx.fogThickness = scene.fogThickness;
+        if (lens_ && scene.baked) {
+            pctx.bake = scene.baked->shared();
+            pctx.exposure = scene.exposure;
+        }
         std::vector<Prop> ps;
         for (const auto& sp : scene.props) ps.push_back(sp.prop);
         scene.models->draw(ps, pctx);
+    }
+    // The last bake's light grid (View menu): a small cube per sample, each side coloured by
+    // the light from that side (sRGB, clipped). Editor only.
+    if (!lens_ && scene.lightGrid) {
+        const LightGrid& g = *scene.lightGrid;
+        rlDrawRenderBatchActive();
+        const float h = 6;
+        auto col = [](const Vec3& c) {
+            return Color{(unsigned char)std::lround(linearToSrgb(c.x) * 255), (unsigned char)std::lround(linearToSrgb(c.y) * 255),
+                         (unsigned char)std::lround(linearToSrgb(c.z) * 255), 255};
+        };
+        for (int k = 0; k < g.nz; ++k)
+            for (int j = 0; j < g.ny; ++j)
+                for (int i = 0; i < g.nx; ++i) {
+                    const size_t s = ((size_t)k * g.ny + j) * g.nx + i;
+                    if (!g.valid[s]) continue;
+                    const Vec3 p = g.at(i, j, k);
+                    const float x = (float)p.x, y = (float)p.y, z = (float)p.z;
+                    rlCheckRenderBatchLimit(36);
+                    rlBegin(RL_TRIANGLES);
+                    auto quad = [&](const Color& c, Vector3 a, Vector3 b, Vector3 cc, Vector3 d) {
+                        rlColor4ub(c.r, c.g, c.b, c.a);
+                        for (const Vector3& v : {a, b, cc, a, cc, d}) rlVertex3f(v.x, v.y, v.z);
+                    };
+                    const Vector3 c000{x - h, y - h, z - h}, c100{x + h, y - h, z - h}, c010{x - h, y + h, z - h}, c110{x + h, y + h, z - h};
+                    const Vector3 c001{x - h, y - h, z + h}, c101{x + h, y - h, z + h}, c011{x - h, y + h, z + h}, c111{x + h, y + h, z + h};
+                    const Vec3* cb = &g.cube[s * 6];
+                    quad(col(cb[0]), c100, c110, c111, c101); // +x
+                    quad(col(cb[1]), c000, c001, c011, c010); // -x
+                    quad(col(cb[2]), c010, c011, c111, c110); // +y
+                    quad(col(cb[3]), c000, c100, c101, c001); // -y
+                    quad(col(cb[4]), c001, c101, c111, c011); // +z
+                    quad(col(cb[5]), c000, c010, c110, c100); // -z
+                    rlEnd();
+                }
+        rlDrawRenderBatchActive();
     }
     if (lens_) { // a picture: none of the editor's boxes, outlines, markers or labels
         rlDrawRenderBatchActive();

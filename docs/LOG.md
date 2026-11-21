@@ -4,6 +4,32 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-21 — v0.12.3: lit props and the light grid (M12 batch 4)
+- Built as agreed (PLAN.md "Batch 4 decided with the user"); choices made while building
+  are under "v0.12.3, decided without asking".
+- **Core (`core/bake.*`):** after the bounces, Half-Life 2's light grid (48 x 48 x 96 Hammer
+  units; 162 rays per sample into 6 sides: the hit patch's light x its reflectivity, or the
+  sky; samples inside brushes / primitives left out) and the props: per vertex (direct
+  light with shadows, sky light, bounce gathered from the patches; props that cast no
+  shadows shadow themselves through their own ray test) or like a Source model (the grid's
+  nearest cube, the 2 strongest visible lights, the others folded into the cube). Props got
+  `modelLighting` (Source's `disablevertexlighting`).
+- **Render:** `ModelLibrary` draws props in renders with a baked shader: vertex light from a
+  float texture (gl_VertexID), or the ambient cube + 2 lights with Half-Lambert and VRAD's
+  falloff; linear x exposure, sRGB, fog. View > 3D view: light grid draws the last bake's
+  samples as small cubes (editor only). Prop Properties: lighting. Render log: props and
+  grid lines.
+- **Tests:** core `testPropLight` (Source's cube formula; per-vertex sun / shadow on a cube
+  prop, a slab shadowing half its top; a model-style prop with the sun as its light and
+  sky in its cube; the grid's spacing, sky above; a prop that casts no shadows leaves the
+  floor lit but is lit itself; the key; the map key): 4888 checks, 0 failed. New UI script
+  `v123_props.script`. All UI scripts pass at 1x and 2x; idle 0 ticks.
+- **Screenshots:** `m12-17-props-baked.png` (crates baked per vertex, one like a Source
+  model), `m12-18-props-log.png`, `m12-19-light-grid.png` (the grid in the 3D view).
+- **Busy maps:** the rich map 1.4 s (grid 616 samples), 1000 boxes 25 s (grid 8280, 1.7 s),
+  4000 boxes 159 s (grid 26 928, 16 s). The 1000 rocks (2.6 million prop vertices, each
+  with about 325 rays) were still baking after 40 minutes on 2 threads (see the next entry).
+
 ### 2026-11-21 — Batch 4 (v0.12.3, prop lighting and the light grid) agreed (docs only)
 - 13 numbered questions on lighting props; all answered. Recorded as "Batch 4 decided with
   the user" (PLAN.md Roadmap item 5); the batch is renamed "prop lighting". The user asked
