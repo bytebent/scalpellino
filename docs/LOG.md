@@ -13,6 +13,8 @@ too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
   (`_normal`, `_ssbump`, `_mask`) paired by name and hidden. No batch variants (the user:
   avoid making hundreds of files by accident). All in v0.12.4 (bump maps in v0.12.4b).
   Recorded as items 2 and 19-24 of "Batch 5 decided with the user".
+- `.vmt` files live next to their texture in `textures/`, not in a `materials/` folder
+  (item 25; the user agreed).
 - No code changed. Next: build v0.12.4 when the user says go.
 
 ### 2026-11-21 — Batch 5 (v0.12.4 materials, v0.12.4b bump maps) agreed (docs only)

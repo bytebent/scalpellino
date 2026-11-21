@@ -62,7 +62,7 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   batch** (see Roadmap item 5, batch 5). **Batch 5 (materials) was discussed and agreed
   (2026-11-21)**: see "Batch 5 decided with the user" under Roadmap item 5; the steps after
   it were reordered (decals added); plain-copy variants, batch editing and parent materials
-  were added the same day (items 2, 19-24). Next: **build v0.12.4 when the user says go**.
+  were added the same day (items 2, 19-25). Next: **build v0.12.4 when the user says go**.
 - **Review fixes (2026-11-20), merged into `main`** (fast-forward from
   `fix/review-findings` after the user's go-ahead; no new version, so only "Latest build"
   is refreshed): version releases are
@@ -1058,6 +1058,13 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
          them); they can also be linked by hand. Masks in v0.12.4, bump maps in v0.12.4b.
      24. **No batch variants:** "Make a variant..." works on one material at a time, so
          hundreds of unwanted files can't be made by accident (the user's choice).
+     25. **Where `.vmt` files live: next to their texture, inside `textures/`** (no
+         separate `materials/` folder; agreed 2026-11-21). As Source (its `materials/`
+         holds `.vmt` and texture side by side): they move together, model folders stay
+         self-contained, and a material's name is its texture's path, so maps don't
+         change. A parent lives in the folder of the textures it serves (a parent shared
+         across folders in `textures/` itself). Mazzuola and later texture tools skip
+         `.vmt` files when listing pictures.
      - **Other Source shaders:** `UnlitGeneric` in v0.12.4; `Refract` with mirrors;
        blending several textures is covered by the terrain's painted layers (brushes
        later if missed); character, particle and moving-screen shaders are left out.

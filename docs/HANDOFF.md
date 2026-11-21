@@ -57,7 +57,10 @@ texture licenses; `releases/` has the notes for each version.
   reported. **v0.12.2 (batch 3, bounces) is built** (PLAN.md "Batch 3 decided with the
   user", "v0.12.2, decided without asking"). Then v0.12.3 (props and the light grid) was
   built and reported, and **batch 5 (materials: v0.12.4, then v0.12.4b bump maps) is
-  agreed** (PLAN.md "Batch 5 decided with the user"); build it when the user says go.
+  agreed** (PLAN.md "Batch 5 decided with the user", items 1-25); build it when the user
+  says go. The user's Source / VRAD research (a text file, theirs, not in the repo) also
+  covers shaders and materials; ask them to attach it if a session needs it, and don't
+  commit it.
   The user wants renders of the busy test maps reported with each lighting step:
   `tests/bench/run.sh <app> render` (DEV.md "Benchmark"). The bake is `core/bake.*` (no graphics, tested in
   `testBake`); drawing is `render/baked_light.*`.
