@@ -4,6 +4,14 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-21 — v0.12.3 busy-map renders
+- `tests/bench/run.sh ... render`: the rich map 1.4 s, 1000 boxes 25 s, 4000 boxes 159 s
+  (screenshots `m12-20-busy-rich.png`, `m12-21-busy-1000-boxes.png`,
+  `m12-22-busy-4000-boxes.png`). The 1000 rocks were stopped by the benchmark's one-hour
+  limit while baking their props per vertex (about 50 minutes of it, after 8 minutes of
+  direct light and transfers): 2.6 million vertices x about 325 rays on 2 threads. To ask
+  the user.
+
 ### 2026-11-21 — v0.12.3: lit props and the light grid (M12 batch 4)
 - Built as agreed (PLAN.md "Batch 4 decided with the user"); choices made while building
   are under "v0.12.3, decided without asking".

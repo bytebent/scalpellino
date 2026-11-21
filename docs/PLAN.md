@@ -56,8 +56,10 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   Roadmap item 5. **v0.12.3 is built and pushed** (the user
   said go, 2026-11-21): props lit by the bake and the light grid; its choices made without
   asking are under "v0.12.3, decided without asking"; the busy maps rendered again
-  (`docs/screenshots/m12-20` to `m12-23`). Next: **report**, then discuss batch 5 (v0.12.4,
-  the material system) in depth.
+  (`docs/screenshots/m12-20` to `m12-22`). **The 1000-rocks map didn't finish within the
+  benchmark's hour** (2.6 million prop vertices at full quality, about 325 rays each, on 2
+  threads): to report and ask about (fewer rays for props was the other choice in batch 4
+  question 9). Next: **report**, then discuss batch 5 (v0.12.4, the material system).
 - **Review fixes (2026-11-20), merged into `main`** (fast-forward from
   `fix/review-findings` after the user's go-ahead; no new version, so only "Latest build"
   is refreshed): version releases are
