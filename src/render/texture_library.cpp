@@ -37,49 +37,56 @@ void TextureLibrary::removeUserFolder(size_t i) {
     rescan();
 }
 
-void TextureLibrary::scanFolder(const std::string& dir, const std::string& keyRoot) {
-    std::error_code ec;
-    if (dir.empty() || !fs::is_directory(dir, ec)) return;
-    for (auto it = fs::recursive_directory_iterator(dir, fs::directory_options::skip_permission_denied, ec);
-         !ec && it != fs::recursive_directory_iterator(); it.increment(ec)) {
-        if (!it->is_regular_file(ec)) continue;
-        std::string ext = it->path().extension().string();
-        std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return (char)std::tolower(c); });
-        if (ext != ".png" && ext != ".tga" && ext != ".jpg" && ext != ".jpeg" && ext != ".bmp") continue;
-        std::string name = it->path().stem().string();
-        for (char& c : name) if (std::isspace((unsigned char)c)) c = '_';
-        if (!keyRoot.empty()) { // in the Bottega: named by its path under the root
-            name = bottega::keyFor(keyRoot, it->path().string());
-            if (name.empty()) continue;
-        }
-        if (entries_.count(name)) continue; // first folder wins
-        Entry e;
-        e.path = it->path().string();
-        e.folder = dir;
-        entries_[name] = e;
-    }
-}
-
 void TextureLibrary::rescan() {
     // Keep already-loaded GPU textures whose file is still found.
     std::map<std::string, Entry> old;
     old.swap(entries_);
-    if (!bottega_.empty()) scanFolder(bottega::path(bottega_, "textures"), bottega_);
-    for (const std::string& d : userFolders_) scanFolder(d); // user folders override built-ins
-    scanFolder(builtin_);
-    for (auto& [name, e] : entries_) {
-        auto it = old.find(name);
+    index_.clear();
+    if (!bottega_.empty()) index_.scanFolder(bottega::path(bottega_, "textures"), bottega_, true);
+    for (const std::string& d : userFolders_) index_.scanFolder(d, "", true); // user folders override built-ins
+    index_.scanFolder(builtin_, "", false);
+    index_.finish();
+    for (const std::string& n : index_.names(true)) {
+        const MaterialIndex::Entry* m = index_.find(n);
+        if (!m || m->picture.empty()) continue;
+        Entry e;
+        e.path = m->picture;
+        e.folder = m->folder;
+        auto it = old.find(n);
         if (it != old.end() && it->second.path == e.path) { e = it->second; it->second.loaded = false; }
+        entries_[n] = e;
     }
     for (auto& [name, e] : old)
         if (e.loaded) UnloadTexture(e.tex);
-    names_.clear();
-    for (const auto& [name, e] : entries_) names_.push_back(name);
+    names_ = index_.names(showHelpers_);
+}
+
+void TextureLibrary::setShowHelpers(bool on) {
+    if (on == showHelpers_) return;
+    showHelpers_ = on;
+    names_ = index_.names(showHelpers_);
+}
+
+bool TextureLibrary::isVariant(const std::string& name) const {
+    const MaterialIndex::Entry* e = index_.find(name);
+    return e && e->kind == MaterialIndex::Kind::Variant;
+}
+
+bool TextureLibrary::isBuiltin(const std::string& name) const {
+    const MaterialIndex::Entry* e = index_.find(name);
+    return e && !e->writable;
+}
+
+TextureLibrary::Entry* TextureLibrary::picture(const std::string& name) {
+    const MaterialIndex::Entry* m = index_.find(name);
+    const std::string& pic = m ? m->base : name;
+    auto it = entries_.find(pic);
+    return it == entries_.end() ? nullptr : &it->second;
 }
 
 std::string TextureLibrary::folderOf(const std::string& name) const {
-    auto it = entries_.find(name);
-    return it == entries_.end() ? std::string() : it->second.folder;
+    const MaterialIndex::Entry* e = index_.find(name);
+    return e ? e->folder : std::string();
 }
 
 void TextureLibrary::applyFilter(Texture2D& t) const {
@@ -99,9 +106,9 @@ const Texture2D& TextureLibrary::missing() {
 }
 
 const Texture2D& TextureLibrary::get(const std::string& name) {
-    auto it = entries_.find(name);
-    if (it == entries_.end()) return missing();
-    Entry& e = it->second;
+    Entry* ep = picture(name);
+    if (!ep) return missing();
+    Entry& e = *ep;
     if (!e.loaded && !e.failed) {
         Image img = LoadImage(e.path.c_str());
         if (!img.data) {
@@ -120,9 +127,9 @@ const Texture2D& TextureLibrary::get(const std::string& name) {
 }
 
 Vec3 TextureLibrary::reflectivity(const std::string& name) {
-    auto it = entries_.find(name);
-    if (it == entries_.end()) return {-1, 0, 0};
-    Entry& e = it->second;
+    Entry* ep = picture(name);
+    if (!ep) return {-1, 0, 0};
+    Entry& e = *ep;
     if (!e.reflDone) {
         e.reflDone = true;
         Image img = LoadImage(e.path.c_str());
@@ -140,6 +147,21 @@ Vec3 TextureLibrary::reflectivity(const std::string& name) {
         }
     }
     return e.refl;
+}
+
+bool TextureLibrary::alpha(const std::string& name, int& w, int& h, std::vector<unsigned char>& out) {
+    Entry* e = picture(name);
+    if (!e) return false;
+    Image img = LoadImage(e->path.c_str());
+    if (!img.data) return false;
+    ImageFormat(&img, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+    w = img.width;
+    h = img.height;
+    const unsigned char* p = (const unsigned char*)img.data;
+    out.resize((size_t)w * h);
+    for (size_t i = 0; i < out.size(); ++i) out[i] = p[4 * i + 3];
+    UnloadImage(img);
+    return true;
 }
 
 TexSize TextureLibrary::size(const std::string& name) {

@@ -4,6 +4,38 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-21 — v0.12.4: materials (M12 batch 5)
+- Built as agreed (PLAN.md "Batch 5 decided with the user", items 1-5, 9-14, 16, 17, 19-25);
+  choices made while building are under "v0.12.4, decided without asking", open points
+  under "v0.12.4 parked" (texlight brightness, materials on props and primitives, exposure
+  on reflections, textures with alpha and no `.vmt`).
+- **Core:** `core/material.*` (Source's KeyValues read / written, `.vmt` files, `patch`
+  parents with insert / replace, Source vectors, texlight values; `MaterialIndex`: textures,
+  settings beside them, variants, parents, helper maps by name, where files go);
+  `core/shader_file.*` (the shader header); `Command::fileChanges` (material edits are undo
+  steps that don't mark the map changed). The bake: texlights (VRAD's surface lights per
+  patch), cut-out shadows (ray tests read the picture's alpha), see-through faces block no
+  light, `$reflectivity`, quick prop light (a quarter of the rays).
+- **Render:** `render/shader_library.*` compiles the GLSL files (prelude per geometry: World,
+  Model); `assets/shaders/` has Source's LightmappedGeneric, UnlitGeneric, VertexLitGeneric.
+  Brushes and terrain are drawn by their materials (see-through ones after the props, far
+  to near); props by VertexLitGeneric; reflections read a small copy of the sky. The texture
+  library sits on the material index (variants show their base texture in the editor).
+- **UI:** the Material panel (Texture tool, Properties), multi-select in the Textures panel
+  (Cmd / Shift, Select all shown, a hint line), Texture menu entries, Make a variant,
+  parents, helper maps toggle, Render > Prop light. Help > Controls and the README updated.
+- **Tests:** core `testMaterials` (KeyValues, values, patch rules, the index with variants /
+  helpers / parents, the shipped shader headers, file undo leaving the map saved) and
+  `testBakeMaterials` (cut-out shadows, see-through faces, a texlight's colour and VRAD's
+  repeats scaling, the keys): 4984 checks, 0 failed. New UI script `v124_materials.script`;
+  the idle map now has a material with a `.vmt`. All 33 UI scripts pass at 1x and 2x; idle
+  0 ticks at 1x and 2x (control 892 ticks).
+- **Screenshots:** `m12-23-material-panel.png` (the panel on a material with a parent),
+  `m12-24-materials-log.png` (the render log), `m12-25-materials.png` (cut-out shadows of a
+  fence, a texlight under an overhang, cheap glass, a wet-metal variant with cheap chrome).
+- The SDK's VRAD code couldn't be read this session (fetching the page needed the user's
+  approval, who was away): the texlight scaling is from memory (parked).
+
 ### 2026-11-21 — Batch 5 additions: batch editing, parent materials (docs only)
 - Variants start as a plain copy (the user chose this over presets).
 - For big imports: batch editing of materials (mixed values shown, only the changed field

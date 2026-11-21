@@ -759,10 +759,26 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
     }
 
     // Baked light (renders): brushes through the lightmap shader (fog included).
-    const bool bakedBrushes = lens_ && scene.baked && scene.textures &&
-                              drawBakedBrushes(scene.brushes, *scene.baked, *scene.textures,
-                                               BakedDrawContext{{eye.x, eye.y, eye.z}, scene.exposure, scene.fog, scene.fogColor,
-                                                                scene.fogStart, scene.fogEnd, scene.fogBase, scene.fogThickness});
+    BakedDrawContext bctx;
+    bctx.camPos = {eye.x, eye.y, eye.z};
+    bctx.exposure = scene.exposure;
+    bctx.fog = scene.fog;
+    bctx.fogColor = scene.fogColor;
+    bctx.fogStart = scene.fogStart;
+    bctx.fogEnd = scene.fogEnd;
+    bctx.fogBase = scene.fogBase;
+    bctx.fogThickness = scene.fogThickness;
+    bctx.shaders = scene.shaders;
+    if (lens_ && lens_->ortho) {
+        bctx.orthoOn = true;
+        bctx.viewDir = cameraForward(*lens_);
+    }
+    bctx.skyTex = scene.skyReflection;
+    bctx.skyCover = scene.skyCover;
+    bctx.skyBelow = scene.skyBelow;
+    bctx.skyFlat = {std::pow(scene.ambient.x / 255.0, 2.2), std::pow(scene.ambient.y / 255.0, 2.2), std::pow(scene.ambient.z / 255.0, 2.2)};
+    bctx.problems = scene.problems;
+    const bool bakedBrushes = lens_ && scene.baked && scene.textures && drawBakedBrushes(scene.brushes, *scene.baked, *scene.textures, bctx);
     // Fog: everything solid from here on is drawn through the fog shader.
     bool fogging = false;
     if (scene.fog) {
@@ -990,10 +1006,17 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
         if (lens_ && scene.baked) {
             pctx.bake = scene.baked->shared();
             pctx.exposure = scene.exposure;
+            pctx.material = &bctx;
         }
         std::vector<Prop> ps;
         for (const auto& sp : scene.props) ps.push_back(sp.prop);
         scene.models->draw(ps, pctx);
+    }
+    // See-through faces (materials with $translucent or $alpha < 1) last, far to near.
+    if (bakedBrushes) {
+        BakedDrawContext t = bctx;
+        t.translucent = true;
+        drawBakedBrushes(scene.brushes, *scene.baked, *scene.textures, t);
     }
     // The last bake's light grid (View menu): a small cube per sample, each side coloured by
     // the light from that side (sRGB, clipped). Editor only.

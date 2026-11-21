@@ -57,8 +57,14 @@ texture licenses; `releases/` has the notes for each version.
   reported. **v0.12.2 (batch 3, bounces) is built** (PLAN.md "Batch 3 decided with the
   user", "v0.12.2, decided without asking"). Then v0.12.3 (props and the light grid) was
   built and reported, and **batch 5 (materials: v0.12.4, then v0.12.4b bump maps) is
-  agreed** (PLAN.md "Batch 5 decided with the user", items 1-25); build it when the user
-  says go. The user's Source / VRAD research (a text file, theirs, not in the repo) also
+  agreed** (PLAN.md "Batch 5 decided with the user", items 1-25). **v0.12.4 is built**
+  (`core/material.*`: `.vmt` files, the index of textures / variants / parents / helper
+  maps; `core/shader_file.*` and `render/shader_library.*`: the GLSL shader files and their
+  prelude; `assets/shaders/`: Source's three shaders; `app/editor_materials.cpp`: the panel;
+  material edits are `Command::fileChanges`). Its choices are under "v0.12.4, decided
+  without asking", open points under "v0.12.4 parked" (texlight brightness is the doubtful
+  one). The user asked for **v0.12.4b to be discussed first** (numbered questions with
+  options, consequences and an opinion each), not built straight away. The user's Source / VRAD research (a text file, theirs, not in the repo) also
   covers shaders and materials; ask them to attach it if a session needs it, and don't
   commit it.
   The user wants renders of the busy test maps reported with each lighting step:

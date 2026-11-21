@@ -29,7 +29,7 @@ jobs:
         run: ctest --test-dir build --output-on-failure
 
       - name: Check bundled textures
-        run: test -f build/Scalpellino.app/Contents/Resources/textures/Bricks_24.png && test -f build/Scalpellino.app/Contents/Resources/textures/Tile_19.png
+        run: test -f build/Scalpellino.app/Contents/Resources/textures/Bricks_24.png && test -f build/Scalpellino.app/Contents/Resources/textures/Tile_19.png && test -f build/Scalpellino.app/Contents/Resources/shaders/LightmappedGeneric.glsl
 
       - name: Package app
         run: |

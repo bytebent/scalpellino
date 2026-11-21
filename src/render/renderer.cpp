@@ -2,8 +2,10 @@
 #include "core/texture.hpp"
 #include "render/model_library.hpp"
 #include "render/sky_library.hpp"
+#include "render/shader_library.hpp"
 #include "render/texture_library.hpp"
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <map>
 #include <set>
@@ -25,6 +27,8 @@ Scene Renderer::scene(const Document& doc, TextureLibrary& textures, ModelLibrar
     s.brushes = brushes;
     s.textures = &textures;
     s.models = &models;
+    s.shaders = shaders_;
+    s.problems = &problems_;
     for (const Light& l : doc.lights()) s.lights.push_back({l, false});
     for (const MathPrim& p : doc.prims()) s.prims.push_back({p, false});
     for (const Prop& p : doc.props()) {
@@ -52,6 +56,25 @@ Scene Renderer::scene(const Document& doc, TextureLibrary& textures, ModelLibrar
     for (const MathPrim& p : doc.prims())
         want(p.texture);
     st.missingTextures.assign(missing.begin(), missing.end());
+    // Materials with settings (v0.12.4)
+    {
+        std::set<std::string> used, shaders, probs;
+        auto note = [&](const std::string& name) {
+            const MaterialIndex::Entry* e = textures.material(name);
+            if (!e) return;
+            if (!e->vmt.empty() || e->kind == MaterialIndex::Kind::Variant) used.insert(name);
+            shaders.insert(e->mat.shader);
+            if (!e->mat.problem.empty()) probs.insert(name + ": " + e->mat.problem);
+        };
+        for (const SceneBrush& b : *brushes) {
+            for (const Polygon& p : b.polys)
+                if (p.face >= 0 && p.face < (int)b.faces.size()) note(b.faces[p.face].texture);
+            for (const auto& l : b.layers) note(l.texture);
+        }
+        st.materials = used.size();
+        st.shaders.assign(shaders.begin(), shaders.end());
+        st.materialProblems.assign(probs.begin(), probs.end());
+    }
 
     const Environment& env = doc.environment();
     s.ambient = env.ambient;
@@ -59,6 +82,7 @@ Scene Renderer::scene(const Document& doc, TextureLibrary& textures, ModelLibrar
     if (!env.sky.empty()) {
         if (const Texture2D* t = skies.get(env.sky)) {
             s.skyTexture = t->id;
+            if (const Texture2D* r = skies.reflection(env.sky)) s.skyReflection = r->id;
             const SkyLibrary::Cut cut = skies.cut(env.sky);
             s.skyCover = cut.cover;
             s.skyBelow = {(double)cut.below[0], (double)cut.below[1], (double)cut.below[2]};
@@ -110,6 +134,46 @@ BakeInput bakeInput(const Document& doc, ModelLibrary& models, SkyLibrary& skies
                 for (const TerrainLayer& l : b.terrain->layers) addTex(l.texture);
         }
         for (const MathPrim& p : in.prims) addTex(p.texture);
+        // Materials (v0.12.4): $reflectivity overrides the picture's average; texlights,
+        // cutouts and see-through faces for the light and shadows.
+        std::set<std::string> names;
+        for (const Brush& b : in.brushes) {
+            for (const Face& f : b.faces) names.insert(f.texture);
+            if (b.terrain)
+                for (const TerrainLayer& l : b.terrain->layers) names.insert(l.texture);
+        }
+        for (const MathPrim& p : in.prims) names.insert(p.texture);
+        for (const std::string& n : names) {
+            const MaterialIndex::Entry* e = textures->material(n);
+            if (!e) continue;
+            const Material& m = e->mat;
+            Vec3 r;
+            if (m.has("$reflectivity") && parseVmtVector(m.str("$reflectivity"), r)) in.reflectivity[n] = r;
+            BakeMaterial bm;
+            Vec3 c;
+            double br = 0;
+            if (m.has("%texlight") && parseTexLight(m.str("%texlight"), c, br) && br > 0) {
+                auto lin = [](double v) { return std::pow(std::clamp(v, 0.0, 255.0) / 255.0, 2.2); };
+                bm.emit = Vec3{lin(c.x), lin(c.y), lin(c.z)} * (br / 255.0);
+            }
+            bm.translucent = m.flag("$translucent") || m.num("$alpha", 1) < 1;
+            bm.alphaTest = m.flag("$alphatest") && !bm.translucent;
+            bm.alphaRef = m.num("$alphatestreference", 0.5);
+            const bool glows = bm.emit.x > 0 || bm.emit.y > 0 || bm.emit.z > 0;
+            if (!glows && !bm.translucent && !bm.alphaTest) continue;
+            const TexSize ts = textures->size(n);
+            bm.texW = ts.w;
+            bm.texH = ts.h;
+            if (bm.alphaTest) {
+                int w = 0, h = 0;
+                if (!textures->alpha(n, w, h, bm.alpha) || w != ts.w || h != ts.h) {
+                    bm.alpha.clear();
+                    bm.alphaTest = false;
+                }
+            }
+            if (!glows && !bm.translucent && !bm.alphaTest) continue;
+            in.materials[n] = std::move(bm);
+        }
     }
     for (const auto& [name, m] : *found) {
         if (!m || in.modelReflectivity.count(name)) continue;
@@ -176,6 +240,7 @@ void Renderer::light(const Document& doc, Scene& s) {
 }
 
 bool Renderer::draw(const Camera& cam, const Scene& s, int w, int h, float scale, bool smooth) {
+    problems_.clear();
     if (!view_) view_ = std::make_unique<Viewport>(ViewKind::Persp);
     view_->resize(w, h, scale);
     if (!view_->target().id || !view_->target().texture.id) {

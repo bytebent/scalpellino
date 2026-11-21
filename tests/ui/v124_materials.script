@@ -1,0 +1,171 @@
+# v0.12.4: materials (M12 batch 5). Every texture is a material; a .vmt beside it (Source's
+# syntax and keys) adds settings: written by the Material panel (Texture tool), one undo
+# step each. Variants (a copy under a new name, the same picture), parents (Source's patch),
+# helper maps found by name, several materials edited at once. Renders draw each face with
+# its material's shader file (LightmappedGeneric...): glow, cheap chrome, cutouts (also in
+# the light bake), see-through glass, texlights, detail textures.
+bottega make studio
+copy assets/materials/fence.png studio/textures/mat/fence.png
+copy assets/materials/lamp.png studio/textures/mat/lamp.png
+copy assets/materials/metal.png studio/textures/mat/metal.png
+copy assets/materials/metal_mask.png studio/textures/mat/metal_mask.png
+copy assets/materials/glass.png studio/textures/mat/glass.png
+copy assets/materials/grain.png studio/textures/mat/grain.png
+copy assets/materials/brick_a.png studio/textures/mat/brick_a.png
+copy assets/materials/brick_b.png studio/textures/mat/brick_b.png
+rescan
+expect hastexture textures/mat/fence
+# -- helper maps: found by name, hooked onto their texture, hidden from the list
+expect matkind textures/mat/metal_mask helper
+expect mat textures/mat/metal $envmapmask textures/mat/metal_mask
+expect matfile textures/mat/metal no
+# -- the Material panel writes a .vmt beside the texture; undo takes it away again
+tool texture
+matselect textures/mat/fence
+expect matsel 1
+matset $alphatest 1
+expect matfile textures/mat/fence yes
+expect mat textures/mat/fence $alphatest 1
+expect mat textures/mat/fence $basetexture textures/mat/fence
+undo
+expect matfile textures/mat/fence no
+expect mat textures/mat/fence $alphatest none
+redo
+expect mat textures/mat/fence $alphatest 1
+# -- cheap chrome (the sky), glow and a texlight, see-through glass
+matselect textures/mat/metal
+matset $envmap env_cubemap
+matset $envmaptint [0.7 0.7 0.75]
+matselect textures/mat/lamp
+matset $selfillum 1
+matset %texlight 255 210 150 60000
+matselect textures/mat/glass
+matset $translucent 1
+matset $envmap env_cubemap
+matset $envmaptint [0.4 0.45 0.5]
+expect matshader textures/mat/glass LightmappedGeneric
+# -- a variant: a plain copy under a new name, the same picture
+matselect textures/mat/metal
+matvariant metal_wet
+expect current textures/mat/metal_wet
+expect matkind textures/mat/metal_wet variant
+expect mat textures/mat/metal_wet $envmap env_cubemap
+expect mat textures/mat/metal_wet $basetexture textures/mat/metal
+expect mat textures/mat/metal_wet $envmapmask textures/mat/metal_mask
+matset $envmaptint [0.5 0.52 0.58]
+expect mat textures/mat/metal $envmaptint [0.7 0.7 0.75]
+# -- several at once (Cmd+click): only the changed setting, on all of them, one undo
+matselect textures/mat/fence
+matselect textures/mat/glass cmd
+expect matsel 2
+matset $detail textures/mat/grain
+expect mat textures/mat/fence $detail textures/mat/grain
+expect mat textures/mat/glass $detail textures/mat/grain
+expect mat textures/mat/fence $alphatest 1
+expect mat textures/mat/glass $translucent 1
+undo
+expect mat textures/mat/fence $detail none
+expect mat textures/mat/glass $detail none
+expect mat textures/mat/fence $alphatest 1
+# -- a parent shared by two bricks (Shift+click for a range); edit the parent, both change
+matselect textures/mat/brick_a
+matselect textures/mat/brick_b shift
+expect matsel 2
+matparent new brick_base
+expect matparent textures/mat/brick_a textures/mat/brick_base
+expect matparent textures/mat/brick_b textures/mat/brick_base
+expect matkind textures/mat/brick_base parent
+expect hastexture textures/mat/brick_a
+matselect textures/mat/brick_a
+mateditparent
+matset $envmap env_cubemap
+matset $envmaptint [0.15 0.15 0.15]
+matback
+expect mat textures/mat/brick_b $envmap env_cubemap
+expect mat textures/mat/brick_a $envmaptint [0.15 0.15 0.15]
+expect mat textures/mat/brick_a $basetexture textures/mat/brick_a
+# its own setting overrides the parent's; reset goes back to it
+matset $envmaptint [0.3 0.1 0.1]
+expect mat textures/mat/brick_a $envmaptint [0.3 0.1 0.1]
+expect mat textures/mat/brick_b $envmaptint [0.15 0.15 0.15]
+matreset $envmaptint
+expect mat textures/mat/brick_a $envmaptint [0.15 0.15 0.15]
+# -- Select all shown after a search
+texsearch mat/brick
+matselect shown
+expect matsel 2
+texsearch
+matselect none
+# material edits don't make the map "unsaved"; the editor shows the base texture
+shot m12-23-material-panel.png
+# -- a scene for the render
+tool select
+texture Tile_19
+block -1200 -1200 -32 1200 1200 0
+texscale 1
+texture textures/mat/metal_wet
+block -900 -900 0 -100 -500 4
+texscale 0.5
+texture textures/mat/brick_a
+block -700 400 0 700 432 380
+texture textures/mat/brick_b
+block 100 0 240 700 400 272
+texture textures/mat/lamp
+block 300 150 228 460 250 240
+texscale 5
+texture textures/mat/fence
+block -620 -60 0 -120 -52 240
+texscale 0.5
+texture textures/mat/glass
+block -40 -420 0 160 -412 220
+tool select
+key Esc
+tool light
+lightset kind sun
+lightset pitch -40
+lightset yaw 285
+lightset brightness 350
+lightset pos 0 0 900
+key Return
+environment sky Panorama_Sky_04
+environment skylight 45
+tool select
+key Esc
+tool camera
+cameraset lens 24
+cameraset size 640 360
+cameraset pos -950 -1150 210
+key Return
+cameraedit angles -8 50 0
+tool select
+key Esc
+renderset quality normal
+render
+expect render saved
+expect renderlog materials with settings
+expect renderlog shaders: LightmappedGeneric
+expect renderlog surface lights from glowing materials
+expect renderlog cutout faces cast shadows through
+expect renderlog block no light
+expect renderlog not warning
+expect renderlog prop light full
+shot m12-24-materials-log.png
+rendercopy m12-25-materials.png
+closedialogs
+# -- without the cutout and the texlight it is another bake
+tool texture
+matselect textures/mat/fence
+matset $alphatest 0
+render
+expect renderlog Baking lights (Normal
+expect renderlog not cutout faces
+expect rendersame no
+closedialogs
+undo
+# -- Prop light: quick is its own bake
+renderset props quick
+render
+expect renderlog prop light quick
+expect renderlog Baking lights (Normal
+closedialogs
+quit

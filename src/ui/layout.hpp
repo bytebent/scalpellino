@@ -42,6 +42,8 @@ struct MenuState {
     bool hasCameras = false;
     int renderQuality = 1, renderAA = 2; // Render menu (core/render_job.hpp)
     bool renderSmooth = true;
+    bool renderPropsQuick = false;
+    bool showHelperMaps = false, canMakeVariant = false; // Texture menu (materials, v0.12.4)
 };
 
 struct MenuActions {
@@ -86,6 +88,8 @@ struct MenuActions {
     int renderQuality = -1;   // RenderQuality index
     int renderAA = -1;        // 1..4
     int renderSmooth = -1;    // 0 crisp, 1 smooth
+    int renderPropsQuick = -1; // 0 full, 1 quick
+    bool selectShownTextures = false, selectFaceTextures = false, toggleHelperMaps = false, makeVariant = false;
 };
 
 // Draws the menu bar and reports clicked items.

@@ -27,6 +27,7 @@ std::string renderSettingsToString(const RenderSettings& s) {
     o << "quality " << (s.quality == RenderQuality::Draft ? "draft" : s.quality == RenderQuality::High ? "high" : "normal") << "\n";
     o << "aa " << s.aa << "\n";
     o << "filter " << (s.smooth ? "smooth" : "crisp") << "\n";
+    o << "proplight " << (s.propsQuick ? "quick" : "full") << "\n";
     return o.str();
 }
 
@@ -50,6 +51,9 @@ RenderSettings renderSettingsFromString(const std::string& text) {
         } else if (k == "filter") {
             if (v == "smooth") s.smooth = true;
             else if (v == "crisp") s.smooth = false;
+        } else if (k == "proplight") {
+            if (v == "quick") s.propsQuick = true;
+            else if (v == "full") s.propsQuick = false;
         }
     }
     return s;

@@ -166,6 +166,11 @@ struct Scene {
     // their lightmaps; light is linear, times `exposure` (2^stops).
     const BakedLight* baked = nullptr;
     float exposure = 1;
+    // Materials (renders, v0.12.4): faces and props drawn by their materials' shader files;
+    // reflections read the small sky; problems found while drawing go to the render log.
+    class ShaderLibrary* shaders = nullptr;
+    unsigned skyReflection = 0;
+    std::vector<std::string>* problems = nullptr;
     // The editor's 3D view: the last bake's light grid as small cubes (View menu).
     const LightGrid* lightGrid = nullptr;
 };

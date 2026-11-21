@@ -24,6 +24,7 @@ namespace scal {
 class TextureLibrary;
 class ModelLibrary;
 class SkyLibrary;
+class ShaderLibrary;
 
 // What the bake needs from the map, as a picture shows it (hidden brushes too). Props'
 // models are looked up now, so the bake can run on other threads.
@@ -50,7 +51,14 @@ public:
         std::vector<std::string> missingTextures; // names the library doesn't have (drawn as the checker)
         std::string sky, skyProblem;              // the map's sky ("" none) and why it can't be shown
         bool fog = false;
+        size_t materials = 0;                     // materials with settings (.vmt) the picture uses
+        std::vector<std::string> shaders;         // the shaders they name
+        std::vector<std::string> materialProblems; // .vmt files that can't be read, missing parents
     };
+    // Material shaders (render/shader_library.hpp); null: brushes drawn without materials.
+    void setShaders(ShaderLibrary* s) { shaders_ = s; }
+    // What went wrong while drawing (shaders that don't compile, missing material textures).
+    const std::vector<std::string>& problems() const { return problems_; }
 
     // The scene a picture holds (see the top of this file). Brushes are kept per document
     // revision, and rebuilt only for brushes an edit touched. `lit`: also the lighting (the slow part; the render log shows it as a step).
@@ -77,6 +85,8 @@ private:
     BakedLight baked_;
     SceneCache brushes_{SceneCache::Options{false, true}}; // every brush, nodraw faces left out
     LightingCache lighting_;
+    ShaderLibrary* shaders_ = nullptr;
+    std::vector<std::string> problems_;
 };
 
 } // namespace scal

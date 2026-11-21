@@ -16,7 +16,8 @@ struct RenderSettings {
     RenderQuality quality = RenderQuality::Normal;
     int aa = 2;          // anti-aliasing: the picture is drawn aa x aa times larger, then scaled down (1 = off)
     bool smooth = true;  // texture filtering: smooth (mipmaps) or crisp pixels
-    bool operator==(const RenderSettings& o) const { return quality == o.quality && aa == o.aa && smooth == o.smooth; }
+    bool propsQuick = false; // Prop light: quick = props baked per vertex with a quarter of the rays
+    bool operator==(const RenderSettings& o) const { return quality == o.quality && aa == o.aa && smooth == o.smooth && propsQuick == o.propsQuick; }
 };
 constexpr int kMaxRenderAA = 4;
 // Choosing a quality sets what it decides (for now the anti-aliasing: Draft off, Normal

@@ -35,6 +35,7 @@
 #include "core/replicate.hpp"
 #include "core/landing.hpp"
 #include "render/texture_library.hpp"
+#include "render/shader_library.hpp"
 #include "render/model_library.hpp"
 #include "render/renderer.hpp"
 #include "core/render_job.hpp"
@@ -109,6 +110,24 @@ private:
 
     // Textures (milestone 3)
     void drawTextureBrowser();
+    // Materials (v0.12.4, editor_materials.cpp): the browser's selection, the Material panel
+    // (in the Texture tool's Properties), variants and parents. Edits write .vmt files beside
+    // the textures, each one undo step (Document's file changes).
+    std::vector<std::string> materialTargets() const; // what the panel edits
+    std::vector<std::string> shownTextures() const;   // the browser's list after the search
+    void selectMaterial(const std::string& name, int mode); // 0 click, 1 Cmd (add / remove), 2 Shift (range)
+    void selectShownTextures();
+    void selectFaceTextures();
+    void drawMaterialPanel();
+    void drawMaterialDialogs();
+    void openVariantDialog();
+    bool editMaterials(const std::string& undoName, const std::function<void(const MaterialIndex::Entry&, MaterialFile&)>& edit);
+    bool setMaterialValue(const std::string& key, const std::optional<std::string>& value); // nullopt: back to parent / default
+    bool setMaterialShader(const std::string& shader);
+    bool makeVariant(const std::string& newName);
+    bool setMaterialParent(const std::string& parentName); // "" = none
+    bool newMaterialParent(const std::string& name);
+    void syncMaterialFiles(); // after material files changed (edit, undo, redo): read them again
     void drawFacePanel();
     void applyCurrentTexture() { applyTexture(currentTexture_); }
     void applyTexture(const std::string& name);
@@ -448,6 +467,7 @@ private:
 
     TextureLibrary textures_;
     SkyLibrary skies_;
+    ShaderLibrary shaders_;    // material shaders (GLSL files: built-in and the Bottega's shaders/), renders only
     ModelLibrary models_;      // props' models (the Bottega's models folder), loaded on first use
     ModelFinder modelFinder_;  // models_.finder(), handed to the tools
     LightingCache lighting_;   // only used (and built) while the light preview is on
@@ -460,6 +480,15 @@ private:
     void addBookmark(const std::string& name);
     void goToBookmark(size_t i);
     std::string currentTexture_ = "Bricks_24";
+    // Materials (v0.12.4): what the Material panel edits (the browser's selection: the
+    // current texture and any added with Cmd / Shift-click), in the order picked.
+    std::vector<std::string> materialSelection_;
+    std::string materialAnchor_;          // Shift-click ranges start here
+    std::string parentTarget_;            // the panel edits this parent (.vmt path) instead
+    std::uint64_t filesStamp_ = 0;
+    std::string lastPickedMaterials_;     // picked faces' materials last frame (the panel follows them)
+    bool askVariant_ = false, askParent_ = false;
+    char matNameBuf_[128] = {};
     double defaultScale_ = 0.25;     // Source-style default; good for 512px textures
     bool textured3D_ = true;
     bool showPanels_ = true;         // right-hand Textures/Face panels ("layout classic" hides)

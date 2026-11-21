@@ -8,7 +8,9 @@
 //    shader blends two slices: trilinear).
 //  - Shading is linear: texture (to linear) x light x exposure, then back to sRGB; fog after.
 #include "core/bake.hpp"
+#include "raylib.h"
 #include "render/scene.hpp"
+#include <functional>
 #include <map>
 #include <memory>
 #include <tuple>
@@ -50,16 +52,32 @@ private:
     std::map<std::pair<std::uint32_t, MathPrimId>, PrimRef> prims_;
 };
 
+class ShaderLibrary;
+
 struct BakedDrawContext {
     Vec3 camPos;
     float exposure = 1;     // multiplier (2^stops)
     bool fog = false;
     Vec3 fogColor;          // 0..255
     double fogStart = 0, fogEnd = 1, fogBase = 0, fogThickness = 0;
+    // Materials (v0.12.4): each face is drawn by its material's shader file.
+    ShaderLibrary* shaders = nullptr;      // null: the plain lightmap shader (no materials)
+    bool orthoOn = false;
+    Vec3 viewDir;                          // an orthographic camera's direction
+    unsigned skyTex = 0;                   // the sky for reflections (small), 0 = none
+    float skyCover = 1;
+    Vec3 skyBelow;                         // 0..255
+    Vec3 skyFlat;                          // linear, without a sky picture
+    // Which faces: opaque ones (with cutouts), or the see-through ones ($translucent,
+    // $alpha < 1), drawn last, far to near, without writing depth.
+    bool translucent = false;
+    std::vector<std::string>* problems = nullptr; // shaders that fail, textures materials miss
 };
 
 // Draws the brushes (textured, terrain with its painted layers) lit by `baked`. Inside the
 // 3D camera mode. False if the shader can't run (then nothing was drawn).
 bool drawBakedBrushes(const SceneBrushes& brushes, const BakedLight& baked, TextureLibrary& textures, const BakedDrawContext& ctx);
+// Sets the uniforms every material shader has (render/shader_library.hpp) from `ctx`.
+void setMaterialCommon(Shader& sh, const std::function<int(const char*)>& loc, const BakedDrawContext& ctx);
 
 } // namespace scal

@@ -36,6 +36,9 @@ public:
     // drawn below it. Call after get().
     struct Cut { float cover = 1; unsigned char below[3] = {0, 0, 0}; };
     Cut cut(const std::string& name) const;
+    // A small copy (128 pixels wide, the same cut) for reflections (cheap chrome): about the
+    // size of Source's default cubemap (32 a side), so reflections are as soft. Call after get().
+    const Texture2D* reflection(const std::string& name) const;
     static constexpr double kCutMarginDeg = 5;
     // The sky as small linear colours for the baked sky light (core/bake.hpp), read from the
     // file (whole panorama); invalid if it can't be read. Kept until a rescan.
@@ -48,6 +51,7 @@ private:
     struct Entry {
         std::string path;
         Texture2D tex{};
+        Texture2D refl{};
         bool loaded = false, failed = false;
         Cut cut;
         std::string problem;

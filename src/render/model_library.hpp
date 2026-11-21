@@ -17,6 +17,7 @@
 namespace scal {
 
 struct BakeResult;
+struct BakedDrawContext;
 
 struct PropDrawContext {
     Vec3 camPos;
@@ -28,6 +29,9 @@ struct PropDrawContext {
     Vec3 fogColor;                 // 0..255
     double fogStart = 0, fogEnd = 1;
     double fogBase = 0, fogThickness = 0; // height fog (renders); thickness 0 = everywhere
+    // Renders with materials (v0.12.4): props drawn by the VertexLitGeneric shader file
+    // (its sky, camera and fog from here). Null: the built-in baked shader.
+    const BakedDrawContext* material = nullptr;
 };
 
 class ModelLibrary {
@@ -85,7 +89,7 @@ private:
     // v0.10.3) and plain (one call per prop), the fallback if a GPU refuses the first.
     struct ShaderSet {
         Shader shader{};
-        Material material{};
+        ::Material material{};
         bool ok = false;
         int locHasTex = -1, locCutoff = -1, locCam = -1, locFogOn = -1, locFogColor = -1, locFogRange = -1, locFogHeight = -1;
     };
@@ -95,9 +99,11 @@ private:
     // light in a float texture (each prop's chunks one after another).
     struct BakedSet {
         Shader shader{};
-        Material material{};
+        ::Material material{};
         bool ok = false, tried = false;
         std::map<std::string, int> locs;
+        ::Material fileMaterial{}; // for the shader file's program (v0.12.4)
+        bool fileMaterialMade = false;
         int at(const char* n) {
             auto it = locs.find(n);
             if (it != locs.end()) return it->second;

@@ -1,16 +1,20 @@
 #include "render/baked_light.hpp"
 #include "core/texture.hpp"
+#include "render/shader_library.hpp"
 #include "render/texture_library.hpp"
 #include "raylib.h"
 #include "rlgl.h"
 #include <algorithm>
 #include <cmath>
+#include <set>
 
 namespace scal {
 
 namespace {
 constexpr int kPageSize = 2048;
 constexpr int kLightmapUnit = 5; // texture unit the lightmap page is bound to (the batch uses 0..4)
+constexpr int kSkyUnit = 6;      // the sky for reflections (material shaders)
+constexpr int kFirstMaterialUnit = 7; // a material's own textures (detail, masks...)
 
 unsigned uploadFloatRGB(const std::vector<float>& rgb, int w, int h) {
     const unsigned id = rlLoadTexture(rgb.data(), w, h, PIXELFORMAT_UNCOMPRESSED_R32G32B32, 1);
@@ -222,101 +226,261 @@ void BakedLight::uv(const FaceRef& f, const Page& p, double s, double t, float& 
     v = (float)((f.y + 1 + t + 0.5) / p.h);
 }
 
+void setMaterialCommon(Shader& sh, const std::function<int(const char*)>& loc, const BakedDrawContext& ctx) {
+    auto f1 = [&](const char* n, float v) { SetShaderValue(sh, loc(n), &v, SHADER_UNIFORM_FLOAT); };
+    auto i1 = [&](const char* n, int v) { SetShaderValue(sh, loc(n), &v, SHADER_UNIFORM_INT); };
+    auto f3 = [&](const char* n, const Vec3& v) {
+        const float a[3] = {(float)v.x, (float)v.y, (float)v.z};
+        SetShaderValue(sh, loc(n), a, SHADER_UNIFORM_VEC3);
+    };
+    f1("exposure", ctx.exposure);
+    i1("fogOn", ctx.fog ? 1 : 0);
+    f3("camPos", ctx.camPos);
+    f3("fogColor", ctx.fogColor / 255.0);
+    const float fr[2] = {(float)ctx.fogStart, (float)ctx.fogEnd}, fh[2] = {(float)ctx.fogBase, (float)ctx.fogThickness};
+    SetShaderValue(sh, loc("fogRange"), fr, SHADER_UNIFORM_VEC2);
+    SetShaderValue(sh, loc("fogHeight"), fh, SHADER_UNIFORM_VEC2);
+    i1("orthoOn", ctx.orthoOn ? 1 : 0);
+    f3("viewDir", ctx.viewDir);
+    i1("skyTex", kSkyUnit);
+    i1("skyOn", ctx.skyTex ? 1 : 0);
+    f1("skyCover", ctx.skyCover);
+    f3("skyBelow", ctx.skyBelow / 255.0);
+    f3("skyFlat", ctx.skyFlat);
+    i1("lightmap", kLightmapUnit);
+}
+
+namespace {
+// One thing to draw: a plain face, or a terrain's base or painted layer.
+struct Item {
+    const SceneBrush* b = nullptr;
+    int poly = -1;          // plain face: its polygon; terrain: -1
+    int layer = -1;         // terrain: -1 base, else the painted layer
+    const std::string* material = nullptr;
+    int page = 0;
+    double dist = 0;        // see-through faces: from the camera (far first)
+};
+bool isSeeThrough(const Material* m) { return m && (m->flag("$translucent") || m->num("$alpha", 1) < 1); }
+} // namespace
+
 bool drawBakedBrushes(const SceneBrushes& brushes, const BakedLight& baked, TextureLibrary& textures, const BakedDrawContext& ctx) {
     BakedShader& S = bakedShader();
-    if (!S.ok || !baked.ready() || baked.pages().empty()) return false;
-    rlDrawRenderBatchActive();
-    BeginShaderMode(S.sh);
-    const int unit = kLightmapUnit;
-    SetShaderValue(S.sh, S.lightmap, &unit, SHADER_UNIFORM_INT);
-    SetShaderValue(S.sh, S.exposure, &ctx.exposure, SHADER_UNIFORM_FLOAT);
-    const int fogOn = ctx.fog ? 1 : 0;
-    SetShaderValue(S.sh, S.fogOn, &fogOn, SHADER_UNIFORM_INT);
-    const float cam[3] = {(float)ctx.camPos.x, (float)ctx.camPos.y, (float)ctx.camPos.z};
-    SetShaderValue(S.sh, S.camPos, cam, SHADER_UNIFORM_VEC3);
-    const float fc[3] = {(float)(ctx.fogColor.x / 255), (float)(ctx.fogColor.y / 255), (float)(ctx.fogColor.z / 255)};
-    SetShaderValue(S.sh, S.fogColor, fc, SHADER_UNIFORM_VEC3);
-    const float fr[2] = {(float)ctx.fogStart, (float)ctx.fogEnd}, fh[2] = {(float)ctx.fogBase, (float)ctx.fogThickness};
-    SetShaderValue(S.sh, S.fogRange, fr, SHADER_UNIFORM_VEC2);
-    SetShaderValue(S.sh, S.fogHeight, fh, SHADER_UNIFORM_VEC2);
-
+    if (!baked.ready() || baked.pages().empty()) return false;
+    if (!S.ok && !ctx.shaders) return false;
     const std::vector<BakedLight::Page>& pages = baked.pages();
     const BakedLight::FaceRef full{0, -1, -1, nullptr}; // the full-light block at (0, 0)
-    for (int page = 0; page < (int)pages.size(); ++page) {
-        rlDrawRenderBatchActive();
-        rlActiveTextureSlot(unit);
-        rlEnableTexture(pages[page].tex);
-        rlActiveTextureSlot(0);
-        const BakedLight::Page& pg = pages[page];
-        for (const SceneBrush& b : brushes) {
-            const size_t plain = b.terrain ? b.terrainFirst : b.polys.size();
-            for (size_t pi = 0; pi < plain; ++pi) {
-                const Polygon& p = b.polys[pi];
-                if (p.face < 0 || p.face >= (int)b.faces.size() || p.verts.size() < 3) continue;
-                const BakedLight::FaceRef* ref = baked.face(b.id, p.face, false);
-                if (!ref) ref = &full;
-                if (ref->page != page) continue;
-                const Face& f = b.faces[p.face];
-                const Texture2D& tex = textures.get(f.texture);
-                const TexSize ts{std::max(1, tex.width), std::max(1, tex.height)};
-                rlCheckRenderBatchLimit((int)(p.verts.size() - 2) * 3);
-                rlSetTexture(tex.id);
-                rlBegin(RL_TRIANGLES);
-                rlColor4ub(255, 255, 255, 255);
-                for (size_t i = 1; i + 1 < p.verts.size(); ++i)
-                    for (size_t k : {(size_t)0, i, i + 1}) {
-                        const Vec3& v = p.verts[k];
-                        float lu = 1.5f / pg.w, lv = 1.5f / pg.h;
-                        if (ref->lm) BakedLight::uv(*ref, pg, dot(ref->lm->axisS, v) - ref->lm->s0, dot(ref->lm->axisT, v) - ref->lm->t0, lu, lv);
-                        const UV uv = texCoord(f, v, ts);
-                        rlTexCoord2f((float)uv.u, (float)uv.v);
-                        rlNormal3f(lu, lv, 0);
-                        rlVertex3f((float)v.x, (float)v.y, (float)v.z);
-                    }
-                rlEnd();
-                rlSetTexture(0);
+    auto materialOf = [&](const std::string& n) -> const Material* {
+        const MaterialIndex::Entry* e = textures.material(n);
+        return e ? &e->mat : nullptr;
+    };
+
+    // ---- what to draw in this pass
+    std::vector<Item> items;
+    for (const SceneBrush& b : brushes) {
+        const size_t plain = b.terrain ? b.terrainFirst : b.polys.size();
+        for (size_t pi = 0; pi < plain; ++pi) {
+            const Polygon& p = b.polys[pi];
+            if (p.face < 0 || p.face >= (int)b.faces.size() || p.verts.size() < 3) continue;
+            const std::string& mat = b.faces[p.face].texture;
+            if (isSeeThrough(ctx.shaders ? materialOf(mat) : nullptr) != ctx.translucent) continue;
+            const BakedLight::FaceRef* ref = baked.face(b.id, p.face, false);
+            Item it;
+            it.b = &b;
+            it.poly = (int)pi;
+            it.material = &mat;
+            it.page = ref ? ref->page : 0;
+            if (ctx.translucent) {
+                Vec3 c;
+                for (const Vec3& v : p.verts) c += v;
+                it.dist = length(c / (double)p.verts.size() - ctx.camPos);
             }
-            if (!b.terrain) continue;
-            const BakedLight::FaceRef* ref = baked.face(b.id, b.terrain->face, true);
-            if (!ref) ref = &full;
-            if (ref->page != page) continue;
-            const Face& f = b.faces[b.terrain->face];
-            const int n = b.terrain->n;
-            const size_t cells = b.polys.size() - b.terrainFirst;
-            for (int pass = 0; pass < 1 + (int)b.layers.size(); ++pass) {
-                const Texture2D& tex = textures.get(pass == 0 ? f.texture : b.layers[pass - 1].texture);
-                const TexSize ts{std::max(1, tex.width), std::max(1, tex.height)};
-                for (size_t c = 0; c < cells; ++c) {
-                    const Polygon& p = b.polys[b.terrainFirst + c];
-                    const float* al = pass == 0 ? nullptr : &b.layers[pass - 1].cellAlpha[4 * c];
-                    if (pass > 0 && al[0] <= 0 && al[1] <= 0 && al[2] <= 0 && al[3] <= 0) continue;
-                    const int ci = (int)(c % (size_t)(n - 1)), cj = (int)(c / (size_t)(n - 1));
-                    const int gi[4] = {ci, ci + 1, ci + 1, ci}, gj[4] = {cj, cj, cj + 1, cj + 1};
-                    rlCheckRenderBatchLimit(6);
-                    rlSetTexture(tex.id);
-                    rlBegin(RL_TRIANGLES);
-                    for (int k : {0, 1, 2, 0, 2, 3}) {
-                        const unsigned char a = pass == 0 ? 255 : (unsigned char)std::lround(std::clamp(al[k], 0.0f, 1.0f) * 255);
-                        rlColor4ub(255, 255, 255, a);
-                        float lu = 1.5f / pg.w, lv = 1.5f / pg.h;
-                        if (ref->lm)
-                            BakedLight::uv(*ref, pg, (double)gi[k] / (n - 1) * (ref->lm->w - 1), (double)gj[k] / (n - 1) * (ref->lm->h - 1), lu, lv);
-                        const UV uv = texCoord(f, p.verts[k], ts);
-                        rlTexCoord2f((float)uv.u, (float)uv.v);
-                        rlNormal3f(lu, lv, 0);
-                        rlVertex3f((float)p.verts[k].x, (float)p.verts[k].y, (float)p.verts[k].z);
-                    }
-                    rlEnd();
-                    rlSetTexture(0);
-                }
-            }
+            items.push_back(it);
+        }
+        if (!b.terrain) continue;
+        const BakedLight::FaceRef* ref = baked.face(b.id, b.terrain->face, true);
+        for (int layer = -1; layer < (int)b.layers.size(); ++layer) {
+            const std::string& mat = layer < 0 ? b.faces[b.terrain->face].texture : b.layers[layer].texture;
+            if (isSeeThrough(ctx.shaders ? materialOf(mat) : nullptr) != ctx.translucent) continue;
+            Item it;
+            it.b = &b;
+            it.layer = layer;
+            it.material = &mat;
+            it.page = ref ? ref->page : 0;
+            if (ctx.translucent) it.dist = length(b.bounds.center() - ctx.camPos);
+            items.push_back(it);
         }
     }
+    if (items.empty()) return true;
+    if (ctx.translucent)
+        std::stable_sort(items.begin(), items.end(), [](const Item& a, const Item& b) { return a.dist > b.dist; });
+    else // terrain layers after everything else (bottom layer first), then by material and page
+        std::stable_sort(items.begin(), items.end(), [](const Item& a, const Item& b) {
+            if (a.layer != b.layer) return a.layer < b.layer;
+            if (*a.material != *b.material) return *a.material < *b.material;
+            return a.page < b.page;
+        });
+
+    // ---- the program for a material: its shader file, else the built-in LightmappedGeneric,
+    // else the plain lightmap shader
+    struct Bound {
+        Shader sh{};
+        ShaderLibrary::Program* prog = nullptr;
+        bool nocull = false;
+    };
     rlDrawRenderBatchActive();
-    rlActiveTextureSlot(unit);
+    if (ctx.translucent) rlDisableDepthMask();
+    auto plainUniforms = [&] {
+        const int unit = kLightmapUnit;
+        SetShaderValue(S.sh, S.lightmap, &unit, SHADER_UNIFORM_INT);
+        SetShaderValue(S.sh, S.exposure, &ctx.exposure, SHADER_UNIFORM_FLOAT);
+        const int fogOn = ctx.fog ? 1 : 0;
+        SetShaderValue(S.sh, S.fogOn, &fogOn, SHADER_UNIFORM_INT);
+        const float cam[3] = {(float)ctx.camPos.x, (float)ctx.camPos.y, (float)ctx.camPos.z};
+        SetShaderValue(S.sh, S.camPos, cam, SHADER_UNIFORM_VEC3);
+        const float fc[3] = {(float)(ctx.fogColor.x / 255), (float)(ctx.fogColor.y / 255), (float)(ctx.fogColor.z / 255)};
+        SetShaderValue(S.sh, S.fogColor, fc, SHADER_UNIFORM_VEC3);
+        const float fr[2] = {(float)ctx.fogStart, (float)ctx.fogEnd}, fh[2] = {(float)ctx.fogBase, (float)ctx.fogThickness};
+        SetShaderValue(S.sh, S.fogRange, fr, SHADER_UNIFORM_VEC2);
+        SetShaderValue(S.sh, S.fogHeight, fh, SHADER_UNIFORM_VEC2);
+    };
+    std::set<std::string> reported;
+    auto report = [&](const std::string& what) {
+        if (ctx.problems && reported.insert(what).second) ctx.problems->push_back(what);
+    };
+    auto use = [&](const std::string& matName) -> Bound {
+        Bound bd;
+        const MaterialIndex::Entry* e = textures.material(matName);
+        const Material* m = e ? &e->mat : nullptr;
+        if (ctx.shaders) {
+            const std::string shader = m ? m->shader : "LightmappedGeneric";
+            ShaderLibrary::Program* p = ctx.shaders->program(shader, ShaderGeometry::World);
+            if (!p) report("the shader " + shader + " (material " + matName + ") isn't there: drawn with LightmappedGeneric");
+            else if (!p->ok) report(p->error + ": drawn with LightmappedGeneric");
+            if (!p || !p->ok) p = ctx.shaders->program("LightmappedGeneric", ShaderGeometry::World);
+            if (p && p->ok) {
+                bd.prog = p;
+                bd.sh = p->shader;
+                BeginShaderMode(bd.sh);
+                setMaterialCommon(bd.sh, [&](const char* n) { return p->at(n); }, ctx);
+                for (const std::string& miss : ctx.shaders->bind(*p, m, e, &textures, kFirstMaterialUnit))
+                    report("the material " + matName + " uses " + miss + ", which isn't there");
+                rlActiveTextureSlot(kSkyUnit);
+                rlEnableTexture(ctx.skyTex ? ctx.skyTex : rlGetTextureIdDefault());
+                rlActiveTextureSlot(0);
+                bd.nocull = m && m->flag("$nocull");
+                if (bd.nocull) rlDisableBackfaceCulling();
+                return bd;
+            }
+        }
+        if (!S.ok) return bd;
+        bd.sh = S.sh;
+        BeginShaderMode(S.sh);
+        plainUniforms();
+        return bd;
+    };
+    auto release = [&](Bound& bd) {
+        rlDrawRenderBatchActive();
+        if (bd.prog) ctx.shaders->unbind(kFirstMaterialUnit);
+        if (bd.nocull) rlEnableBackfaceCulling();
+        if (bd.sh.id) EndShaderMode();
+        bd = Bound{};
+    };
+    auto bindPage = [&](int page) {
+        rlDrawRenderBatchActive();
+        rlActiveTextureSlot(kLightmapUnit);
+        rlEnableTexture(pages[page].tex);
+        rlActiveTextureSlot(0);
+    };
+    auto normalColor = [](const Vec3& n, unsigned char a) {
+        auto c = [](double v) { return (unsigned char)std::clamp((int)std::lround((v * 0.5 + 0.5) * 255), 0, 255); };
+        rlColor4ub(c(n.x), c(n.y), c(n.z), a);
+    };
+    auto emit = [&](const Item& it) {
+        const SceneBrush& b = *it.b;
+        const BakedLight::Page& pg = pages[it.page];
+        if (it.poly >= 0) {
+            const Polygon& p = b.polys[it.poly];
+            const BakedLight::FaceRef* ref = baked.face(b.id, p.face, false);
+            if (!ref) ref = &full;
+            const Face& f = b.faces[p.face];
+            const Texture2D& tex = textures.get(f.texture);
+            const TexSize ts{std::max(1, tex.width), std::max(1, tex.height)};
+            rlCheckRenderBatchLimit((int)(p.verts.size() - 2) * 3);
+            rlSetTexture(tex.id);
+            rlBegin(RL_TRIANGLES);
+            for (size_t i = 1; i + 1 < p.verts.size(); ++i)
+                for (size_t k : {(size_t)0, i, i + 1}) {
+                    const Vec3& v = p.verts[k];
+                    float lu = 1.5f / pg.w, lv = 1.5f / pg.h;
+                    if (ref->lm) BakedLight::uv(*ref, pg, dot(ref->lm->axisS, v) - ref->lm->s0, dot(ref->lm->axisT, v) - ref->lm->t0, lu, lv);
+                    const UV uv = texCoord(f, v, ts);
+                    normalColor(p.normal, 255);
+                    rlTexCoord2f((float)uv.u, (float)uv.v);
+                    rlNormal3f(lu, lv, 0);
+                    rlVertex3f((float)v.x, (float)v.y, (float)v.z);
+                }
+            rlEnd();
+            rlSetTexture(0);
+            return;
+        }
+        const BakedLight::FaceRef* ref = baked.face(b.id, b.terrain->face, true);
+        if (!ref) ref = &full;
+        const Face& f = b.faces[b.terrain->face];
+        const int n = b.terrain->n;
+        const size_t cells = b.polys.size() - b.terrainFirst;
+        const Texture2D& tex = textures.get(*it.material);
+        const TexSize ts{std::max(1, tex.width), std::max(1, tex.height)};
+        for (size_t c = 0; c < cells; ++c) {
+            const Polygon& p = b.polys[b.terrainFirst + c];
+            const float* al = it.layer < 0 ? nullptr : &b.layers[it.layer].cellAlpha[4 * c];
+            if (al && al[0] <= 0 && al[1] <= 0 && al[2] <= 0 && al[3] <= 0) continue;
+            const int ci = (int)(c % (size_t)(n - 1)), cj = (int)(c / (size_t)(n - 1));
+            const int gi[4] = {ci, ci + 1, ci + 1, ci}, gj[4] = {cj, cj, cj + 1, cj + 1};
+            rlCheckRenderBatchLimit(6);
+            rlSetTexture(tex.id);
+            rlBegin(RL_TRIANGLES);
+            for (int k : {0, 1, 2, 0, 2, 3}) {
+                const unsigned char a = !al ? 255 : (unsigned char)std::lround(std::clamp(al[k], 0.0f, 1.0f) * 255);
+                const Vec3 nn = 4 * c + k < b.cellNormals.size() ? b.cellNormals[4 * c + k] : b.terrain->normal;
+                normalColor(nn, a);
+                float lu = 1.5f / pg.w, lv = 1.5f / pg.h;
+                if (ref->lm)
+                    BakedLight::uv(*ref, pg, (double)gi[k] / (n - 1) * (ref->lm->w - 1), (double)gj[k] / (n - 1) * (ref->lm->h - 1), lu, lv);
+                const UV uv = texCoord(f, p.verts[k], ts);
+                rlTexCoord2f((float)uv.u, (float)uv.v);
+                rlNormal3f(lu, lv, 0);
+                rlVertex3f((float)p.verts[k].x, (float)p.verts[k].y, (float)p.verts[k].z);
+            }
+            rlEnd();
+            rlSetTexture(0);
+        }
+    };
+
+    Bound bd;
+    const std::string* curMat = nullptr;
+    int curPage = -1;
+    for (const Item& it : items) {
+        if (!curMat || *curMat != *it.material) {
+            release(bd);
+            bd = use(*it.material);
+            curMat = it.material;
+            curPage = -1;
+            if (!bd.sh.id) continue;
+        }
+        if (!bd.sh.id) continue;
+        if (it.page != curPage) {
+            bindPage(it.page);
+            curPage = it.page;
+        }
+        emit(it);
+    }
+    release(bd);
+    rlActiveTextureSlot(kLightmapUnit);
+    rlDisableTexture();
+    rlActiveTextureSlot(kSkyUnit);
     rlDisableTexture();
     rlActiveTextureSlot(0);
-    EndShaderMode();
+    if (ctx.translucent) rlEnableDepthMask();
     return true;
 }
 

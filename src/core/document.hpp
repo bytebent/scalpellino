@@ -81,6 +81,14 @@ struct CameraChange {
     std::optional<Camera> after;
 };
 
+// A file the command writes (materials, v0.12.4): its text before and after (nullopt = no
+// file). Material files aren't part of the map: commands holding only file changes don't
+// mark the map as changed.
+struct FileChange {
+    std::string path;
+    std::optional<std::string> before, after;
+};
+
 struct Command {
     std::string name;
     std::vector<BrushChange> changes;
@@ -97,7 +105,13 @@ struct Command {
     std::optional<std::set<PropId>> propSelectionBefore, propSelectionAfter;
     std::vector<CameraChange> cameraChanges;
     std::optional<std::set<CameraId>> cameraSelectionBefore, cameraSelectionAfter;
+    std::vector<FileChange> fileChanges;
     std::uint64_t serial = 0; // set by Document::apply: which edit this is (for "saved?")
+    // Only files change (nothing of the map itself).
+    bool filesOnly() const {
+        return !fileChanges.empty() && changes.empty() && groupChanges.empty() && lightChanges.empty() && !envAfter &&
+               primChanges.empty() && propChanges.empty() && cameraChanges.empty();
+    }
 };
 
 // Everything besides brushes that a loaded map brings (milestone 8).
@@ -197,6 +211,13 @@ public:
     size_t undoCount() const { return undo_.size(); }
     bool canRedo() const { return !redo_.empty(); }
     const std::string& undoName() const;
+    // Files written by commands (materials): changes with every apply / undo / redo that
+    // writes one; the paths of the last ones; the last write error ("" none).
+    std::uint64_t filesStamp() const { return filesStamp_; }
+    const std::vector<std::string>& lastFiles() const { return lastFiles_; }
+    const std::string& fileError() const { return fileError_; }
+    // A material edit: the files' new texts (nullopt = delete); the old ones are read now.
+    Command makeFileEdit(const std::vector<std::pair<std::string, std::optional<std::string>>>& files, const std::string& name) const;
 
     // Changes since last save: undoing back to the saved state counts as no change
     // (v0.10.2). Visgroups, bookmarks and the figure aren't undoable: changing them stays
@@ -284,6 +305,10 @@ private:
     void sideEdit() { bump(); sideEdits_ = true; }
     // Serial of the state the history's top undoes to; with every step dropped by the memory
     // limit, the newest dropped one (so undoing all the way doesn't look like the saved state).
+    void writeFiles(const std::vector<FileChange>& files, bool after);
+    std::uint64_t filesStamp_ = 0;
+    std::vector<std::string> lastFiles_;
+    std::string fileError_;
     std::uint64_t historyTop() const { return undo_.empty() ? historyFloor_ : undo_.back().serial; }
 
     std::vector<Brush> brushes_;

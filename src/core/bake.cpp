@@ -39,11 +39,23 @@ struct Tri { Vec3 a, e1, e2; };
 
 class Tracer {
 public:
+    // A cutout ($alphatest, v0.12.4): texel (u, v) = (dot(P, uAxis) + uOff, dot(P, vAxis) + vOff),
+    // wrapped; a hit where the picture's alpha is under the reference doesn't count.
+    struct Mask {
+        const BakeMaterial* mat = nullptr;
+        Vec3 uAxis, vAxis;
+        double uOff = 0, vOff = 0;
+    };
+    int addMask(const Mask& m) {
+        masks_.push_back(m);
+        return (int)masks_.size() - 1;
+    }
     // `tag`: what the triangle belongs to (closestHit reports it; -1 = nothing that bounces).
-    void addTri(const Vec3& a, const Vec3& b, const Vec3& c, int tag = -1) {
+    void addTri(const Vec3& a, const Vec3& b, const Vec3& c, int tag = -1, int mask = -1) {
         if (length(cross(b - a, c - a)) < 1e-9) return;
         tris_.push_back({a, b - a, c - a});
         tags_.push_back(tag);
+        triMask_.push_back(mask);
     }
     void addPrims(std::vector<MathPrim> members) {
         PrimObj o;
@@ -89,7 +101,7 @@ public:
                 if (n.count) {
                     for (int i = n.first; i < n.first + n.count; ++i) {
                         double t;
-                        if (hitTriT(tris_[idx_[i]], o, d, best, t)) {
+                        if (hitTriT(idx_[i], o, d, best, t)) {
                             best = t;
                             hit.t = t;
                             hit.tag = tags_[idx_[i]];
@@ -133,7 +145,7 @@ public:
                 if (!hitBox(n.box, o, inv, maxT)) continue;
                 if (n.count) {
                     for (int i = n.first; i < n.first + n.count; ++i)
-                        if (hitTri(tris_[idx_[i]], o, d, maxT)) return true;
+                        if (hitTri(idx_[i], o, d, maxT)) return true;
                 } else if (sp + 2 <= 96) {
                     stack[sp++] = n.left;
                     stack[sp++] = n.right;
@@ -154,6 +166,8 @@ private:
     struct PrimObj { std::vector<MathPrim> members; std::vector<const MathPrim*> ptrs; AABB box; };
     std::vector<Tri> tris_;
     std::vector<int> tags_;
+    std::vector<int> triMask_;
+    std::vector<Mask> masks_;
     std::vector<int> idx_;
     std::vector<Node> nodes_;
     std::vector<PrimObj> prims_;
@@ -169,7 +183,21 @@ private:
         }
         return true;
     }
-    static bool hitTriT(const Tri& t, const Vec3& o, const Vec3& d, double maxT, double& tt) {
+    // Is the cutout's picture see-through at P?
+    bool seeThrough(int ti, const Vec3& P) const {
+        const int mi = triMask_[ti];
+        if (mi < 0) return false;
+        const Mask& m = masks_[mi];
+        const BakeMaterial& bm = *m.mat;
+        if (bm.texW <= 0 || bm.texH <= 0 || bm.alpha.size() < (size_t)bm.texW * bm.texH) return false;
+        const double u = dot(P, m.uAxis) + m.uOff, v = dot(P, m.vAxis) + m.vOff;
+        long long x = (long long)std::floor(u) % bm.texW, y = (long long)std::floor(v) % bm.texH;
+        if (x < 0) x += bm.texW;
+        if (y < 0) y += bm.texH;
+        return bm.alpha[(size_t)y * bm.texW + (size_t)x] < bm.alphaRef * 255.0;
+    }
+    bool hitTriT(int ti, const Vec3& o, const Vec3& d, double maxT, double& tt) const {
+        const Tri& t = tris_[ti];
         const Vec3 p = cross(d, t.e2);
         const double det = dot(t.e1, p);
         if (std::fabs(det) < 1e-12) return false;
@@ -181,9 +209,10 @@ private:
         const double v = dot(d, q) * inv;
         if (v < 0 || u + v > 1) return false;
         tt = dot(t.e2, q) * inv;
-        return tt > 1e-4 && tt < maxT;
+        return tt > 1e-4 && tt < maxT && !seeThrough(ti, o + d * tt);
     }
-    static bool hitTri(const Tri& t, const Vec3& o, const Vec3& d, double maxT) {
+    bool hitTri(int ti, const Vec3& o, const Vec3& d, double maxT) const {
+        const Tri& t = tris_[ti];
         const Vec3 p = cross(d, t.e2);
         const double det = dot(t.e1, p);
         if (std::fabs(det) < 1e-12) return false;
@@ -195,7 +224,7 @@ private:
         const double v = dot(d, q) * inv;
         if (v < 0 || u + v > 1) return false;
         const double tt = dot(t.e2, q) * inv;
-        return tt > 1e-4 && tt < maxT;
+        return tt > 1e-4 && tt < maxT && !seeThrough(ti, o + d * tt);
     }
     int buildNode(int first, int count) {
         const int me = (int)nodes_.size();
@@ -264,6 +293,21 @@ struct Gather {
                 sum += L.intensity * (dt * vis / (double)ns);
                 continue;
             }
+            if (L.surface) {
+                // VRAD's emit_surface: intensity x cos at the sample x cos at the light / d^2
+                const Vec3 delta = L.pos - o;
+                const double dist = length(delta);
+                if (dist < 1e-6) continue;
+                const Vec3 to = delta / dist;
+                const double dt = dot(n, to), dot2 = -dot(to, L.dir);
+                if (dt <= 0 || dot2 <= 1e-3) continue;
+                const double dh = std::max(1.0, dist / kCmPerHammerUnit);
+                const Vec3 c = L.intensity * (dt * dot2 / (dh * dh));
+                if (maxc(c) < 1e-5) continue;
+                if (blocked(o, to, dist - 0.5)) continue;
+                sum += c;
+                continue;
+            }
             const Vec3 delta = L.pos - o;
             const double dist = length(delta);
             if (dist < 1e-6) continue;
@@ -322,6 +366,7 @@ struct SmoothNormals {
 struct FaceWork {
     FaceLightmap* out = nullptr;
     std::string texture;
+    double texelArea = 1;         // cm^2 per texel (|scaleU x scaleV|): texlights' repeats
     Vec3 n;                       // face normal
     double planeD = 0;
     std::vector<Vec3> verts;
@@ -825,6 +870,18 @@ std::uint64_t bakeKey(const BakeInput& in) {
     }
     h.v(in.env.ambient); h.d(in.env.skyLight); h.i(in.env.minLight); h.d(in.env.smoothAngle); h.d(in.env.bounceScale);
     h.i(in.maxBounces);
+    h.i(in.propsQuick);
+    for (const auto& [k, m] : in.materials) {
+        h.s(k); h.v(m.emit); h.i(m.texW); h.i(m.texH); h.i(m.translucent); h.i(m.alphaTest); h.d(m.alphaRef);
+        if (!m.alpha.empty()) h.bytes(m.alpha.data(), m.alpha.size());
+    }
+    // where a cutout's holes or a texlight's repeats fall
+    for (const Brush& b : in.brushes)
+        for (const Face& f : b.faces) {
+            auto it = in.materials.find(f.texture);
+            if (it == in.materials.end() || (!it->second.alphaTest && maxc(it->second.emit) <= 0)) continue;
+            h.d(f.scaleU); h.d(f.scaleV); h.d(f.u.offset); h.d(f.v.offset);
+        }
     for (const auto& [k, v] : in.reflectivity) { h.s(k); h.v(v); }
     for (const auto& [k, v] : in.modelReflectivity) { h.s(k); h.v(v); }
     for (const MathPrim& p : in.prims) { h.s(p.texture); h.v(p.color); }
@@ -846,6 +903,7 @@ BakeResult bakeLight(const BakeInput& in, BakeProgress* progress, int threads) {
     std::vector<Owner> owners;
     Tracer tracer;
     std::vector<std::optional<TerrainGrid>> grids(in.brushes.size());
+    size_t translucentFaces = 0, cutoutFaces = 0;
     {
         int fi = 0, ti = 0;
         for (size_t bi = 0; bi < in.brushes.size(); ++bi) {
@@ -853,12 +911,28 @@ BakeResult bakeLight(const BakeInput& in, BakeProgress* progress, int threads) {
             grids[bi] = terrainGrid(b);
             for (const Polygon& p : b.polygons()) {
                 if (grids[bi] && p.face == grids[bi]->face) continue;
-                int tag = -1;
+                int tag = -1, mask = -1;
                 if (p.face >= 0 && p.face < (int)b.faces.size() && p.verts.size() >= 3 && !isNoDraw(b.faces[p.face].texture)) {
                     tag = (int)owners.size();
                     owners.push_back({0, fi++, 0});
+                    const Face& f = b.faces[p.face];
+                    auto mit = in.materials.find(f.texture);
+                    if (mit != in.materials.end()) {
+                        const BakeMaterial& bm = mit->second;
+                        if (bm.translucent) { ++translucentFaces; continue; } // see-through: blocks no light (VRAD)
+                        if (bm.alphaTest && !bm.alpha.empty() && f.scaleU != 0 && f.scaleV != 0) {
+                            Tracer::Mask m;
+                            m.mat = &bm;
+                            m.uAxis = f.u.axis / f.scaleU;
+                            m.vAxis = f.v.axis / f.scaleV;
+                            m.uOff = f.u.offset;
+                            m.vOff = f.v.offset;
+                            mask = tracer.addMask(m);
+                            ++cutoutFaces;
+                        }
+                    }
                 }
-                for (size_t i = 1; i + 1 < p.verts.size(); ++i) tracer.addTri(p.verts[0], p.verts[i], p.verts[i + 1], tag);
+                for (size_t i = 1; i + 1 < p.verts.size(); ++i) tracer.addTri(p.verts[0], p.verts[i], p.verts[i + 1], tag, mask);
             }
             if (grids[bi]) {
                 const TerrainGrid& g = *grids[bi];
@@ -1022,6 +1096,7 @@ BakeResult bakeLight(const BakeInput& in, BakeProgress* progress, int threads) {
                 FaceWork& w = faces[fi++];
                 const Face& f = b.faces[p.face];
                 w.texture = f.texture;
+                w.texelArea = std::max(1e-9, std::fabs(f.scaleU * f.scaleV));
                 double L = std::clamp(f.lightmapScale, kMinLightmapScale, kMaxLightmapScale) * Q.scaleMul;
                 Vec3 aS = length(f.u.axis) > 1e-9 ? normalize(f.u.axis) : Vec3{1, 0, 0};
                 Vec3 aT = length(f.v.axis) > 1e-9 ? normalize(f.v.axis) : Vec3{0, 1, 0};
@@ -1068,6 +1143,88 @@ BakeResult bakeLight(const BakeInput& in, BakeProgress* progress, int threads) {
         }
     }
     if (capped) res.notes.push_back(std::to_string(capped) + " large faces got coarser lightmaps (at most " + std::to_string(kMaxLuxels) + " luxels a side)");
+
+    // ---- texlights (v0.12.4): each patch of a glowing face is a surface light, as VRAD's
+    // CreateDirectLights: intensity = baselight x the patch's area in texture repeats
+    // (area / texel area / texels per picture), facing out of the face. Faces are cut into
+    // patches as for the bounce (4 luxels); unlike VRAD also when there are no bounces.
+    {
+        auto addSurface = [&](const Vec3& origin, const Vec3& normal, const Vec3& intensity) {
+            BakeLight L;
+            L.surface = true;
+            L.pos = origin + normal * 1.0; // just off the face, so the face itself doesn't shadow it
+            L.dir = normal;
+            L.intensity = intensity;
+            G.lights.push_back(std::move(L));
+            ++res.texlights;
+        };
+        for (FaceWork& w : faces) {
+            auto mit = in.materials.find(w.texture);
+            if (mit == in.materials.end() || maxc(mit->second.emit) <= 0) continue;
+            const BakeMaterial& bm = mit->second;
+            const double perPicture = w.texelArea * std::max(1, bm.texW) * std::max(1, bm.texH);
+            const double luxscale = (length(w.out->axisS) + length(w.out->axisT)) / 2;
+            std::vector<std::vector<Vec3>> stack{w.verts};
+            while (!stack.empty()) {
+                std::vector<Vec3> poly = std::move(stack.back());
+                stack.pop_back();
+                AABB box;
+                for (const Vec3& v : poly) box.add(v);
+                const Vec3 total = box.size() * luxscale;
+                const int axis = total.x >= total.y && total.x >= total.z ? 0 : total.y >= total.z ? 1 : 2;
+                if (total[axis] >= 4 && poly.size() >= 3) {
+                    std::vector<Vec3> lo, hi;
+                    splitPoly(poly, axis, (box.min[axis] + box.max[axis]) / 2, lo, hi);
+                    if (lo.size() >= 3 && hi.size() >= 3 && polyArea(lo) > 1e-6 && polyArea(hi) > 1e-6) {
+                        stack.push_back(std::move(lo));
+                        stack.push_back(std::move(hi));
+                        continue;
+                    }
+                }
+                const double area = polyArea(poly);
+                if (area <= 1e-6) continue;
+                addSurface(polyCentroid(poly), w.n, bm.emit * (area / perPicture));
+            }
+        }
+        for (TerrainWork& t : terrains) {
+            const Brush* tb = nullptr;
+            for (const Brush& bb : in.brushes)
+                if (bb.id == t.out->brush) tb = &bb;
+            if (!tb) continue;
+            const Face& f = tb->faces[t.g.face];
+            auto mit = in.materials.find(f.texture);
+            if (mit == in.materials.end() || maxc(mit->second.emit) <= 0) continue;
+            const BakeMaterial& bm = mit->second;
+            const double perPicture = std::max(1e-9, std::fabs(f.scaleU * f.scaleV)) * std::max(1, bm.texW) * std::max(1, bm.texH);
+            const TerrainGrid& g = t.g;
+            const int n1 = g.n - 1;
+            const double cellSize = std::max(1e-6, length(g.corners[1] - g.corners[0]) / n1);
+            const double L = std::clamp(f.lightmapScale, kMinLightmapScale, kMaxLightmapScale) * Q.scaleMul;
+            const int k = std::max(1, (int)std::lround(4 * L / cellSize));
+            for (int by = 0; by < n1; by += k)
+                for (int bx = 0; bx < n1; bx += k) {
+                    double area = 0;
+                    Vec3 o, nn;
+                    for (int cj = by; cj < std::min(n1, by + k); ++cj)
+                        for (int ci = bx; ci < std::min(n1, bx + k); ++ci) {
+                            const Vec3 a = g.at(ci, cj), b = g.at(ci + 1, cj), c = g.at(ci + 1, cj + 1), d = g.at(ci, cj + 1);
+                            for (const auto& tri : {std::array<Vec3, 3>{a, b, c}, std::array<Vec3, 3>{a, c, d}}) {
+                                Vec3 cr = cross(tri[1] - tri[0], tri[2] - tri[0]);
+                                if (dot(cr, g.normal) < 0) cr = -cr;
+                                const double ar = length(cr) / 2;
+                                area += ar;
+                                o += (tri[0] + tri[1] + tri[2]) * (ar / 3);
+                                nn += cr / 2;
+                            }
+                        }
+                    if (area <= 1e-9) continue;
+                    addSurface(o / area, length(nn) > 1e-12 ? normalize(nn) : g.normal, bm.emit * (area / perPicture));
+                }
+        }
+        if (res.texlights) res.notes.push_back(std::to_string(res.texlights) + (res.texlights == 1 ? " surface light" : " surface lights") + " from glowing materials (texlights)");
+        if (cutoutFaces) res.notes.push_back(std::to_string(cutoutFaces) + (cutoutFaces == 1 ? " cutout face casts" : " cutout faces cast") + " shadows through its holes");
+        if (translucentFaces) res.notes.push_back(std::to_string(translucentFaces) + (translucentFaces == 1 ? " see-through face blocks" : " see-through faces block") + " no light");
+    }
     for (TerrainWork& t : terrains) {
         const TerrainGrid& g = t.g;
         const int n = g.n;
@@ -1803,6 +1960,10 @@ BakeResult bakeLight(const BakeInput& in, BakeProgress* progress, int threads) {
         return mul(pa.direct + pa.total, pa.refl);
     };
     const std::vector<Vec3> dirs162 = haltonSphere(fast ? std::max(8, kSkySamples / 4) : kSkySamples);
+    // Render > Prop light > quick: props baked per vertex with a quarter of the rays (sky,
+    // sun samples and the bounce gather), as Draft does everywhere.
+    const bool propFast = fast || in.propsQuick;
+    const std::vector<Vec3> propDirs = propFast ? haltonSphere(std::max(8, kSkySamples / 4)) : dirs162;
     static const Vec3 kAxes[6] = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
     // An ambient cube at p: each of the 6 directions weighs the rays by how much they face it.
     auto cubeAt = [&](const Vec3& p, Vec3 out[6]) {
@@ -2008,12 +2169,12 @@ BakeResult bakeLight(const BakeInput& in, BakeProgress* progress, int threads) {
                         }
                         // a little off the surface along the normal (VRAD nudges its samples)
                         const Vec3 at = P + n * 0.5;
-                        Vec3 c = G.at(at, n, n, fast, own.get());
+                        Vec3 c = G.at(at, n, n, propFast, own.get());
                         if (!patches.empty()) {
                             Vec3 acc;
                             double sumdot = 0;
                             const Vec3 o = at + n * kOffset;
-                            for (const Vec3& d : dirs162) {
+                            for (const Vec3& d : propDirs) {
                                 const double cs = dot(n, d);
                                 if (cs <= 1e-6) continue;
                                 sumdot += cs;

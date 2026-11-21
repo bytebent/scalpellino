@@ -51,7 +51,9 @@ add_library(scal_core STATIC
   src/core/camera.cpp
   src/core/sky_presets.cpp
   src/core/render_job.cpp
-  src/core/bake.cpp)
+  src/core/bake.cpp
+  src/core/material.cpp
+  src/core/shader_file.cpp)
 target_include_directories(scal_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 find_package(Threads REQUIRED)
 target_link_libraries(scal_core PUBLIC Threads::Threads) # Sky Lab bakes on all threads
@@ -69,6 +71,7 @@ if(SCAL_BUILD_TESTS)
   # here too.
   add_executable(scal_core_tests tests/test_core.cpp src/render/scene.cpp src/render/lighting.cpp)
   target_link_libraries(scal_core_tests PRIVATE scal_core scal_io)
+  target_compile_definitions(scal_core_tests PRIVATE SCAL_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
   add_test(NAME core COMMAND scal_core_tests)
 endif()
 
@@ -88,6 +91,7 @@ if(SCAL_BUILD_APP)
     src/app/editor_script_commands.cpp
     src/app/editor_script_expects.cpp
     src/app/editor_surfaces.cpp
+    src/app/editor_materials.cpp
     src/app/editor_visibility.cpp
     src/app/editor_world.cpp
     src/app/editor_cameras.cpp
@@ -103,6 +107,7 @@ if(SCAL_BUILD_APP)
     src/render/viewport.cpp
     src/render/renderer.cpp
     src/render/baked_light.cpp
+    src/render/shader_library.cpp
     src/tools/tool.cpp
     src/tools/select_tool.cpp
     src/tools/block_tool.cpp
@@ -133,6 +138,9 @@ if(SCAL_BUILD_APP)
   file(GLOB SCAL_BUILTIN_SKIES ${CMAKE_CURRENT_SOURCE_DIR}/assets/skies/*.png
                                ${CMAKE_CURRENT_SOURCE_DIR}/assets/skies/*.txt)
 
+  # Source's shaders as GLSL files (materials, v0.12.4).
+  file(GLOB SCAL_BUILTIN_SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/*.glsl)
+
   # The built-in moon (Sky Lab, v0.10.6).
   file(GLOB SCAL_BUILTIN_MOON ${CMAKE_CURRENT_SOURCE_DIR}/assets/moon/*.jpg
                               ${CMAKE_CURRENT_SOURCE_DIR}/assets/moon/*.txt)
@@ -141,7 +149,8 @@ if(SCAL_BUILD_APP)
     set_source_files_properties(${SCAL_BUILTIN_TEXTURES} PROPERTIES MACOSX_PACKAGE_LOCATION Resources/textures)
     set_source_files_properties(${SCAL_BUILTIN_SKIES} PROPERTIES MACOSX_PACKAGE_LOCATION Resources/skies)
     set_source_files_properties(${SCAL_BUILTIN_MOON} PROPERTIES MACOSX_PACKAGE_LOCATION Resources/moon)
-    add_executable(Scalpellino MACOSX_BUNDLE ${SCAL_APP_SOURCES} ${SCAL_BUILTIN_TEXTURES} ${SCAL_BUILTIN_SKIES} ${SCAL_BUILTIN_MOON})
+    set_source_files_properties(${SCAL_BUILTIN_SHADERS} PROPERTIES MACOSX_PACKAGE_LOCATION Resources/shaders)
+    add_executable(Scalpellino MACOSX_BUNDLE ${SCAL_APP_SOURCES} ${SCAL_BUILTIN_TEXTURES} ${SCAL_BUILTIN_SKIES} ${SCAL_BUILTIN_MOON} ${SCAL_BUILTIN_SHADERS})
     set_target_properties(Scalpellino PROPERTIES
       MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/cmake/Info.plist.in
       MACOSX_BUNDLE_BUNDLE_NAME "Scalpellino"
@@ -158,7 +167,9 @@ if(SCAL_BUILD_APP)
       COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:Scalpellino>/skies
       COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SCAL_BUILTIN_SKIES} $<TARGET_FILE_DIR:Scalpellino>/skies
       COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:Scalpellino>/moon
-      COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SCAL_BUILTIN_MOON} $<TARGET_FILE_DIR:Scalpellino>/moon)
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SCAL_BUILTIN_MOON} $<TARGET_FILE_DIR:Scalpellino>/moon
+      COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:Scalpellino>/shaders
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SCAL_BUILTIN_SHADERS} $<TARGET_FILE_DIR:Scalpellino>/shaders)
   endif()
 
   target_include_directories(Scalpellino PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)

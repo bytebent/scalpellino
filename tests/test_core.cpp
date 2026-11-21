@@ -19,6 +19,8 @@
 #include "core/bottega.hpp"
 #include "core/prop.hpp"
 #include "core/bake.hpp"
+#include "core/material.hpp"
+#include "core/shader_file.hpp"
 #include <array>
 #include "io/glb_loader.hpp"
 #include "io/model_store.hpp"
@@ -4164,6 +4166,281 @@ static void testPropLight() {
     CHECK(writeMap(d).find("disablevertexlighting") != std::string::npos);
 }
 
+
+static void testBakeMaterials() {
+    // A floor, the sun straight down and a slab between (as testBake).
+    auto setup = [](const std::string& slabTex) {
+        BakeInput in;
+        Brush floor = makeBox(box({0, 0, -16}, {1024, 1024, 0}), "floor");
+        floor.id = 1;
+        Brush slab = makeBox(box({384, 384, 100}, {640, 640, 116}), slabTex);
+        slab.id = 2;
+        for (Face& f : slab.faces) { // texel = x / 128 (period 2 texels across 256 cm)
+            f.u.axis = {1, 0, 0};
+            f.v.axis = {0, 1, 0};
+            f.scaleU = f.scaleV = 128;
+            f.u.offset = f.v.offset = 0;
+        }
+        in.brushes = {floor, slab};
+        Light sun;
+        sun.kind = LightKind::Sun;
+        sun.pitch = -90;
+        sun.brightness = 200;
+        in.lights = {sun};
+        in.env.skyLight = 0;
+        in.quality = BakeQuality::Draft;
+        in.maxBounces = 0;
+        return in;
+    };
+    // a cutout: alpha clear in texel 1 (x 384..512), solid in texel 0 (x 512..640)
+    {
+        BakeInput in = setup("fence");
+        BakeMaterial m;
+        m.alphaTest = true;
+        m.texW = 2;
+        m.texH = 1;
+        m.alpha = {255, 0};
+        in.materials["fence"] = m;
+        const BakeResult r = bakeLight(in, nullptr, 2);
+        CHECK(luxelAt(r, in.brushes[0], {0, 0, 1}, {440, 512, 0}).x > 0.3); // through the hole
+        CHECK(luxelAt(r, in.brushes[0], {0, 0, 1}, {590, 512, 0}).x < 0.01); // under the solid part
+        bool noted = false;
+        for (const std::string& n : r.notes) noted = noted || n.find("cutout") != std::string::npos;
+        CHECK(noted);
+        // without the cutout the whole slab shadows
+        const BakeResult solid = bakeLight(setup("fence"), nullptr, 2);
+        CHECK(luxelAt(solid, setup("fence").brushes[0], {0, 0, 1}, {440, 512, 0}).x < 0.01);
+        CHECK(bakeKey(in) != bakeKey(setup("fence")));
+    }
+    // see-through: blocks no light at all
+    {
+        BakeInput in = setup("glass");
+        BakeMaterial m;
+        m.translucent = true;
+        in.materials["glass"] = m;
+        const BakeResult r = bakeLight(in, nullptr, 2);
+        CHECK(luxelAt(r, in.brushes[0], {0, 0, 1}, {512, 512, 0}).x > 0.3);
+        CHECK(luxelAt(r, in.brushes[1], {0, 0, 1}, {512, 512, 116}).x > 0.3); // still lit itself
+    }
+    // a texlight: a glowing ceiling lights a dark closed room; VRAD's repeats scaling
+    {
+        auto room = [](double scale) {
+            BakeInput in;
+            Brush floor = makeBox(box({0, 0, -16}, {512, 512, 0}), "floor");
+            floor.id = 1;
+            Brush ceil = makeBox(box({0, 0, 256}, {512, 512, 272}), "panel");
+            ceil.id = 2;
+            for (Face& f : ceil.faces) f.scaleU = f.scaleV = scale;
+            in.brushes = {floor, ceil};
+            in.env.skyLight = 0;
+            in.quality = BakeQuality::Draft;
+            in.maxBounces = 0;
+            BakeMaterial m;
+            m.emit = {1, 0.5, 0.25};
+            m.texW = m.texH = 64;
+            in.materials["panel"] = m;
+            return in;
+        };
+        BakeInput in = room(1);
+        const BakeResult r = bakeLight(in, nullptr, 2);
+        const Vec3 c = luxelAt(r, in.brushes[0], {0, 0, 1}, {256, 256, 0});
+        CHECK(c.x > 0.001 && near(c.y / c.x, 0.5, 1e-6) && near(c.z / c.x, 0.25, 1e-6)); // its colour
+        CHECK(r.texlights > 1);
+        CHECK(luxelAt(r, in.brushes[1], {0, 0, -1}, {256, 256, 256}).x < 1e-9); // it doesn't light itself
+        // half the texture scale = four times the repeats = four times the light (VRAD)
+        const BakeResult r2 = bakeLight(room(0.5), nullptr, 2);
+        CHECK(near(luxelAt(r2, in.brushes[0], {0, 0, 1}, {256, 256, 0}).x / c.x, 4.0, 1e-6));
+        // no material: dark
+        BakeInput dark = room(1);
+        dark.materials.clear();
+        CHECK(luxelAt(bakeLight(dark, nullptr, 2), in.brushes[0], {0, 0, 1}, {256, 256, 0}).x < 1e-9);
+        CHECK(bakeKey(dark) != bakeKey(in));
+    }
+    // quick prop light is another bake
+    {
+        BakeInput in = setup("x");
+        BakeInput q = in;
+        q.propsQuick = true;
+        CHECK(bakeKey(q) != bakeKey(in));
+    }
+}
+
+static void writeText(const std::filesystem::path& p, const std::string& t) {
+    std::filesystem::create_directories(p.parent_path());
+    std::ofstream o(p, std::ios::binary);
+    o << t;
+}
+
+static void testMaterials() {
+    namespace fs = std::filesystem;
+    // ---- KeyValues
+    {
+        VmtBlock b;
+        std::string err;
+        CHECK(parseVmt("LightmappedGeneric\n{\n  \"$BaseTexture\" \"brick/brick01\" // a comment\n  $envmap env_cubemap\n"
+                       "  \"$envmaptint\" \"[0.5 0.5 0.5]\"\n  Proxies { AnimatedTexture { animatedtexturevar $basetexture } }\n}\n", b, &err));
+        CHECK(b.name == "LightmappedGeneric");
+        CHECK(b.keys.size() == 3 && b.keys[0].key == "$basetexture" && b.keys[0].value == "brick/brick01");
+        CHECK(b.keys[1].value == "env_cubemap");
+        CHECK(b.blocks.size() == 1 && b.blocks[0].blocks.size() == 1);
+        VmtBlock again;
+        CHECK(parseVmt(writeVmt(b), again) && again.keys.size() == 3 && again.blocks.size() == 1 && again.keys[2].value == "[0.5 0.5 0.5]");
+        CHECK(!parseVmt("LightmappedGeneric { \"$a\" \"1\"", b, &err) && !err.empty());   // a '}' missing
+        CHECK(!parseVmt("", b, &err));
+        // an unquoted vector and Source's [$X360] condition after a value
+        CHECK(parseVmt("UnlitGeneric { $color [1 0 0] $alpha 0.5 [$X360] $nocull 1 }", b) && b.keys.size() == 3 && b.keys[0].value == "[1 0 0]" && b.keys[2].key == "$nocull");
+    }
+    // ---- values
+    {
+        Vec3 v;
+        CHECK(parseVmtVector("[0.5 1 0]", v) && std::fabs(v.x - 0.5) < 1e-9 && v.y == 1 && v.z == 0);
+        CHECK(parseVmtVector("{255 0 51}", v) && std::fabs(v.x - 1) < 1e-9 && std::fabs(v.z - 0.2) < 1e-9);
+        CHECK(parseVmtVector("2", v) && v.x == 2 && v.z == 2);
+        CHECK(!parseVmtVector("red", v));
+        double br = 0;
+        CHECK(parseTexLight("255 128 0 400", v, br) && v.y == 128 && br == 400);
+        CHECK(parseTexLight("255 255 255", v, br) && br == 200);
+        Material m;
+        m.params["$alpha"] = "0.25";
+        m.params["$envmaptint"] = "[.2 .3 .4]";
+        CHECK(std::fabs(m.num("$ALPHA", 1) - 0.25) < 1e-12 && m.num("$missing", 7) == 7);
+        CHECK(std::fabs(m.vec("$envmaptint", {}).z - 0.4) < 1e-12);
+    }
+    // ---- patch: insert adds or overrides, replace only changes what the parent has, "" removes
+    {
+        MaterialFile parent, child;
+        CHECK(MaterialFile::parse("LightmappedGeneric { $envmap env_cubemap $envmaptint \"[1 1 1]\" $detail grain }", parent));
+        CHECK(MaterialFile::parse("patch { include \"textures/base.vmt\" insert { $basetexture brick $envmaptint \"[.5 .5 .5]\" $detail \"\" } "
+                                  "replace { $selfillum 1 $envmap sky } }", child));
+        CHECK(child.isPatch() && child.include == "textures/base.vmt" && child.params.size() == 3 && child.replace.size() == 2);
+        const Material m = resolveMaterial(child, [&](const std::string& inc) -> std::optional<std::pair<MaterialFile, std::string>> {
+            if (inc == "textures/base.vmt") return std::make_pair(parent, std::string("/x/base.vmt"));
+            return std::nullopt;
+        });
+        CHECK(m.shader == "LightmappedGeneric");
+        CHECK(m.str("$basetexture") == "brick");
+        CHECK(m.str("$envmaptint") == "[.5 .5 .5]");
+        CHECK(!m.has("$detail"));               // removed by ""
+        CHECK(!m.has("$selfillum"));            // replace doesn't add
+        CHECK(m.str("$envmap") == "sky");       // replace changes what is there
+        CHECK(m.parentFile == "/x/base.vmt" && m.problem.empty());
+        CHECK(m.own.count("$basetexture") && m.own.count("$envmap") && !m.own.count("$envmaptint") == false);
+        // own value editing keeps a patch a patch
+        MaterialFile c2 = child;
+        c2.setOwn("$EnvMap", "env_cubemap");
+        CHECK(c2.replace.size() == 1 && c2.own("$envmap") && *c2.own("$envmap") == "env_cubemap");
+        c2.removeOwn("$basetexture");
+        CHECK(!c2.own("$basetexture"));
+        MaterialFile back;
+        CHECK(MaterialFile::parse(c2.text(), back) && back.isPatch() && back.include == "textures/base.vmt" && back.own("$envmap"));
+        // a missing parent is reported, the own keys still apply; a loop of includes stops
+        const Material lost = resolveMaterial(child, [](const std::string&) { return std::nullopt; });
+        CHECK(!lost.problem.empty() && lost.str("$basetexture") == "brick");
+        const Material loop = resolveMaterial(child, [&](const std::string&) { return std::make_pair(child, std::string("/x/self.vmt")); });
+        CHECK(!loop.problem.empty());
+    }
+    // ---- the index: textures, settings beside them, variants, helpers, parents
+    {
+        const fs::path root = fs::temp_directory_path() / "scal_materials_test";
+        fs::remove_all(root);
+        const fs::path bt = root / "bottega", user = root / "mine", builtin = root / "builtin";
+        writeText(bt / "bottega.txt", "bottega 1\n");
+        writeText(bt / "textures/walls/Brick.png", "x");
+        writeText(bt / "textures/walls/Brick_mask.png", "x");
+        writeText(bt / "textures/walls/Brick_normal.png", "x");
+        writeText(bt / "textures/walls/Brick.vmt", "LightmappedGeneric { $basetexture textures/walls/Brick $envmap env_cubemap }");
+        writeText(bt / "textures/walls/Brick_wet.vmt", "patch { include textures/walls/brick_base.vmt insert { $basetexture walls/Brick $envmaptint \"[.8 .8 .8]\" } }");
+        writeText(bt / "textures/walls/brick_base.vmt", "LightmappedGeneric { $envmap env_cubemap $envmapcontrast 1 }");
+        writeText(bt / "textures/Glass.png", "x");
+        writeText(bt / "textures/broken.vmt", "LightmappedGeneric { $basetexture ");
+        writeText(user / "My Tile.png", "x");
+        writeText(user / "My Tile_selfillum.png", "x");
+        writeText(builtin / "Bricks_24.png", "x");
+        writeText(builtin / "Bricks_24.vmt", "LightmappedGeneric { $basetexture Bricks_24 $detail Bricks_24 }");
+        writeText(builtin / "Glass.png", "x"); // a later folder's Glass loses to... a different name: "Glass" vs "textures/Glass"
+        MaterialIndex ix;
+        ix.scanFolder((bt / "textures").string(), bt.string(), true);
+        ix.scanFolder(user.string(), "", true);
+        ix.scanFolder(builtin.string(), "", false);
+        ix.finish();
+        const auto names = ix.names(false);
+        auto has = [&](const std::string& n) { return std::find(names.begin(), names.end(), n) != names.end(); };
+        CHECK(has("textures/walls/Brick") && has("textures/walls/Brick_wet") && has("My_Tile") && has("Bricks_24") && has("textures/Glass") && has("Glass"));
+        CHECK(!has("textures/walls/Brick_mask") && !has("textures/walls/Brick_normal") && !has("My_Tile_selfillum")); // helpers hidden
+        CHECK(!has("textures/walls/brick_base") && !has("textures/broken")); // a parent only, a broken file
+        const auto all = ix.names(true);
+        CHECK(std::find(all.begin(), all.end(), "textures/walls/Brick_mask") != all.end());
+        const MaterialIndex::Entry* brick = ix.find("textures/walls/Brick");
+        CHECK(brick && brick->kind == MaterialIndex::Kind::Texture && brick->base == "textures/walls/Brick");
+        CHECK(brick && brick->mat.str("$envmap") == "env_cubemap");
+        CHECK(brick && brick->mat.str("$envmapmask") == "textures/walls/Brick_mask"); // hooked by name
+        CHECK(brick && brick->mat.str("$bumpmap") == "textures/walls/Brick_normal");
+        const MaterialIndex::Entry* wet = ix.find("textures/walls/Brick_wet");
+        CHECK(wet && wet->kind == MaterialIndex::Kind::Variant && wet->base == "textures/walls/Brick");
+        CHECK(wet && wet->mat.num("$envmapcontrast") == 1 && wet->mat.str("$envmaptint") == "[.8 .8 .8]"); // from its parent, and its own
+        CHECK(wet && wet->mat.str("$envmapmask") == "textures/walls/Brick_mask"); // a variant gets its base's helpers
+        CHECK(wet && !wet->mat.parentFile.empty() && wet->mat.problem.empty());
+        const MaterialIndex::Entry* tile = ix.find("My_Tile");
+        CHECK(tile && tile->vmt.empty() && tile->mat.str("$basetexture") == "My_Tile" && tile->mat.str("$selfillummask") == "My_Tile_selfillum");
+        CHECK(ix.vmtPathFor("My_Tile") == (user / "My Tile.vmt").lexically_normal().string());
+        CHECK(ix.vmtPathFor("Bricks_24").empty());                 // built-in: read only
+        CHECK(ix.find("Bricks_24") && ix.find("Bricks_24")->mat.str("$detail") == "Bricks_24");
+        CHECK(ix.find("textures/broken") && !ix.find("textures/broken")->mat.problem.empty());
+        CHECK(ix.vmtEntries().size() == 5);
+        // includes are named from the library folder's root (the Bottega root), as Source's "materials/..."
+        CHECK(brick && ix.includeName(*brick, (bt / "textures/walls/brick_base.vmt").string()) == "textures/walls/brick_base.vmt");
+        CHECK(brick && ix.resolveTexture(*brick, "walls\\Brick.vtf") == "textures/walls/Brick");
+        CHECK(brick && ix.resolveTexture(*brick, "Brick_mask") == "textures/walls/Brick_mask");   // beside the .vmt
+        CHECK(brick && ix.resolveTexture(*brick, "nothing").empty());
+        fs::remove_all(root);
+    }
+    // ---- shader files: the shipped ones list their settings
+    {
+        ShaderFile sf;
+        std::string err;
+        CHECK(!parseShaderFile("void main() {}", sf, &err) && !err.empty());
+        for (const char* n : {"LightmappedGeneric", "UnlitGeneric", "VertexLitGeneric"}) {
+            std::ifstream in(std::string(SCAL_SOURCE_DIR) + "/assets/shaders/" + n + ".glsl");
+            std::stringstream ss;
+            ss << in.rdbuf();
+            CHECK(parseShaderFile(ss.str(), sf, &err) && sf.name == n && sf.kind == "material");
+            CHECK(sf.setting("$basetexture") && sf.setting("$basetexture")->type == "texture");
+            CHECK(sf.setting("$alphatestreference") && sf.setting("$alphatestreference")->def == "0.5");
+            CHECK(sf.setting("$envmaptint") && sf.setting("$envmaptint")->def == "1 1 1");
+            CHECK(sf.body.find("vec4 shade()") != std::string::npos && sf.body.find("// setting:") == std::string::npos);
+            CHECK(sf.bodyLine > 10);
+        }
+        CHECK(shaderUniformName("$detailscale") == "u_detailscale" && shaderUniformName("%texlight") == "u_texlight");
+    }
+    // ---- material files through undo: written, put back, deleted; the map stays "saved"
+    {
+        const fs::path dir = fs::temp_directory_path() / "scal_material_undo";
+        fs::remove_all(dir);
+        fs::create_directories(dir);
+        Document doc;
+        doc.markSaved();
+        const std::string a = (dir / "a.vmt").string(), b = (dir / "b.vmt").string();
+        writeText(a, "LightmappedGeneric { $alpha 1 }");
+        auto read = [](const std::string& p) { std::ifstream i(p); std::stringstream s; s << i.rdbuf(); return s.str(); };
+        Command c = doc.makeFileEdit({{a, std::string("LightmappedGeneric { $alpha 0.5 }")}, {b, std::string("UnlitGeneric { }")}}, "Material");
+        CHECK(c.fileChanges.size() == 2 && c.filesOnly());
+        const auto stamp = doc.filesStamp();
+        doc.apply(c);
+        CHECK(read(a).find("0.5") != std::string::npos && fs::exists(b) && doc.filesStamp() != stamp);
+        CHECK(!doc.dirty() && doc.canUndo());
+        doc.undo();
+        CHECK(read(a).find("$alpha 1") != std::string::npos && !fs::exists(b) && !doc.dirty());
+        doc.redo();
+        CHECK(fs::exists(b) && doc.lastFiles().size() == 2 && doc.fileError().empty());
+        // the same text again changes nothing
+        CHECK(doc.makeFileEdit({{b, std::string("UnlitGeneric { }")}}, "x").fileChanges.empty());
+        // with a map edit after it, the map is changed as usual
+        doc.apply(doc.makeAdd({makeBox(box({0, 0, 0}, {10, 10, 10}), "a")}, "Add"));
+        CHECK(doc.dirty());
+        fs::remove_all(dir);
+    }
+}
+
 int main() {
     testRenderJob();
     testGrid();
@@ -4209,6 +4486,8 @@ int main() {
     testBake();
     testBounce();
     testPropLight();
+    testMaterials();
+    testBakeMaterials();
     testMapQuakeFormat();
     testMapErrors();
     std::printf("%d checks, %d failed\n", g_checks, g_failures);

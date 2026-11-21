@@ -10,7 +10,7 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 
 ## Current status
 
-- **Released:** v0.1.0 … v0.12.1. Milestones 0–11, Random Replicate and Sky Lab are done (see the
+- **Released:** v0.1.0 … v0.12.3 (v0.12.4 pushed, see below). Milestones 0–11, Random Replicate and Sky Lab are done (see the
   milestone sections below and the log); the user confirmed the choices of M10, Random
   Replicate and v0.10.2 (2026-11-19). **v0.10.3 is built and pushed** (asked by the user
   before Sky Lab): `editor.cpp` split by topic (step 1: code moved unchanged; step 2:
@@ -62,7 +62,12 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   batch** (see Roadmap item 5, batch 5). **Batch 5 (materials) was discussed and agreed
   (2026-11-21)**: see "Batch 5 decided with the user" under Roadmap item 5; the steps after
   it were reordered (decals added); plain-copy variants, batch editing and parent materials
-  were added the same day (items 2, 19-25). Next: **build v0.12.4 when the user says go**.
+  were added the same day (items 2, 19-25). **v0.12.4 (materials) is built and pushed** (the
+  user said go, 2026-11-21): `.vmt` materials, the Material panel, variants, parents, helper
+  maps, Source's shaders as GLSL files, glow, cheap chrome, cutouts, cheap glass, detail,
+  texlights, `$reflectivity`, Render > Prop light; its choices made without asking are under
+  "v0.12.4, decided without asking", the open points under Open questions ("v0.12.4 parked").
+  Next: **report, then discuss v0.12.4b (bump maps) with the user before building it**.
 - **Review fixes (2026-11-20), merged into `main`** (fast-forward from
   `fix/review-findings` after the user's go-ahead; no new version, so only "Latest build"
   is refreshed): version releases are
@@ -99,6 +104,23 @@ are in [`DEV.md`](DEV.md). One-step-per-release: add `docs/releases/vX.Y.Z.md` a
 Each archive's SHA-256 is in `cmake/Deps.cmake` (checked at configure time).
 
 ## Open questions (parked)
+
+- **v0.12.4 parked (to discuss with the user, with v0.12.4b):**
+  - **Texlight brightness:** built with VRAD's formula as remembered (each patch a light of
+    baselight x the texture's repeats on it, cos x cos / d^2 in Hammer units). With HL2-like
+    brightness values (hundreds) the light is very faint; the test scene needs 60000. The
+    SDK code couldn't be read this session (the page needed the user's approval): check
+    `CreateDirectLights` / `GatherSampleLight` (emit_surface) and fix the scale if it differs.
+  - **Materials on props:** props are drawn by VertexLitGeneric with their model's own
+    materials; how a prop picks a `.vmt` (beside the model's texture files? per model?) is
+    needed for bump, Phong and rim on props (v0.12.4b).
+  - **Materials on primitives:** they show their material's base texture only (their shader
+    is separate, up to 4 textures per combination); glow / chrome / cutouts on them later?
+  - **Exposure and reflections:** exposure multiplies everything a material draws, the
+    reflection too, but the sky drawn behind the scene isn't exposed (as before): with
+    exposure not 0, cheap chrome reflects a brighter / darker sky than the background.
+  - **Textures with alpha and no `.vmt`** are opaque in renders now (Source: alpha means
+    nothing without `$alphatest` / `$translucent`); before v0.12.4 renders blended them.
 
 - **Light grid "for now" choices (user, 2026-11-21):** a regular HL2-style grid (not
   per-leaf samples) and props reading the nearest sample (no blending); might change.
@@ -141,6 +163,75 @@ Each archive's SHA-256 is in `cmake/Deps.cmake` (checked at configure time).
   numbers loosely (`atoi`, `strtod`): not in the review's list; worth the same strict
   reading some time (a bad value there only changes a generated shape).
 
+- **v0.12.4 (materials), decided without asking (confirm with the user):**
+  - **Built-in textures are read only** (they are inside the app); the panel says so. A
+    variant of one is written to the Bottega's `textures/` (its `$basetexture` names the
+    built-in texture); no Bottega: it asks for one.
+  - **What the panel edits:** the Textures panel's selection (click: one; Cmd+click: add /
+    remove; Shift+click: a range in the list as shown). **Picking faces selects their
+    materials** (the current texture, the one Apply puts on faces, doesn't change). The
+    panel is a **Material** section in Properties under the face settings (Texture tool):
+    shader, parent, Make a variant / New parent from these / Edit the parent, then a field per
+    setting of the shader file's header, labelled with Source's key (`$envmaptint`); bright =
+    the material sets it, dim = from the parent or the shader; **x** resets it. Colours: a
+    swatch plus the value typed as Source writes it (`[r g b]`, may pass 1). Texlight: a
+    "glows" tick box, a colour and a brightness.
+  - **Files:** a `.vmt` is made on the first change, in Source's layout (keys lower case,
+    `$basetexture` written out); unknown keys and blocks (Proxies...) are kept, comments are
+    not. Every change is an undo step but doesn't mark the map unsaved (the files are saved
+    at once); after each change all texture folders are read again (loaded pictures kept).
+    Edits skip built-in materials with a message.
+  - **Parents:** `include` is written from the library folder's root (`textures/walls/
+    brick_base.vmt` in the Bottega, as Source's `materials/...`) and also found beside the
+    material. **New parent from these** goes beside the selected materials if they share a
+    folder, else at the root of their library folder; it holds the first material's
+    settings (not its picture or helper maps); each child keeps what differs (written with
+    `insert`, as Valve's own example) and a `""` for a setting the parent has but it didn't.
+    Moving to another parent keeps a material's own settings that differ; "(none)" writes
+    everything into its own file (it looks the same). A material with a parent takes its
+    shader from it (greyed: Source's patch can't change the shader). `replace` only changes
+    keys the parent has, as Source.
+  - **Helper maps:** `_normal`, `_normalmap`, `_bump`, `_ssbump` (also `$ssbump 1`) ->
+    `$bumpmap`; `_mask`, `_envmapmask`, `_spec` -> `$envmapmask`; `_selfillum`, `_illum` ->
+    `$selfillummask`; same folder only; they fill a key only when the material doesn't set
+    it; a variant gets its base texture's helpers. Browser marks: **V** variant, **\*** has a
+    `.vmt`, **H** helper. A variant's suggested name is `<name>_variant`.
+  - **Shader files:** the header line syntax `// setting: <key> <type> [default] | help`
+    (types texture, float, int, bool, color, text, light); `// kind: material` is the only
+    kind read for now; the body defines `vec4 shade()` and has no `#version`; errors show
+    in the terminal with the file's own line numbers. The Bottega's `shaders/` is searched
+    first (a LightmappedGeneric there replaces the app's).
+  - **Where the files are used:** brushes and terrain (each painted layer with its own
+    material) through the files; props through VertexLitGeneric with their model's own
+    materials; primitives keep their own shader and show the base texture (parked).
+  - **Drawing:** without a `.vmt` a texture is opaque even if it has alpha (Source; parked
+    as it changes older renders); `$alpha` < 1 counts as see-through; see-through faces are
+    sorted by their centre (terrain by its box), not per pixel. The normal for reflections
+    travels in the vertex colour (8 bits). Exposure multiplies the whole result, reflection
+    included (parked).
+  - **Cheap chrome** reflects a 128-pixel-wide copy of the map's sky (about Source's default
+    32-a-side cubemap, so it is soft, not a mirror); below the sky picture's cut, its plain
+    colour; no sky picture: the ambient colour. Any `$envmap` value reflects the sky for now.
+  - **Source's details followed:** detail is mod2x only (`$detailblendmode` not read yet),
+    read without the sRGB curve; `$basealphaenvmapmask` uses the alpha in
+    LightmappedGeneric and 1 - alpha in VertexLitGeneric; `$alphatestreference` default 0.5;
+    `$fresnelreflection` default 1 (no Fresnel).
+  - **Texlights:** brush faces and terrain (its face texture) give light; primitives, props
+    and painted layers don't. Faces are cut into patches as for the bounce (4 luxels), also
+    when there are no bounces (VRAD only cuts then); each light sits 1 cm off the face; the
+    glowing face doesn't light itself (add `$selfillum` to make it look bright). A value
+    without a brightness means 200 (Hammer's default). Props lit like a Source model may
+    take a texlight patch as one of their 2 lights (as a point light). Brightness: see the
+    parked question.
+  - **Cut-out shadows:** brush faces only; the picture's alpha at full size, nearest texel,
+    wrapped; their texture shift / scale are part of the bake key. See-through faces still
+    get lightmaps and bounce light (as VRAD).
+  - **`$reflectivity`** is Source's `[r g b]` (linear), still capped at 0.99 x bounce strength.
+  - **Prop light quick:** a quarter of the sky rays, sun samples and bounce rays for props
+    baked per vertex (as Draft), for the whole render; saved in `render.txt` (`proplight`);
+    part of the bake key. The busy-map benchmark renders the rocks with it.
+  - **The render log** lists the materials with settings, the shaders used, and warnings
+    (a `.vmt` that can't be read, a missing parent or texture, a shader that doesn't compile).
 - **v0.12.3 (props and the light grid), decided without asking (confirm with the user):**
   - **Per-vertex samples** start 0.5 units off along the vertex normal (then the usual 0.3);
     the bounce at a vertex is gathered like the primitives' cells (162 rays to the patches,
@@ -1065,6 +1156,9 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
          change. A parent lives in the folder of the textures it serves (a parent shared
          across folders in `textures/` itself). Mazzuola and later texture tools skip
          `.vmt` files when listing pictures.
+     - **Built (v0.12.4, 2026-11-21)** as items 1-5, 9-14, 16, 17, 19-25 say; choices made
+       while building are under "v0.12.4, decided without asking", open points under "v0.12.4
+       parked". v0.12.4b (items 6-8, 15, bump maps) is discussed with the user first.
      - **Other Source shaders:** `UnlitGeneric` in v0.12.4; `Refract` with mirrors;
        blending several textures is covered by the terrain's painted layers (brushes
        later if missed); character, particle and moving-screen shaders are left out.

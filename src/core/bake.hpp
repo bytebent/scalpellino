@@ -53,6 +53,21 @@ SkyPicture makeSkyPicture(const unsigned char* rgb, int w, int h, int outW = 128
 
 enum class BakeQuality { Draft, Normal, High };
 
+// What the bake needs of a material (v0.12.4).
+struct BakeMaterial {
+    // %texlight: VRAD's surface light. `emit` = the lights.rad colour, linear, times
+    // brightness / 255 (VRAD's baselight); each patch of the face becomes a light of
+    // emit x (how many times the texture covers the patch), as VRAD scales it.
+    Vec3 emit;
+    int texW = 64, texH = 64;    // the picture's size (texels), for the repeats
+    bool translucent = false;    // $translucent / $alpha < 1: doesn't block light (as VRAD)
+    // $alphatest: the picture's alpha cuts holes in the shadows (VRAD's -TextureShadows,
+    // here on brushes too). Alpha rows top first, texW x texH.
+    bool alphaTest = false;
+    double alphaRef = 0.5;
+    std::vector<unsigned char> alpha;
+};
+
 struct BakeInput {
     std::vector<Brush> brushes;  // all of them (hidden ones too: hiding is an editing aid)
     std::vector<Light> lights;
@@ -67,7 +82,11 @@ struct BakeInput {
     std::map<std::string, Vec3> reflectivity;
     std::map<std::string, Vec3> modelReflectivity;
     int maxBounces = -1;         // -1: as the quality says (Draft 10, else VRAD's 100)
+    // Materials (v0.12.4), by the name faces store: texlights, cutouts, see-through.
+    std::map<std::string, BakeMaterial> materials;
+    bool propsQuick = false;     // props baked per vertex with a quarter of the rays (Render menu)
 };
+
 constexpr double kDefaultReflectivity = 0.2;
 
 // One face's lightmap. Plain faces: a point P is at luxel (s, t) with
@@ -135,6 +154,7 @@ struct BakeResult {
     std::vector<PrimLightmap> prims;
     std::vector<std::string> notes; // for the render log (warnings, lights not used...)
     std::vector<std::string> bounces; // VRAD's "Bounce #n added RGB(r, g, b)" lines
+    size_t texlights = 0;           // surface lights made from glowing materials (one per patch)
     size_t luxels = 0, cells = 0, triangles = 0;
     size_t patches = 0, transfers = 0;
     std::vector<PropLighting> props; // every prop with a model, in input order
@@ -170,6 +190,7 @@ struct BakeLight {
     double startFade = 0, endFade = -1, capDist = 1e22; // Hammer units; end <= start: none
     double stopdot = 1, stopdot2 = 1, exponent = 0;      // spot
     double spreadSin = 0;        // sun
+    bool surface = false;        // a texlight patch (VRAD's emit_surface): dir = its normal
     std::vector<std::string> notes;
 };
 BakeLight prepareLight(const Light& l, const Environment& env);

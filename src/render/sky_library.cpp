@@ -2,6 +2,7 @@
 #include "core/sky.hpp"
 #include "core/bottega.hpp"
 #include <algorithm>
+#include <cmath>
 #include <cctype>
 #include <filesystem>
 #include <system_error>
@@ -102,6 +103,15 @@ const Texture2D* SkyLibrary::get(const std::string& name) {
         ImageCrop(&img, Rectangle{0, 0, (float)img.width, (float)keep});
     }
     e.tex = LoadTextureFromImage(img);
+    {
+        Image small = ImageCopy(img);
+        const int sw = std::min(128, img.width);
+        ImageResize(&small, sw, std::max(1, (int)std::lround((double)img.height * sw / img.width)));
+        e.refl = LoadTextureFromImage(small);
+        UnloadImage(small);
+        SetTextureFilter(e.refl, TEXTURE_FILTER_BILINEAR);
+        SetTextureWrap(e.refl, TEXTURE_WRAP_CLAMP);
+    }
     UnloadImage(img);
     SetTextureFilter(e.tex, TEXTURE_FILTER_BILINEAR);
     SetTextureWrap(e.tex, TEXTURE_WRAP_CLAMP);
@@ -143,7 +153,18 @@ std::string SkyLibrary::problem(const std::string& name) const {
 
 void SkyLibrary::unloadAll() {
     for (auto& [name, e] : entries_)
-        if (e.loaded) { UnloadTexture(e.tex); e.loaded = false; }
+        if (e.loaded) {
+            UnloadTexture(e.tex);
+            if (e.refl.id) UnloadTexture(e.refl);
+            e.refl = {};
+            e.loaded = false;
+        }
+}
+
+const Texture2D* SkyLibrary::reflection(const std::string& name) const {
+    auto it = entries_.find(name);
+    if (it == entries_.end() || !it->second.loaded || !it->second.refl.id) return nullptr;
+    return &it->second.refl;
 }
 
 } // namespace scal

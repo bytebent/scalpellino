@@ -569,6 +569,53 @@ void Editor::registerScriptCommands() {
         bottegaMsg_.clear();
         askBottega_ = true;
     });
+    // ---- materials (v0.12.4)
+    add({"texsearch"}, [this](const std::string&, std::istringstream& in) {
+        std::string t; std::getline(in >> std::ws, t);
+        std::snprintf(texSearch_, sizeof texSearch_, "%s", t.c_str());
+    });
+    add({"texhelpers"}, [this](const std::string&, std::istringstream& in) {
+        std::string v; in >> v;
+        textures_.setShowHelpers(v == "on");
+    });
+    add({"matselect"}, [this](const std::string&, std::istringstream& in) {
+        // matselect <name> [cmd|shift] | shown | faces | none   (as clicks in the Textures panel)
+        std::string n, mod; in >> n >> mod;
+        if (n == "shown") selectShownTextures();
+        else if (n == "faces") selectFaceTextures();
+        else if (n == "none") { materialSelection_.clear(); parentTarget_.clear(); }
+        else if (!textures_.exists(n)) { std::fprintf(stderr, "script FAIL (command %d): no material %s\n", scriptLine_, n.c_str()); ++scriptFailures_; }
+        else selectMaterial(n, mod == "cmd" ? 1 : mod == "shift" ? 2 : 0);
+    });
+    add({"matset", "matreset", "matshader", "matvariant", "matparent", "mateditparent", "matback"}, [this](const std::string& cmd, std::istringstream& in) {
+        // matset <key> <value...> ("" = empty)   matreset <key>   matshader <name>   matvariant <name>
+        // matparent <name>|none|new <name>   mateditparent   matback   (the Material panel)
+        bool ok = true;
+        if (cmd == "matset") {
+            std::string k, v; in >> k; std::getline(in >> std::ws, v);
+            if (v == "\"\"") v.clear();
+            ok = setMaterialValue(k, v);
+        } else if (cmd == "matreset") {
+            std::string k; in >> k;
+            ok = setMaterialValue(k, std::nullopt);
+        } else if (cmd == "matshader") {
+            std::string n; in >> n;
+            ok = setMaterialShader(n);
+        } else if (cmd == "matvariant") {
+            std::string n; in >> n;
+            ok = makeVariant(n);
+        } else if (cmd == "matparent") {
+            std::string n, m; in >> n >> m;
+            ok = n == "new" ? newMaterialParent(m) : setMaterialParent(n == "none" ? std::string() : n);
+        } else if (cmd == "mateditparent") {
+            const std::vector<std::string> t = materialTargets();
+            const MaterialIndex::Entry* e = t.size() == 1 ? textures_.material(t[0]) : nullptr;
+            ok = e && !e->mat.parentFile.empty();
+            if (ok) parentTarget_ = e->mat.parentFile;
+        } else
+            parentTarget_.clear();
+        if (!ok) { std::fprintf(stderr, "script FAIL (command %d): %s (%s)\n", scriptLine_, cmd.c_str(), errorText_.c_str()); ++scriptFailures_; }
+    });
     add({"copy"}, [this](const std::string&, std::istringstream& in) {
         // copy <from> <to...>  (tests only: add a file to a folder; makes the parent folders)
         std::string from, to; in >> from; std::getline(in >> std::ws, to);
@@ -748,6 +795,7 @@ void Editor::registerScriptCommands() {
         if (k == "quality") applyQuality(renderSettings_, v == "draft" ? RenderQuality::Draft : v == "high" ? RenderQuality::High : RenderQuality::Normal);
         else if (k == "aa") renderSettings_.aa = std::clamp(std::atoi(v.c_str()), 1, kMaxRenderAA);
         else if (k == "filter") renderSettings_.smooth = v != "crisp";
+        else if (k == "props") renderSettings_.propsQuick = v == "quick";
         else { std::fprintf(stderr, "script FAIL (command %d): renderset %s\n", scriptLine_, k.c_str()); ++scriptFailures_; }
     });
     add({"rendercopy"}, [this](const std::string&, std::istringstream& in) {

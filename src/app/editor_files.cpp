@@ -86,6 +86,7 @@ void Editor::setBottegaRoot(const std::string& root) {
     textures_.setBottegaRoot(use);
     skies_.setBottegaRoot(use);
     models_.setBottegaRoot(use);
+    shaders_.setBottegaRoot(use);
     if (!textures_.exists(currentTexture_) && !textures_.names().empty()) currentTexture_ = textures_.names()[0];
 }
 
@@ -98,6 +99,9 @@ void Editor::rescanBottega() {
     skies_.setBottegaRoot(use);
     skies_.rescan();
     models_.setBottegaRoot(use); // forgets every loaded model; they load again when next drawn
+    shaders_.setBottegaRoot(use);
+    shaders_.rescan();
+    materialSelection_.clear();
 }
 
 void Editor::drawBottegaDialog() {

@@ -478,6 +478,34 @@ That's all. No gameplay entities (doors, triggers, physics, scripting).
 - **Textures:** built-in CC0 textures inside the app + the user's folders of PNG/TGA/JPG/BMP
   (name = file name without extension) + the Bottega's `textures/` (below). Half-Life `.wad`
   support later.
+- **Materials** (v0.12.4, `core/material.*`): Source's `.vmt` files, Source's syntax and key
+  names (lower case), **beside their texture** in the texture folders (no separate
+  `materials/` folder). Every texture is a material already (LightmappedGeneric with that
+  picture); `<name>.vmt` beside `<name>.png` adds settings; a `.vmt` with another name whose
+  `$basetexture` is a texture of the library is a **variant** (its own entry, on faces like a
+  texture); a `.vmt` without a picture is only a **parent**. Parents are Source's `patch`
+  shader: `include` (the path from the library folder's root, the Bottega root for the
+  Bottega: `textures/walls/brick_base.vmt`), `insert` (adds or overrides; "" removes),
+  `replace` (only keys the parent has); chains allowed. **Helper maps** `<name>_normal`,
+  `_normalmap`, `_bump`, `_ssbump` (also `$ssbump 1`), `_mask`, `_envmapmask`, `_spec`,
+  `_selfillum`, `_illum` in the same folder fill `$bumpmap`, `$envmapmask` or
+  `$selfillummask` when the material doesn't, and are hidden from the browser. Faces store
+  the material name (texture or variant), so maps don't change. Built-in textures are read
+  only (a variant of one goes in the Bottega's `textures/`). Material edits are commands
+  holding file changes (`Command::fileChanges`): undoable, and they don't mark the map as
+  changed. Compiler keys use Source's `%` prefix: `%texlight "r g b brightness"` (lights.rad's
+  format) makes a texlight.
+- **Shader files** (v0.12.4, `core/shader_file.*`, `render/shader_library.*`): GLSL, one file
+  per shader, a comment header (`// scalpellino shader 1`, `// name:`, `// kind: material`,
+  `// about:`, `// setting: <key> <type> [default] | help`; types texture, float, int, bool,
+  color, text, light) and a body defining `vec4 shade()` (linear colour before exposure,
+  alpha). The app compiles prelude + body for each kind of geometry (World: brushes and
+  terrain; Model: props); the prelude gives `baseColor()`, `baseUV()`, `bakedLight()`,
+  `worldPos()`, `worldNormal()`, `eyeVector()`, `envmap(dir)`, `toLinear`, `toSrgb`,
+  `luminance`, and each setting as a uniform (`$detailscale` -> `u_detailscale`; textures
+  also `u_x_set`; text: `u_x_set` only). Source's LightmappedGeneric, UnlitGeneric and
+  VertexLitGeneric ship in `assets/shaders/` (the app's `shaders/` folder); the Bottega's
+  `shaders/` is searched first. No `#version` line in the body.
 - **Bottega** (built, v0.9.4): one folder shared by Mazzuola, Scalpellino and later tools.
   A normal folder anywhere; each tool asks once, in its settings, where it is (File >
   Bottega folder...). A marker file `bottega.txt` at its root holds the format version
@@ -499,7 +527,8 @@ Preview and in renders.
 
 - **2D views:** wireframe, redrawn only on change.
 - **3D view modes:** wireframe, flat-color, textured, plus the rough light preview, sky and
-  fog toggles (milestone 8). Materials show as a simple placeholder here (planned).
+  fog toggles (milestone 8). Materials show only their base texture here (a variant: its
+  picture); no shine, glow or cutouts in the editor.
 - **Camera Preview** (v0.11.1; a draft render since v0.12.0): a docked panel under
   Properties showing the active camera's view, only while the map has a camera. Updated
   **only on a keybind or button** (Cmd+K, its Update button, Render > Update Camera
@@ -557,11 +586,21 @@ Preview and in renders.
 - **Reflections:** a material chooses: sky only; baked reflection from the nearest
   probe; live mirror reflection on flat surfaces (water, floors). Probe quality is a
   render-option preset.
-- **Materials and shaders:** a surface's look is its material (texture, reflection,
-  transparency, shader), built into the renderer from the start. Shaders are GLSL files
-  with a settings header, dropped into Bottega's `shaders/`; they run in renders and the
-  Camera Preview. Water, clouds and endless planes are materials made with it. Optional
-  camera effects (dither, palette, bloom) are separate from the look and matter least.
+- **Materials and shaders** (v0.12.4; formats in §8): a surface's look is its material.
+  In renders and the Camera Preview each brush face and terrain layer is drawn by its
+  material's shader file (grouped by material, then lightmap page; terrain layers after the
+  rest); see-through materials (`$translucent`, `$alpha` < 1) are drawn after the props, far
+  to near, without writing depth. Props are drawn by the VertexLitGeneric file with their
+  model's own materials (no `.vmt` for props yet). Primitives keep their own shader and show
+  their material's base texture. The normal travels in the vertex colour (8 bits a channel);
+  reflections read a 128-pixel-wide copy of the sky (about Source's default cubemap size).
+  A shader that doesn't compile is reported in the render log and LightmappedGeneric draws
+  instead. The bake takes from materials: `$reflectivity`, `%texlight` (VRAD's surface
+  lights: one per patch, intensity = baselight x the texture's repeats on the patch,
+  cos x cos / d^2), `$alphatest` (cut-out shadows: rays pass where the picture's alpha is
+  under the reference) and `$translucent` (blocks no light). Water, clouds and endless planes
+  will be materials too. Optional camera effects (dither, palette, bloom) are separate from
+  the look and matter least.
 - **Maybe later:** a ray-tracing renderer (Bryce look: real reflections on any shape,
   bending glass). Not pressing; the Source renderer may be enough.
 
@@ -635,7 +674,7 @@ docs/         this file, roadmap
 | 10b | Random Replicate (Bryce): random offset / turn / size ranges for props and primitives | done (v0.10.1) |
 | 10c | Sky Lab (Bryce, all of it): generated skies (sun, moon, stars, clouds, atmosphere) with live preview in the 3D view, baked to panoramas in Bottega's `skies/`; settings kept in the map; tick box to lock the sun to the map's sun light; eclipses. Steps: v0.10.4 window / bake / sky modes / sun / haze / lock, v0.10.5 clouds, v0.10.6 night sky and effects | done (v0.10.6) |
 | 11 | Cameras and Camera Preview: camera objects (many, one active), options and presets, the on-request preview in a docked panel (editor look until M12 replaces it). Steps: v0.11.0 camera objects and options, v0.11.1 presets and the preview | done (v0.11.0, v0.11.1) |
-| 12 | Render, the Source look, with materials: render window, terminal log, light baking, reflection probes, mirrors, the material system (GLSL shaders from Bottega's `shaders/`, reflection kind per material), PNG to `renders/`. Steps: v0.12.0 pipeline, v0.12.1 direct light and shadows, v0.12.2 bounces, v0.12.3 light grid, v0.12.4 materials, v0.12.5 probes, v0.12.6 mirrors | in progress (v0.12.3) |
+| 12 | Render, the Source look, with materials: render window, terminal log, light baking, reflection probes, mirrors, the material system (GLSL shaders from Bottega's `shaders/`, reflection kind per material), PNG to `renders/`. Steps: v0.12.0 pipeline, v0.12.1 direct light and shadows, v0.12.2 bounces, v0.12.3 props and the light grid, v0.12.4 materials, v0.12.4b bump maps, v0.12.5 decals and overlays, v0.12.6 probes, v0.12.7 mirrors and glass | in progress (v0.12.4) |
 | 13 | Water, cloud and endless planes: materials made with the system above | |
 | 14 | Camera effects (lowest priority): dithering, palette, bloom | |
 | 15 | Export: `.glb`, optional and last (not confirmed by the user) | |

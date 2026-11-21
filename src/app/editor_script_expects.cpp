@@ -427,6 +427,41 @@ void Editor::registerScriptExpects() {
                         (state == "none" && s == S::NoPath);
         if (!ok) { std::fprintf(stderr, "script FAIL (command %d): expected Bottega state %s\n", scriptLine_, state.c_str()); ++scriptFailures_; }
     });
+    // ---- materials (v0.12.4)
+    add({"matsel"}, [this](const std::string&, std::istringstream& in) {
+        std::string w; size_t n = 0; in >> w >> n;
+        const size_t got = materialTargets().size();
+        if (got != n) { std::fprintf(stderr, "script FAIL (command %d): expected %zu materials selected, got %zu\n", scriptLine_, n, got); ++scriptFailures_; }
+    });
+    add({"mat", "matfile", "matkind", "matshader", "matparent"}, [this](const std::string&, std::istringstream& in) {
+        // expect mat <name> <key> <value...|none>   expect matfile <name> yes|no
+        // expect matkind <name> texture|variant|helper|parent   expect matshader <name> <shader>
+        // expect matparent <name> <parent|none>
+        syncMaterialFiles();
+        std::string w, name; in >> w >> name;
+        const MaterialIndex::Entry* e = textures_.material(name);
+        std::string want, got;
+        if (w == "mat") {
+            std::string key; in >> key; std::getline(in >> std::ws, want);
+            got = e && e->mat.has(key) ? e->mat.str(key) : "none";
+            if (want == "\"\"") want.clear();
+        } else if (w == "matfile") {
+            in >> want;
+            got = e && !e->vmt.empty() ? "yes" : "no";
+        } else if (w == "matkind") {
+            in >> want;
+            got = !e ? "none" : e->kind == MaterialIndex::Kind::Variant ? "variant" : e->kind == MaterialIndex::Kind::Helper ? "helper"
+                  : e->kind == MaterialIndex::Kind::Parent ? "parent" : "texture";
+        } else if (w == "matshader") {
+            in >> want;
+            got = e ? e->mat.shader : "none";
+        } else {
+            in >> want;
+            const MaterialIndex::Entry* p = e && !e->mat.parentFile.empty() ? textures_.materials().byVmt(e->mat.parentFile) : nullptr;
+            got = !e ? "?" : p ? p->name : e->mat.parentFile.empty() ? "none" : e->mat.parentFile;
+        }
+        if (got != want) { std::fprintf(stderr, "script FAIL (command %d): %s %s: expected \"%s\", got \"%s\"\n", scriptLine_, w.c_str(), name.c_str(), want.c_str(), got.c_str()); ++scriptFailures_; }
+    });
     add({"hastexture", "hassky"}, [this](const std::string&, std::istringstream& in) {
         // expect hastexture <name> | expect hassky <name>; add "not" before the name to expect it absent
         std::string w, name; in >> w >> name;

@@ -195,6 +195,9 @@ key Return
 cameraedit angles -15 45 0
 tool select
 key Esc
+# 2.6 million prop vertices: with full prop light this took over the benchmark's hour
+# (v0.12.3); Render > Prop light > Quick (v0.12.4) bakes them with a quarter of the rays.
+renderset props quick
 render
 expect render saved
 rendercopy render-4-1000-rocks.png

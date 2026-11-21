@@ -9,6 +9,12 @@ copy assets/models/crate.glb studio/models/Crate.glb
 copy assets/models/post.glb studio/models/fence/post.glb
 rescan
 expect hastexture textures/walls/Rock_Face
+# -- a material with settings (v0.12.4): a .vmt beside the texture, written by the panel
+tool texture
+matselect textures/walls/Rock_Face
+matset $envmap env_cubemap
+expect matfile textures/walls/Rock_Face yes
+tool select
 expect hasmodel models/Crate
 # -- terrain: a patch, raised and painted
 block -512 -512 -64 512 512 0

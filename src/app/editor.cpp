@@ -54,6 +54,12 @@ Editor::Editor(const EditorOptions& opt) : opt_(opt) {
         if (!opt_.automated()) loadSkyFolders();
         skies_.setBuiltinFolder(skyDir);
 #if defined(__APPLE__)
+        shaders_.setBuiltinFolder(appDir + "../Resources/shaders");
+#else
+        shaders_.setBuiltinFolder(appDir + "shaders");
+#endif
+        preview_.setShaders(&shaders_);
+#if defined(__APPLE__)
         moonBuiltinPath_ = appDir + "../Resources/moon/moon_lroc_color.jpg";
 #else
         moonBuiltinPath_ = appDir + "moon/moon_lroc_color.jpg";
@@ -184,6 +190,8 @@ bool Editor::frame(float dt) {
     st.microgrid = grid_.microgrid;
     st.textureTool = tool_ == &textureTool_;
     st.textureLock = tfTexLock_;
+    st.showHelperMaps = textures_.showHelpers();
+    st.canMakeVariant = materialTargets().size() == 1;
     st.smoothTextures = textures_.smooth();
     st.textured3D = textured3D_;
     st.defaultScale = defaultScale_;
@@ -223,6 +231,7 @@ bool Editor::frame(float dt) {
     st.renderQuality = (int)renderSettings_.quality;
     st.renderAA = renderSettings_.aa;
     st.renderSmooth = renderSettings_.smooth;
+    st.renderPropsQuick = renderSettings_.propsQuick;
     const std::string status = statusText();
     const bool renderClicked = drawStatusBar(status.c_str(), !doc_.cameras().empty());
     dockspace(resetLayout_, "Tools###tools", views_[0]->title(), views_[1]->title(),
@@ -296,6 +305,7 @@ bool Editor::frame(float dt) {
     if (m.renderQuality >= 0) { applyQuality(renderSettings_, (RenderQuality)m.renderQuality); saveRenderSettings(); }
     if (m.renderAA >= 1) { renderSettings_.aa = m.renderAA; saveRenderSettings(); }
     if (m.renderSmooth >= 0) { renderSettings_.smooth = m.renderSmooth == 1; saveRenderSettings(); }
+    if (m.renderPropsQuick >= 0) { renderSettings_.propsQuick = m.renderPropsQuick == 1; saveRenderSettings(); }
     if (m.createProp) onKey(KEY_ENTER);
     if (m.primKind >= 0) { primTool_.templ.kind = (PrimKind)m.primKind; setTool(&primTool_); }
     if (m.createPrim) primTool_.create(doc_, currentTexture_, &lastBox_);
@@ -356,6 +366,10 @@ bool Editor::frame(float dt) {
     if (m.smoothTextures >= 0) { textures_.setSmooth(m.smoothTextures == 1); models_.setSmooth(m.smoothTextures == 1); }
     if (m.textured3D >= 0) textured3D_ = m.textured3D == 1;
     if (m.addTextureFolder) { folderBuf_[0] = 0; askTexFolder_ = true; }
+    if (m.selectShownTextures) selectShownTextures();
+    if (m.selectFaceTextures) selectFaceTextures();
+    if (m.toggleHelperMaps) textures_.setShowHelpers(!textures_.showHelpers());
+    if (m.makeVariant) openVariantDialog();
     if (m.rescanBottega) rescanBottega();
     if (m.bottegaFolder) { std::snprintf(bottegaBuf_, sizeof bottegaBuf_, "%s", bottegaRoot_.c_str()); bottegaMsg_.clear(); askBottega_ = true; }
     if (!curveTool_.hasShape()) { curveTool_.params.texture = currentTexture_; curveTool_.params.texScale = defaultScale_; }
@@ -369,6 +383,7 @@ bool Editor::frame(float dt) {
 
     if (!ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId) && !io.WantTextInput) handleKeyboard();
 
+    syncMaterialFiles();
     drawToolsPanel();
     if (showPanels_) { drawTextureBrowser(); drawPropsPanel(); drawVisgroupsPanel(); drawFacePanel(); drawCameraPreview(); }
     drawViews();
@@ -377,6 +392,7 @@ bool Editor::frame(float dt) {
     drawPrecisionDialogs();
     drawShapingDialogs();
     drawTerrainDialogs();
+    drawMaterialDialogs();
     drawWorldDialogs();
     drawReplicateDialog();
     drawRandomReplicateWindow();

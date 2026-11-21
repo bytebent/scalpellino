@@ -122,7 +122,14 @@ inside the view. Lines starting with # are comments.
   camerapreset save|load <name>   (from / into the selected camera, else the next camera)
   expect camerapreview <times drawn> [stale 0|1]   expect camerapresets <n>
   render   (Cmd+Shift+K; the next command waits until it has finished)   renderstart (doesn't wait)
-  renderset quality draft|normal|high | aa <1..4> | filter smooth|crisp   (Render menu)
+  renderset quality draft|normal|high | aa <1..4> | filter smooth|crisp | props full|quick   (Render menu)
+  matselect <name> [cmd|shift] | shown | faces | none   (Textures panel clicks: the materials the panel edits)
+  texsearch <text>   texhelpers on|off   (the Textures panel's search, helper maps shown)
+  matset <key> <value...> ("" = empty)   matreset <key>   matshader <name>   matvariant <name>
+  matparent <name>|none|new <name>   mateditparent   matback   (the Material panel; each one undo step)
+  expect matsel <n>   expect mat <name> <key> <value...|none>   expect matfile <name> yes|no
+  expect matkind <name> texture|variant|helper|parent   expect matshader <name> <shader>
+  expect matparent <name> <parent|none>
   rendercopy <file.png>   (the last saved render, copied here: screenshots)
   expect render saved|stopped|failed|none   expect renders <n>   (saved, each on disk with its log)
   expect renderlog [not] <text>   expect rendersize <w> <h>   expect renderwindow open|closed
@@ -191,7 +198,8 @@ A development tool, not a test: `tests/bench/run.sh <absolute path to Scalpellin
 
 **Render** (`tests/bench/render.script`, several minutes): busy maps rendered at Normal
 quality with the baked light: the rich map (as the idle test's), 1000 boxes + 8 terrains,
-4000 boxes + 16 terrains, 1000 rocks. Prints each render log's bake lines; with
+4000 boxes + 16 terrains, 1000 rocks (with Render > Prop light > Quick since v0.12.4: with
+full prop light it passed the benchmark's hour). Prints each render log's bake lines; with
 `SCAL_BENCH_OUT=<folder>` it also copies the pictures and render windows there. The user
 wants these renders reported with each lighting step.
 

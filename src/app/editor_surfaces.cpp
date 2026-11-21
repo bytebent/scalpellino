@@ -21,6 +21,7 @@
 #include <fstream>
 #include <sstream>
 #include <algorithm>
+#include <set>
 #include <cctype>
 #include "app/editor_util.hpp"
 #include "app/editor_templates.hpp"
@@ -97,35 +98,63 @@ void Editor::drawTextureBrowser() {
         if (ImGui::Button("Apply to selection (Shift+T)")) applyCurrentTexture();
 
         ImGui::SetNextItemWidth(-1);
-        ImGui::InputTextWithHint("##search", "search by name", texSearch_, sizeof texSearch_);
-        std::string needle = texSearch_;
-        std::transform(needle.begin(), needle.end(), needle.begin(), [](unsigned char c) { return (char)std::tolower(c); });
+        ImGui::InputTextWithHint("##search", "search by name or folder", texSearch_, sizeof texSearch_);
+        if (ImGui::SmallButton("Select all shown")) selectShownTextures();
+        ImGui::SameLine();
+        bool helpers = textures_.showHelpers();
+        if (ImGui::Checkbox("helper maps", &helpers)) textures_.setShowHelpers(helpers);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Show <name>_normal, _ssbump, _mask, _selfillum... (they hook onto <name> by themselves)");
+        // How to select, written where it is used (also Help > Controls).
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+        ImGui::TextWrapped("Click: choose. Cmd+click: add / remove. Shift+click: a range.");
+        ImGui::PopStyleColor();
+        const std::vector<std::string> shown = shownTextures();
+        std::set<std::string> selected(materialSelection_.begin(), materialSelection_.end());
+        if (selected.size() > 1) ImGui::TextDisabled("%zu selected: the Material panel (Texture tool) edits them all", selected.size());
 
         const float footer = ImGui::GetFrameHeightWithSpacing() * 1.4f;
         if (ImGui::BeginChild("##grid", ImVec2(0, -footer), ImGuiChildFlags_None)) {
             const float cell = 76.0f;
             const float avail = ImGui::GetContentRegionAvail().x;
             const int cols = std::max(1, (int)(avail / (cell + ImGui::GetStyle().ItemSpacing.x)));
-            int col = 0, shown = 0;
-            for (const std::string& name : textures_.names()) {
-                std::string low = name;
-                std::transform(low.begin(), low.end(), low.begin(), [](unsigned char c) { return (char)std::tolower(c); });
-                if (!needle.empty() && low.find(needle) == std::string::npos) continue;
-                ++shown;
+            int col = 0;
+            for (const std::string& name : shown) {
                 if (col > 0) ImGui::SameLine();
                 ImGui::BeginGroup();
                 ImGui::PushID(name.c_str());
                 const Texture2D& t = textures_.get(name);
-                const bool selected = name == currentTexture_;
-                if (selected) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
-                if (ImGui::ImageButton("##t", ImTextureID(t.id), ImVec2(cell - 8, cell - 8))) currentTexture_ = name;
-                if (selected) ImGui::PopStyleColor();
+                const bool current = name == currentTexture_;
+                const bool inSel = selected.count(name) > 0;
+                if (current || inSel)
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(current ? ImGuiCol_ButtonActive : ImGuiCol_ButtonHovered));
+                if (ImGui::ImageButton("##t", ImTextureID(t.id), ImVec2(cell - 8, cell - 8))) {
+                    selectMaterial(name, cmdDown() ? 1 : (IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT)) ? 2 : 0);
+                }
+                if (current || inSel) ImGui::PopStyleColor();
+                const MaterialIndex::Entry* me = textures_.material(name);
+                // a small mark: V = variant, H = helper map, a dot = has a .vmt
+                if (me) {
+                    const ImVec2 mn = ImGui::GetItemRectMin();
+                    const char* mark = me->kind == MaterialIndex::Kind::Variant ? "V" : me->kind == MaterialIndex::Kind::Helper ? "H" : !me->vmt.empty() ? "*" : nullptr;
+                    if (mark) {
+                        ImDrawList* dl = ImGui::GetWindowDrawList();
+                        const ImVec2 p{mn.x + 4, mn.y + 3};
+                        const ImVec2 sz = ImGui::CalcTextSize(mark);
+                        dl->AddRectFilled({p.x - 2, p.y - 1}, {p.x + sz.x + 2, p.y + sz.y + 1}, IM_COL32(20, 20, 20, 200), 3);
+                        dl->AddText(p, IM_COL32(255, 210, 120, 255), mark);
+                    }
+                }
                 if (ImGui::IsItemHovered())
                 {
                     bool user = false;
                     for (const std::string& d : textures_.userFolders()) user = user || d == textures_.folderOf(name);
                     const bool inBottega = !bottegaRoot_.empty() && name.rfind("textures/", 0) == 0;
-                    ImGui::SetTooltip("%s\n%d x %d\n%s", name.c_str(), t.width, t.height, inBottega ? "Bottega" : user ? "your folder" : "built-in");
+                    std::string what = inBottega ? "Bottega" : user ? "your folder" : "built-in";
+                    if (me && me->kind == MaterialIndex::Kind::Variant) what += "\nvariant of " + me->base;
+                    else if (me && me->kind == MaterialIndex::Kind::Helper) what += "\nhelper map of " + me->helperOf;
+                    else if (me && !me->vmt.empty()) what += "\nhas a .vmt (material settings)";
+                    if (me && me->mat.shader != "LightmappedGeneric") what += "\nshader " + me->mat.shader;
+                    ImGui::SetTooltip("%s\n%d x %d\n%s", name.c_str(), t.width, t.height, what.c_str());
                 }
                 std::string label = name.substr(name.find_last_of('/') == std::string::npos ? 0 : name.find_last_of('/') + 1);
                 while (label.size() > 3 && ImGui::CalcTextSize(label.c_str()).x > cell) label = label.substr(0, label.size() - 4) + "..";
@@ -134,7 +163,7 @@ void Editor::drawTextureBrowser() {
                 ImGui::EndGroup();
                 if (++col >= cols) col = 0;
             }
-            if (shown == 0) ImGui::TextDisabled(textures_.names().empty() ? "No textures. Texture -> Add texture folder..." : "No texture matches.");
+            if (shown.empty()) ImGui::TextDisabled(textures_.names().empty() ? "No textures. Texture -> Add texture folder..." : "No texture matches.");
         }
         ImGui::EndChild();
         if (ImGui::Button("Add folder...")) { folderBuf_[0] = 0; askTexFolder_ = true; }
@@ -537,6 +566,10 @@ void Editor::drawFacePanel() {
         }
         ImGui::Checkbox("Texture lock", &tfTexLock_);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Textures stay put on surfaces when brushes move, rotate or scale");
+        if (tool_ == &textureTool_) {
+            ImGui::Separator();
+            drawMaterialPanel();
+        }
     }
     ImGui::End();
 }

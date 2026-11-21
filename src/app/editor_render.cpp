@@ -58,6 +58,7 @@ void Editor::startRender() {
     }
     renderJob_ = std::make_unique<RenderJob>();
     RenderJob& j = *renderJob_;
+    j.draw.setShaders(&shaders_);
     j.start = GetTime();
     j.settings = renderSettings_;
     renderOpen_ = true;
@@ -146,8 +147,8 @@ void Editor::stepRender() {
         char aaText[32];
         if (j.settings.aa > 1) std::snprintf(aaText, sizeof aaText, "anti-aliasing %dx", j.aa);
         else std::snprintf(aaText, sizeof aaText, "no anti-aliasing");
-        std::snprintf(b, sizeof b, "Picture %d x %d (the camera's size), quality %s, %s, textures %s", j.cam.width, j.cam.height,
-                      renderQualityName(j.settings.quality), aaText, j.settings.smooth ? "smooth" : "crisp");
+        std::snprintf(b, sizeof b, "Picture %d x %d (the camera's size), quality %s, %s, textures %s, prop light %s", j.cam.width, j.cam.height,
+                      renderQualityName(j.settings.quality), aaText, j.settings.smooth ? "smooth" : "crisp", j.settings.propsQuick ? "quick" : "full");
         renderLog(b);
         if (j.settings.aa > 1) {
             std::snprintf(b, sizeof b, "  anti-aliasing %dx: drawn at %d x %d, then scaled down", j.aa, j.cam.width * j.aa, j.cam.height * j.aa);
@@ -177,6 +178,14 @@ void Editor::stepRender() {
         if (st.nodrawFaces) renderLog("  " + std::to_string(st.nodrawFaces) + " nodraw faces left out");
         if (st.missingProps) renderLog("  warning: " + std::to_string(st.missingProps) + " props have no model file (left out; Rescan the Bottega?)");
         for (const std::string& t : st.missingTextures) renderLog("  warning: texture \"" + t + "\" not found (drawn as a checker)");
+        if (st.materials) renderLog("  " + std::to_string(st.materials) + (st.materials == 1 ? " material" : " materials") + " with settings (.vmt)");
+        if (!st.shaders.empty()) {
+            std::string l = "  shaders:";
+            for (size_t i = 0; i < st.shaders.size(); ++i) l += (i ? ", " : " ") + st.shaders[i];
+            renderLog(l);
+        }
+        for (const std::string& p : st.materialProblems) renderLog("  warning: material " + p);
+        for (const std::string& p : shaders_.problems()) renderLog("  warning: shader file " + p);
         if (st.sky.empty()) renderLog("  sky: none");
         else if (!st.skyProblem.empty()) renderLog("  warning: sky \"" + st.sky + "\": " + st.skyProblem + " (left out)");
         else renderLog("  sky: " + st.sky);
@@ -191,6 +200,7 @@ void Editor::stepRender() {
         // quality if nothing that lights the map has changed, else made on other threads.
         const BakeQuality q = (BakeQuality)(int)j.settings.quality;
         BakeInput in = bakeInput(doc_, models_, skies_, q, &textures_);
+        in.propsQuick = j.settings.propsQuick;
         const std::uint64_t key = bakeKey(in);
         const KeptBake& kept = bakes_[(int)q];
         if (!in.env.sky.empty() && !in.sky.valid() && in.env.skyLight > 0)
@@ -278,6 +288,7 @@ void Editor::stepRender() {
             finishRender();
             return;
         }
+        for (const std::string& p : j.draw.problems()) renderLog("  warning: " + p);
         renderLog(j.aa > 1 ? "Scaling down..." : "Reading the picture...");
         break;
     }

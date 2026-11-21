@@ -1,5 +1,7 @@
 #include "render/model_library.hpp"
 #include "core/bake.hpp"
+#include "render/baked_light.hpp"
+#include "render/shader_library.hpp"
 #include "rlgl.h"
 #include <algorithm>
 #include <cmath>
@@ -435,27 +437,54 @@ void ModelLibrary::drawBaked(const std::vector<Prop>& props, const PropDrawConte
             sh.material.shader = sh.shader;
         }
     }
-    if (!sh.ok) return;
+    // The material shader file (VertexLitGeneric) when the render has them, else the built-in one.
+    ShaderLibrary::Program* prog = nullptr;
+    if (ctx.material && ctx.material->shaders) {
+        prog = ctx.material->shaders->program("VertexLitGeneric", ShaderGeometry::Model);
+        if (prog && !prog->ok) {
+            if (ctx.material->problems) ctx.material->problems->push_back(prog->error + ": props drawn with the built-in shader");
+            prog = nullptr;
+        }
+    }
+    if (!sh.ok && !prog) return;
     prepareBake(props, ctx.bake);
     rlDrawRenderBatchActive();
     rlDisableBackfaceCulling();
-    Shader& S = sh.shader;
-    auto setI = [&](const char* n, int v) { SetShaderValue(S, sh.at(n), &v, SHADER_UNIFORM_INT); };
-    auto setF = [&](const char* n, float v) { SetShaderValue(S, sh.at(n), &v, SHADER_UNIFORM_FLOAT); };
+    Shader S = prog ? prog->shader : sh.shader;
+    ::Material& drawMat = prog ? sh.fileMaterial : sh.material;
+    if (prog) {
+        if (!sh.fileMaterialMade) {
+            sh.fileMaterial = LoadMaterialDefault();
+            sh.fileMaterialMade = true;
+        }
+        sh.fileMaterial.shader = prog->shader;
+    }
+    auto loc = [&](const char* n) { return prog ? prog->at(n) : sh.at(n); };
+    auto setI = [&](const char* n, int v) { SetShaderValue(S, loc(n), &v, SHADER_UNIFORM_INT); };
+    auto setF = [&](const char* n, float v) { SetShaderValue(S, loc(n), &v, SHADER_UNIFORM_FLOAT); };
     auto set3 = [&](const char* n, const Vec3& v) {
         const float f[3] = {(float)v.x, (float)v.y, (float)v.z};
-        SetShaderValue(S, sh.at(n), f, SHADER_UNIFORM_VEC3);
+        SetShaderValue(S, loc(n), f, SHADER_UNIFORM_VEC3);
     };
     set3("camPos", ctx.camPos);
     setI("fogOn", ctx.fog ? 1 : 0);
     set3("fogColor", ctx.fogColor / 255.0);
     {
         const float fr[2] = {(float)ctx.fogStart, (float)ctx.fogEnd}, fh[2] = {(float)ctx.fogBase, (float)ctx.fogThickness};
-        SetShaderValue(S, sh.at("fogRange"), fr, SHADER_UNIFORM_VEC2);
-        SetShaderValue(S, sh.at("fogHeight"), fh, SHADER_UNIFORM_VEC2);
+        SetShaderValue(S, loc("fogRange"), fr, SHADER_UNIFORM_VEC2);
+        SetShaderValue(S, loc("fogHeight"), fh, SHADER_UNIFORM_VEC2);
     }
     setF("exposure", ctx.exposure);
-    const int unit = 6;
+    const int unit = 5; // the props' vertex light (6: the sky, 7 on: material textures)
+    if (prog) {
+        BakedDrawContext common = *ctx.material;
+        common.camPos = ctx.camPos;
+        common.exposure = ctx.exposure;
+        setMaterialCommon(S, [&](const char* n) { return prog->at(n); }, common);
+        ctx.material->shaders->bind(*prog, nullptr, nullptr, nullptr, 7);
+        rlActiveTextureSlot(6);
+        rlEnableTexture(ctx.material->skyTex ? ctx.material->skyTex : rlGetTextureIdDefault());
+    }
     setI("vlight", unit);
     rlActiveTextureSlot(unit);
     rlEnableTexture(bakeTex_ ? bakeTex_ : rlGetTextureIdDefault());
@@ -474,7 +503,7 @@ void ModelLibrary::drawBaked(const std::vector<Prop>& props, const PropDrawConte
                 const Vec3 c = pl && pl->modelStyle ? pl->cube[a] : Vec3{1, 1, 1};
                 cube[3 * a] = (float)c.x; cube[3 * a + 1] = (float)c.y; cube[3 * a + 2] = (float)c.z;
             }
-            SetShaderValueV(S, sh.at("cube"), cube, SHADER_UNIFORM_VEC3, 6);
+            SetShaderValueV(S, loc("cube"), cube, SHADER_UNIFORM_VEC3, 6);
             const int n = pl && pl->modelStyle ? (int)std::min<size_t>(2, pl->lights.size()) : 0;
             setI("lightCount", n);
             int kind[2] = {0, 0};
@@ -488,13 +517,13 @@ void ModelLibrary::drawBaked(const std::vector<Prop>& props, const PropDrawConte
                     dst[a][3 * i] = (float)v[a].x; dst[a][3 * i + 1] = (float)v[a].y; dst[a][3 * i + 2] = (float)v[a].z;
                 }
             }
-            SetShaderValueV(S, sh.at("lkind"), kind, SHADER_UNIFORM_INT, 2);
-            SetShaderValueV(S, sh.at("lpos"), pos, SHADER_UNIFORM_VEC3, 2);
-            SetShaderValueV(S, sh.at("ldir"), dir, SHADER_UNIFORM_VEC3, 2);
-            SetShaderValueV(S, sh.at("lcol"), col, SHADER_UNIFORM_VEC3, 2);
-            SetShaderValueV(S, sh.at("latt"), att, SHADER_UNIFORM_VEC3, 2);
-            SetShaderValueV(S, sh.at("lfade"), fade, SHADER_UNIFORM_VEC3, 2);
-            SetShaderValueV(S, sh.at("lspot"), spot, SHADER_UNIFORM_VEC3, 2);
+            SetShaderValueV(S, loc("lkind"), kind, SHADER_UNIFORM_INT, 2);
+            SetShaderValueV(S, loc("lpos"), pos, SHADER_UNIFORM_VEC3, 2);
+            SetShaderValueV(S, loc("ldir"), dir, SHADER_UNIFORM_VEC3, 2);
+            SetShaderValueV(S, loc("lcol"), col, SHADER_UNIFORM_VEC3, 2);
+            SetShaderValueV(S, loc("latt"), att, SHADER_UNIFORM_VEC3, 2);
+            SetShaderValueV(S, loc("lfade"), fade, SHADER_UNIFORM_VEC3, 2);
+            SetShaderValueV(S, loc("lspot"), spot, SHADER_UNIFORM_VEC3, 2);
         }
         const Matrix mat = propMatrix(p);
         for (size_t c = 0; c < g->chunks.size(); ++c) {
@@ -502,16 +531,21 @@ void ModelLibrary::drawBaked(const std::vector<Prop>& props, const PropDrawConte
             const size_t mi = (size_t)ch.material;
             if (mi >= g->tint.size()) continue;
             setI("base", perVertex ? bi->second[c] : -1);
-            sh.material.maps[MATERIAL_MAP_DIFFUSE].texture = g->textured[mi] ? g->textures[mi] : Texture2D{};
-            sh.material.maps[MATERIAL_MAP_DIFFUSE].color = g->tint[mi];
+            drawMat.maps[MATERIAL_MAP_DIFFUSE].texture = g->textured[mi] ? g->textures[mi] : Texture2D{};
+            drawMat.maps[MATERIAL_MAP_DIFFUSE].color = g->tint[mi];
             setI("hasTex", g->textured[mi] ? 1 : 0);
             setF("cutoff", g->cutoff[mi]);
-            DrawMesh(ch.mesh, sh.material, mat);
+            DrawMesh(ch.mesh, drawMat, mat);
             ++drawCalls_;
         }
     }
     rlActiveTextureSlot(unit);
     rlDisableTexture();
+    if (prog) {
+        rlActiveTextureSlot(6);
+        rlDisableTexture();
+        ctx.material->shaders->unbind(7);
+    }
     rlActiveTextureSlot(0);
     rlEnableBackfaceCulling();
 }

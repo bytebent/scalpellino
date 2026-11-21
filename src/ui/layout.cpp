@@ -132,6 +132,12 @@ MenuActions drawMenuBar(const MenuState& st) {
             ImGui::EndMenu();
         }
         ImGui::Separator();
+        // Materials (v0.12.4): the browser's selection is what the Material panel edits
+        if (ImGui::MenuItem("Select all shown textures")) a.selectShownTextures = true;
+        if (ImGui::MenuItem("Select the textures of the picked faces")) a.selectFaceTextures = true;
+        if (ImGui::MenuItem("Make a variant of the current material...", nullptr, false, st.canMakeVariant)) a.makeVariant = true;
+        if (ImGui::MenuItem("Show helper maps (_normal, _mask...)", nullptr, st.showHelperMaps)) a.toggleHelperMaps = true;
+        ImGui::Separator();
         if (ImGui::MenuItem("Add texture folder...")) a.addTextureFolder = true;
         if (ImGui::MenuItem("Rescan Bottega and texture folders", "Cmd+R")) a.rescanBottega = true;
         ImGui::EndMenu();
@@ -234,6 +240,13 @@ MenuActions drawMenuBar(const MenuState& st) {
             ImGui::TextDisabled("the editor's own: Texture > Filtering");
             ImGui::EndMenu();
         }
+        if (ImGui::BeginMenu("Prop light")) {
+            if (ImGui::MenuItem("Full", nullptr, !st.renderPropsQuick)) a.renderPropsQuick = 0;
+            if (ImGui::MenuItem("Quick (a quarter of the rays)", nullptr, st.renderPropsQuick)) a.renderPropsQuick = 1;
+            ImGui::TextDisabled("props baked per vertex, for the whole render;");
+            ImGui::TextDisabled("the Camera Preview is always quick (Draft)");
+            ImGui::EndMenu();
+        }
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("View")) {
@@ -299,6 +312,9 @@ void drawControlsWindow(bool* open) {
             {"Apply current texture", "Shift+T (selected brushes, or picked faces)"},
             {"Wrap texture around a corner", "Texture tool: click a face, Option+Shift+click the next (repeat)"},
             {"Textures / Face panels", "right side: search by name, click to choose; adjust picked faces"},
+            {"Select textures (materials)", "Textures panel: click chooses one; Cmd+click adds / removes one; Shift+click a range; Select all shown (after a search); Texture menu: Select the textures of the picked faces"},
+            {"Material panel", "Texture tool, Properties: the selected materials' settings (shader, glow, cheap chrome, cutout, see-through, detail, texlight...) written to .vmt files beside the textures; several selected = all edited at once (mixed values shown); Cmd+Z undoes"},
+            {"Variants and parents", "Material panel: Make a variant... (a copy under a new name, same picture: Texture menu too); Parent: share settings through a parent .vmt (New parent from these...)"},
             {"Clip tool", "Shift+X: drag a line in a 2D view; drag points 1-3 (3 tilts the plane); Return clips"},
             {"Clip: keep both / front / back", "Shift+X again cycles (Tools menu)"},
             {"Carve with selection", "Cmd+Shift+C: cuts the selection's shape out of touching brushes"},
@@ -328,7 +344,7 @@ void drawControlsWindow(bool* open) {
             {"Active camera", "the one Render and the Camera Preview use (white dot in its marker): tick 'active' in Properties, or World > Make selected camera active; only one at a time"},
             {"Camera Preview", "panel under Properties while the map has a camera: a draft render of the active camera's view (the map as it is, whatever the View menu shows); drawn only when you ask: Cmd+K, its Update button or Render > Update Camera Preview"},
             {"Render", "the Render button (left of the status bar), Render > Render... or Cmd+Shift+K: the active camera's picture at its size, saved in the Bottega's renders folder with its log; a terminal window shows the steps; Esc stops it"},
-            {"Render options", "Render menu: Quality (Draft / Normal / High: also how finely the light is baked), Anti-aliasing, Texture filtering"},
+            {"Render options", "Render menu: Quality (Draft / Normal / High: also how finely the light is baked), Anti-aliasing, Texture filtering, Prop light (full / quick)"},
             {"Baked light", "part of every render (and the Camera Preview, at Draft): lightmaps with shadows and bounced light, as Source's VRAD bakes them; kept in memory while nothing that lights the map changes. Lights: falloff (inverse-square, 50% / 0%, custom), spot exponent, sun spread in Properties; sky light %, minimum light, bounce strength and smoothing angle in World > Environment"},
             {"Lightmap scale", "Texture tool, Face panel: units per lightmap pixel for the picked faces (default 40, Hammer's 16 units); primitives: in Properties; props: 'casts shadows' and 'lighting' (baked per vertex / like a Source model) in Properties; View > 3D view: light grid shows the last bake's ambient cubes"},
             {"Camera presets", "Properties (camera tool or a selected camera): Save preset / Load a preset (lens, near / far, size, orthographic, exposure), kept in the Bottega's presets/camera_presets"},

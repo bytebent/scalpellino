@@ -1,5 +1,9 @@
 #include "core/document.hpp"
 #include <algorithm>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
+#include <system_error>
 #include <map>
 
 namespace scal {
@@ -130,7 +134,9 @@ void Document::apply(Command cmd) {
     if (cmd.primSelectionAfter) primSelection_ = *cmd.primSelectionAfter;
     if (cmd.propSelectionAfter) propSelection_ = *cmd.propSelectionAfter;
     if (cmd.cameraSelectionAfter) cameraSelection_ = *cmd.cameraSelectionAfter;
-    cmd.serial = ++nextSerial_;
+    if (!cmd.fileChanges.empty()) writeFiles(cmd.fileChanges, true);
+    // Material files aren't the map: an edit of files only leaves "saved?" as it was.
+    cmd.serial = cmd.filesOnly() ? historyTop() : ++nextSerial_;
     // New primitives or props show them again if they were hidden.
     for (const PrimChange& c : cmd.primChanges) if (c.after && !c.before) primsShown_ = true;
     for (const PropChange& c : cmd.propChanges) if (c.after && !c.before) propsShown_ = true;
@@ -182,6 +188,7 @@ std::size_t Document::commandBytes(const Command& c) {
     for (const CameraChange& x : c.cameraChanges) n += sizeof(x) + optBytes(x.before, cameraBytes) + optBytes(x.after, cameraBytes);
     if (c.envBefore) n += sizeof(Environment);
     if (c.envAfter) n += sizeof(Environment);
+    for (const FileChange& f : c.fileChanges) n += sizeof(f) + f.path.size() + (f.before ? f.before->size() : 0) + (f.after ? f.after->size() : 0);
     n += setBytes(c.selectionBefore) + setBytes(c.selectionAfter);
     n += optSetBytes(c.lightSelectionBefore) + optSetBytes(c.lightSelectionAfter);
     n += optSetBytes(c.primSelectionBefore) + optSetBytes(c.primSelectionAfter);
@@ -235,6 +242,7 @@ bool Document::undo() {
     if (cmd.primSelectionBefore) primSelection_ = *cmd.primSelectionBefore;
     if (cmd.propSelectionBefore) propSelection_ = *cmd.propSelectionBefore;
     if (cmd.cameraSelectionBefore) cameraSelection_ = *cmd.cameraSelectionBefore;
+    if (!cmd.fileChanges.empty()) writeFiles(cmd.fileChanges, false);
     redo_.push_back(std::move(cmd));
     bump();
     return true;
@@ -258,9 +266,51 @@ bool Document::redo() {
     if (cmd.primSelectionAfter) primSelection_ = *cmd.primSelectionAfter;
     if (cmd.propSelectionAfter) propSelection_ = *cmd.propSelectionAfter;
     if (cmd.cameraSelectionAfter) cameraSelection_ = *cmd.cameraSelectionAfter;
+    if (!cmd.fileChanges.empty()) writeFiles(cmd.fileChanges, true);
     undo_.push_back(std::move(cmd));
     bump();
     return true;
+}
+
+void Document::writeFiles(const std::vector<FileChange>& files, bool after) {
+    namespace fs = std::filesystem;
+    lastFiles_.clear();
+    fileError_.clear();
+    for (const FileChange& f : files) {
+        const std::optional<std::string>& text = after ? f.after : f.before;
+        std::error_code ec;
+        lastFiles_.push_back(f.path);
+        if (!text) {
+            fs::remove(f.path, ec);
+            if (ec) fileError_ = "can't remove " + fs::path(f.path).filename().string();
+            continue;
+        }
+        if (fs::path(f.path).has_parent_path()) fs::create_directories(fs::path(f.path).parent_path(), ec);
+        std::ofstream o(f.path, std::ios::binary | std::ios::trunc);
+        o << *text;
+        if (!o) fileError_ = "can't write " + fs::path(f.path).filename().string();
+    }
+    ++filesStamp_;
+}
+
+Command Document::makeFileEdit(const std::vector<std::pair<std::string, std::optional<std::string>>>& files, const std::string& name) const {
+    Command c;
+    c.name = name;
+    c.selectionBefore = c.selectionAfter = selection_;
+    for (const auto& [path, text] : files) {
+        FileChange fc;
+        fc.path = path;
+        std::ifstream in(path, std::ios::binary);
+        if (in) {
+            std::ostringstream ss;
+            ss << in.rdbuf();
+            fc.before = ss.str();
+        }
+        fc.after = text;
+        if (fc.before == fc.after) continue;
+        c.fileChanges.push_back(std::move(fc));
+    }
+    return c;
 }
 
 const std::string& Document::undoName() const {
