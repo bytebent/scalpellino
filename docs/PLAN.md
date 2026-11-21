@@ -51,9 +51,9 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   (VRAD's radiosity in `core/bake.*`); its choices made without asking are under "v0.12.2,
   decided without asking". Renders of the busy test maps (`tests/bench/render.script`) are
   in `docs/screenshots/m12-13` to `m12-16`. Reported (CI green, released); the user is
-  fine with the slow bakes. **Batch 4 (v0.12.3, prop lighting) was discussed and
-  agreed (2026-11-21)**: see "Batch 4 decided with the user" under Roadmap item 5 (the real
-  light grid is parked in Open questions). Next: **build v0.12.3 when the user says go**.
+  fine with the slow bakes. **Batch 4 (v0.12.3, prop lighting and the light
+  grid) was discussed and agreed (2026-11-21)**: see "Batch 4 decided with the user" under
+  Roadmap item 5. Next: **build v0.12.3 when the user says go**.
 - **Review fixes (2026-11-20), merged into `main`** (fast-forward from
   `fix/review-findings` after the user's go-ahead; no new version, so only "Latest build"
   is refreshed): version releases are
@@ -91,11 +91,8 @@ Each archive's SHA-256 is in `cmake/Deps.cmake` (checked at configure time).
 
 ## Open questions (parked)
 
-- **A real light grid (parked, user 2026-11-21):** a 3D grid of ambient cubes over the
-  map (Source's leaf samples). Not needed by Scalpellino now (props compute their cube
-  where they stand, v0.12.3); kept for later, e.g. if a separate tool to walk around these
-  maps is ever made (moving viewer / objects need light anywhere). The cube code samples
-  any point, so the grid is a small step.
+- **Light grid "for now" choices (user, 2026-11-21):** a regular HL2-style grid (not
+  per-leaf samples) and props reading the nearest sample (no blending); might change.
 - **Prop lighting origin (maybe, user 2026-11-21):** Source's `lightingorigin` key (measure a
   prop's light at another point) if the bounding box centre turns out wrong for some props.
 - **Batch 2 (v0.12.1) choices flagged "might change" (user, 2026-11-20).** Agreed for
@@ -763,10 +760,10 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
         also receive baked light already** (their own 3D lightmaps; agreed 2026-11-20).
      3. **v0.12.2 bounces:** radiosity ("Bounce #n added RGB(...)"), bounce colour from
         the textures.
-     4. **v0.12.3 prop lighting** (was "light grid"): baked per-vertex light for props
-        (VRAD's `-StaticPropLighting`), or per prop "like a Source model" (an ambient cube
-        computed at the prop + its 2 strongest lights); primitives already have their
-        lightmaps from v0.12.1. The real 3D grid is parked (Open questions).
+     4. **v0.12.3 prop lighting and the light grid:** baked per-vertex light for props
+        (VRAD's `-StaticPropLighting`), or per prop "like a Source model" (the nearest
+        sample of a real 3D grid of ambient cubes + its 2 strongest lights); primitives
+        already have their lightmaps from v0.12.1.
      5. **v0.12.4 material system:** material files, GLSL shaders in Bottega `shaders/`,
         specular, emissive, detail textures, alpha cutout, rim lighting; editor
         placeholder.
@@ -919,10 +916,21 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
         itself).
      3. **Bounce light on props:** each vertex gathers from the patches around it (as the
         primitives' cells do).
-     4. **No real grid now:** the ambient cube is computed exactly at each prop that uses it
-        (the same as Source's nearest sample, more exact), with code that can sample any
-        point. The real 3D grid is kept for later (Open questions). Reflections don't need
-        it: Source's come from env_cubemap probes (v0.12.5), mirrors redraw the lit scene.
+     4. **A real light grid, now** (user, after a first reading of "keep it for later" was
+        wrong: the user wants the grid built). Reflections don't need it (Source's come from
+        env_cubemap probes, v0.12.5; mirrors redraw the lit scene), but a future tool to walk
+        around these maps might, and the code will be there.
+        - **4a. Layout:** a regular grid as Half-Life 2 (one sample every 4 x 4 x 8 feet =
+          48 x 48 x 96 Hammer units, about 122 x 122 x 244 cm) over the map's bounds;
+          samples inside solid brushes skipped. "For now": Source's later per-leaf random
+          samples need BSP leaves, which Scalpellino doesn't have.
+        - **4b. A "like a Source model" prop reads the nearest sample** to its lighting
+          origin, no blending (as Source). "For now".
+        - **4c. Memory only**, like the lightmaps (a walk-around tool would probably rebake
+          on its own; the code exists).
+        - **4d. View menu toggle** (off by default): each sample drawn as a small cube
+          coloured by its 6 directions in the 3D view, after a render or a Camera Preview
+          bake. Static (nothing moves).
      5. **Where a prop's light is measured:** its bounding box centre, moved out of brushes
         if inside (as Source). **Maybe:** Source's `lightingorigin` (another point) later.
      6. **The ambient cube holds what VRAD's does:** light reflected off surfaces plus sky

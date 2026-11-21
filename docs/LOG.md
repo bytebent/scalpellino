@@ -4,12 +4,13 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
-### 2026-11-21 — Batch 4 (v0.12.3, prop lighting) agreed (docs only)
+### 2026-11-21 — Batch 4 (v0.12.3, prop lighting and the light grid) agreed (docs only)
 - 13 numbered questions on lighting props; all answered. Recorded as "Batch 4 decided with
   the user" (PLAN.md Roadmap item 5); the batch is renamed "prop lighting". The user asked
-  whether reflections need the light grid: no (Source's come from env_cubemap probes); the
-  real grid is parked in Open questions (maybe for a future walk-around tool), and the
-  lighting origin is a "maybe".
+  whether reflections need the light grid: no (Source's come from env_cubemap probes). I
+  first recorded the grid as parked; that was a misreading: the user wants the real grid
+  built now. Four follow-up questions (layout, how props read it, saving, a view toggle)
+  answered and recorded as 4a-4d; the lighting origin is a "maybe".
 - No code changed. Next: build v0.12.3 when the user says go.
 
 ### 2026-11-21 — v0.12.2 reported
