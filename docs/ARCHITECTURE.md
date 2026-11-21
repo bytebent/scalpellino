@@ -573,6 +573,13 @@ Preview and in renders.
     inches to cm), sky light from the sky picture, shadows from everything, 3D lightmaps
     for primitives, linear light; bounces in v0.12.2, ambient cubes and prop vertex
     light in v0.12.3.
+    **Rays** (`core/tracer.*`, sped up before v0.12.4b): a tree of boxes per mesh split by
+    surface area (binned SAH), searched nearer box first; boxes and triangles stored in
+    single precision, the triangle test itself in double (as before, so edge cases fall the
+    same way); a prop model is stored once and placed per prop (instances: the ray goes into
+    the model's space), with a small tree over the instances and the world mesh. A face's
+    patches are found through a grid in lightmap space (`StGrid`) instead of checking each
+    one. Same light as before (renders match within 2 / 255).
 - **The Source look** comes from **how Source renders**: fast, on the graphics card, with
   baked lightmaps (light, shadows, bounce), baked reflection probes, real textures and
   fog. It is **never faked with filters** laid over the picture (user: that is not the

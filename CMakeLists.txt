@@ -53,7 +53,8 @@ add_library(scal_core STATIC
   src/core/render_job.cpp
   src/core/bake.cpp
   src/core/material.cpp
-  src/core/shader_file.cpp)
+  src/core/shader_file.cpp
+  src/core/tracer.cpp)
 target_include_directories(scal_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 find_package(Threads REQUIRED)
 target_link_libraries(scal_core PUBLIC Threads::Threads) # Sky Lab bakes on all threads

@@ -2,6 +2,7 @@
 #include "core/model.hpp"
 #include "core/terrain.hpp"
 #include "core/texture.hpp"
+#include "core/tracer.hpp"
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -35,226 +36,55 @@ double maxc(const Vec3& v) { return std::max({v.x, v.y, v.z}); }
 double lengthSq(const Vec3& v) { return dot(v, v); }
 
 // ---------------------------------------------------------------- ray tests
-struct Tri { Vec3 a, e1, e2; };
-
-class Tracer {
-public:
-    // A cutout ($alphatest, v0.12.4): texel (u, v) = (dot(P, uAxis) + uOff, dot(P, vAxis) + vOff),
-    // wrapped; a hit where the picture's alpha is under the reference doesn't count.
-    struct Mask {
-        const BakeMaterial* mat = nullptr;
-        Vec3 uAxis, vAxis;
-        double uOff = 0, vOff = 0;
-    };
-    int addMask(const Mask& m) {
-        masks_.push_back(m);
-        return (int)masks_.size() - 1;
-    }
-    // `tag`: what the triangle belongs to (closestHit reports it; -1 = nothing that bounces).
-    void addTri(const Vec3& a, const Vec3& b, const Vec3& c, int tag = -1, int mask = -1) {
-        if (length(cross(b - a, c - a)) < 1e-9) return;
-        tris_.push_back({a, b - a, c - a});
-        tags_.push_back(tag);
-        triMask_.push_back(mask);
-    }
-    void addPrims(std::vector<MathPrim> members) {
-        PrimObj o;
-        o.members = std::move(members);
-        double pad = 0;
-        for (const MathPrim& m : o.members) {
-            o.box.add(primBounds(m));
-            pad = std::max(pad, m.blend);
+// ---------------------------------------------------------------- finding a face's patches
+// A face's patches by where they are in lightmap space (s, t): a grid of cells about a patch
+// wide, each listing the patches whose box touches it (in the face's order). Answers the same
+// as looking through every patch of the face, without doing so (speed-up before v0.12.4b).
+struct StGrid {
+    double s0 = 0, t0 = 0, cs = 1;
+    int nx = 0, ny = 0;
+    std::vector<std::vector<int>> cells;
+    void build(const std::vector<std::pair<int, std::array<double, 4>>>& items, double cell) {
+        if (items.empty()) return;
+        double s1 = -1e300, t1 = -1e300;
+        s0 = t0 = 1e300;
+        for (const auto& [id, b] : items) {
+            s0 = std::min(s0, b[0]);
+            t0 = std::min(t0, b[1]);
+            s1 = std::max(s1, b[2]);
+            t1 = std::max(t1, b[3]);
         }
-        o.box.min -= Vec3{1, 1, 1} * (1 + pad);
-        o.box.max += Vec3{1, 1, 1} * (1 + pad);
-        for (const MathPrim& m : o.members) o.ptrs.push_back(&m);
-        prims_.push_back(std::move(o));
-    }
-    void build() {
-        // pointers into members are stable now (prims_ no longer grows)
-        for (PrimObj& o : prims_) {
-            o.ptrs.clear();
-            for (const MathPrim& m : o.members) o.ptrs.push_back(&m);
+        cs = std::max(cell, 1e-6);
+        nx = std::clamp((int)std::ceil((s1 - s0) / cs) + 1, 1, 4096);
+        ny = std::clamp((int)std::ceil((t1 - t0) / cs) + 1, 1, 4096);
+        cs = std::max(cs, std::max((s1 - s0) / (nx - 0.5), (t1 - t0) / (ny - 0.5)));
+        cells.assign((size_t)nx * ny, {});
+        for (const auto& [id, b] : items) {
+            int x0, y0, x1, y1;
+            range(b[0], b[1], b[2], b[3], x0, y0, x1, y1);
+            for (int y = y0; y <= y1; ++y)
+                for (int x = x0; x <= x1; ++x) cells[(size_t)y * nx + x].push_back(id);
         }
-        nodes_.clear();
-        idx_.resize(tris_.size());
-        for (size_t i = 0; i < idx_.size(); ++i) idx_[i] = (int)i;
-        if (!tris_.empty()) buildNode(0, (int)tris_.size());
     }
-    size_t triangles() const { return tris_.size(); }
-    size_t primObjects() const { return prims_.size(); }
-
-    // The nearest thing along the ray (d unit), up to maxT: its distance, the triangle's tag
-    // (or -1) and the primitive object's index (or -1). False if nothing.
-    struct Hit { double t = 0; int tag = -1; int prim = -1; };
-    bool closestHit(const Vec3& o, const Vec3& d, double maxT, Hit& hit) const {
-        const Vec3 inv{1.0 / (d.x != 0 ? d.x : 1e-30), 1.0 / (d.y != 0 ? d.y : 1e-30), 1.0 / (d.z != 0 ? d.z : 1e-30)};
-        double best = maxT;
-        bool any = false;
-        if (!nodes_.empty()) {
-            int stack[96];
-            int sp = 0;
-            stack[sp++] = 0;
-            while (sp) {
-                const Node& n = nodes_[stack[--sp]];
-                if (!hitBox(n.box, o, inv, best)) continue;
-                if (n.count) {
-                    for (int i = n.first; i < n.first + n.count; ++i) {
-                        double t;
-                        if (hitTriT(idx_[i], o, d, best, t)) {
-                            best = t;
-                            hit.t = t;
-                            hit.tag = tags_[idx_[i]];
-                            hit.prim = -1;
-                            any = true;
-                        }
-                    }
-                } else if (sp + 2 <= 96) {
-                    stack[sp++] = n.left;
-                    stack[sp++] = n.right;
-                }
+    void range(double a, double b, double c, double d, int& x0, int& y0, int& x1, int& y1) const {
+        x0 = std::clamp((int)std::floor((a - s0) / cs), 0, nx - 1);
+        y0 = std::clamp((int)std::floor((b - t0) / cs), 0, ny - 1);
+        x1 = std::clamp((int)std::floor((c - s0) / cs), 0, nx - 1);
+        y1 = std::clamp((int)std::floor((d - t0) / cs), 0, ny - 1);
+    }
+    // Patches whose box may touch [a, c] x [b, d], in ascending order, once each.
+    void query(double a, double b, double c, double d, std::vector<int>& out) const {
+        out.clear();
+        if (cells.empty()) return;
+        int x0, y0, x1, y1;
+        range(a, b, c, d, x0, y0, x1, y1);
+        for (int y = y0; y <= y1; ++y)
+            for (int x = x0; x <= x1; ++x) {
+                const std::vector<int>& c2 = cells[(size_t)y * nx + x];
+                out.insert(out.end(), c2.begin(), c2.end());
             }
-        }
-        for (size_t pi = 0; pi < prims_.size(); ++pi) {
-            const PrimObj& p = prims_[pi];
-            if (!hitBox(p.box, o, inv, best)) continue;
-            const std::vector<RayInterval> iv = p.members.size() == 1 ? primIntervals(p.members[0], o, d) : comboIntervals(p.ptrs, o, d);
-            for (const RayInterval& r : iv) {
-                const double t = r.t0 > 1e-3 ? r.t0 : r.t1;
-                if (t > 1e-3 && t < best) {
-                    best = t;
-                    hit.t = t;
-                    hit.tag = -1;
-                    hit.prim = (int)pi;
-                    any = true;
-                }
-            }
-        }
-        return any;
-    }
-
-    // Anything between o and o + d * maxT (d unit)?
-    bool occluded(const Vec3& o, const Vec3& d, double maxT) const {
-        const Vec3 inv{1.0 / (d.x != 0 ? d.x : 1e-30), 1.0 / (d.y != 0 ? d.y : 1e-30), 1.0 / (d.z != 0 ? d.z : 1e-30)};
-        if (!nodes_.empty()) {
-            int stack[96];
-            int sp = 0;
-            stack[sp++] = 0;
-            while (sp) {
-                const Node& n = nodes_[stack[--sp]];
-                if (!hitBox(n.box, o, inv, maxT)) continue;
-                if (n.count) {
-                    for (int i = n.first; i < n.first + n.count; ++i)
-                        if (hitTri(idx_[i], o, d, maxT)) return true;
-                } else if (sp + 2 <= 96) {
-                    stack[sp++] = n.left;
-                    stack[sp++] = n.right;
-                }
-            }
-        }
-        for (const PrimObj& p : prims_) {
-            if (!hitBox(p.box, o, inv, maxT)) continue;
-            const std::vector<RayInterval> iv = p.members.size() == 1 ? primIntervals(p.members[0], o, d) : comboIntervals(p.ptrs, o, d);
-            for (const RayInterval& r : iv)
-                if (r.t1 > 1e-3 && r.t0 < maxT) return true;
-        }
-        return false;
-    }
-
-private:
-    struct Node { AABB box; int left = -1, right = -1, first = 0, count = 0; };
-    struct PrimObj { std::vector<MathPrim> members; std::vector<const MathPrim*> ptrs; AABB box; };
-    std::vector<Tri> tris_;
-    std::vector<int> tags_;
-    std::vector<int> triMask_;
-    std::vector<Mask> masks_;
-    std::vector<int> idx_;
-    std::vector<Node> nodes_;
-    std::vector<PrimObj> prims_;
-
-    static bool hitBox(const AABB& b, const Vec3& o, const Vec3& inv, double maxT) {
-        double t0 = 0, t1 = maxT;
-        for (int a = 0; a < 3; ++a) {
-            double ta = (b.min[a] - o[a]) * inv[a], tb = (b.max[a] - o[a]) * inv[a];
-            if (ta > tb) std::swap(ta, tb);
-            t0 = std::max(t0, ta);
-            t1 = std::min(t1, tb);
-            if (t0 > t1) return false;
-        }
-        return true;
-    }
-    // Is the cutout's picture see-through at P?
-    bool seeThrough(int ti, const Vec3& P) const {
-        const int mi = triMask_[ti];
-        if (mi < 0) return false;
-        const Mask& m = masks_[mi];
-        const BakeMaterial& bm = *m.mat;
-        if (bm.texW <= 0 || bm.texH <= 0 || bm.alpha.size() < (size_t)bm.texW * bm.texH) return false;
-        const double u = dot(P, m.uAxis) + m.uOff, v = dot(P, m.vAxis) + m.vOff;
-        long long x = (long long)std::floor(u) % bm.texW, y = (long long)std::floor(v) % bm.texH;
-        if (x < 0) x += bm.texW;
-        if (y < 0) y += bm.texH;
-        return bm.alpha[(size_t)y * bm.texW + (size_t)x] < bm.alphaRef * 255.0;
-    }
-    bool hitTriT(int ti, const Vec3& o, const Vec3& d, double maxT, double& tt) const {
-        const Tri& t = tris_[ti];
-        const Vec3 p = cross(d, t.e2);
-        const double det = dot(t.e1, p);
-        if (std::fabs(det) < 1e-12) return false;
-        const double inv = 1.0 / det;
-        const Vec3 s = o - t.a;
-        const double u = dot(s, p) * inv;
-        if (u < 0 || u > 1) return false;
-        const Vec3 q = cross(s, t.e1);
-        const double v = dot(d, q) * inv;
-        if (v < 0 || u + v > 1) return false;
-        tt = dot(t.e2, q) * inv;
-        return tt > 1e-4 && tt < maxT && !seeThrough(ti, o + d * tt);
-    }
-    bool hitTri(int ti, const Vec3& o, const Vec3& d, double maxT) const {
-        const Tri& t = tris_[ti];
-        const Vec3 p = cross(d, t.e2);
-        const double det = dot(t.e1, p);
-        if (std::fabs(det) < 1e-12) return false;
-        const double inv = 1.0 / det;
-        const Vec3 s = o - t.a;
-        const double u = dot(s, p) * inv;
-        if (u < 0 || u > 1) return false;
-        const Vec3 q = cross(s, t.e1);
-        const double v = dot(d, q) * inv;
-        if (v < 0 || u + v > 1) return false;
-        const double tt = dot(t.e2, q) * inv;
-        return tt > 1e-4 && tt < maxT && !seeThrough(ti, o + d * tt);
-    }
-    int buildNode(int first, int count) {
-        const int me = (int)nodes_.size();
-        nodes_.push_back({});
-        AABB box, cb;
-        for (int i = first; i < first + count; ++i) {
-            const Tri& t = tris_[idx_[i]];
-            box.add(t.a);
-            box.add(t.a + t.e1);
-            box.add(t.a + t.e2);
-            cb.add(t.a + (t.e1 + t.e2) / 3.0);
-        }
-        nodes_[me].box = box;
-        if (count <= 4) {
-            nodes_[me].first = first;
-            nodes_[me].count = count;
-            return me;
-        }
-        const Vec3 sz = cb.size();
-        const int axis = sz.x >= sz.y && sz.x >= sz.z ? 0 : sz.y >= sz.z ? 1 : 2;
-        const int mid = first + count / 2;
-        std::nth_element(idx_.begin() + first, idx_.begin() + mid, idx_.begin() + first + count, [&](int a, int b) {
-            const Tri &ta = tris_[a], &tb = tris_[b];
-            return (ta.a[axis] * 3 + ta.e1[axis] + ta.e2[axis]) < (tb.a[axis] * 3 + tb.e1[axis] + tb.e2[axis]);
-        });
-        const int l = buildNode(first, mid - first);
-        const int r = buildNode(mid, first + count - mid);
-        nodes_[me].left = l;
-        nodes_[me].right = r;
-        return me;
+        std::sort(out.begin(), out.end());
+        out.erase(std::unique(out.begin(), out.end()), out.end());
     }
 };
 
@@ -962,50 +792,59 @@ BakeResult bakeLight(const BakeInput& in, BakeProgress* progress, int threads) {
     std::vector<int> propPatchIds;
     const double patchSize = kDefaultLightmapScale * 4 * Q.scaleMul;
     size_t propsCasting = 0;
+    // Each model's triangles once, in its own space (the tracer places them per prop).
+    struct ModelTris { int mesh = -1; std::vector<std::array<Vec3, 3>> tris; };
+    std::map<std::string, ModelTris> modelTris;
     for (const Prop& p : in.props) {
         if (!p.castShadows || !in.models) continue;
         const Model* m = in.models(p.model);
         if (!m) continue;
         ++propsCasting;
+        ModelTris& mt = modelTris[p.model];
+        if (mt.mesh < 0) {
+            for (const ModelMesh& mesh : m->meshes) {
+                const size_t nv = mesh.pos.size() / 3;
+                auto L = [&](std::uint32_t k) { return Vec3{mesh.pos[3 * k], mesh.pos[3 * k + 1], mesh.pos[3 * k + 2]}; };
+                for (size_t t = 0; t + 2 < mesh.index.size(); t += 3) {
+                    if (mesh.index[t] >= nv || mesh.index[t + 1] >= nv || mesh.index[t + 2] >= nv) continue;
+                    mt.tris.push_back({L(mesh.index[t]), L(mesh.index[t + 1]), L(mesh.index[t + 2])});
+                }
+            }
+            mt.mesh = tracer.addMesh(mt.tris);
+        }
         auto rit = in.modelReflectivity.find(p.model);
         const Vec3 refl = rit != in.modelReflectivity.end() ? rit->second : Vec3{kDefaultReflectivity, kDefaultReflectivity, kDefaultReflectivity};
         std::map<std::tuple<long long, long long, long long, int>, int> bucket;
-        for (const ModelMesh& mesh : m->meshes) {
-            auto P = [&](std::uint32_t k) {
-                return propToWorld(p, {mesh.pos[3 * k], mesh.pos[3 * k + 1], mesh.pos[3 * k + 2]});
-            };
-            const size_t nv = mesh.pos.size() / 3;
-            for (size_t t = 0; t + 2 < mesh.index.size(); t += 3) {
-                if (mesh.index[t] >= nv || mesh.index[t + 1] >= nv || mesh.index[t + 2] >= nv) continue;
-                const Vec3 a = P(mesh.index[t]), b = P(mesh.index[t + 1]), c = P(mesh.index[t + 2]);
-                const Vec3 cr = cross(b - a, c - a);
-                const double area = length(cr) / 2;
-                if (area < 1e-9) continue;
-                const Vec3 n = cr / (2 * area), ctr = (a + b + c) / 3.0;
-                const int bin = std::fabs(n.x) >= std::fabs(n.y) && std::fabs(n.x) >= std::fabs(n.z) ? (n.x > 0 ? 0 : 1)
-                                : std::fabs(n.y) >= std::fabs(n.z)                                ? (n.y > 0 ? 2 : 3)
-                                                                                                   : (n.z > 0 ? 4 : 5);
-                const auto key = std::make_tuple((long long)std::floor(ctr.x / patchSize), (long long)std::floor(ctr.y / patchSize),
-                                                 (long long)std::floor(ctr.z / patchSize), bin);
-                auto it = bucket.find(key);
-                int pid;
-                if (it == bucket.end()) {
-                    pid = (int)patches.size();
-                    bucket[key] = pid;
-                    patches.push_back({});
-                    patches.back().refl = refl;
-                    propPatchIds.push_back(pid);
-                } else
-                    pid = it->second;
-                Patch& pa = patches[pid];
-                pa.area += area;
-                pa.origin += ctr * area;
-                pa.normal += n * area;
-                const int tag = (int)owners.size();
-                owners.push_back({2, pid, (int)(&p - in.props.data())});
-                tracer.addTri(a, b, c, tag);
-            }
+        const int tagBase = (int)owners.size();
+        for (const auto& lt : mt.tris) {
+            const Vec3 a = propToWorld(p, lt[0]), b = propToWorld(p, lt[1]), c = propToWorld(p, lt[2]);
+            const Vec3 cr = cross(b - a, c - a);
+            const double area = length(cr) / 2;
+            const Vec3 n = area > 1e-9 ? cr / (2 * area) : Vec3{0, 0, 1}, ctr = (a + b + c) / 3.0;
+            const int bin = std::fabs(n.x) >= std::fabs(n.y) && std::fabs(n.x) >= std::fabs(n.z) ? (n.x > 0 ? 0 : 1)
+                            : std::fabs(n.y) >= std::fabs(n.z)                                ? (n.y > 0 ? 2 : 3)
+                                                                                               : (n.z > 0 ? 4 : 5);
+            const auto key = std::make_tuple((long long)std::floor(ctr.x / patchSize), (long long)std::floor(ctr.y / patchSize),
+                                             (long long)std::floor(ctr.z / patchSize), bin);
+            auto it = bucket.find(key);
+            int pid;
+            if (it == bucket.end()) {
+                pid = (int)patches.size();
+                bucket[key] = pid;
+                patches.push_back({});
+                patches.back().refl = refl;
+                propPatchIds.push_back(pid);
+            } else
+                pid = it->second;
+            Patch& pa = patches[pid];
+            pa.area += area;
+            pa.origin += ctr * area;
+            pa.normal += n * area;
+            owners.push_back({2, pid, (int)(&p - in.props.data())}); // tag tagBase + k for triangle k
         }
+        const Vec3 o = propToWorld(p, {0, 0, 0});
+        const Vec3 cols[3] = {propToWorld(p, {1, 0, 0}) - o, propToWorld(p, {0, 1, 0}) - o, propToWorld(p, {0, 0, 1}) - o};
+        tracer.addInstance(mt.mesh, cols, o, tagBase);
     }
     tracer.build();
     res.triangles = tracer.triangles();
@@ -1475,13 +1314,20 @@ BakeResult bakeLight(const BakeInput& in, BakeProgress* progress, int threads) {
         return true;
     };
     // The patch of face `fi` holding world point P (or the nearest).
+    std::vector<StGrid> faceGrids(faces.size());
     auto facePatchAt = [&](int fi, const Vec3& P) {
         const std::vector<int>& list = facePatches[fi];
         if (list.empty()) return -1;
         double s, t;
         faces[fi].lux(P, s, t);
-        for (int id : list)
-            if (insideSt(patches[id].st, s, t)) return id;
+        if (!faceGrids[fi].cells.empty()) {
+            thread_local std::vector<int> cand;
+            faceGrids[fi].query(s, t, s, t, cand);
+            for (int id : cand)
+                if (insideSt(patches[id].st, s, t)) return id;
+        } else
+            for (int id : list)
+                if (insideSt(patches[id].st, s, t)) return id;
         int best = list[0];
         double bd = 1e300;
         for (int id : list) {
@@ -1552,6 +1398,20 @@ BakeResult bakeLight(const BakeInput& in, BakeProgress* progress, int threads) {
                 facePatches[fi].push_back((int)patches.size());
                 patches.push_back(std::move(pa));
             }
+            {
+                std::vector<std::pair<int, std::array<double, 4>>> items;
+                for (int id : facePatches[fi]) {
+                    std::array<double, 4> b{1e300, 1e300, -1e300, -1e300};
+                    for (const auto& [a2, b2] : patches[id].st) {
+                        b[0] = std::min(b[0], a2);
+                        b[1] = std::min(b[1], b2);
+                        b[2] = std::max(b[2], a2);
+                        b[3] = std::max(b[3], b2);
+                    }
+                    items.push_back({id, b});
+                }
+                if (items.size() > 8) faceGrids[fi].build(items, 4.0);
+            }
             // the patches' direct light: the average of the luxels on them (VRAD's AddSampleToPatch)
             const FaceLightmap& lm = *w.out;
             std::vector<Vec3> sum(facePatches[fi].size());
@@ -1563,7 +1423,7 @@ BakeResult bakeLight(const BakeInput& in, BakeProgress* progress, int threads) {
                     const Vec3 P = w.point(s + lm.s0, t + lm.t0);
                     const int id = facePatchAt((int)fi, P);
                     if (id < 0) continue;
-                    const size_t k = (size_t)(std::find(facePatches[fi].begin(), facePatches[fi].end(), id) - facePatches[fi].begin());
+                    const size_t k = (size_t)(id - facePatches[fi].front()); // a face's patches are numbered in a row
                     const size_t q = ((size_t)j * lm.w + i) * 3;
                     sum[k] += Vec3{lm.rgb[q], lm.rgb[q + 1], lm.rgb[q + 2]} - minL;
                     ++cnt[k];
@@ -1865,17 +1725,34 @@ BakeResult bakeLight(const BakeInput& in, BakeProgress* progress, int threads) {
                         const Vec3 P = w.point(s + lm.s0, t + lm.t0);
                         Vec3 acc;
                         double ws = 0;
-                        int nearest = list[0];
-                        double nd = 1e300;
-                        for (int id : list) {
+                        // only patches nearer than R count: those near in (s, t) (the grid), in order
+                        const std::vector<int>* cand = &list;
+                        thread_local std::vector<int> near;
+                        if (!faceGrids[fi].cells.empty()) {
+                            const double r = R * std::max(length(w.out->axisS), length(w.out->axisT)) + 1e-6;
+                            double ps, pt;
+                            w.lux(P, ps, pt);
+                            faceGrids[fi].query(ps - r, pt - r, ps + r, pt + r, near);
+                            cand = &near;
+                        }
+                        for (int id : *cand) {
                             const double d = length(patches[id].origin - P);
-                            if (d < nd) { nd = d; nearest = id; }
                             const double wgt = 1 - d / R;
                             if (wgt <= 0) continue;
                             acc += patches[id].total * wgt;
                             ws += wgt;
                         }
-                        const Vec3 bounce = ws > 0 ? acc / ws : patches[nearest].total;
+                        Vec3 bounce;
+                        if (ws > 0) bounce = acc / ws;
+                        else { // none that near: the nearest
+                            int nearest = list[0];
+                            double nd = 1e300;
+                            for (int id : list) {
+                                const double d = length(patches[id].origin - P);
+                                if (d < nd) { nd = d; nearest = id; }
+                            }
+                            bounce = patches[nearest].total;
+                        }
                         const size_t q = ((size_t)j * lm.w + i) * 3;
                         lm.rgb[q] += (float)bounce.x;
                         lm.rgb[q + 1] += (float)bounce.y;

@@ -4,6 +4,26 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-21 — Faster bakes, the same light (before v0.12.4b)
+- The user asked for bake speed-ups that keep the look (items 1-4 of the proposal).
+  Profiling a test scene (floor, 300 boxes, 100 props of 5000 triangles, Normal, 2 threads)
+  showed 82% of the time in finding which patch of a face a point is on: three loops
+  looked through every patch of the face per luxel or ray. A grid per face in lightmap space
+  (`StGrid`) answers the same: 122 -> 22 s. Then the tracer, moved to `core/tracer.*`:
+  binned SAH tree, nearer child first, single-precision boxes and triangles (the triangle
+  test stays in double so edge cases fall as before: a first all-float version turned a
+  luxel on a wall's edge dark under a sun straight down), a multiply-add box test, prop
+  models stored once and placed per prop (instances): 22 -> 15.6 s. Testing 4 rays at once
+  was not done (see PLAN.md). A single-precision pre-test of triangles gained nothing and was
+  taken out.
+- Same light: the test scene's lightmaps and prop light differ by at most 0.00005; the busy
+  renders match the v0.12.4 ones (`m12-26` to `m12-28`) within 2 / 255 per pixel (so no new
+  screenshots). Busy maps: rich 1.2 s (same), 1000 boxes 21.6 -> 9.0 s, 4000 boxes 133.9 ->
+  56.0 s.
+- Tests: new core `testTracer` (placed models answer like the same triangles in the world,
+  2000 random rays): 4994 checks, 0 failed. All 33 UI scripts pass at 1x and 2x; idle 0
+  ticks at 1x and 2x. Not released on its own: it goes out with v0.12.4b.
+
 ### 2026-11-21 — v0.12.4b agreed; benchmark without the rocks
 - The user said yes to all twelve v0.12.4b recommendations (PLAN.md, current status) and to
   dropping the 1000 rocks from the busy-map render benchmark (`tests/bench/render.script`,

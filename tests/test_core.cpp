@@ -21,6 +21,7 @@
 #include "core/bake.hpp"
 #include "core/material.hpp"
 #include "core/shader_file.hpp"
+#include "core/tracer.hpp"
 #include <array>
 #include "io/glb_loader.hpp"
 #include "io/model_store.hpp"
@@ -4265,6 +4266,61 @@ static void testBakeMaterials() {
     }
 }
 
+// The bake's tracer (speed-up before v0.12.4b): a model placed as an instance answers like the
+// same triangles put in the world one by one.
+static void testTracer() {
+    std::vector<std::array<Vec3, 3>> blob;
+    const int R = 12, C = 12;
+    auto P = [&](int j, int i) {
+        const double th = M_PI * j / R, ph = 2 * M_PI * i / C, r = 40 * (1 + 0.2 * std::sin(3 * th) * std::cos(2 * ph));
+        return Vec3{r * std::sin(th) * std::cos(ph), r * std::sin(th) * std::sin(ph), 40 + r * std::cos(th)};
+    };
+    for (int j = 0; j < R; ++j)
+        for (int i = 0; i < C; ++i) {
+            blob.push_back({P(j, i), P(j + 1, i), P(j, i + 1)});
+            blob.push_back({P(j, i + 1), P(j + 1, i), P(j + 1, i + 1)});
+        }
+    Tracer inst, flat;
+    Brush floor = makeBox(box({-500, -500, -16}, {500, 500, 0}), "f");
+    for (const Polygon& p : floor.polygons())
+        for (size_t i = 1; i + 1 < p.verts.size(); ++i) {
+            inst.addTri(p.verts[0], p.verts[i], p.verts[i + 1], 7);
+            flat.addTri(p.verts[0], p.verts[i], p.verts[i + 1], 7);
+        }
+    const int mesh = inst.addMesh(blob);
+    for (int k = 0; k < 6; ++k) {
+        Prop pr;
+        pr.pos = {-300.0 + 120 * k, 40.0 * (k % 3), 0};
+        pr.rot = {10.0 * k, 25.0 * k, 5.0};
+        pr.scale = {1 + 0.1 * k, 1, 1.5 - 0.05 * k};
+        const Vec3 o = propToWorld(pr, {0, 0, 0});
+        const Vec3 cols[3] = {propToWorld(pr, {1, 0, 0}) - o, propToWorld(pr, {0, 1, 0}) - o, propToWorld(pr, {0, 0, 1}) - o};
+        const int base = 1000 * (k + 1);
+        CHECK(inst.addInstance(mesh, cols, o, base));
+        for (size_t t = 0; t < blob.size(); ++t)
+            flat.addTri(propToWorld(pr, blob[t][0]), propToWorld(pr, blob[t][1]), propToWorld(pr, blob[t][2]), base + (int)t);
+    }
+    const Vec3 zero{0, 0, 0};
+    CHECK(!inst.addInstance(mesh, std::array<Vec3, 3>{zero, zero, zero}.data(), zero, 0)); // scale 0: nothing
+    inst.build();
+    flat.build();
+    CHECK(inst.triangles() >= flat.triangles()); // a model keeps its degenerate triangles (never hit)
+    unsigned seed = 12345;
+    auto rnd = [&] { seed = seed * 1103515245u + 12345u; return ((seed >> 8) & 0xffff) / 65535.0; };
+    int same = 0, n = 2000, hits = 0;
+    for (int k = 0; k < n; ++k) {
+        const Vec3 o{-450 + 900 * rnd(), -300 + 600 * rnd(), 5 + 200 * rnd()};
+        const Vec3 d = normalize(Vec3{rnd() - 0.5, rnd() - 0.5, rnd() - 0.7});
+        Tracer::Hit a, b;
+        const bool ha = inst.closestHit(o, d, 5000, a), hb = flat.closestHit(o, d, 5000, b);
+        const bool oa = inst.occluded(o, d, 300), ob = flat.occluded(o, d, 300);
+        if (ha == hb && (!ha || (std::fabs(a.t - b.t) < 1e-3 && a.tag == b.tag)) && oa == ob) ++same;
+        hits += ha;
+    }
+    CHECK(same >= n - 2); // a ray grazing an edge may fall either way in the last digit
+    CHECK(hits > n / 2);
+}
+
 static void writeText(const std::filesystem::path& p, const std::string& t) {
     std::filesystem::create_directories(p.parent_path());
     std::ofstream o(p, std::ios::binary);
@@ -4488,6 +4544,7 @@ int main() {
     testPropLight();
     testMaterials();
     testBakeMaterials();
+    testTracer();
     testMapQuakeFormat();
     testMapErrors();
     std::printf("%d checks, %d failed\n", g_checks, g_failures);

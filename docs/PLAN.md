@@ -84,7 +84,15 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   stay opaque (Source); (11) expose the sky behind the scene too; (12) materials on
   primitives later. One release. The busy-map render benchmark drops the 1000 rocks.
   Before building, the user asked whether bakes can be faster without changing the look:
-  proposal sent (tracer speed-ups that give the same picture), waiting for the answer.
+  **done (2026-11-21), the same light, released with v0.12.4b:** the tracer (`core/tracer.*`:
+  surface-area tree, nearer box first, single-precision storage with the triangle test in
+  double, prop models stored once and placed per prop) and a grid to find a face's patches
+  (the biggest win: three loops looked through every patch of a face per luxel or ray).
+  Busy maps: 1000 boxes 21.6 -> 9.0 s, 4000 boxes 133.9 -> 56.0 s; a 100-prop test scene
+  122 -> 15.6 s (2 threads). Renders match the old ones within 2 / 255. Not done: testing 4
+  rays at once (VRAD's SSE): after the rest, about 1.5-2x more for a large rewrite of every
+  place that shoots rays; left for later. Item 9 (texlight scale, reading VRAD's code) waits
+  until the user can approve the page; it blocks nothing else. Next: **build v0.12.4b**.
 - **Review fixes (2026-11-20), merged into `main`** (fast-forward from
   `fix/review-findings` after the user's go-ahead; no new version, so only "Latest build"
   is refreshed): version releases are
