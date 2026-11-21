@@ -4,6 +4,16 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-21 — Batch 3 (v0.12.2, bounces) agreed (docs only)
+- v0.12.1 released (CI green); reported. The user confirmed the v0.12.1 choices made
+  without asking.
+- 16 numbered questions on bounces (radiosity) with options, consequences and a
+  recommendation; all answered. Recorded as "Batch 3 decided with the user" (PLAN.md
+  Roadmap item 5). One change from Source by the user's choice: primitives and props
+  reflect light onto other things (they get patches of their own). The flagged item in
+  Open questions is updated.
+- No code changed. Next: build v0.12.2 (one release) when the user says go.
+
 ### 2026-11-21 — v0.12.1: baked light and shadows (M12 batch 2)
 - Built as agreed (PLAN.md Roadmap item 5, "Batch 2 decided with the user"); choices made
   while building are under "v0.12.1, decided without asking".

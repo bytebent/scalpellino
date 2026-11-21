@@ -52,8 +52,9 @@ texture licenses; `releases/` has the notes for each version.
   build it only when they say go, then report. **v0.12.0 (batch 1, the render pipeline)
   is done** and reported; **v0.12.1 (batch 2, baked direct light and shadows) is built**
   (PLAN.md Roadmap item 5, "Batch 2 decided with the user", "VRAD reference" and
-  "v0.12.1, decided without asking"; flagged choices under Open questions). Next: report,
-  then discuss batch 3 (bounces). The bake is `core/bake.*` (no graphics, tested in
+  "v0.12.1, decided without asking"; flagged choices under Open questions). Released and
+  reported. **Batch 3 (v0.12.2, bounces) is agreed** (PLAN.md "Batch 3 decided with the
+  user"); build it when the user says go. The bake is `core/bake.*` (no graphics, tested in
   `testBake`); drawing is `render/baked_light.*`.
   Read PLAN.md Roadmap item 5 first: the Camera Preview becomes a draft render (the real
   renderer at lower settings), ignores the View menu and shows hidden things (the user

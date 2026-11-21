@@ -44,8 +44,10 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   "Batch 2 decided with the user" under Roadmap item 5 and the choices flagged "might
   change" under Open questions. **v0.12.1 is built and pushed** (the user said go,
   2026-11-21): baked direct light and shadows (`core/bake.*`, `render/baked_light.*`); its
-  choices made without asking are under "v0.12.1, decided without asking". Next:
-  **report**, then discuss batch 3 (v0.12.2, bounces) in depth before building it.
+  choices made without asking are under "v0.12.1, decided without asking" (**the user
+  confirmed them, 2026-11-21**). Released (CI green). **Batch 3 (v0.12.2, bounces) was
+  discussed and agreed (2026-11-21)**: see "Batch 3 decided with the user" under Roadmap
+  item 5. Next: **build v0.12.2 when the user says go** (one release).
 - **Review fixes (2026-11-20), merged into `main`** (fast-forward from
   `fix/review-findings` after the user's go-ahead; no new version, so only "Latest build"
   is refreshed): version releases are
@@ -96,7 +98,8 @@ Each archive's SHA-256 is in `cmake/Deps.cmake` (checked at configure time).
   - **Primitive lightmap density:** one lightmap scale per primitive, shared by a
     combination; very thin parts may leak light. Might change once tried.
   - **Primitives and props don't bounce light** (as Source: only brush faces are bounce
-    patches). Might change in batch 3.
+    patches). **Changed in batch 3 (user, 2026-11-21): they do reflect light onto other
+    things** (a deliberate difference from Source); see "Batch 3 decided with the user".
   - **Default texture scale (decided, not scheduled):** the user will change the default
     for new faces to Source's real size (0.25 in Hammer units = about 0.64 in cm), since
     the lighting now converts Source's numbers to cm. Existing maps unchanged. When:
@@ -812,7 +815,45 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
      26. **One release** (v0.12.1). If primitive lightmaps stall while the brush bake
          works, tell the user and ship brushes / terrain first.
      - **Built (v0.12.1, 2026-11-21)** as one release; choices made while building are under
-       "v0.12.1, decided without asking".
+       "v0.12.1, decided without asking" (confirmed by the user, 2026-11-21).
+   - **Batch 3 decided with the user (2026-11-21), v0.12.2 bounces (radiosity).** As VRAD
+     (see "VRAD reference" below), numbered as asked:
+     1. **VRAD's radiosity:** surfaces cut into patches; each patch's direct light is passed
+        between patches that see each other (form factors, Jacobi iterations), then blended
+        onto the lightmaps. Not a per-luxel ray gather.
+     2. **Patch size: VRAD's default**, 4 luxels (about 160 cm at the default lightmap
+        scale); Draft twice as coarse; no map setting for now.
+     3. **Patches onto luxels as VRAD:** blended smoothly (VRAD's radial blending), so the
+        bounce stays soft and doesn't follow the luxel grid.
+     4. **All direct light bounces** (sun at full strength, VRAD's `indirect_sun` 1; sky
+        light; point and spot lights). The minimum light doesn't.
+     5. **Reflectivity = the texture's average colour, linear, capped at 0.99** (VRAD); a
+        per-material override (`$reflectivity`) comes with materials.
+     6. **A map-wide bounce strength** in Environment, like VRAD's `-reflectivityScale`
+        (default 1; saved in `_scal_bake`).
+     7. **Terrain bounces and receives** (VRAD makes patches on displacements).
+     8. **Primitives receive bounce light now:** each cell of a primitive's 3D lightmap
+        gathers what the patches around it give off (VRAD's ambient-cube gather: rays in
+        the 162 directions, each taking the hit patch's light times its reflectivity).
+     9. **Primitives and props also reflect light onto other things** (user: "we can
+        diverge from Source in this case"). They get patches of their own (primitives from
+        their surface, props from their triangles) that take part in the bounce like brush
+        faces. Their reflectivity: a primitive's texture average or flat colour, a prop's
+        model textures' average (decided while building if unclear; flagged in Open
+        questions then). Props still aren't lit by the bake themselves until v0.12.3.
+     10. **nodraw faces** block light and bounce nothing.
+     11. **Bounces:** Normal and High as VRAD (up to 100, stop when a bounce adds less than
+         1/255 in every channel); Draft and the Camera Preview stop at 10.
+     12. **No visibility data:** every patch pair gets a ray test, pairs too far apart to
+         matter are skipped (as VRAD drops tiny transfers). Measure; if a big map bakes too
+         slowly, tell the user before adding anything (e.g. a cutoff distance).
+     13. **The log as VRAD:** `Bounce #n added RGB(r, g, b)` for each bounce, then the
+         patch and transfer counts.
+     14. **Glowing textures** (texlights, `lights.rad`) come with materials (v0.12.4).
+     15. **One release** (v0.12.2).
+     16. The v0.12.1 choices made without asking stand (sky light %, lightmap scale 40,
+         at least 4 cells across a primitive, the Camera Preview baking while the editor
+         waits).
      - **Also agreed:** sun and sky light count a ray that hits nothing as sky (there are
        no sky brushes); the bake runs on the processor with all threads, in the core
        (testable without a graphics card), with ray tests against brushes, terrain,
