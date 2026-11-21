@@ -4,6 +4,17 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-21 — Batch 5 additions: batch editing, parent materials (docs only)
+- Variants start as a plain copy (the user chose this over presets).
+- For big imports: batch editing of materials (mixed values shown, only the changed field
+  written, one undo), parent materials (Source's `patch` include, asked by the user),
+  multi-select in the texture browser with the controls written in its window, "Select all
+  shown" after a filter and "Select the textures of the selected faces", helper maps
+  (`_normal`, `_ssbump`, `_mask`) paired by name and hidden. No batch variants (the user:
+  avoid making hundreds of files by accident). All in v0.12.4 (bump maps in v0.12.4b).
+  Recorded as items 2 and 19-24 of "Batch 5 decided with the user".
+- No code changed. Next: build v0.12.4 when the user says go.
+
 ### 2026-11-21 — Batch 5 (v0.12.4 materials, v0.12.4b bump maps) agreed (docs only)
 - 18 numbered questions on the material system; the user agreed with the recommendations,
   with changes: material variants (a "wet" copy of a texture's material, with presets),

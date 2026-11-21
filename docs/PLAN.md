@@ -61,7 +61,8 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   threads). Reported; **the user wants an option for fewer rays for props, in the next
   batch** (see Roadmap item 5, batch 5). **Batch 5 (materials) was discussed and agreed
   (2026-11-21)**: see "Batch 5 decided with the user" under Roadmap item 5; the steps after
-  it were reordered (decals added). Next: **build v0.12.4 when the user says go**.
+  it were reordered (decals added); plain-copy variants, batch editing and parent materials
+  were added the same day (items 2, 19-24). Next: **build v0.12.4 when the user says go**.
 - **Review fixes (2026-11-20), merged into `main`** (fast-forward from
   `fix/review-findings` after the user's go-ahead; no new version, so only "Latest build"
   is refreshed): version releases are
@@ -999,8 +1000,8 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
         current material into a new `.vmt` next to it under a typed name (e.g. `..._wet`),
         same texture; it shows in the texture browser as its own entry (with a small mark)
         and goes on faces like a texture. Faces store the name (texture or variant), so maps
-        don't change. **Variants start from presets** (e.g. "wet": darker, a reflection
-        masked by the texture; "polished"; "glowing"), every setting still editable.
+        don't change. **A variant starts as a plain copy** (the user chose this over
+        presets, 2026-11-21): identical until edited in the Material panel.
      3. **Shaders:** Source's own (`LightmappedGeneric`, `VertexLitGeneric`, `UnlitGeneric`)
         ship with the app as GLSL files with the agreed header; a `.vmt` names its shader;
         the user's shaders in Bottega `shaders/` get the same inputs (texture, baked light,
@@ -1034,6 +1035,29 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
      18. **Two releases:** v0.12.4 (files, variants, panel, glow, detail, cutouts, cheap
          glass, cheap chrome, `$reflectivity`, texlights, the props option) and v0.12.4b
          (bump maps, SSBump, Phong and rim).
+     19. **Batch editing (asked by the user for big imports, e.g. 1000 textures), in
+         v0.12.4.** Select many textures and the Material panel edits all of them: a
+         setting that differs shows as "mixed"; changing a field changes only that field on
+         every selected material, the rest stays; one undo for the whole change. Each
+         texture keeps its own picture (and later its own bump map).
+     20. **Parent materials (the user wants them now, against my "later"):** a material
+         can include a shared parent (Source's `patch` shader: `include` the parent `.vmt`,
+         `replace` / `insert` what differs, e.g. `$basetexture`), so e.g. all bricks point
+         to one `brick_base` and changing it changes all of them. The Material panel shows
+         the parent and which settings are the material's own. Batch editing can set the
+         parent of all selected. Each child is still a small `.vmt` of a few lines (that is
+         how Source ties a texture to its material); the shared settings live once in the
+         parent. Details settled while building.
+     21. **Selecting in the texture browser:** Shift-click a range, Cmd-click adds /
+         removes one; also in the menus, and **written in the browser window** (a hint
+         line) as well as in Help → Controls and the README.
+     22. **Finding textures fast:** filter by name or folder, then **"Select all shown"**;
+         and **"Select the textures of the selected faces"** (pick in the map).
+     23. **Helper maps found by name:** `<name>_normal`, `_ssbump`, `_mask` (and similar)
+         hook onto `<name>` on import and are hidden from the browser (a toggle shows
+         them); they can also be linked by hand. Masks in v0.12.4, bump maps in v0.12.4b.
+     24. **No batch variants:** "Make a variant..." works on one material at a time, so
+         hundreds of unwanted files can't be made by accident (the user's choice).
      - **Other Source shaders:** `UnlitGeneric` in v0.12.4; `Refract` with mirrors;
        blending several textures is covered by the terrain's painted layers (brushes
        later if missed); character, particle and moving-screen shaders are left out.
