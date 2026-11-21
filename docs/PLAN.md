@@ -1114,10 +1114,13 @@ read and write. Agreed so far:
     **active**; the Camera Preview and Render use only that one. Making another camera
     active deactivates the old one.
   - **Reflections (user, 2026-11-18):** the user wants several levels of reflection,
-    chosen per material and by the render options: environment only (sky; the Y2K chrome
-    look), baked reflections of the surroundings, and mirror reflections on flat surfaces
+    chosen per material and by the render options: environment only (sky), baked
+    reflections of the surroundings, and mirror reflections on flat surfaces
     (water, floors; scene included). Real reflections and bending glass on any shape
-    (the Bryce look) need a ray tracer.
+    (the Bryce look) need a ray tracer. **Correction (user, 2026-11-21):** the user never
+    called the sky-only level "the Y2K chrome look" (an earlier note added that). Chrome
+    waits for the reflection probes; reflecting only the sky is a cheaper variant
+    ("cheap chrome", like Source's cheap water next to its real water).
   - **No filters (user, firm):** the Source look must come from **how Source renders**
     (baked lightmaps, baked probes, real textures, fog), **never from filters or
     post-effects laid over the picture to imitate it**. Camera effects (dither, palette,
