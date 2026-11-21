@@ -10,7 +10,7 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 
 ## Current status
 
-- **Released:** v0.1.0 … v0.12.4 (v0.12.4b pushed, see below). Milestones 0–11, Random Replicate and Sky Lab are done (see the
+- **Released:** v0.1.0 … v0.12.4b (CI green). Milestones 0–11, Random Replicate and Sky Lab are done (see the
   milestone sections below and the log); the user confirmed the choices of M10, Random
   Replicate and v0.10.2 (2026-11-19). **v0.10.3 is built and pushed** (asked by the user
   before Sky Lab): `editor.cpp` split by topic (step 1: code moved unchanged; step 2:
@@ -93,7 +93,7 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   rays at once (VRAD's SSE): after the rest, about 1.5-2x more for a large rewrite of every
   place that shoots rays; left for later. Item 9 (texlight scale, reading VRAD's code) waits
   until the user can approve the page; it blocks nothing else.
-  **v0.12.4b is built and pushed** (the user said go, 2026-11-21): bump maps (radiosity
+  **v0.12.4b is built and released** (the user said go, 2026-11-21; CI green): bump maps (radiosity
   normal mapping, 4 lightmaps per bumped face and terrain, SSBump, flip-green tick), props'
   glTF normal maps and `.vmt` files, Phong and rim light on props, the sky behind the scene
   exposed, and the faster bakes above. Choices made while building are under "v0.12.4b,

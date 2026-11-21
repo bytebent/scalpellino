@@ -34,6 +34,7 @@ too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 - Screenshots: `m12-30-bump-material.png`, `m12-31-bump-render.png`,
   `m12-32-bump-log.png`, `m12-33-bump-model-style.png`, `m12-34-exposure-sky.png`,
   `m12-35-bump-seam.png`.
+- Pushed; CI green (Linux, macOS, release); release `v0.12.4b` published.
 
 ### 2026-11-21 — Faster bakes, the same light (before v0.12.4b)
 - The user asked for bake speed-ups that keep the look (items 1-4 of the proposal).
