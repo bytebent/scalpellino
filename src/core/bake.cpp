@@ -196,6 +196,26 @@ struct Gather {
     }
 };
 
+// VRAD's DIRECT_SCALE: texlights are scaled like entity lights at "unit 100 distance".
+constexpr double kTexLightScale = 100.0 * 100.0;
+
+// The engine's bumped lightmap conversion (VRAD's LinearToBumpedLightmap): for n values,
+// flat[i] and bump map q at bump[(q * mapStride + i) * 3]: scale the 3 bump values so
+// their average is the flat value (0 where they are all 0).
+void correctBumped(const float* flat, float* bump, size_t n, size_t mapStride) {
+    for (size_t i = 0; i < n; ++i)
+        for (int c = 0; c < 3; ++c) {
+            float& a = bump[(0 * mapStride + i) * 3 + c];
+            float& b = bump[(1 * mapStride + i) * 3 + c];
+            float& d = bump[(2 * mapStride + i) * 3 + c];
+            const double avg = ((double)a + b + d) / 3.0;
+            const double s = avg != 0 ? flat[i * 3 + c] / avg : 0.0;
+            a = (float)std::max(0.0, a * s);
+            b = (float)std::max(0.0, b * s);
+            d = (float)std::max(0.0, d * s);
+        }
+}
+
 // Smooth normals: for each corner position, the normals of the lit faces meeting there.
 struct SmoothNormals {
     double cosLimit = 0.7071067;
@@ -701,6 +721,9 @@ double lightFalloff(const BakeLight& L, double distCm, const Vec3& toSample) {
 
 std::uint64_t bakeKey(const BakeInput& in) {
     Hasher h;
+    // the bake's own version: changes when the same input gives other light (v0.12.4c:
+    // texlights' DIRECT_SCALE, bumped lightmaps' correction)
+    h.s("bake 0.12.4c");
     h.i((long long)in.quality);
     for (const Brush& b : in.brushes) {
         h.i(b.id);
@@ -1029,7 +1052,8 @@ BakeResult bakeLight(const BakeInput& in, BakeProgress* progress, int threads) {
     if (capped) res.notes.push_back(std::to_string(capped) + " large faces got coarser lightmaps (at most " + std::to_string(kMaxLuxels) + " luxels a side)");
 
     // ---- texlights (v0.12.4): each patch of a glowing face is a surface light, as VRAD's
-    // CreateDirectLights: intensity = baselight x the patch's area in texture repeats
+    // CreateDirectLights: intensity = baselight x the patch's area in texture repeats x
+    // DIRECT_SCALE (10000; checked in VRAD's code, v0.12.4c)
     // (area / texel area / texels per picture), facing out of the face. Faces are cut into
     // patches as for the bounce (4 luxels); unlike VRAD also when there are no bounces.
     {
@@ -1038,7 +1062,8 @@ BakeResult bakeLight(const BakeInput& in, BakeProgress* progress, int threads) {
             L.surface = true;
             L.pos = origin + normal * 1.0; // just off the face, so the face itself doesn't shadow it
             L.dir = normal;
-            L.intensity = intensity;
+            // VRAD's DIRECT_SCALE (100 x 100), as entity lights' "unit 100 distance" scale
+            L.intensity = intensity * kTexLightScale;
             G.lights.push_back(std::move(L));
             ++res.texlights;
         };
@@ -2322,6 +2347,18 @@ BakeResult bakeLight(const BakeInput& in, BakeProgress* progress, int threads) {
     res.cancelled = cancelled();
     if (progress && !res.cancelled) progress->done = progress->total.load();
     if (propsCasting) res.notes.push_back(std::to_string(propsCasting) + (propsCasting == 1 ? " prop casts" : " props cast") + " shadows");
+    // The engine's conversion of bumped lightmaps (VRAD's copy: LinearToBumpedLightmap):
+    // each luxel's 3 bump values are scaled, per colour, so their average is the flat value.
+    // With SDK 2013's blend a flat normal then gets exactly the flat light (no seam where a
+    // bump-mapped face meets one without). Per-vertex props (our own) get the same.
+    for (FaceLightmap& f : res.faces)
+        if (!f.bump.empty()) correctBumped(f.rgb.data(), f.bump.data(), f.rgb.size() / 3, f.rgb.size() / 3);
+    for (PropLighting& p : res.props)
+        if (p.bumped)
+            for (std::vector<float>& vr : p.vertexRgb) {
+                const size_t nv = vr.size() / 12;
+                for (size_t v = 0; v < nv; ++v) correctBumped(&vr[12 * v], &vr[12 * v + 3], 1, 1);
+            }
     {
         size_t bf = 0, bp = 0;
         for (const FaceLightmap& f : res.faces) bf += f.bump.empty() ? 0 : 1;

@@ -4316,14 +4316,20 @@ static void testBumpBake() {
         double maxDiff = 0;
         for (size_t k = 0; k < f.rgb.size() && k < g.rgb.size(); ++k) maxDiff = std::max(maxDiff, (double)std::fabs(f.rgb[k] - g.rgb[k]));
         CHECK(maxDiff < 1e-5);
-        // a luxel in the middle: each map = flat x (b_k . L) / (n . L)
+        // a luxel in the middle: the maps hold the light along b_k (b_k . L), scaled as the
+        // engine does so their average is the flat value (no seam beside unbumped faces)
         const size_t nl = (size_t)f.w * f.h, k = ((size_t)(f.h / 2) * f.w + f.w / 2);
         const double flat = f.rgb[3 * k];
         CHECK(flat > 0.1);
+        double dsum = 0;
+        for (int q = 0; q < 3; ++q) dsum += std::max(0.0, dot(b[q], Ldir));
+        double avg = 0;
         for (int q = 0; q < 3; ++q) {
-            const double want = flat * std::max(0.0, dot(b[q], Ldir)) / Ldir.z;
+            const double want = flat * 3 * std::max(0.0, dot(b[q], Ldir)) / dsum;
             CHECK(near(f.bump[(q * nl + k) * 3], want, 0.02 + 0.03 * want));
+            avg += f.bump[(q * nl + k) * 3] / 3.0;
         }
+        CHECK(near(avg, flat, 1e-4 + 1e-4 * flat));
     }
     CHECK(found);
 }

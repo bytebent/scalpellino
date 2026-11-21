@@ -4,6 +4,24 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-22 — v0.12.4c: VRAD's code checked (texlight scale, bump correction)
+- Read VRAD's code (Source SDK 2013, `utils/vrad`; the user said go). Not kept in the repo.
+- **Bump maps:** VRAD bakes each bump map as cosine light (`GatherSampleLightAt4Points`);
+  `LinearToBumpedLightmap` ("matches the engine's conversion") scales a luxel's 3 bump
+  values so their average is the flat value; the shader (`lightmappedgeneric_ps2_3_x.h`)
+  blends with squared weights over their sum, no other scale. Added the same correction at
+  the end of the bake (faces, terrain, per-vertex props). The seam is gone
+  (`m12-35-bump-seam.png`: 128 vs 128 of 255, was 115 vs 128).
+- **Texlights:** `CreateDirectLights` multiplies by `DIRECT_SCALE` (100 x 100); added. The
+  materials test lamp is now `%texlight 255 210 150 6` (was 60000): the same picture
+  (`m12-25-materials.png` identical).
+- The bake key carries the bake's version (old cached bakes are made again).
+- **Tests:** core 5010 checks, 0 failed (`testBumpBake` checks the correction); all 34 UI
+  scripts pass at 1x and 2x; idle 0 ticks at 1x and 2x.
+- Screenshots updated: `m12-23-material-panel.png`, `m12-24-materials-log.png`,
+  `m12-31-bump-render.png`, `m12-32-bump-log.png`, `m12-33-bump-model-style.png`,
+  `m12-34-exposure-sky.png`, `m12-35-bump-seam.png`.
+
 ### 2026-11-21 — v0.12.4b: bump maps, Phong and rim light
 - **Bake** (`core/bake.*`): bumped faces, terrain and per-vertex props get the light along
   Source's 3 bump directions (VRAD's `GetBumpNormals` from the texture axes): direct and sky

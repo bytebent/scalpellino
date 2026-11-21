@@ -596,7 +596,10 @@ Preview and in renders.
     the page beside the flat map (or below it when too wide), the offset passed to the
     shader in the vertex normal's z. Props per vertex: 4 values a vertex (flat, then the 3
     directions; tangents from the UVs). Props like a Source model: the bump normal is lit
-    per pixel by the ambient cube and the 2 lights.
+    per pixel by the ambient cube and the 2 lights. At the end, each luxel's (and vertex's)
+    3 bump values are scaled per colour so their average is the flat value: the engine's
+    conversion (VRAD's copy, `LinearToBumpedLightmap`), so a flat normal gets the flat
+    light with SDK 2013's blend. The bake key carries the bake's own version.
 - **The Source look** comes from **how Source renders**: fast, on the graphics card, with
   baked lightmaps (light, shadows, bounce), baked reflection probes, real textures and
   fog. It is **never faked with filters** laid over the picture (user: that is not the
@@ -622,8 +625,8 @@ Preview and in renders.
   reflections read a 128-pixel-wide copy of the sky (about Source's default cubemap size).
   A shader that doesn't compile is reported in the render log and LightmappedGeneric draws
   instead. The bake takes from materials: `$reflectivity`, `%texlight` (VRAD's surface
-  lights: one per patch, intensity = baselight x the texture's repeats on the patch,
-  cos x cos / d^2), `$alphatest` (cut-out shadows: rays pass where the picture's alpha is
+  lights: one per patch, intensity = baselight x the texture's repeats on the patch x
+  DIRECT_SCALE 10000, cos x cos / d^2; checked in VRAD's code), `$alphatest` (cut-out shadows: rays pass where the picture's alpha is
   under the reference) and `$translucent` (blocks no light). Water, clouds and endless planes
   will be materials too. Optional camera effects (dither, palette, bloom) are separate from
   the look and matter least.

@@ -38,7 +38,7 @@ matset $envmap env_cubemap
 matset $envmaptint [0.7 0.7 0.75]
 matselect textures/mat/lamp
 matset $selfillum 1
-matset %texlight 255 210 150 60000
+matset %texlight 255 210 150 6
 matselect textures/mat/glass
 matset $translucent 1
 matset $envmap env_cubemap

@@ -10,7 +10,7 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 
 ## Current status
 
-- **Released:** v0.1.0 … v0.12.4b (CI green). Milestones 0–11, Random Replicate and Sky Lab are done (see the
+- **Released:** v0.1.0 … v0.12.4b (CI green); v0.12.4c pushed, see below. Milestones 0–11, Random Replicate and Sky Lab are done (see the
   milestone sections below and the log); the user confirmed the choices of M10, Random
   Replicate and v0.10.2 (2026-11-19). **v0.10.3 is built and pushed** (asked by the user
   before Sky Lab): `editor.cpp` split by topic (step 1: code moved unchanged; step 2:
@@ -97,10 +97,10 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   normal mapping, 4 lightmaps per bumped face and terrain, SSBump, flip-green tick), props'
   glTF normal maps and `.vmt` files, Phong and rim light on props, the sky behind the scene
   exposed, and the faster bakes above. Choices made while building are under "v0.12.4b,
-  decided without asking"; **a new question is parked** (bump blend energy: a flat bump map
-  is darker than no bump map, see Open questions). Next: **report**; then item 9 (VRAD's
-  code: texlight scale and the bump question) when the user can approve the page, and
-  batch 6 (v0.12.5, decals and overlays) discussed with the user first.
+  decided without asking".
+  **v0.12.4c** (2026-11-22): VRAD's code checked (item 9 and the bump question): texlights
+  get VRAD's DIRECT_SCALE, bumped lightmaps the engine's correction (no seam). Next: batch
+  6 (v0.12.5, decals and overlays), discussed with the user first.
 - **Review fixes (2026-11-20), merged into `main`** (fast-forward from
   `fix/review-findings` after the user's go-ahead; no new version, so only "Latest build"
   is refreshed): version releases are
@@ -139,24 +139,14 @@ Each archive's SHA-256 is in `cmake/Deps.cmake` (checked at configure time).
 ## Open questions (parked)
 
 - **v0.12.4b parked (to discuss with the user):**
-  - **Bump blend energy (new, 2026-11-21):** with SDK 2013's blend (squared weights over
-    their sum, agreed item 1) and the bump lightmaps baked as the light along each bump
-    direction (cosine), a bumped face whose normal map is flat gets the mean of the 3 maps:
-    about 0.58 times the flat lightmap under direct light (1 / sqrt 3), about 0.8 in sky
-    light. A seam shows where it meets the same surface without a bump map
-    (`docs/screenshots/m12-35-bump-seam.png`: 115 vs 128 of 255 in shade). The 2004 blend
-    (linear weights) and SSBumps give exactly the flat light. Source maps don't show such
-    seams, so VRAD probably scales the bump maps (or the shader does): check in VRAD's code
-    with item 9. Options: (a) keep as is; (b) the 2004 linear blend (exact for any light,
-    slightly harder edges where a dot is clipped); (c) scale the bump maps in the bake so a
-    flat normal gives the flat light (if that is what VRAD does). Built as agreed (a) until
-    then; changing it is one line in the shader prelude or the bake.
-  - **Texlight brightness** (item 9, waits for the user to approve VRAD's code page): built
-    with VRAD's formula as remembered (each patch a light of baselight x the texture's
-    repeats on it, cos x cos / d^2 in Hammer units). With HL2-like brightness values
-    (hundreds) the light is very faint; the test scene needs 60000. Check
-    `CreateDirectLights` / `GatherSampleLight` (emit_surface) and fix the scale if it
-    differs.
+  - **Bump blend energy and texlight brightness: answered from VRAD's code (v0.12.4c,
+    2026-11-22, the user said check it).** Bump: VRAD bakes each bump map as plain cosine
+    light; the engine then scales a luxel's 3 bump values so their average is the flat
+    value (VRAD keeps a copy: `LinearToBumpedLightmap`, "matches the engine's conversion");
+    the SDK 2013 shader blends with squared weights over their sum and no other scale. Done
+    the same way: no seam. Texlights: `CreateDirectLights` multiplies by `DIRECT_SCALE`
+    (100 x 100), as entity lights' "unit 100 distance" scale; ours lacked it (the test
+    scene needed 60000, now 6, the same picture).
   - **Materials on primitives:** later (agreed, item 12); they show their material's base
     texture only.
 
@@ -200,6 +190,16 @@ Each archive's SHA-256 is in `cmake/Deps.cmake` (checked at configure time).
 - **Curve generator parameters** in a `.map` (`core/curves.cpp curveFromKeys`) still read
   numbers loosely (`atoi`, `strtod`): not in the review's list; worth the same strict
   reading some time (a bad value there only changes a generated shape).
+
+- **v0.12.4c (VRAD's code checked), decided without asking (confirm with the user):**
+  - Texlights keep a 1-Hammer-unit minimum distance (VRAD's emit_surface has none; it only
+    matters within 2.5 cm of a light and avoids single blown-out luxels).
+  - The bump correction is done in linear light on the final values (the engine does it on
+    8-bit gamma values for LDR); per-vertex bumped props (our own addition, VRAD 2013
+    bakes no bump light for props) get the same correction per vertex.
+  - The bake key now includes the bake's version, so bakes cached before this one are
+    made again.
+  - Released as v0.12.4c (a fix step, one release per step).
 
 - **v0.12.4b (bump maps, Phong, rim light), decided without asking (confirm with the user):**
   - **The texture's frame in shaders** comes from screen derivatives of the position and
