@@ -249,14 +249,14 @@ Matrix propMatrix(const Prop& p) {
     return m;
 }
 
-bool decodeTexture(const ModelMaterial& mat, Texture2D& out) {
+bool decodeTexture(const std::vector<unsigned char>& bytes, const std::string& file, Texture2D& out) {
     Image img{};
-    if (!mat.image.empty()) {
-        const unsigned char* d = mat.image.data();
-        const char* ext = (mat.image.size() > 3 && d[0] == 0xFF && d[1] == 0xD8) ? ".jpg" : ".png";
-        img = LoadImageFromMemory(ext, d, (int)mat.image.size());
-    } else if (!mat.imageFile.empty()) {
-        img = LoadImage(mat.imageFile.c_str());
+    if (!bytes.empty()) {
+        const unsigned char* d = bytes.data();
+        const char* ext = (bytes.size() > 3 && d[0] == 0xFF && d[1] == 0xD8) ? ".jpg" : ".png";
+        img = LoadImageFromMemory(ext, d, (int)bytes.size());
+    } else if (!file.empty()) {
+        img = LoadImage(file.c_str());
     }
     if (!img.data) return false;
     ImageFormat(&img, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
@@ -315,13 +315,23 @@ void ModelLibrary::rescan() {
 void ModelLibrary::setSmooth(bool smooth) {
     smooth_ = smooth;
     for (auto& [n, g] : gpu_)
+    {
         for (Texture2D& t : g.textures)
             if (t.id) SetTextureFilter(t, smooth_ ? TEXTURE_FILTER_TRILINEAR : TEXTURE_FILTER_POINT);
+        for (Texture2D& t : g.normals)
+            if (t.id) SetTextureFilter(t, smooth_ ? TEXTURE_FILTER_TRILINEAR : TEXTURE_FILTER_POINT);
+        for (auto& [f, t] : g.files)
+            if (t.id) SetTextureFilter(t, smooth_ ? TEXTURE_FILTER_TRILINEAR : TEXTURE_FILTER_POINT);
+    }
 }
 
 void ModelLibrary::freeGpu(Gpu& g) {
     for (Chunk& c : g.chunks) UnloadMesh(c.mesh);
     for (Texture2D& t : g.textures)
+        if (t.id) UnloadTexture(t);
+    for (Texture2D& t : g.normals)
+        if (t.id) UnloadTexture(t);
+    for (auto& [f, t] : g.files)
         if (t.id) UnloadTexture(t);
     g = Gpu{};
 }
@@ -334,6 +344,7 @@ void ModelLibrary::unloadAll() {
     bakeSrc_.reset();
     bakeBase_.clear();
     bakeIndex_.clear();
+    bakeBumped_.clear();
 }
 
 ModelLibrary::Gpu* ModelLibrary::gpuFor(const std::string& name) {
@@ -345,7 +356,7 @@ ModelLibrary::Gpu* ModelLibrary::gpuFor(const std::string& name) {
     for (const ModelMaterial& mat : m->materials) {
         Texture2D t{};
         const bool wants = mat.hasTexture();
-        if (wants && decodeTexture(mat, t)) {
+        if (wants && decodeTexture(mat.image, mat.imageFile, t)) {
             SetTextureFilter(t, smooth_ ? TEXTURE_FILTER_TRILINEAR : TEXTURE_FILTER_POINT);
             SetTextureWrap(t, TEXTURE_WRAP_REPEAT);
         } else {
@@ -357,6 +368,14 @@ ModelLibrary::Gpu* ModelLibrary::gpuFor(const std::string& name) {
         g.tint.push_back({byteOf(mat.color.x * k), byteOf(mat.color.y * k), byteOf(mat.color.z * k), 255});
         g.cutoff.push_back(mat.cutout ? (float)mat.cutoff : -1.0f);
         g.textured.push_back(t.id != 0);
+        Texture2D nt{};
+        if (mat.hasNormalMap() && decodeTexture(mat.normalImage, mat.normalImageFile, nt)) {
+            SetTextureFilter(nt, smooth_ ? TEXTURE_FILTER_TRILINEAR : TEXTURE_FILTER_POINT);
+            SetTextureWrap(nt, TEXTURE_WRAP_REPEAT);
+        } else
+            nt = Texture2D{};
+        g.normals.push_back(nt);
+        g.settings.push_back(modelMaterialSettings(*m, g.settings.size()));
     }
     // Un-indexed chunks (a raylib mesh indexes with 16 bits): a copy of the triangles, once.
     for (const ModelMesh& mm : m->meshes) {
@@ -387,6 +406,7 @@ void ModelLibrary::prepareBake(const std::vector<Prop>& props, const std::shared
     bakeTex_ = 0;
     bakeBase_.clear();
     bakeIndex_.clear();
+    bakeBumped_.clear();
     bakeSrc_ = bake;
     if (!bake) return;
     std::map<std::uint32_t, const Prop*> byId;
@@ -401,6 +421,9 @@ void ModelLibrary::prepareBake(const std::vector<Prop>& props, const std::shared
         const Model* m = store_.find(it->second->model);
         if (!m || pl.vertexRgb.size() != m->meshes.size()) continue;
         std::vector<int>& bases = bakeBase_[pl.id];
+        // Bumped props (v0.12.4b): 4 values a vertex, flat then the 3 bump directions.
+        const size_t K = pl.bumped ? 4 : 1;
+        if (pl.bumped) bakeBumped_.insert(pl.id);
         // The same chunks as gpuFor(): each mesh's triangles, kChunkVertices at a time.
         for (size_t mi = 0; mi < m->meshes.size(); ++mi) {
             const ModelMesh& mm = m->meshes[mi];
@@ -410,8 +433,11 @@ void ModelLibrary::prepareBake(const std::vector<Prop>& props, const std::shared
                 bases.push_back((int)(data.size() / 3));
                 for (size_t i = 0; i < n; ++i) {
                     const size_t v = mm.index[at + i];
-                    if (3 * v + 2 < vr.size()) data.insert(data.end(), {vr[3 * v], vr[3 * v + 1], vr[3 * v + 2]});
-                    else data.insert(data.end(), {1.0f, 1.0f, 1.0f});
+                    for (size_t q = 0; q < K; ++q) {
+                        const size_t o = 3 * (K * v + q);
+                        if (o + 2 < vr.size()) data.insert(data.end(), {vr[o], vr[o + 1], vr[o + 2]});
+                        else data.insert(data.end(), {1.0f, 1.0f, 1.0f});
+                    }
                 }
             }
         }
@@ -424,6 +450,46 @@ void ModelLibrary::prepareBake(const std::vector<Prop>& props, const std::shared
         rlTextureParameters(bakeTex_, RL_TEXTURE_MIN_FILTER, RL_TEXTURE_FILTER_NEAREST);
         rlTextureParameters(bakeTex_, RL_TEXTURE_MAG_FILTER, RL_TEXTURE_FILTER_NEAREST);
     }
+}
+
+// A prop material's settings for the VertexLitGeneric file (v0.12.4b): its settings file's
+// keys, and the glTF's normal map as $bumpmap (green up: %flipgreen) unless that file
+// names another. Texture values: a file beside the settings file, else the texture library.
+void ModelLibrary::bindPropMaterial(ShaderLibrary::Program& prog, Gpu& g, size_t mi, const BakedDrawContext& ctx) {
+    static const std::string kGltfNormal = "\x01gltf-normal";
+    Material mat;
+    if (mi < g.settings.size() && g.settings[mi].found) mat = g.settings[mi].mat;
+    const bool ownNormal = mi < g.normals.size() && g.normals[mi].id;
+    if (!mat.has("$bumpmap") && ownNormal) {
+        mat.params["$bumpmap"] = kGltfNormal;
+        if (!mat.has("%flipgreen")) mat.params["%flipgreen"] = "1";
+    }
+    const std::string dir = mi < g.settings.size() ? g.settings[mi].dir : "";
+    auto finder = [&](const std::string& v) -> unsigned {
+        if (v == kGltfNormal) return ownNormal ? g.normals[mi].id : 0u;
+        const std::string f = modelTextureFile(dir, v);
+        if (!f.empty()) {
+            auto it = g.files.find(f);
+            if (it == g.files.end()) {
+                Texture2D t{};
+                if (decodeTexture({}, f, t)) {
+                    SetTextureFilter(t, smooth_ ? TEXTURE_FILTER_TRILINEAR : TEXTURE_FILTER_POINT);
+                    SetTextureWrap(t, TEXTURE_WRAP_REPEAT);
+                } else
+                    t = Texture2D{};
+                it = g.files.emplace(f, t).first;
+            }
+            return it->second.id;
+        }
+        if (ctx.textures) return ShaderLibrary::libraryFinder(*ctx.textures, nullptr)(v);
+        return 0u;
+    };
+    const std::vector<std::string> missing = ctx.shaders->bind(prog, &mat, finder, 7);
+    if (ctx.problems)
+        for (const std::string& v : missing) {
+            const std::string line = "prop texture not found: " + v;
+            if (std::find(ctx.problems->begin(), ctx.problems->end(), line) == ctx.problems->end()) ctx.problems->push_back(line);
+        }
 }
 
 void ModelLibrary::drawBaked(const std::vector<Prop>& props, const PropDrawContext& ctx) {
@@ -481,7 +547,6 @@ void ModelLibrary::drawBaked(const std::vector<Prop>& props, const PropDrawConte
         common.camPos = ctx.camPos;
         common.exposure = ctx.exposure;
         setMaterialCommon(S, [&](const char* n) { return prog->at(n); }, common);
-        ctx.material->shaders->bind(*prog, nullptr, nullptr, nullptr, 7);
         rlActiveTextureSlot(6);
         rlEnableTexture(ctx.material->skyTex ? ctx.material->skyTex : rlGetTextureIdDefault());
     }
@@ -496,15 +561,17 @@ void ModelLibrary::drawBaked(const std::vector<Prop>& props, const PropDrawConte
         const PropLighting* pl = ii != bakeIndex_.end() && ii->second < bakeSrc_->props.size() ? &bakeSrc_->props[ii->second] : nullptr;
         auto bi = bakeBase_.find(p.id);
         const bool perVertex = pl && !pl->modelStyle && bi != bakeBase_.end() && bi->second.size() == g->chunks.size();
-        if (!perVertex) {
-            // like a Source model (or no bake for it: full light from every side)
+        setI("bumpedVL", perVertex && bakeBumped_.count(p.id) ? 1 : 0);
+        {
+            // like a Source model (or no bake for it: full light from every side); per-vertex
+            // props get them too, for Phong and rim light (v0.12.4b)
             float cube[18];
             for (int a = 0; a < 6; ++a) {
-                const Vec3 c = pl && pl->modelStyle ? pl->cube[a] : Vec3{1, 1, 1};
+                const Vec3 c = pl ? pl->cube[a] : Vec3{1, 1, 1};
                 cube[3 * a] = (float)c.x; cube[3 * a + 1] = (float)c.y; cube[3 * a + 2] = (float)c.z;
             }
             SetShaderValueV(S, loc("cube"), cube, SHADER_UNIFORM_VEC3, 6);
-            const int n = pl && pl->modelStyle ? (int)std::min<size_t>(2, pl->lights.size()) : 0;
+            const int n = pl ? (int)std::min<size_t>(2, pl->lights.size()) : 0;
             setI("lightCount", n);
             int kind[2] = {0, 0};
             float pos[6] = {}, dir[6] = {}, col[6] = {}, att[6] = {}, fade[6] = {}, spot[6] = {};
@@ -535,7 +602,9 @@ void ModelLibrary::drawBaked(const std::vector<Prop>& props, const PropDrawConte
             drawMat.maps[MATERIAL_MAP_DIFFUSE].color = g->tint[mi];
             setI("hasTex", g->textured[mi] ? 1 : 0);
             setF("cutoff", g->cutoff[mi]);
+            if (prog) bindPropMaterial(*prog, *g, mi, *ctx.material);
             DrawMesh(ch.mesh, drawMat, mat);
+            if (prog) ctx.material->shaders->unbind(7);
             ++drawCalls_;
         }
     }
@@ -544,7 +613,6 @@ void ModelLibrary::drawBaked(const std::vector<Prop>& props, const PropDrawConte
     if (prog) {
         rlActiveTextureSlot(6);
         rlDisableTexture();
-        ctx.material->shaders->unbind(7);
     }
     rlActiveTextureSlot(0);
     rlEnableBackfaceCulling();

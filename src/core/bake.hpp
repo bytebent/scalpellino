@@ -30,6 +30,7 @@
 #include <atomic>
 #include <cstdint>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -66,6 +67,9 @@ struct BakeMaterial {
     bool alphaTest = false;
     double alphaRef = 0.5;
     std::vector<unsigned char> alpha;
+    // $bumpmap (v0.12.4b): the face gets 3 more lightmaps, one per bump direction
+    // (radiosity normal mapping, as VRAD's SURF_BUMPLIGHT).
+    bool bumped = false;
 };
 
 struct BakeInput {
@@ -85,6 +89,8 @@ struct BakeInput {
     // Materials (v0.12.4), by the name faces store: texlights, cutouts, see-through.
     std::map<std::string, BakeMaterial> materials;
     bool propsQuick = false;     // props baked per vertex with a quarter of the rays (Render menu)
+    // Prop models with bump maps (v0.12.4b): baked per vertex they get 4 values a vertex.
+    std::set<std::string> bumpedModels;
 };
 
 constexpr double kDefaultReflectivity = 0.2;
@@ -99,6 +105,9 @@ struct FaceLightmap {
     bool terrain = false;
     int w = 0, h = 0;
     std::vector<float> rgb;      // linear, rows of w luxels
+    // Bumped faces (v0.12.4b): the light along Source's 3 bump directions, three maps of
+    // w x h x 3 one after the other (empty when not bumped).
+    std::vector<float> bump;
     Vec3 axisS, axisT;           // world direction / lightmap scale (luxels per cm)
     double s0 = 0, t0 = 0;
 };
@@ -128,6 +137,7 @@ struct ModelLight {
 struct PropLighting {
     PropId id = 0;
     bool modelStyle = false;
+    bool bumped = false;         // per vertex: 4 values a vertex (flat, then the 3 bump directions)
     std::vector<std::vector<float>> vertexRgb;
     Vec3 origin;
     Vec3 cube[6];
@@ -194,6 +204,9 @@ struct BakeLight {
     std::vector<std::string> notes;
 };
 BakeLight prepareLight(const Light& l, const Environment& env);
+// Source's 3 bump directions (VRAD's GetBumpNormals) for a surface with normal `n` and
+// texture axes `s`, `t` (v0.12.4b).
+void bumpNormals(const Vec3& n, const Vec3& s, const Vec3& t, Vec3 out[3]);
 // Distance falloff times spot cone at distance `distCm` from the light; `toSample` is the
 // unit direction from the light to the point (spots).
 double lightFalloff(const BakeLight& L, double distCm, const Vec3& toSample);

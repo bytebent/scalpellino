@@ -733,6 +733,34 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
             rlEnd();
             if (textured) rlSetTexture(0);
         };
+        // Renders and the Camera Preview (v0.12.4b): the sky behind the scene takes the
+        // render's exposure too, as everything else lit by the bake.
+        static Shader skyExp{};
+        static bool skyExpTried = false;
+        const bool exposed = lens_ && scene.baked && scene.exposure != 1.0f;
+        if (exposed && !skyExpTried) {
+            skyExpTried = true;
+            skyExp = LoadShaderFromMemory(nullptr, R"(#version 330
+in vec2 fragTexCoord;
+in vec4 fragColor;
+uniform sampler2D texture0;
+uniform vec4 colDiffuse;
+uniform float exposure;
+out vec4 finalColor;
+void main() {
+    vec4 c = texture(texture0, fragTexCoord) * colDiffuse * fragColor;
+    vec3 lin = pow(c.rgb, vec3(2.2)) * exposure;
+    finalColor = vec4(pow(lin, vec3(1.0 / 2.2)), c.a);
+}
+)");
+            if (skyExp.id == rlGetShaderIdDefault()) skyExp.id = 0;
+        }
+        const bool useExp = exposed && skyExp.id != 0;
+        if (useExp) {
+            const float e = scene.exposure;
+            SetShaderValue(skyExp, GetShaderLocation(skyExp, "exposure"), &e, SHADER_UNIFORM_FLOAT);
+            BeginShaderMode(skyExp);
+        }
         const int texRows = std::max(4, (int)std::lround(NV * cover));
         band(0, cover, texRows, true);
         if (cover < 1) {
@@ -740,6 +768,7 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
             band(cover, 1, std::max(2, NV - texRows), false);
         }
         rlDrawRenderBatchActive();
+        if (useExp) EndShaderMode();
         rlEnableBackfaceCulling();
         rlEnableDepthMask();
     }
@@ -778,6 +807,7 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
     bctx.skyBelow = scene.skyBelow;
     bctx.skyFlat = {std::pow(scene.ambient.x / 255.0, 2.2), std::pow(scene.ambient.y / 255.0, 2.2), std::pow(scene.ambient.z / 255.0, 2.2)};
     bctx.problems = scene.problems;
+    bctx.textures = scene.textures;
     const bool bakedBrushes = lens_ && scene.baked && scene.textures && drawBakedBrushes(scene.brushes, *scene.baked, *scene.textures, bctx);
     // Fog: everything solid from here on is drawn through the fog shader.
     bool fogging = false;

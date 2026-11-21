@@ -76,11 +76,11 @@ std::string decodedUri(const char* uri) {
 }
 
 // Image `img` of the file: embedded bytes, a data: URI or a file next to the model.
-void readImage(Ctx& c, const cgltf_image* img, ModelMaterial& mat) {
+void readImage(Ctx& c, const cgltf_image* img, std::vector<unsigned char>& bytes, std::string& file) {
     if (!img) return;
     if (img->buffer_view && img->buffer_view->buffer && img->buffer_view->buffer->data) {
         const unsigned char* p = (const unsigned char*)img->buffer_view->buffer->data + img->buffer_view->offset;
-        mat.image.assign(p, p + img->buffer_view->size);
+        bytes.assign(p, p + img->buffer_view->size);
         return;
     }
     if (!img->uri) return;
@@ -94,14 +94,14 @@ void readImage(Ctx& c, const cgltf_image* img, ModelMaterial& mat) {
         const size_t size = len / 4 * 3 - pad;
         void* data = nullptr;
         if (cgltf_load_buffer_base64(&c.opt, size, b64, &data) == cgltf_result_success && data) {
-            mat.image.assign((unsigned char*)data, (unsigned char*)data + size);
+            bytes.assign((unsigned char*)data, (unsigned char*)data + size);
             std::free(data);
         }
         return;
     }
     const fs::path f = fs::path(c.dir) / decodedUri(img->uri);
     std::error_code ec;
-    if (fs::is_regular_file(f, ec)) mat.imageFile = f.string();
+    if (fs::is_regular_file(f, ec)) file = f.string();
 }
 
 int addMaterial(Ctx& c, const cgltf_material* m) {
@@ -111,12 +111,13 @@ int addMaterial(Ctx& c, const cgltf_material* m) {
         if (m->has_pbr_metallic_roughness) {
             const cgltf_pbr_metallic_roughness& p = m->pbr_metallic_roughness;
             mat.color = {p.base_color_factor[0] * 255.0, p.base_color_factor[1] * 255.0, p.base_color_factor[2] * 255.0};
-            if (p.base_color_texture.texture) readImage(c, p.base_color_texture.texture->image, mat);
+            if (p.base_color_texture.texture) readImage(c, p.base_color_texture.texture->image, mat.image, mat.imageFile);
         } else if (m->has_pbr_specular_glossiness) {
             const cgltf_pbr_specular_glossiness& p = m->pbr_specular_glossiness;
             mat.color = {p.diffuse_factor[0] * 255.0, p.diffuse_factor[1] * 255.0, p.diffuse_factor[2] * 255.0};
-            if (p.diffuse_texture.texture) readImage(c, p.diffuse_texture.texture->image, mat);
+            if (p.diffuse_texture.texture) readImage(c, p.diffuse_texture.texture->image, mat.image, mat.imageFile);
         }
+        if (m->normal_texture.texture) readImage(c, m->normal_texture.texture->image, mat.normalImage, mat.normalImageFile);
         if (m->alpha_mode == cgltf_alpha_mode_mask) {
             mat.cutout = true;
             mat.cutoff = m->alpha_cutoff;

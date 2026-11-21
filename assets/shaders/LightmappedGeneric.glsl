@@ -5,8 +5,13 @@
 // about: light, with Source's detail texture (mod2x), glow ($selfillum), cutouts
 // about: ($alphatest), see-through ($translucent, $alpha) and cheap chrome ($envmap: the
 // about: sky picture until the reflection probes, with mask, tint, contrast, saturation
-// about: and Fresnel), as in Source SDK 2013's lightmappedgeneric. Bump maps: v0.12.4b.
+// about: and Fresnel), as in Source SDK 2013's lightmappedgeneric. Bump maps (v0.12.4b):
+// about: radiosity normal mapping over the face's 3 bump lightmaps, and SSBump.
 // setting: $basetexture texture | the picture
+// setting: $bumpmap texture | bump map (normal map, Source's convention: green down; or an SSBump)
+// setting: $ssbump bool 0 | the bump map is an SSBump (self-shadowed: it holds the 3 weights)
+// setting: %flipgreen bool 0 | the bump map's green points the other way (OpenGL / most tools)
+// setting: $normalmapalphaenvmapmask bool 0 | the bump map's alpha masks the reflection
 // setting: $color color 1 1 1 | tint, multiplies the texture (linear)
 // setting: $detail texture | detail texture, laid over the base (mod2x: mid grey = no change)
 // setting: $detailscale float 4 | detail repeats per repeat of the base texture
@@ -39,18 +44,34 @@ vec4 shade() {
         vec3 d = texture(u_detail, baseUV() * u_detailscale).rgb * u_detailtint;
         albedo *= mix(vec3(1.0), 2.0 * d, u_detailblendfactor);
     }
-    vec3 diffuse = albedo * bakedLight();
+    // the light: flat, or through the bump map (radiosity normal mapping / SSBump)
+    vec3 light;
+    vec3 n = worldNormal();
+    vec4 bump = vec4(0.5, 0.5, 1.0, 1.0);
+    if (u_bumpmap_set != 0) {
+        bump = texture(u_bumpmap, baseUV());
+        if (u_ssbump != 0) {
+            light = bakedLightSSBump(bump.rgb);
+        } else {
+            vec3 nt = bumpNormal(bump, u_flipgreen != 0);
+            light = bakedLightBumped(nt);
+            n = tangentToWorld(nt);
+        }
+    } else {
+        light = bakedLight();
+    }
+    vec3 diffuse = albedo * light;
     if (u_selfillum != 0) {
         float glow = u_selfillummask_set != 0 ? texture(u_selfillummask, baseUV()).r : base.a;
         diffuse = mix(diffuse, albedo * u_selfillumtint, glow);
     }
     vec3 spec = vec3(0.0);
     if (u_envmap_set != 0) {
-        vec3 n = worldNormal();
         vec3 v = eyeVector();
         vec3 e = envmap(reflect(-v, n));
         if (u_envmapmask_set != 0) e *= texture(u_envmapmask, baseUV()).rgb;
         if (u_basealphaenvmapmask != 0) e *= base.a;
+        if (u_normalmapalphaenvmapmask != 0 && u_bumpmap_set != 0) e *= bump.a;
         e *= u_envmaptint;
         e = mix(e, e * e, u_envmapcontrast);
         e = mix(vec3(luminance(e)), e, u_envmapsaturation);

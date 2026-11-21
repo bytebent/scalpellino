@@ -3,6 +3,7 @@
 #include "io/glb_loader.hpp"
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 #include <filesystem>
 
 namespace scal {
@@ -120,6 +121,47 @@ const Model* ModelStore::find(const std::string& name) {
 std::string ModelStore::problem(const std::string& name) const {
     auto it = problems_.find(name);
     return it == problems_.end() ? "" : it->second;
+}
+
+ModelMaterialSettings modelMaterialSettings(const Model& m, size_t material) {
+    ModelMaterialSettings out;
+    if (material >= m.materials.size()) return out;
+    const ModelMaterial& mm = m.materials[material];
+    std::vector<fs::path> tries;
+    if (!mm.imageFile.empty()) tries.push_back(fs::path(mm.imageFile).replace_extension(".vmt"));
+    if (!mm.name.empty() && !m.file.empty()) tries.push_back(fs::path(m.file).parent_path() / (mm.name + ".vmt"));
+    std::error_code ec;
+    for (const fs::path& f : tries) {
+        if (!fs::is_regular_file(f, ec)) continue;
+        std::string text;
+        if (FILE* fp = std::fopen(f.string().c_str(), "rb")) {
+            char buf[4096];
+            size_t n;
+            while ((n = std::fread(buf, 1, sizeof buf, fp)) > 0) text.append(buf, n);
+            std::fclose(fp);
+        }
+        MaterialFile file;
+        if (!MaterialFile::parse(text, file)) continue;
+        out.found = true;
+        out.file = f.string();
+        out.dir = f.parent_path().string();
+        out.mat = resolveMaterial(file, [](const std::string&) { return std::nullopt; });
+        return out;
+    }
+    return out;
+}
+
+std::string modelTextureFile(const std::string& dir, const std::string& value) {
+    if (dir.empty() || value.empty()) return "";
+    std::error_code ec;
+    const fs::path base = fs::path(dir) / value;
+    if (fs::is_regular_file(base, ec)) return base.string();
+    for (const char* e : {".png", ".jpg", ".jpeg", ".tga", ".bmp"}) {
+        fs::path f = base;
+        f += e;
+        if (fs::is_regular_file(f, ec)) return f.string();
+    }
+    return "";
 }
 
 } // namespace scal

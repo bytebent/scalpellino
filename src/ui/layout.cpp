@@ -314,6 +314,7 @@ void drawControlsWindow(bool* open) {
             {"Textures / Face panels", "right side: search by name, click to choose; adjust picked faces"},
             {"Select textures (materials)", "Textures panel: click chooses one; Cmd+click adds / removes one; Shift+click a range; Select all shown (after a search); Texture menu: Select the textures of the picked faces"},
             {"Material panel", "Texture tool, Properties: the selected materials' settings (shader, glow, cheap chrome, cutout, see-through, detail, texlight...) written to .vmt files beside the textures; several selected = all edited at once (mixed values shown); Cmd+Z undoes"},
+            {"Bump maps", "Material panel: $bumpmap (or a picture named <texture>_normal / _bump / _ssbump beside it); %flipgreen for maps with green up; props use their glTF normal map, and a .vmt named like the model's material in its folder (Phong, rim light)"},
             {"Variants and parents", "Material panel: Make a variant... (a copy under a new name, same picture: Texture menu too); Parent: share settings through a parent .vmt (New parent from these...)"},
             {"Clip tool", "Shift+X: drag a line in a 2D view; drag points 1-3 (3 tilts the plane); Return clips"},
             {"Clip: keep both / front / back", "Shift+X again cycles (Tools menu)"},

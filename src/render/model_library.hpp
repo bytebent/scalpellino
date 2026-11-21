@@ -9,7 +9,9 @@
 #include "raylib.h"
 #include "core/prop.hpp"
 #include "io/model_store.hpp"
+#include "render/shader_library.hpp"
 #include <map>
+#include <set>
 #include <memory>
 #include <string>
 #include <vector>
@@ -76,6 +78,10 @@ private:
         std::vector<Color> tint;         // per material
         std::vector<float> cutoff;       // per material; < 0 = no cutout
         std::vector<char> textured;      // per material: has a texture (even a broken one)
+        // v0.12.4b: per material, the glTF's normal map (id 0 none) and its settings file
+        std::vector<Texture2D> normals;
+        std::vector<ModelMaterialSettings> settings;
+        std::map<std::string, Texture2D> files;   // textures its settings name, by file
     };
     Gpu* gpuFor(const std::string& name);
     void freeGpu(Gpu& g);
@@ -114,8 +120,10 @@ private:
     unsigned bakeTex_ = 0;
     std::map<std::uint32_t, std::vector<int>> bakeBase_;   // prop id -> base per chunk
     std::map<std::uint32_t, size_t> bakeIndex_;            // prop id -> its PropLighting
+    std::set<std::uint32_t> bakeBumped_;                    // props with 4 values a vertex
     void prepareBake(const std::vector<Prop>& props, const std::shared_ptr<const BakeResult>& bake);
     void drawBaked(const std::vector<Prop>& props, const PropDrawContext& ctx);
+    void bindPropMaterial(ShaderLibrary::Program& prog, Gpu& g, size_t mi, const BakedDrawContext& ctx);
     bool shaderTried_ = false, shaderOk_ = false;
     size_t drawCalls_ = 0;
 public:

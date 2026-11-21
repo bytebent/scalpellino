@@ -19,6 +19,7 @@
 #include "raylib.h"
 #include "core/material.hpp"
 #include "core/shader_file.hpp"
+#include <functional>
 #include <map>
 #include <memory>
 #include <string>
@@ -57,11 +58,13 @@ public:
     Program* program(const std::string& name, ShaderGeometry geom);
 
     // Sets the material's settings (or the header's defaults where it has none) as the
-    // program's uniforms, binding its textures to units from `firstUnit` up. `entry` (may be
-    // null) resolves texture names written in the material. Returns texture names that
-    // couldn't be found.
-    std::vector<std::string> bind(Program& p, const Material* mat, const MaterialIndex::Entry* entry, TextureLibrary* textures,
-                                  int firstUnit);
+    // program's uniforms, binding its textures to units from `firstUnit` up. `texture` turns
+    // a texture value written in the material into a GPU texture (0: not found). Returns the
+    // texture values that couldn't be found.
+    using TextureFinder = std::function<unsigned(const std::string& value)>;
+    std::vector<std::string> bind(Program& p, const Material* mat, const TextureFinder& texture, int firstUnit);
+    // A finder for materials of the texture library (`entry` resolves names written in it).
+    static TextureFinder libraryFinder(TextureLibrary& textures, const MaterialIndex::Entry* entry);
     // Unbinds what bind() bound (call after drawing, with the batch flushed).
     void unbind(int firstUnit);
 

@@ -11,6 +11,7 @@
 // joins once its format is final.
 //
 // Nothing here watches the disk: rescan() is the one way to see changes (Bottega's Rescan).
+#include "core/material.hpp"
 #include "core/prop.hpp"
 #include <map>
 #include <memory>
@@ -56,6 +57,20 @@ private:
 
 // The models under `<root>/models`, as name -> file (see the rules above). Files whose
 // name is already taken are left out and listed in `clashes` (if given).
+// A model material's settings file (v0.12.4b): a `.vmt` beside the material's texture file
+// (same name), else `<material name>.vmt` in the model's folder. Its keys add to what the
+// glTF says (Phong, rim light, another bump map...). `found` false: there is none.
+struct ModelMaterialSettings {
+    bool found = false;
+    std::string file;      // the .vmt
+    std::string dir;       // its folder: texture values are looked up here first
+    Material mat;
+};
+ModelMaterialSettings modelMaterialSettings(const Model& m, size_t material);
+// A texture value written in such a file, as a file in `dir` ("" if none): as written,
+// or with .png / .jpg / .jpeg / .tga / .bmp added.
+std::string modelTextureFile(const std::string& dir, const std::string& value);
+
 std::map<std::string, std::string> scanModelFiles(const std::string& root, std::vector<std::string>* clashes = nullptr);
 
 } // namespace scal

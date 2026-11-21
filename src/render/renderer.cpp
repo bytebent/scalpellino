@@ -1,4 +1,5 @@
 #include "render/renderer.hpp"
+#include "io/model_store.hpp"
 #include "core/texture.hpp"
 #include "render/model_library.hpp"
 #include "render/sky_library.hpp"
@@ -160,7 +161,9 @@ BakeInput bakeInput(const Document& doc, ModelLibrary& models, SkyLibrary& skies
             bm.alphaTest = m.flag("$alphatest") && !bm.translucent;
             bm.alphaRef = m.num("$alphatestreference", 0.5);
             const bool glows = bm.emit.x > 0 || bm.emit.y > 0 || bm.emit.z > 0;
-            if (!glows && !bm.translucent && !bm.alphaTest) continue;
+            // bump maps (v0.12.4b): the bake fills the face's 3 bump-direction lightmaps too
+            bm.bumped = m.has("$bumpmap") && !m.str("$bumpmap").empty();
+            if (!glows && !bm.translucent && !bm.alphaTest && !bm.bumped) continue;
             const TexSize ts = textures->size(n);
             bm.texW = ts.w;
             bm.texH = ts.h;
@@ -171,12 +174,17 @@ BakeInput bakeInput(const Document& doc, ModelLibrary& models, SkyLibrary& skies
                     bm.alphaTest = false;
                 }
             }
-            if (!glows && !bm.translucent && !bm.alphaTest) continue;
+            if (!glows && !bm.translucent && !bm.alphaTest && !bm.bumped) continue;
             in.materials[n] = std::move(bm);
         }
     }
     for (const auto& [name, m] : *found) {
         if (!m || in.modelReflectivity.count(name)) continue;
+        // Bump maps on props (v0.12.4b): the glTF's normal map, or one its settings file names.
+        for (size_t i = 0; i < m->materials.size(); ++i) {
+            const ModelMaterialSettings st = modelMaterialSettings(*m, i);
+            if (m->materials[i].hasNormalMap() || (st.found && !st.mat.str("$bumpmap").empty())) in.bumpedModels.insert(name);
+        }
         std::vector<Vec3> matRefl(m->materials.size(), Vec3{1, 1, 1});
         for (size_t i = 0; i < m->materials.size(); ++i) {
             const ModelMaterial& mat = m->materials[i];

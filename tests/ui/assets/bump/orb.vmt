@@ -1,0 +1,8 @@
+"VertexLitGeneric"
+{
+	"$phong" "1"
+	"$phongexponent" "24"
+	"$phongboost" "3"
+	"$rimlight" "1"
+	"$rimlightboost" "1.5"
+}

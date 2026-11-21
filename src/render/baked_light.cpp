@@ -128,14 +128,18 @@ void BakedLight::upload(std::shared_ptr<const BakeResult> r) {
     std::vector<size_t> order(res.faces.size());
     for (size_t i = 0; i < order.size(); ++i) order[i] = i;
     std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) { return res.faces[a].h > res.faces[b].h; });
-    struct Placed { size_t face; int page, x, y; };
+    struct Placed { size_t face; int page, x, y; int step; bool down; };
     std::vector<Placed> placed;
     std::vector<int> pageUsedH;
     int page = 0, x = 4, y = 0, shelfH = 4; // (0, 0)..(3, 3): full light, for anything without a lightmap
     pageUsedH.push_back(4);
     for (size_t i : order) {
         const FaceLightmap& f = res.faces[i];
-        const int w = f.w + 2, h = f.h + 2;
+        const bool bumped = !f.bump.empty();
+        // bumped: the flat map and the 3 bump maps side by side (Source's layout), or one
+        // under the other when 4 don't fit across a page
+        const bool down = bumped && 4 * (f.w + 2) > kPageSize;
+        const int w = (f.w + 2) * (bumped && !down ? 4 : 1), h = (f.h + 2) * (down ? 4 : 1);
         if (x + w > kPageSize) {
             y += shelfH;
             x = 0;
@@ -146,7 +150,7 @@ void BakedLight::upload(std::shared_ptr<const BakeResult> r) {
             pageUsedH.push_back(0);
             x = y = shelfH = 0;
         }
-        placed.push_back({i, page, x, y});
+        placed.push_back({i, page, x, y, bumped ? (down ? f.h + 2 : f.w + 2) : 0, down});
         x += w;
         shelfH = std::max(shelfH, h);
         pageUsedH[page] = std::max(pageUsedH[page], y + h);
@@ -166,20 +170,27 @@ void BakedLight::upload(std::shared_ptr<const BakeResult> r) {
         const FaceLightmap& f = res.faces[pl.face];
         std::vector<float>& d = data[pl.page];
         const int W = pages_[pl.page].w;
-        for (int j = -1; j <= f.h; ++j)
-            for (int i = -1; i <= f.w; ++i) {
-                const int si = std::clamp(i, 0, f.w - 1), sj = std::clamp(j, 0, f.h - 1);
-                const float* src = &f.rgb[((size_t)sj * f.w + si) * 3];
-                float* dst = &d[((size_t)(pl.y + 1 + j) * W + (pl.x + 1 + i)) * 3];
-                dst[0] = src[0];
-                dst[1] = src[1];
-                dst[2] = src[2];
-            }
+        const size_t nl = (size_t)f.w * f.h;
+        for (int m = 0; m < (pl.step ? 4 : 1); ++m) {
+            const float* map = m == 0 ? f.rgb.data() : &f.bump[(size_t)(m - 1) * nl * 3];
+            const int ox = pl.x + (pl.down ? 0 : m * pl.step), oy = pl.y + (pl.down ? m * pl.step : 0);
+            for (int j = -1; j <= f.h; ++j)
+                for (int i = -1; i <= f.w; ++i) {
+                    const int si = std::clamp(i, 0, f.w - 1), sj = std::clamp(j, 0, f.h - 1);
+                    const float* src = &map[((size_t)sj * f.w + si) * 3];
+                    float* dst = &d[((size_t)(oy + 1 + j) * W + (ox + 1 + i)) * 3];
+                    dst[0] = src[0];
+                    dst[1] = src[1];
+                    dst[2] = src[2];
+                }
+        }
         FaceRef ref;
         ref.page = pl.page;
         ref.x = pl.x;
         ref.y = pl.y;
         ref.lm = &f;
+        ref.bumpStep = pl.step;
+        ref.bumpDown = pl.down;
         faces_[{f.brush, f.face, f.terrain}] = ref;
     }
     for (size_t p = 0; p < pages_.size(); ++p) pages_[p].tex = uploadFloatRGB(data[p], pages_[p].w, pages_[p].h);
@@ -251,6 +262,12 @@ void setMaterialCommon(Shader& sh, const std::function<int(const char*)>& loc, c
 }
 
 namespace {
+// The bump maps' offset as the shader gets it in the normal's z: the step to the next map as
+// a share of the page, > 0 across, < 0 down; 0 = not bumped.
+float bumpZ(const BakedLight::FaceRef& r, const BakedLight::Page& pg) {
+    if (!r.bumpStep) return 0;
+    return r.bumpDown ? -(float)r.bumpStep / (float)pg.h : (float)r.bumpStep / (float)pg.w;
+}
 // One thing to draw: a plain face, or a terrain's base or painted layer.
 struct Item {
     const SceneBrush* b = nullptr;
@@ -362,7 +379,7 @@ bool drawBakedBrushes(const SceneBrushes& brushes, const BakedLight& baked, Text
                 bd.sh = p->shader;
                 BeginShaderMode(bd.sh);
                 setMaterialCommon(bd.sh, [&](const char* n) { return p->at(n); }, ctx);
-                for (const std::string& miss : ctx.shaders->bind(*p, m, e, &textures, kFirstMaterialUnit))
+                for (const std::string& miss : ctx.shaders->bind(*p, m, ShaderLibrary::libraryFinder(textures, e), kFirstMaterialUnit))
                     report("the material " + matName + " uses " + miss + ", which isn't there");
                 rlActiveTextureSlot(kSkyUnit);
                 rlEnableTexture(ctx.skyTex ? ctx.skyTex : rlGetTextureIdDefault());
@@ -405,6 +422,7 @@ bool drawBakedBrushes(const SceneBrushes& brushes, const BakedLight& baked, Text
             const Face& f = b.faces[p.face];
             const Texture2D& tex = textures.get(f.texture);
             const TexSize ts{std::max(1, tex.width), std::max(1, tex.height)};
+            const float bz = bumpZ(*ref, pg);
             rlCheckRenderBatchLimit((int)(p.verts.size() - 2) * 3);
             rlSetTexture(tex.id);
             rlBegin(RL_TRIANGLES);
@@ -416,7 +434,7 @@ bool drawBakedBrushes(const SceneBrushes& brushes, const BakedLight& baked, Text
                     const UV uv = texCoord(f, v, ts);
                     normalColor(p.normal, 255);
                     rlTexCoord2f((float)uv.u, (float)uv.v);
-                    rlNormal3f(lu, lv, 0);
+                    rlNormal3f(lu, lv, bz);
                     rlVertex3f((float)v.x, (float)v.y, (float)v.z);
                 }
             rlEnd();
@@ -430,6 +448,7 @@ bool drawBakedBrushes(const SceneBrushes& brushes, const BakedLight& baked, Text
         const size_t cells = b.polys.size() - b.terrainFirst;
         const Texture2D& tex = textures.get(*it.material);
         const TexSize ts{std::max(1, tex.width), std::max(1, tex.height)};
+        const float bz = bumpZ(*ref, pg);
         for (size_t c = 0; c < cells; ++c) {
             const Polygon& p = b.polys[b.terrainFirst + c];
             const float* al = it.layer < 0 ? nullptr : &b.layers[it.layer].cellAlpha[4 * c];
@@ -448,7 +467,7 @@ bool drawBakedBrushes(const SceneBrushes& brushes, const BakedLight& baked, Text
                     BakedLight::uv(*ref, pg, (double)gi[k] / (n - 1) * (ref->lm->w - 1), (double)gj[k] / (n - 1) * (ref->lm->h - 1), lu, lv);
                 const UV uv = texCoord(f, p.verts[k], ts);
                 rlTexCoord2f((float)uv.u, (float)uv.v);
-                rlNormal3f(lu, lv, 0);
+                rlNormal3f(lu, lv, bz);
                 rlVertex3f((float)p.verts[k].x, (float)p.verts[k].y, (float)p.verts[k].z);
             }
             rlEnd();

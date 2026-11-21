@@ -105,22 +105,38 @@ struct Gather {
     // Light at a point `p` with shading normal `n` and geometric normal `ng`.
     // `extra`: more things that block light (a prop's own triangles when it casts no shadows).
     Vec3 at(const Vec3& p, const Vec3& n, const Vec3& ng, bool fast, const Tracer* extra = nullptr) const {
+        Vec3 out;
+        atN(p, &n, 1, ng, fast, extra, &out);
+        return out;
+    }
+    // The same for `k` normals at once (bump maps, v0.12.4b: the flat normal and the 3 bump
+    // directions), sharing the shadow rays, as VRAD's GatherSampleLight with 4 normals.
+    void atN(const Vec3& p, const Vec3* ns, int k, const Vec3& ng, bool fast, const Tracer* extra, Vec3* out) const {
         auto blocked = [&](const Vec3& o, const Vec3& d, double t) { return tracer->occluded(o, d, t) || (extra && extra->occluded(o, d, t)); };
         const Vec3 o = p + ng * kOffset;
-        Vec3 sum = minLight;
+        for (int i = 0; i < k; ++i) out[i] = minLight;
+        double dts[4];
+        auto dots = [&](const Vec3& to) {
+            bool any = false;
+            for (int i = 0; i < k; ++i) {
+                dts[i] = dot(ns[i], to);
+                any = any || dts[i] > 0;
+            }
+            return any;
+        };
         for (const BakeLight& L : lights) {
             if (L.kind == LightKind::Sun) {
-                const double dt = -dot(n, L.dir);
-                if (dt <= 0) continue;
+                if (!dots(-L.dir)) continue;
                 const std::vector<Vec3>& jit = fast ? sunJitterFast : sunJitter;
-                const size_t ns = L.spreadSin > 0 ? jit.size() + 1 : 1;
+                const size_t nsamp = L.spreadSin > 0 ? jit.size() + 1 : 1;
                 double vis = 0;
-                for (size_t k = 0; k < ns; ++k) {
+                for (size_t q = 0; q < nsamp; ++q) {
                     Vec3 d = -L.dir;
-                    if (k > 0) d = normalize(d + jit[k - 1] * L.spreadSin);
+                    if (q > 0) d = normalize(d + jit[q - 1] * L.spreadSin);
                     if (!blocked(o, d, kFar)) vis += 1;
                 }
-                sum += L.intensity * (dt * vis / (double)ns);
+                for (int i = 0; i < k; ++i)
+                    if (dts[i] > 0) out[i] += L.intensity * (dts[i] * vis / (double)nsamp);
                 continue;
             }
             if (L.surface) {
@@ -129,42 +145,54 @@ struct Gather {
                 const double dist = length(delta);
                 if (dist < 1e-6) continue;
                 const Vec3 to = delta / dist;
-                const double dt = dot(n, to), dot2 = -dot(to, L.dir);
-                if (dt <= 0 || dot2 <= 1e-3) continue;
+                const double dot2 = -dot(to, L.dir);
+                if (!dots(to) || dot2 <= 1e-3) continue;
                 const double dh = std::max(1.0, dist / kCmPerHammerUnit);
-                const Vec3 c = L.intensity * (dt * dot2 / (dh * dh));
-                if (maxc(c) < 1e-5) continue;
+                const Vec3 c = L.intensity * (dot2 / (dh * dh));
+                double mx = 0;
+                for (int i = 0; i < k; ++i) mx = std::max(mx, dts[i]);
+                if (maxc(c * mx) < 1e-5) continue;
                 if (blocked(o, to, dist - 0.5)) continue;
-                sum += c;
+                for (int i = 0; i < k; ++i)
+                    if (dts[i] > 0) out[i] += c * dts[i];
                 continue;
             }
             const Vec3 delta = L.pos - o;
             const double dist = length(delta);
             if (dist < 1e-6) continue;
             const Vec3 to = delta / dist;
-            const double dt = dot(n, to);
-            if (dt <= 0) continue;
+            if (!dots(to)) continue;
             const double f = lightFalloff(L, dist, -to);
             if (f <= 0) continue;
-            const Vec3 c = L.intensity * (dt * f);
-            if (maxc(c) < 1e-5) continue; // VRAD's minimum: too faint to show
+            double mx = 0;
+            for (int i = 0; i < k; ++i) mx = std::max(mx, dts[i]);
+            if (maxc(L.intensity * (mx * f)) < 1e-5) continue; // VRAD's minimum: too faint to show
             if (blocked(o, to, dist - 0.5)) continue;
-            sum += c;
+            for (int i = 0; i < k; ++i)
+                if (dts[i] > 0) out[i] += L.intensity * (dts[i] * f);
         }
         if (skyOn) {
             const std::vector<Vec3>& dirs = fast ? skyDirsFast : skyDirs;
-            double sumdot = 0;
-            Vec3 acc;
+            double sumdot[4] = {0, 0, 0, 0};
+            Vec3 acc[4];
             for (const Vec3& a : dirs) {
                 const Vec3 d = -a; // VRAD traces "back" along each direction
-                const double dt = dot(n, d);
-                if (dt <= 1e-6) continue;
-                sumdot += dt;
-                if (!blocked(o, d, kFar)) acc += skyColor(d) * dt;
+                bool any = false;
+                for (int i = 0; i < k; ++i) {
+                    dts[i] = dot(ns[i], d);
+                    if (dts[i] > 1e-6) {
+                        sumdot[i] += dts[i];
+                        any = true;
+                    }
+                }
+                if (!any || blocked(o, d, kFar)) continue;
+                const Vec3 sc = skyColor(d);
+                for (int i = 0; i < k; ++i)
+                    if (dts[i] > 1e-6) acc[i] += sc * dts[i];
             }
-            if (sumdot > 0) sum += acc / sumdot;
+            for (int i = 0; i < k; ++i)
+                if (sumdot[i] > 0) out[i] += acc[i] / sumdot[i];
         }
-        return sum;
     }
 };
 
@@ -197,6 +225,8 @@ struct FaceWork {
     FaceLightmap* out = nullptr;
     std::string texture;
     double texelArea = 1;         // cm^2 per texel (|scaleU x scaleV|): texlights' repeats
+    bool bumped = false;          // its material has a bump map: 3 more lightmaps
+    Vec3 texS, texT;              // the texture's s / t directions (the bump basis)
     Vec3 n;                       // face normal
     double planeD = 0;
     std::vector<Vec3> verts;
@@ -278,6 +308,8 @@ struct TerrainWork {
     FaceLightmap* out = nullptr;
     const Brush* brush = nullptr;
     TerrainGrid g;
+    bool bumped = false;  // its texture or a painted layer's has a bump map (v0.12.4b)
+    Vec3 texS, texT;      // the face texture's s / t directions
     std::vector<Vec3> vn; // smooth normal per grid point
     // Position and normal at grid coordinates (u, v) in 0..n-1.
     void at(double u, double v, Vec3& p, Vec3& nn, Vec3& ng) const {
@@ -319,6 +351,12 @@ struct Patch {
     Vec3 total;               // incident bounce light, summed over the bounces
     Vec3 emit, add;
     std::vector<std::pair<int, float>> transfers; // (patch it receives from, transfer)
+    // Bumped surfaces (v0.12.4b): the bounce light arriving along the 3 bump directions
+    // (each transfer's cosine at this patch swapped for the bump direction's).
+    bool bumped = false;
+    Vec3 basis[3];
+    Vec3 totalB[3], addB[3];
+    std::vector<std::array<float, 3>> tw;  // per transfer
 };
 
 // A square polygon of `area` around `o`, facing `n` (for the polygon-to-point form factor).
@@ -701,8 +739,9 @@ std::uint64_t bakeKey(const BakeInput& in) {
     h.v(in.env.ambient); h.d(in.env.skyLight); h.i(in.env.minLight); h.d(in.env.smoothAngle); h.d(in.env.bounceScale);
     h.i(in.maxBounces);
     h.i(in.propsQuick);
+    for (const std::string& m : in.bumpedModels) h.s(m);
     for (const auto& [k, m] : in.materials) {
-        h.s(k); h.v(m.emit); h.i(m.texW); h.i(m.texH); h.i(m.translucent); h.i(m.alphaTest); h.d(m.alphaRef);
+        h.s(k); h.v(m.emit); h.i(m.texW); h.i(m.texH); h.i(m.translucent); h.i(m.alphaTest); h.d(m.alphaRef); h.i(m.bumped);
         if (!m.alpha.empty()) h.bytes(m.alpha.data(), m.alpha.size());
     }
     // where a cutout's holes or a texlight's repeats fall
@@ -936,6 +975,12 @@ BakeResult bakeLight(const BakeInput& in, BakeProgress* progress, int threads) {
                 const Face& f = b.faces[p.face];
                 w.texture = f.texture;
                 w.texelArea = std::max(1e-9, std::fabs(f.scaleU * f.scaleV));
+                w.texS = f.u.axis;
+                w.texT = f.v.axis;
+                {
+                    auto mit = in.materials.find(f.texture);
+                    w.bumped = mit != in.materials.end() && mit->second.bumped;
+                }
                 double L = std::clamp(f.lightmapScale, kMinLightmapScale, kMaxLightmapScale) * Q.scaleMul;
                 Vec3 aS = length(f.u.axis) > 1e-9 ? normalize(f.u.axis) : Vec3{1, 0, 0};
                 Vec3 aT = length(f.v.axis) > 1e-9 ? normalize(f.v.axis) : Vec3{0, 1, 0};
@@ -1079,6 +1124,18 @@ BakeResult bakeLight(const BakeInput& in, BakeProgress* progress, int threads) {
         const Brush* b = nullptr;
         for (const Brush& bb : in.brushes) if (bb.id == t.out->brush) b = &bb;
         t.brush = b;
+        if (b) {
+            const Face& tf = b->faces[g.face];
+            t.texS = tf.u.axis;
+            t.texT = tf.v.axis;
+            auto bumpedMat = [&](const std::string& name) {
+                auto mit = in.materials.find(name);
+                return mit != in.materials.end() && mit->second.bumped;
+            };
+            t.bumped = bumpedMat(tf.texture);
+            if (b->terrain)
+                for (const TerrainLayer& l : b->terrain->layers) t.bumped = t.bumped || bumpedMat(l.texture);
+        }
         const double L = std::clamp(b ? b->faces[g.face].lightmapScale : kDefaultLightmapScale, kMinLightmapScale, kMaxLightmapScale) * Q.scaleMul;
         const double lu = length(g.corners[1] - g.corners[0]), lv = length(g.corners[3] - g.corners[0]);
         t.out->w = std::clamp((int)std::ceil(lu / L) + 1, 2, kMaxLuxels);
@@ -1143,14 +1200,26 @@ BakeResult bakeLight(const BakeInput& in, BakeProgress* progress, int threads) {
             FaceWork& w = *wp;
             FaceLightmap& lm = *w.out;
             lm.rgb.assign((size_t)lm.w * lm.h * 3, 0.0f);
-            std::vector<Vec3> v((size_t)lm.w * lm.h);
-            auto sampleAt = [&](double s, double t, bool f) {
+            const size_t nl = (size_t)lm.w * lm.h;
+            std::vector<Vec3> v(nl);
+            std::vector<std::array<Vec3, 3>> vb(w.bumped ? nl : 0); // bumped: the 3 bump directions
+            auto sampleAt = [&](double s, double t, bool f, std::array<Vec3, 3>* b) {
                 w.clampInside(s, t);
                 const Vec3 P = w.point(s + lm.s0, t + lm.t0);
-                return G.at(P, w.shadingNormal(s, t), w.n, f);
+                const Vec3 n = w.shadingNormal(s, t);
+                if (!b) return G.at(P, n, w.n, f);
+                Vec3 ns[4], out[4];
+                ns[0] = n;
+                bumpNormals(n, w.texS, w.texT, ns + 1);
+                G.atN(P, ns, 4, w.n, f, nullptr, out);
+                for (int q = 0; q < 3; ++q) (*b)[q] = out[q + 1];
+                return out[0];
             };
             for (int j = 0; j < lm.h && !cancelled(); ++j) {
-                for (int i = 0; i < lm.w; ++i) v[(size_t)j * lm.w + i] = sampleAt(i, j, fast);
+                for (int i = 0; i < lm.w; ++i) {
+                    const size_t q = (size_t)j * lm.w + i;
+                    v[q] = sampleAt(i, j, fast, w.bumped ? &vb[q] : nullptr);
+                }
                 tick(lm.w);
             }
             if (Q.superN > 1 && !cancelled()) {
@@ -1173,10 +1242,16 @@ BakeResult bakeLight(const BakeInput& in, BakeProgress* progress, int threads) {
                     for (int i = 0; i < lm.w; ++i) {
                         if (!redo[(size_t)j * lm.w + i]) continue;
                         Vec3 acc;
+                        std::array<Vec3, 3> accB{}, one{};
                         for (int b = 0; b < N; ++b)
-                            for (int a = 0; a < N; ++a)
-                                acc += sampleAt(i - 0.5 + (a + 0.5) / N, j - 0.5 + (b + 0.5) / N, true);
+                            for (int a = 0; a < N; ++a) {
+                                acc += sampleAt(i - 0.5 + (a + 0.5) / N, j - 0.5 + (b + 0.5) / N, true, w.bumped ? &one : nullptr);
+                                if (w.bumped)
+                                    for (int q = 0; q < 3; ++q) accB[q] += one[q];
+                            }
                         v[(size_t)j * lm.w + i] = acc / (double)(N * N);
+                        if (w.bumped)
+                            for (int q = 0; q < 3; ++q) vb[(size_t)j * lm.w + i][q] = accB[q] / (double)(N * N);
                     }
             }
             for (size_t k = 0; k < v.size(); ++k) {
@@ -1184,12 +1259,21 @@ BakeResult bakeLight(const BakeInput& in, BakeProgress* progress, int threads) {
                 lm.rgb[3 * k + 1] = (float)v[k].y;
                 lm.rgb[3 * k + 2] = (float)v[k].z;
             }
+            if (w.bumped) {
+                lm.bump.assign(3 * nl * 3, 0.0f);
+                for (int q = 0; q < 3; ++q)
+                    for (size_t k = 0; k < nl; ++k)
+                        for (int c = 0; c < 3; ++c) lm.bump[(q * nl + k) * 3 + c] = (float)vb[k][q][c];
+            } else
+                lm.bump.clear();
         });
     for (TerrainWork& t : terrains)
         jobs.push_back([&, tp = &t] {
             TerrainWork& t = *tp;
             FaceLightmap& lm = *t.out;
             lm.rgb.assign((size_t)lm.w * lm.h * 3, 0.0f);
+            if (t.bumped) lm.bump.assign((size_t)lm.w * lm.h * 9, 0.0f);
+            else lm.bump.clear();
             const int n = t.g.n;
             for (int j = 0; j < lm.h && !cancelled(); ++j) {
                 for (int i = 0; i < lm.w; ++i) {
@@ -1197,8 +1281,19 @@ BakeResult bakeLight(const BakeInput& in, BakeProgress* progress, int threads) {
                     const double fu = std::clamp((double)i / (lm.w - 1), 0.002, 0.998), fv = std::clamp((double)j / (lm.h - 1), 0.002, 0.998);
                     Vec3 p, nn, ng;
                     t.at(fu * (n - 1), fv * (n - 1), p, nn, ng);
-                    const Vec3 c = G.at(p, nn, ng, fast);
                     const size_t k = (size_t)j * lm.w + i;
+                    Vec3 c;
+                    if (t.bumped) {
+                        Vec3 ns[4], out[4];
+                        ns[0] = nn;
+                        bumpNormals(nn, t.texS, t.texT, ns + 1);
+                        G.atN(p, ns, 4, ng, fast, nullptr, out);
+                        c = out[0];
+                        const size_t nl = (size_t)lm.w * lm.h;
+                        for (int q = 0; q < 3; ++q)
+                            for (int ch = 0; ch < 3; ++ch) lm.bump[(q * nl + k) * 3 + ch] = (float)out[q + 1][ch];
+                    } else
+                        c = G.at(p, nn, ng, fast);
                     lm.rgb[3 * k] = (float)c.x;
                     lm.rgb[3 * k + 1] = (float)c.y;
                     lm.rgb[3 * k + 2] = (float)c.z;
@@ -1395,6 +1490,10 @@ BakeResult bakeLight(const BakeInput& in, BakeProgress* progress, int threads) {
                 }
                 pa.wind = std::move(poly);
                 pa.refl = refl;
+                if (w.bumped) {
+                    pa.bumped = true;
+                    bumpNormals(pa.normal, w.texS, w.texT, pa.basis);
+                }
                 facePatches[fi].push_back((int)patches.size());
                 patches.push_back(std::move(pa));
             }
@@ -1481,6 +1580,10 @@ BakeResult bakeLight(const BakeInput& in, BakeProgress* progress, int threads) {
                         pa.normal = g.normal;
                     }
                     pa.refl = clampRefl(refl);
+                    if (t.bumped) {
+                        pa.bumped = true;
+                        bumpNormals(pa.normal, t.texS, t.texT, pa.basis);
+                    }
                     patches.push_back(std::move(pa));
                 }
             const FaceLightmap& lm = *t.out;
@@ -1675,6 +1778,19 @@ BakeResult bakeLight(const BakeInput& in, BakeProgress* progress, int threads) {
             for (auto& t : pa.transfers) t.second = (float)(t.second * norm);
         }
         for (const Patch& pa : patches) res.transfers += pa.transfers.size();
+        // bumped patches: how much of each transfer each bump direction sees (its cosine
+        // instead of the patch normal's, which the transfer holds)
+        for (Patch& pa : patches) {
+            if (!pa.bumped) continue;
+            pa.tw.resize(pa.transfers.size());
+            for (size_t q = 0; q < pa.transfers.size(); ++q) {
+                const Vec3 d = patches[pa.transfers[q].first].origin - pa.origin;
+                const double l = length(d);
+                const Vec3 dir = l > 1e-9 ? d / l : pa.normal;
+                const double cn = std::max(dot(pa.normal, dir), 0.05);
+                for (int k = 0; k < 3; ++k) pa.tw[q][k] = (float)(std::max(0.0, dot(pa.basis[k], dir)) / cn);
+            }
+        }
         res.secondsTransfers = since() - res.secondsDirect;
 
         // ---- bounce: gather from the patches each patch sees, until a bounce adds less
@@ -1682,15 +1798,25 @@ BakeResult bakeLight(const BakeInput& in, BakeProgress* progress, int threads) {
         for (Patch& pa : patches) {
             pa.emit = pa.direct;
             pa.total = {};
+            for (int k = 0; k < 3; ++k) pa.totalB[k] = {};
         }
         for (int b = 0; b < maxBounces && !cancelled(); ++b) {
             std::vector<std::function<void()>> bjobs;
             for (size_t start = 0; start < NP; start += 64)
                 bjobs.push_back([&, start] {
                     for (size_t i = start; i < std::min(NP, start + 64); ++i) {
-                        Vec3 sum;
-                        for (const auto& [j, t] : patches[i].transfers) sum += mul(patches[j].emit, patches[j].refl) * (double)t;
-                        patches[i].add = sum;
+                        Patch& pi = patches[i];
+                        Vec3 sum, sb[3];
+                        for (size_t q = 0; q < pi.transfers.size(); ++q) {
+                            const auto& [j, t] = pi.transfers[q];
+                            const Vec3 c = mul(patches[j].emit, patches[j].refl) * (double)t;
+                            sum += c;
+                            if (pi.bumped)
+                                for (int k = 0; k < 3; ++k) sb[k] += c * (double)pi.tw[q][k];
+                        }
+                        pi.add = sum;
+                        if (pi.bumped)
+                            for (int k = 0; k < 3; ++k) pi.addB[k] = sb[k];
                     }
                 });
             runJobs(bjobs);
@@ -1699,6 +1825,8 @@ BakeResult bakeLight(const BakeInput& in, BakeProgress* progress, int threads) {
                 pa.total += pa.add;
                 pa.emit = pa.add;
                 added += pa.add;
+                if (pa.bumped)
+                    for (int k = 0; k < 3; ++k) pa.totalB[k] += pa.addB[k];
             }
             added = added * 255.0;
             char line[96];
@@ -1735,16 +1863,21 @@ BakeResult bakeLight(const BakeInput& in, BakeProgress* progress, int threads) {
                             faceGrids[fi].query(ps - r, pt - r, ps + r, pt + r, near);
                             cand = &near;
                         }
+                        Vec3 accB[3];
                         for (int id : *cand) {
                             const double d = length(patches[id].origin - P);
                             const double wgt = 1 - d / R;
                             if (wgt <= 0) continue;
                             acc += patches[id].total * wgt;
+                            if (w.bumped)
+                                for (int k = 0; k < 3; ++k) accB[k] += patches[id].totalB[k] * wgt;
                             ws += wgt;
                         }
-                        Vec3 bounce;
-                        if (ws > 0) bounce = acc / ws;
-                        else { // none that near: the nearest
+                        Vec3 bounce, bounceB[3];
+                        if (ws > 0) {
+                            bounce = acc / ws;
+                            for (int k = 0; k < 3; ++k) bounceB[k] = accB[k] / ws;
+                        } else { // none that near: the nearest
                             int nearest = list[0];
                             double nd = 1e300;
                             for (int id : list) {
@@ -1752,6 +1885,12 @@ BakeResult bakeLight(const BakeInput& in, BakeProgress* progress, int threads) {
                                 if (d < nd) { nd = d; nearest = id; }
                             }
                             bounce = patches[nearest].total;
+                            for (int k = 0; k < 3; ++k) bounceB[k] = patches[nearest].totalB[k];
+                        }
+                        if (w.bumped && !lm.bump.empty()) {
+                            const size_t nl = (size_t)lm.w * lm.h, kq = (size_t)j * lm.w + i;
+                            for (int k = 0; k < 3; ++k)
+                                for (int c = 0; c < 3; ++c) lm.bump[(k * nl + kq) * 3 + c] += (float)bounceB[k][c];
                         }
                         const size_t q = ((size_t)j * lm.w + i) * 3;
                         lm.rgb[q] += (float)bounce.x;
@@ -1765,22 +1904,35 @@ BakeResult bakeLight(const BakeInput& in, BakeProgress* progress, int threads) {
                 FaceLightmap& lm = *t.out;
                 const TerrainBlocks& tb = terrainBlocks[ti];
                 const int n1 = t.g.n - 1;
+                int which = -1; // -1: the flat total, 0..2: a bump direction's
                 auto P = [&](int bx, int by) {
                     bx = std::clamp(bx, 0, tb.nb - 1);
                     by = std::clamp(by, 0, tb.nb - 1);
-                    return patches[tb.first + by * tb.nb + bx].total;
+                    const Patch& pa = patches[tb.first + by * tb.nb + bx];
+                    return which < 0 ? pa.total : pa.totalB[which];
                 };
                 for (int j = 0; j < lm.h; ++j)
                     for (int i = 0; i < lm.w; ++i) {
                         const double u = (double)i / (lm.w - 1) * n1 / tb.k - 0.5, v = (double)j / (lm.h - 1) * n1 / tb.k - 0.5;
                         const int bx = (int)std::floor(u), by = (int)std::floor(v);
                         const double fu = u - bx, fv = v - by;
-                        const Vec3 b = P(bx, by) * ((1 - fu) * (1 - fv)) + P(bx + 1, by) * (fu * (1 - fv)) + P(bx, by + 1) * ((1 - fu) * fv) +
-                                       P(bx + 1, by + 1) * (fu * fv);
+                        auto blend = [&] {
+                            return P(bx, by) * ((1 - fu) * (1 - fv)) + P(bx + 1, by) * (fu * (1 - fv)) + P(bx, by + 1) * ((1 - fu) * fv) +
+                                   P(bx + 1, by + 1) * (fu * fv);
+                        };
+                        which = -1;
+                        const Vec3 b = blend();
                         const size_t q = ((size_t)j * lm.w + i) * 3;
                         lm.rgb[q] += (float)b.x;
                         lm.rgb[q + 1] += (float)b.y;
                         lm.rgb[q + 2] += (float)b.z;
+                        if (t.bumped && !lm.bump.empty()) {
+                            const size_t nl = (size_t)lm.w * lm.h, kq = (size_t)j * lm.w + i;
+                            for (which = 0; which < 3; ++which) {
+                                const Vec3 bb = blend();
+                                for (int c = 0; c < 3; ++c) lm.bump[(which * nl + kq) * 3 + c] += (float)bb[c];
+                            }
+                        }
                     }
             });
         const std::vector<Vec3>& gdirs = fast ? G.skyDirsFast : haltonSphere(kSkySamples);
@@ -1960,10 +2112,11 @@ BakeResult bakeLight(const BakeInput& in, BakeProgress* progress, int threads) {
                 const Prop& p = *withModel[k];
                 PropLighting& pl = res.props[k];
                 const int self = (int)(&p - in.props.data());
-                if (p.modelLighting) {
+                {
                     // Like a Source model: measured at its bounding box centre (moved up out
                     // of a brush if it is inside one); the grid's nearest sample; the 2
                     // strongest lights it can see, the others folded into the cube.
+                    // Props baked per vertex keep these too (v0.12.4b: Phong and rim light).
                     const AABB bb = propBounds(p, m);
                     Vec3 o = bb.center();
                     for (int step = 0; step < 16 && insideSolid(o); ++step) o.z += std::max(4.0, bb.size().z / 16);
@@ -2012,7 +2165,7 @@ BakeResult bakeLight(const BakeInput& in, BakeProgress* progress, int threads) {
                             for (int a = 0; a < 6; ++a) pl.cube[a] += cands[ci].c * std::max(0.0, dot(cands[ci].toLight, kAxes[a]));
                         }
                     }
-                    return;
+                    if (p.modelLighting) return;
                 }
                 // Baked per vertex (VRAD's -StaticPropLighting). A prop that casts no
                 // shadows still shadows itself: its own triangles in a tracer of its own.
@@ -2030,11 +2183,37 @@ BakeResult bakeLight(const BakeInput& in, BakeProgress* progress, int threads) {
                 }
                 const Mat3 R = rotationMatrix(p.rot);
                 pl.vertexRgb.resize(m->meshes.size());
+                // a model with a bump map: 4 values a vertex (flat and the 3 bump directions,
+                // in each vertex's texture frame)
+                pl.bumped = in.bumpedModels.count(p.model) > 0;
+                const int K = pl.bumped ? 4 : 1;
                 for (size_t mi = 0; mi < m->meshes.size() && !cancelled(); ++mi) {
                     const ModelMesh& mesh = m->meshes[mi];
                     const size_t nv = mesh.vertices();
                     std::vector<float>& out = pl.vertexRgb[mi];
-                    out.assign(nv * 3, 0.0f);
+                    out.assign(nv * 3 * K, 0.0f);
+                    // the texture's s / t directions per vertex (model space), from its UVs
+                    std::vector<Vec3> ts, tt;
+                    if (pl.bumped) {
+                        ts.assign(nv, Vec3{});
+                        tt.assign(nv, Vec3{});
+                        if (mesh.uv.size() >= 2 * nv)
+                            for (size_t t = 0; t + 2 < mesh.index.size(); t += 3) {
+                                const std::uint32_t a = mesh.index[t], b = mesh.index[t + 1], c = mesh.index[t + 2];
+                                if (a >= nv || b >= nv || c >= nv) continue;
+                                auto Pm = [&](std::uint32_t v) { return Vec3{mesh.pos[3 * v], mesh.pos[3 * v + 1], mesh.pos[3 * v + 2]}; };
+                                const Vec3 e1 = Pm(b) - Pm(a), e2 = Pm(c) - Pm(a);
+                                const double du1 = mesh.uv[2 * b] - mesh.uv[2 * a], dv1 = mesh.uv[2 * b + 1] - mesh.uv[2 * a + 1];
+                                const double du2 = mesh.uv[2 * c] - mesh.uv[2 * a], dv2 = mesh.uv[2 * c + 1] - mesh.uv[2 * a + 1];
+                                const double det = du1 * dv2 - du2 * dv1;
+                                if (std::fabs(det) < 1e-20) continue;
+                                const Vec3 sd = (e1 * dv2 - e2 * dv1) / det, td = (e2 * du1 - e1 * du2) / det;
+                                for (std::uint32_t v : {a, b, c}) {
+                                    ts[v] += sd;
+                                    tt[v] += td;
+                                }
+                            }
+                    }
                     for (size_t v = 0; v < nv; ++v) {
                         const Vec3 P = propToWorld(p, {mesh.pos[3 * v], mesh.pos[3 * v + 1], mesh.pos[3 * v + 2]});
                         Vec3 n{0, 0, 1};
@@ -2046,22 +2225,49 @@ BakeResult bakeLight(const BakeInput& in, BakeProgress* progress, int threads) {
                         }
                         // a little off the surface along the normal (VRAD nudges its samples)
                         const Vec3 at = P + n * 0.5;
-                        Vec3 c = G.at(at, n, n, propFast, own.get());
+                        Vec3 ns[4] = {n, n, n, n}, cs4[4];
+                        if (pl.bumped) {
+                            // model-space s / t to the world (they move like positions)
+                            auto toWorld = [&](const Vec3& l) {
+                                const Vec3 sl{l.x * p.scale.x, l.y * p.scale.y, l.z * p.scale.z};
+                                return R.col[0] * sl.x + R.col[1] * sl.y + R.col[2] * sl.z;
+                            };
+                            Vec3 sw = toWorld(ts[v]), tw = toWorld(tt[v]);
+                            if (length(sw) < 1e-12 || length(tw) < 1e-12) defaultTexAxes(n, sw, tw);
+                            bumpNormals(n, sw, tw, ns + 1);
+                        }
+                        G.atN(at, ns, K, n, propFast, own.get(), cs4);
                         if (!patches.empty()) {
-                            Vec3 acc;
-                            double sumdot = 0;
+                            Vec3 acc[4];
+                            double sumdot[4] = {0, 0, 0, 0};
                             const Vec3 o = at + n * kOffset;
                             for (const Vec3& d : propDirs) {
-                                const double cs = dot(n, d);
-                                if (cs <= 1e-6) continue;
-                                sumdot += cs;
-                                acc += rayLight(o, d, false, own.get()) * cs;
+                                double c[4];
+                                bool any = false;
+                                for (int q = 0; q < K; ++q) {
+                                    c[q] = dot(ns[q], d);
+                                    if (c[q] > 1e-6) {
+                                        sumdot[q] += c[q];
+                                        any = true;
+                                    }
+                                }
+                                if (!any || c[0] <= 1e-6) {
+                                    // the bump directions can lean past the surface: those rays
+                                    // would start into the prop itself, so only above it
+                                    continue;
+                                }
+                                const Vec3 L = rayLight(o, d, false, own.get());
+                                for (int q = 0; q < K; ++q)
+                                    if (c[q] > 1e-6) acc[q] += L * c[q];
                             }
-                            if (sumdot > 0) c += acc / sumdot;
+                            for (int q = 0; q < K; ++q)
+                                if (sumdot[q] > 0) cs4[q] += acc[q] / sumdot[q];
                         }
-                        out[3 * v] = (float)c.x;
-                        out[3 * v + 1] = (float)c.y;
-                        out[3 * v + 2] = (float)c.z;
+                        for (int q = 0; q < K; ++q) {
+                            out[(K * v + q) * 3] = (float)cs4[q].x;
+                            out[(K * v + q) * 3 + 1] = (float)cs4[q].y;
+                            out[(K * v + q) * 3 + 2] = (float)cs4[q].z;
+                        }
                         if ((v & 255) == 255) tick(256);
                     }
                     tick((long long)(nv & 255));
@@ -2116,8 +2322,36 @@ BakeResult bakeLight(const BakeInput& in, BakeProgress* progress, int threads) {
     res.cancelled = cancelled();
     if (progress && !res.cancelled) progress->done = progress->total.load();
     if (propsCasting) res.notes.push_back(std::to_string(propsCasting) + (propsCasting == 1 ? " prop casts" : " props cast") + " shadows");
+    {
+        size_t bf = 0, bp = 0;
+        for (const FaceLightmap& f : res.faces) bf += f.bump.empty() ? 0 : 1;
+        for (const PropLighting& p : res.props) bp += p.bumped ? 1 : 0;
+        if (bf || bp)
+            res.notes.push_back("bump maps: " + std::to_string(bf) + (bf == 1 ? " face" : " faces") + " with 4 lightmaps, " + std::to_string(bp) +
+                                (bp == 1 ? " prop" : " props") + " with 4 light values a vertex");
+    }
     res.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
     return res;
+}
+
+// Source's bump basis (radiosity normal mapping): three directions in tangent space, each
+// 54.7 degrees from the normal, 120 degrees apart (SIGGRAPH 2006, GDC 2004).
+static const Vec3 kBumpBasis[3] = {{0.816496580927726, 0, 0.577350269189626},
+                            {-0.408248290463863, 0.707106781186548, 0.577350269189626},
+                            {-0.408248290463863, -0.707106781186548, 0.577350269189626}};
+// The three in the world for shading normal `n` and the texture's s / t directions (VRAD's
+// GetBumpNormals): B0 along s, B1 along t (flipped for a mirrored texture), B2 = n.
+void bumpNormals(const Vec3& n, const Vec3& s, const Vec3& t, Vec3 out[3]) {
+    Vec3 b1 = cross(n, s);
+    if (length(b1) < 1e-12) { // s along the normal: any frame
+        Vec3 a, b;
+        defaultTexAxes(n, a, b);
+        b1 = cross(n, a);
+    }
+    b1 = normalize(b1);
+    const Vec3 b0 = normalize(cross(b1, n));
+    if (dot(b1, t) < 0) b1 = -b1; // VRAD: leftHanded (dot(n, s x t) < 0) flips B1
+    for (int i = 0; i < 3; ++i) out[i] = b0 * kBumpBasis[i].x + b1 * kBumpBasis[i].y + n * kBumpBasis[i].z;
 }
 
 } // namespace scal

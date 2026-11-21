@@ -10,7 +10,7 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 
 ## Current status
 
-- **Released:** v0.1.0 … v0.12.3 (v0.12.4 pushed, see below). Milestones 0–11, Random Replicate and Sky Lab are done (see the
+- **Released:** v0.1.0 … v0.12.4 (v0.12.4b pushed, see below). Milestones 0–11, Random Replicate and Sky Lab are done (see the
   milestone sections below and the log); the user confirmed the choices of M10, Random
   Replicate and v0.10.2 (2026-11-19). **v0.10.3 is built and pushed** (asked by the user
   before Sky Lab): `editor.cpp` split by topic (step 1: code moved unchanged; step 2:
@@ -92,7 +92,15 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   122 -> 15.6 s (2 threads). Renders match the old ones within 2 / 255. Not done: testing 4
   rays at once (VRAD's SSE): after the rest, about 1.5-2x more for a large rewrite of every
   place that shoots rays; left for later. Item 9 (texlight scale, reading VRAD's code) waits
-  until the user can approve the page; it blocks nothing else. Next: **build v0.12.4b**.
+  until the user can approve the page; it blocks nothing else.
+  **v0.12.4b is built and pushed** (the user said go, 2026-11-21): bump maps (radiosity
+  normal mapping, 4 lightmaps per bumped face and terrain, SSBump, flip-green tick), props'
+  glTF normal maps and `.vmt` files, Phong and rim light on props, the sky behind the scene
+  exposed, and the faster bakes above. Choices made while building are under "v0.12.4b,
+  decided without asking"; **a new question is parked** (bump blend energy: a flat bump map
+  is darker than no bump map, see Open questions). Next: **report**; then item 9 (VRAD's
+  code: texlight scale and the bump question) when the user can approve the page, and
+  batch 6 (v0.12.5, decals and overlays) discussed with the user first.
 - **Review fixes (2026-11-20), merged into `main`** (fast-forward from
   `fix/review-findings` after the user's go-ahead; no new version, so only "Latest build"
   is refreshed): version releases are
@@ -130,22 +138,27 @@ Each archive's SHA-256 is in `cmake/Deps.cmake` (checked at configure time).
 
 ## Open questions (parked)
 
-- **v0.12.4 parked (to discuss with the user, with v0.12.4b):**
-  - **Texlight brightness:** built with VRAD's formula as remembered (each patch a light of
-    baselight x the texture's repeats on it, cos x cos / d^2 in Hammer units). With HL2-like
-    brightness values (hundreds) the light is very faint; the test scene needs 60000. The
-    SDK code couldn't be read this session (the page needed the user's approval): check
-    `CreateDirectLights` / `GatherSampleLight` (emit_surface) and fix the scale if it differs.
-  - **Materials on props:** props are drawn by VertexLitGeneric with their model's own
-    materials; how a prop picks a `.vmt` (beside the model's texture files? per model?) is
-    needed for bump, Phong and rim on props (v0.12.4b).
-  - **Materials on primitives:** they show their material's base texture only (their shader
-    is separate, up to 4 textures per combination); glow / chrome / cutouts on them later?
-  - **Exposure and reflections:** exposure multiplies everything a material draws, the
-    reflection too, but the sky drawn behind the scene isn't exposed (as before): with
-    exposure not 0, cheap chrome reflects a brighter / darker sky than the background.
-  - **Textures with alpha and no `.vmt`** are opaque in renders now (Source: alpha means
-    nothing without `$alphatest` / `$translucent`); before v0.12.4 renders blended them.
+- **v0.12.4b parked (to discuss with the user):**
+  - **Bump blend energy (new, 2026-11-21):** with SDK 2013's blend (squared weights over
+    their sum, agreed item 1) and the bump lightmaps baked as the light along each bump
+    direction (cosine), a bumped face whose normal map is flat gets the mean of the 3 maps:
+    about 0.58 times the flat lightmap under direct light (1 / sqrt 3), about 0.8 in sky
+    light. A seam shows where it meets the same surface without a bump map
+    (`docs/screenshots/m12-35-bump-seam.png`: 115 vs 128 of 255 in shade). The 2004 blend
+    (linear weights) and SSBumps give exactly the flat light. Source maps don't show such
+    seams, so VRAD probably scales the bump maps (or the shader does): check in VRAD's code
+    with item 9. Options: (a) keep as is; (b) the 2004 linear blend (exact for any light,
+    slightly harder edges where a dot is clipped); (c) scale the bump maps in the bake so a
+    flat normal gives the flat light (if that is what VRAD does). Built as agreed (a) until
+    then; changing it is one line in the shader prelude or the bake.
+  - **Texlight brightness** (item 9, waits for the user to approve VRAD's code page): built
+    with VRAD's formula as remembered (each patch a light of baselight x the texture's
+    repeats on it, cos x cos / d^2 in Hammer units). With HL2-like brightness values
+    (hundreds) the light is very faint; the test scene needs 60000. Check
+    `CreateDirectLights` / `GatherSampleLight` (emit_surface) and fix the scale if it
+    differs.
+  - **Materials on primitives:** later (agreed, item 12); they show their material's base
+    texture only.
 
 - **Light grid "for now" choices (user, 2026-11-21):** a regular HL2-style grid (not
   per-leaf samples) and props reading the nearest sample (no blending); might change.
@@ -187,6 +200,44 @@ Each archive's SHA-256 is in `cmake/Deps.cmake` (checked at configure time).
 - **Curve generator parameters** in a `.map` (`core/curves.cpp curveFromKeys`) still read
   numbers loosely (`atoi`, `strtod`): not in the review's list; worth the same strict
   reading some time (a bad value there only changes a generated shape).
+
+- **v0.12.4b (bump maps, Phong, rim light), decided without asking (confirm with the user):**
+  - **The texture's frame in shaders** comes from screen derivatives of the position and
+    texture coordinates (no tangents stored), built like VRAD's `GetBumpNormals`: x along u,
+    y along v (flipped for a mirrored texture), so the shader and the bake agree. On brushes
+    the bake takes s / t from the face's texture axes; on props from the UVs per vertex.
+  - **Where the 3 bump maps go:** beside the flat map in the lightmap page (4 side by side),
+    below it when 4 would be wider than a page; the shader gets the offset in the vertex
+    normal's z.
+  - **Props per vertex:** 4 values a vertex (flat, then the 3 directions); bounce rays are
+    traced for the 3 directions only above the surface. **Props like a Source model** with a
+    bump map: the bumped normal lit per pixel by the ambient cube and the 2 lights
+    (Half-Lambert), as Source's model shaders do.
+  - **A prop material's `.vmt`:** beside its texture file (same name), else `<glTF material
+    name>.vmt` in the model's folder (embedded textures have no file). Its texture values
+    are files in that folder first (as written, or with .png / .jpg / .jpeg / .tga / .bmp),
+    then textures of the library. Parents (`patch`) aren't followed for props yet. The
+    glTF's normal map is the `$bumpmap` with `%flipgreen 1` (glTF is green-up) unless the
+    `.vmt` names another bump map or sets `%flipgreen`.
+  - **Phong** as SDK 2013's `phong`: `pow(R.L, exponent) x N.L x light x Fresnel ranges x
+    boost x tint x mask`; Fresnel = `(1 - N.V)^2` through the 3 ranges; the exponent
+    texture's red x 149 + 1; the mask is the bump map's alpha, or the base alpha with
+    `$basemapalphaphongmask`. **Rim light:** `max(lights' rim, ambient cube along the view)
+    x (1 - N.V)^4 x boost`, times the exponent texture's alpha with `$rimmask`. Per-vertex
+    props get their 2 lights and cube from the bake for this (they had them only when lit
+    like a Source model). The model shader reads `$basealphaenvmapmask` inverted, as
+    Source's VertexLitGeneric.
+  - **The sky behind the scene** (renders and the Camera Preview): its picture made linear
+    (power 2.2), times the exposure, back to sRGB.
+  - **A bumped face** for the bake is one whose material has a non-empty `$bumpmap` (helper
+    pictures included); a terrain is bumped if its texture or any layer's material is.
+  - **The render log** gets "bump maps: N faces with 4 lightmaps, M props with 4 light
+    values a vertex".
+  - **The Material panel's keys column** is as wide as the longest key, at most half the
+    panel; longer keys are cut and shown whole in the tooltip (`$normalmapalphaenvmapmask`
+    ran into its field).
+  - **Version:** the notes are `v0.12.4b.md`, the release tag `v0.12.4b`; the app reports
+    0.12.4 (CMake and the Mac's version strings take numbers only).
 
 - **v0.12.4 (materials), decided without asking (confirm with the user):**
   - **Built-in textures are read only** (they are inside the app); the panel says so. A
@@ -1184,6 +1235,9 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
      - **Built (v0.12.4, 2026-11-21)** as items 1-5, 9-14, 16, 17, 19-25 say; choices made
        while building are under "v0.12.4, decided without asking", open points under "v0.12.4
        parked". v0.12.4b (items 6-8, 15, bump maps) is discussed with the user first.
+     - **Built (v0.12.4b, 2026-11-21)** as items 6-8 and 15 and the 12 v0.12.4b answers say
+       (item 9 waits); choices made while building are under "v0.12.4b, decided without
+       asking", open points under "v0.12.4b parked".
      - **Other Source shaders:** `UnlitGeneric` in v0.12.4; `Refract` with mirrors;
        blending several textures is covered by the terrain's painted layers (brushes
        later if missed); character, particle and moving-screen shaders are left out.

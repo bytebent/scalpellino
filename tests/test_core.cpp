@@ -4268,6 +4268,66 @@ static void testBakeMaterials() {
 
 // The bake's tracer (speed-up before v0.12.4b): a model placed as an instance answers like the
 // same triangles put in the world one by one.
+static void testBumpBake() {
+    // A floor with a bump-mapped material, a slanted sun from +x: the 3 bump maps hold the
+    // light along Source's 3 directions; the flat map is the same as without the bump map.
+    auto setup = [] {
+        BakeInput in;
+        Brush floor = makeBox(box({0, 0, -16}, {1024, 1024, 0}), "rock");
+        floor.id = 1;
+        for (Face& f : floor.faces) {
+            f.u.axis = {1, 0, 0};
+            f.v.axis = {0, -1, 0};
+        }
+        in.brushes = {floor};
+        Light sun;
+        sun.kind = LightKind::Sun;
+        sun.pitch = -50;
+        sun.yaw = 180; // see below: whichever way it points, the check follows it
+        sun.brightness = 200;
+        in.lights = {sun};
+        in.env.skyLight = 0;
+        in.quality = BakeQuality::Draft;
+        in.maxBounces = 0;
+        return in;
+    };
+    const BakeInput plain = setup();
+    BakeInput in = setup();
+    BakeMaterial m;
+    m.bumped = true;
+    in.materials["rock"] = m;
+    CHECK(bakeKey(in) != bakeKey(plain));
+    const BakeResult rp = bakeLight(plain, nullptr, 2), rb = bakeLight(in, nullptr, 2);
+    const Vec3 Ldir = -prepareLight(in.lights[0], in.env).dir; // towards the sun
+    Vec3 b[3];
+    bumpNormals({0, 0, 1}, {1, 0, 0}, {0, -1, 0}, b);
+    CHECK(b[0].x > 0.8 && b[1].y < -0.7 && b[2].y > 0.7); // b0 along s, b1 along t
+    bool found = false;
+    for (size_t i = 0; i < rb.faces.size(); ++i) {
+        const FaceLightmap& f = rb.faces[i];
+        const FaceLightmap& g = rp.faces[i];
+        if (in.brushes[0].faces[f.face].plane().n.z < 0.999) {
+            CHECK(f.bump.size() == f.rgb.size() * 3 || f.bump.empty());
+            continue;
+        }
+        found = true;
+        CHECK(g.bump.empty());
+        CHECK(f.bump.size() == f.rgb.size() * 3);
+        double maxDiff = 0;
+        for (size_t k = 0; k < f.rgb.size() && k < g.rgb.size(); ++k) maxDiff = std::max(maxDiff, (double)std::fabs(f.rgb[k] - g.rgb[k]));
+        CHECK(maxDiff < 1e-5);
+        // a luxel in the middle: each map = flat x (b_k . L) / (n . L)
+        const size_t nl = (size_t)f.w * f.h, k = ((size_t)(f.h / 2) * f.w + f.w / 2);
+        const double flat = f.rgb[3 * k];
+        CHECK(flat > 0.1);
+        for (int q = 0; q < 3; ++q) {
+            const double want = flat * std::max(0.0, dot(b[q], Ldir)) / Ldir.z;
+            CHECK(near(f.bump[(q * nl + k) * 3], want, 0.02 + 0.03 * want));
+        }
+    }
+    CHECK(found);
+}
+
 static void testTracer() {
     std::vector<std::array<Vec3, 3>> blob;
     const int R = 12, C = 12;
@@ -4544,6 +4604,7 @@ int main() {
     testPropLight();
     testMaterials();
     testBakeMaterials();
+    testBumpBake();
     testTracer();
     testMapQuakeFormat();
     testMapErrors();

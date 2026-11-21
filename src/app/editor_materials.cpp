@@ -448,7 +448,11 @@ void Editor::drawMaterialPanel() {
     if (!sf) {
         ImGui::TextDisabled("The shader files aren't there (the app's shaders folder).");
     } else {
-        const float labelW = ImGui::CalcTextSize("$alphatestreference").x + ImGui::GetStyle().ItemSpacing.x * 2;
+        // the keys' column: as wide as the longest key, at most half the panel (longer keys
+        // are cut; the tooltip has the whole key)
+        float keysW = ImGui::CalcTextSize("$alphatestreference").x;
+        for (const ShaderSetting& st : sf->settings) keysW = std::max(keysW, ImGui::CalcTextSize(st.key.c_str()).x);
+        const float labelW = std::min(keysW + ImGui::GetStyle().ItemSpacing.x * 2, 0.5f * ImGui::GetContentRegionAvail().x);
         for (const ShaderSetting& st : sf->settings) {
             if (st.key == "$basetexture") continue;
             ImGui::PushID(st.key.c_str());
@@ -461,9 +465,17 @@ void Editor::drawMaterialPanel() {
             const bool mixed = values.size() > 1;
             const std::string v = mixed ? std::string() : *values.begin();
             // the key: bright when a selected material sets it, dim when it comes from the parent or the default
-            if (own) ImGui::TextUnformatted(st.key.c_str());
-            else ImGui::TextDisabled("%s", st.key.c_str());
-            if (ImGui::IsItemHovered() && !st.help.empty()) ImGui::SetTooltip("%s", st.help.c_str());
+            {
+                const ImVec2 at = ImGui::GetCursorScreenPos();
+                const float clipW = labelW - ImGui::GetStyle().ItemSpacing.x;
+                ImGui::PushClipRect(at, ImVec2(at.x + clipW, at.y + ImGui::GetFrameHeight()), true);
+                if (own) ImGui::TextUnformatted(st.key.c_str());
+                else ImGui::TextDisabled("%s", st.key.c_str());
+                ImGui::PopClipRect();
+                const bool cut = ImGui::CalcTextSize(st.key.c_str()).x > clipW;
+                if (ImGui::IsItemHovered() && (cut || !st.help.empty()))
+                    ImGui::SetTooltip("%s%s%s", cut ? st.key.c_str() : "", cut && !st.help.empty() ? ": " : "", st.help.c_str());
+            }
             ImGui::SameLine(labelW);
             const float resetW = own ? ImGui::CalcTextSize("x").x + ImGui::GetStyle().FramePadding.x * 2 + ImGui::GetStyle().ItemSpacing.x : 0;
             ImGui::SetNextItemWidth(std::max(60.0f, ImGui::GetContentRegionAvail().x - resetW));

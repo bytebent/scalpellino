@@ -494,7 +494,11 @@ That's all. No gameplay entities (doors, triggers, physics, scripting).
   only (a variant of one goes in the Bottega's `textures/`). Material edits are commands
   holding file changes (`Command::fileChanges`): undoable, and they don't mark the map as
   changed. Compiler keys use Source's `%` prefix: `%texlight "r g b brightness"` (lights.rad's
-  format) makes a texlight.
+  format) makes a texlight. **Props** (v0.12.4b) take settings from a `.vmt` beside the
+  material's texture file (same name), else `<glTF material name>.vmt` in the model's folder;
+  texture values in it are files in that folder first, then textures of the library; the
+  glTF's own normal map is the `$bumpmap` (green up: `%flipgreen 1`) unless the `.vmt` names
+  another.
 - **Shader files** (v0.12.4, `core/shader_file.*`, `render/shader_library.*`): GLSL, one file
   per shader, a comment header (`// scalpellino shader 1`, `// name:`, `// kind: material`,
   `// about:`, `// setting: <key> <type> [default] | help`; types texture, float, int, bool,
@@ -502,7 +506,12 @@ That's all. No gameplay entities (doors, triggers, physics, scripting).
   alpha). The app compiles prelude + body for each kind of geometry (World: brushes and
   terrain; Model: props); the prelude gives `baseColor()`, `baseUV()`, `bakedLight()`,
   `worldPos()`, `worldNormal()`, `eyeVector()`, `envmap(dir)`, `toLinear`, `toSrgb`,
-  `luminance`, and each setting as a uniform (`$detailscale` -> `u_detailscale`; textures
+  `luminance`; bump maps (v0.12.4b): `bumpNormal(texel, flipGreen)` (Source's convention, X+
+  Y- Z+), `bakedLightBumped(n)` (SDK 2013's radiosity normal mapping: squared weights over
+  their sum), `bakedLightSSBump(w)`, `tangentToWorld(n)` (the texture's frame from screen
+  derivatives: x along u, y along v, the same frame the bake used); for props
+  `ambientCube(n)`, `modelLightCount()`, `modelLightAt(i, L, col)` (the 2 strongest lights,
+  for Phong and rim light); and each setting as a uniform (`$detailscale` -> `u_detailscale`; textures
   also `u_x_set`; text: `u_x_set` only). Source's LightmappedGeneric, UnlitGeneric and
   VertexLitGeneric ship in `assets/shaders/` (the app's `shaders/` folder); the Bottega's
   `shaders/` is searched first. No `#version` line in the body.
@@ -580,6 +589,14 @@ Preview and in renders.
     the model's space), with a small tree over the instances and the world mesh. A face's
     patches are found through a grid in lightmap space (`StGrid`) instead of checking each
     one. Same light as before (renders match within 2 / 255).
+    **Bump maps** (v0.12.4b): a face, terrain or prop whose material has a `$bumpmap` gets
+    the light along Source's 3 bump directions too (VRAD's `GetBumpNormals` from the
+    texture's s / t axes): direct, sky and bounce (patches keep 3 more totals; each transfer
+    is weighed by `max(0, b.dir) / n.dir`). Faces: `FaceLightmap::bump` (3 maps), packed in
+    the page beside the flat map (or below it when too wide), the offset passed to the
+    shader in the vertex normal's z. Props per vertex: 4 values a vertex (flat, then the 3
+    directions; tangents from the UVs). Props like a Source model: the bump normal is lit
+    per pixel by the ambient cube and the 2 lights.
 - **The Source look** comes from **how Source renders**: fast, on the graphics card, with
   baked lightmaps (light, shadows, bounce), baked reflection probes, real textures and
   fog. It is **never faked with filters** laid over the picture (user: that is not the
@@ -598,7 +615,9 @@ Preview and in renders.
   material's shader file (grouped by material, then lightmap page; terrain layers after the
   rest); see-through materials (`$translucent`, `$alpha` < 1) are drawn after the props, far
   to near, without writing depth. Props are drawn by the VertexLitGeneric file with their
-  model's own materials (no `.vmt` for props yet). Primitives keep their own shader and show
+  model's own materials, plus a `.vmt` per material (§8): bump maps, Phong and rim light
+  from the prop's 2 strongest lights and its ambient cube (Source's `phong`; not shadowed).
+  The sky drawn behind the scene takes the render's exposure (v0.12.4b). Primitives keep their own shader and show
   their material's base texture. The normal travels in the vertex colour (8 bits a channel);
   reflections read a 128-pixel-wide copy of the sky (about Source's default cubemap size).
   A shader that doesn't compile is reported in the render log and LightmappedGeneric draws
@@ -681,7 +700,7 @@ docs/         this file, roadmap
 | 10b | Random Replicate (Bryce): random offset / turn / size ranges for props and primitives | done (v0.10.1) |
 | 10c | Sky Lab (Bryce, all of it): generated skies (sun, moon, stars, clouds, atmosphere) with live preview in the 3D view, baked to panoramas in Bottega's `skies/`; settings kept in the map; tick box to lock the sun to the map's sun light; eclipses. Steps: v0.10.4 window / bake / sky modes / sun / haze / lock, v0.10.5 clouds, v0.10.6 night sky and effects | done (v0.10.6) |
 | 11 | Cameras and Camera Preview: camera objects (many, one active), options and presets, the on-request preview in a docked panel (editor look until M12 replaces it). Steps: v0.11.0 camera objects and options, v0.11.1 presets and the preview | done (v0.11.0, v0.11.1) |
-| 12 | Render, the Source look, with materials: render window, terminal log, light baking, reflection probes, mirrors, the material system (GLSL shaders from Bottega's `shaders/`, reflection kind per material), PNG to `renders/`. Steps: v0.12.0 pipeline, v0.12.1 direct light and shadows, v0.12.2 bounces, v0.12.3 props and the light grid, v0.12.4 materials, v0.12.4b bump maps, v0.12.5 decals and overlays, v0.12.6 probes, v0.12.7 mirrors and glass | in progress (v0.12.4) |
+| 12 | Render, the Source look, with materials: render window, terminal log, light baking, reflection probes, mirrors, the material system (GLSL shaders from Bottega's `shaders/`, reflection kind per material), PNG to `renders/`. Steps: v0.12.0 pipeline, v0.12.1 direct light and shadows, v0.12.2 bounces, v0.12.3 props and the light grid, v0.12.4 materials, v0.12.4b bump maps, v0.12.5 decals and overlays, v0.12.6 probes, v0.12.7 mirrors and glass | in progress (v0.12.4b) |
 | 13 | Water, cloud and endless planes: materials made with the system above | |
 | 14 | Camera effects (lowest priority): dithering, palette, bloom | |
 | 15 | Export: `.glb`, optional and last (not confirmed by the user) | |

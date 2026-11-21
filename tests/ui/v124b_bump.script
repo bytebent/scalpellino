@@ -1,0 +1,107 @@
+# v0.12.4b: bump maps, Phong and rim light (M12 batch 5b). A bump map ($bumpmap, or a
+# helper picture named *_normal / *_bump / *_ssbump) makes the bake fill the face's 3 bump
+# lightmaps (Source's radiosity normal mapping); SSBumps hold the 3 weights themselves.
+# A glTF model's own normal map is used by itself (its props get 4 light values a vertex);
+# a .vmt named like its material in the model's folder adds Phong and rim light.
+bottega make studio
+copy assets/bump/bumpbrick.png studio/textures/bump/bumpbrick.png
+copy assets/bump/bumpbrick_normal.png studio/textures/bump/bumpbrick_normal.png
+copy assets/bump/ssstone.png studio/textures/bump/ssstone.png
+copy assets/bump/ssstone_ssbump.png studio/textures/bump/ssstone_ssbump.png
+copy assets/bump/greybump.png studio/textures/bump/greybump.png
+copy assets/bump/greybump_normal.png studio/textures/bump/greybump_normal.png
+copy assets/bump/greyplain.png studio/textures/bump/greyplain.png
+copy assets/bump/orb.glb studio/models/orb/orb.glb
+copy assets/bump/orb.vmt studio/models/orb/orb.vmt
+rescan
+# -- helper pictures hook on by name; _ssbump also sets $ssbump
+expect matkind textures/bump/bumpbrick_normal helper
+expect mat textures/bump/bumpbrick $bumpmap textures/bump/bumpbrick_normal
+expect mat textures/bump/ssstone $bumpmap textures/bump/ssstone_ssbump
+expect mat textures/bump/ssstone $ssbump 1
+expect mat textures/bump/bumpbrick %flipgreen none
+# -- the flip-green tick is a setting like the others (undoable, written to the .vmt)
+tool texture
+matselect textures/bump/bumpbrick
+matset %flipgreen 1
+expect mat textures/bump/bumpbrick %flipgreen 1
+undo
+expect mat textures/bump/bumpbrick %flipgreen none
+matselect textures/bump/bumpbrick
+shot m12-30-bump-material.png
+# -- a scene: brick walls under a low sun, a stone floor, orbs
+tool select
+texture textures/bump/ssstone
+block -1024 -1024 -32 1024 1024 0
+texscale 2
+texture textures/bump/bumpbrick
+block -600 300 0 600 332 360
+texscale 1
+block -632 -500 0 -600 300 360
+texscale 1
+prop models/orb -250 0 0 0 0 0 2
+prop models/orb 150 -150 0 0 0 0 2
+tool light
+lightset kind sun
+lightset pitch -25
+lightset yaw 300
+lightset brightness 350
+lightset pos 0 0 900
+key Return
+lightset kind point
+lightset color 255 170 110
+lightset brightness 120
+lightset pos -100 120 160
+key Return
+environment sky Panorama_Sky_04
+environment skylight 45
+tool select
+key Esc
+tool camera
+cameraset lens 24
+cameraset size 640 360
+cameraset pos 350 -900 260
+key Return
+cameraedit angles -12 118 0
+tool select
+key Esc
+renderset quality normal
+render
+expect render saved
+expect renderlog bump maps:
+expect renderlog 2 props with 4 light values a vertex
+expect renderlog not warning
+rendercopy m12-31-bump-render.png
+shot m12-32-bump-log.png
+closedialogs
+# -- the second orb like a Source model: Phong and rim from its 2 lights and the cube
+propselect 1
+propedit lighting model
+render
+expect renderlog 1 prop with 4 light values a vertex
+rendercopy m12-33-bump-model-style.png
+closedialogs
+propselect none
+# -- exposure: the sky behind the scene follows it too
+cameraselect 0
+cameraedit exposure 1
+render
+expect renderlog exposure +1 stops
+rendercopy m12-34-exposure-sky.png
+closedialogs
+# -- a check: a flat bump map beside the same grey without one (squared weights, item 1)
+cameraedit exposure 0
+tool select
+texture textures/bump/greybump
+block 200 -700 0 500 -400 8
+texture textures/bump/greyplain
+block 500 -700 0 800 -400 8
+tool select
+key Esc
+cameraselect 0
+cameraedit pos 500 -950 300
+cameraedit angles -35 90 0
+render
+rendercopy m12-35-bump-seam.png
+closedialogs
+quit

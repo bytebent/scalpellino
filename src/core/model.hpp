@@ -22,6 +22,10 @@ struct ModelMaterial {
     std::vector<unsigned char> image;     // an embedded texture: the encoded PNG / JPG bytes
     std::string imageFile;                // or a texture file next to the model (full path)
     bool hasTexture() const { return !image.empty() || !imageFile.empty(); }
+    // the glTF's normal map (v0.12.4b; OpenGL's convention, green up), the same ways
+    std::vector<unsigned char> normalImage;
+    std::string normalImageFile;
+    bool hasNormalMap() const { return !normalImage.empty() || !normalImageFile.empty(); }
 };
 
 // One mesh with one material: 3 floats per vertex position and normal, 2 per texture

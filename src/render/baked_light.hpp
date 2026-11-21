@@ -34,7 +34,9 @@ public:
     const BakeResult* result() const { return result_.get(); }
     const std::shared_ptr<const BakeResult>& shared() const { return result_; }
 
-    struct FaceRef { int page = 0; int x = 0, y = 0; const FaceLightmap* lm = nullptr; };
+    // A bumped face (v0.12.4b) has its 3 bump-direction maps next to the flat one, each
+    // `bumpStep` pixels further right (or down, `bumpDown`, if 4 don't fit across a page).
+    struct FaceRef { int page = 0; int x = 0, y = 0; const FaceLightmap* lm = nullptr; int bumpStep = 0; bool bumpDown = false; };
     const FaceRef* face(BrushId b, int face, bool terrain) const;
     struct Page { unsigned tex = 0; int w = 0, h = 0; };
     const std::vector<Page>& pages() const { return pages_; }
@@ -72,6 +74,7 @@ struct BakedDrawContext {
     // $alpha < 1), drawn last, far to near, without writing depth.
     bool translucent = false;
     std::vector<std::string>* problems = nullptr; // shaders that fail, textures materials miss
+    TextureLibrary* textures = nullptr;    // props' settings files find textures here too (v0.12.4b)
 };
 
 // Draws the brushes (textured, terrain with its painted layers) lit by `baked`. Inside the
