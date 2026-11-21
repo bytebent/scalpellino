@@ -499,6 +499,7 @@ void Editor::registerScriptCommands() {
         else if (k == "skylight") in >> e.skyLight;
         else if (k == "minlight") { std::string v; in >> v; e.minLight = v == "on"; }
         else if (k == "smooth") in >> e.smoothAngle;
+        else if (k == "bounce") in >> e.bounceScale;
         if (e != doc_.environment()) doc_.apply(doc_.makeEnvironment(e, "Environment"));
     });
     add({"skylab"}, [this](const std::string&, std::istringstream& in) {

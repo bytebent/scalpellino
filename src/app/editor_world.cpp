@@ -251,6 +251,11 @@ void Editor::drawWorldDialogs() {
             ImGui::SetTooltip("Light from the sky, where it can be seen (as Source's light_environment ambient).\n"
                               "Its colours come from the sky picture; with no sky, the ambient colour.");
         ImGui::Checkbox("minimum light (the ambient colour everywhere)", &e.minLight);
+        ImGui::InputDouble("bounce strength", &e.bounceScale, 0, 0, "%g");
+        e.bounceScale = std::clamp(e.bounceScale, 0.0, 100.0);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("How much light surfaces bounce, times their texture's colour (VRAD's -reflectivityScale).\n"
+                              "1 = as Source; 0 = no bounced light.");
         ImGui::InputDouble("smoothing angle", &e.smoothAngle, 0, 0, "%g");
         e.smoothAngle = std::clamp(e.smoothAngle, 0.0, 180.0);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Faces closer than this many degrees are lit smoothly (VRAD's default 45)");

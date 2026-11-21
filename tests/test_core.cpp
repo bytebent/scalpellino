@@ -3794,6 +3794,7 @@ static void testBake() {
         in.lights = {l};
         in.env.skyLight = 0;
         in.quality = BakeQuality::Draft;
+        in.maxBounces = 0; // direct light only (bounces: testBounce)
         const BakeResult r = bakeLight(in, nullptr, 2);
         CHECK(!r.cancelled);
         CHECK(r.faces.size() == 12); // two boxes, every face lit
@@ -3848,6 +3849,7 @@ static void testBake() {
         ball.size = {200, 200, 200};
         in.prims = {ball};
         in.quality = BakeQuality::Draft;
+        in.maxBounces = 0;
         const BakeResult r = bakeLight(in, nullptr, 2);
         CHECK(near(luxelAt(r, floor, {0, 0, 1}, {100, 100, 0}).x, 1.0, 1e-6));
         CHECK(luxelAt(r, floor, {0, 0, 1}, {512, 512, 0}).x < 0.001);
@@ -3948,6 +3950,88 @@ static void testBake() {
     }
 }
 
+// ---------------------------------------------------------------- bounces (v0.12.2)
+static void testBounce() {
+    // The sun straight down on a red floor; a wall standing on it gets no direct light,
+    // only what the floor bounces: red.
+    BakeInput in;
+    Brush floor = makeBox(box({0, 0, -16}, {1024, 1024, 0}), "redfloor");
+    floor.id = 1;
+    Brush wall = makeBox(box({480, 0, 0}, {544, 1024, 400}), "wall");
+    wall.id = 2;
+    in.brushes = {floor, wall};
+    Light sun;
+    sun.kind = LightKind::Sun;
+    sun.pitch = -90;
+    sun.brightness = 255;
+    in.lights = {sun};
+    in.env.skyLight = 0;
+    in.reflectivity["redfloor"] = {0.8, 0.1, 0.1};
+    in.reflectivity["wall"] = {0.5, 0.5, 0.5};
+    in.quality = BakeQuality::Draft;
+    in.maxBounces = 0;
+    const BakeResult none = bakeLight(in, nullptr, 2);
+    CHECK(none.patches == 0 && none.bounces.empty());
+    const Vec3 dark = luxelAt(none, wall, {-1, 0, 0}, {480, 512, 60});
+    CHECK(dark.x < 1e-6);
+    in.maxBounces = -1;
+    const BakeResult r = bakeLight(in, nullptr, 2);
+    CHECK(r.patches > 0 && r.transfers > 0);
+    CHECK(!r.bounces.empty() && r.bounces.size() <= 10); // Draft: at most 10
+    CHECK(!r.bounces.empty() && r.bounces[0].rfind("Bounce #1 added RGB(", 0) == 0);
+    const Vec3 lit = luxelAt(r, wall, {-1, 0, 0}, {480, 512, 60});
+    CHECK(lit.x > 0.02);            // bounced light
+    CHECK(lit.x > 3 * lit.y);       // red, from the floor
+    CHECK(lit.x < 0.8);             // less than what the floor reflects
+    // higher up the wall sees less of the floor
+    CHECK(luxelAt(r, wall, {-1, 0, 0}, {480, 512, 380}).x < lit.x);
+    // the floor's own light: direct (1) plus a little back from the wall
+    const Vec3 fl = luxelAt(r, floor, {0, 0, 1}, {440, 512, 0});
+    CHECK(fl.x >= 1.0 && fl.x < 1.3);
+    // bounce strength 0: no bounce
+    in.env.bounceScale = 0;
+    CHECK(luxelAt(bakeLight(in, nullptr, 2), wall, {-1, 0, 0}, {480, 512, 60}).x < 1e-6);
+    in.env.bounceScale = 1;
+    // Normal goes on until a bounce adds less than 1 (VRAD's stop)
+    in.quality = BakeQuality::Normal;
+    const BakeResult n = bakeLight(in, nullptr, 2);
+    CHECK(!n.bounces.empty() && n.bounces.size() < 100);
+    // A primitive above the red floor gathers the red bounce under it; and it bounces light
+    // onto the wall itself (primitives reflect, unlike in Source).
+    in.quality = BakeQuality::Draft;
+    MathPrim ball;
+    ball.id = 3;
+    ball.kind = PrimKind::Sphere;
+    ball.pos = {300, 512, 250};
+    ball.size = {200, 200, 200};
+    ball.color = {255, 255, 255};
+    in.prims = {ball};
+    const BakeResult p = bakeLight(in, nullptr, 2);
+    CHECK(p.prims.size() == 1);
+    if (p.prims.size() == 1) {
+        const PrimLightmap& lm = p.prims[0];
+        auto cellAt = [&](const Vec3& w, int ch) {
+            const int i = std::clamp((int)std::lround((w.x - lm.origin.x) / lm.cell), 0, lm.nx - 1);
+            const int j = std::clamp((int)std::lround((w.y - lm.origin.y) / lm.cell), 0, lm.ny - 1);
+            const int k = std::clamp((int)std::lround((w.z - lm.origin.z) / lm.cell), 0, lm.nz - 1);
+            return lm.rgb[(((size_t)k * lm.ny + j) * lm.nx + i) * 3 + ch];
+        };
+        CHECK(cellAt({300, 512, 150}, 0) > 0.05);                              // the bottom: red bounce
+        CHECK(cellAt({300, 512, 150}, 0) > 3 * cellAt({300, 512, 150}, 1));
+    }
+    // the ball's sunlit top reflects onto the wall: more light high on the wall than without it
+    in.reflectivity["redfloor"] = {0, 0, 0};
+    in.prims.clear();
+    const double without = luxelAt(bakeLight(in, nullptr, 2), wall, {-1, 0, 0}, {480, 512, 330}).y;
+    in.prims = {ball};
+    const double with = luxelAt(bakeLight(in, nullptr, 2), wall, {-1, 0, 0}, {480, 512, 330}).y;
+    CHECK(without < 1e-6 && with > 1e-3);
+    // the key follows the reflectivity
+    BakeInput k2 = in;
+    k2.reflectivity["wall"] = {0.4, 0.4, 0.4};
+    CHECK(bakeKey(k2) != bakeKey(in));
+}
+
 int main() {
     testRenderJob();
     testGrid();
@@ -3991,6 +4075,7 @@ int main() {
     testDirty();
     testMapRoundTrip();
     testBake();
+    testBounce();
     testMapQuakeFormat();
     testMapErrors();
     std::printf("%d checks, %d failed\n", g_checks, g_failures);

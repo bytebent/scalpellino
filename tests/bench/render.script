@@ -1,0 +1,202 @@
+# Render benchmark (development tool, not a test): busy maps rendered at Normal quality,
+# with the baked light and its bounces. See docs/DEV.md "Benchmark". Pictures and render
+# windows are saved next to where it runs (render-*.png, render-*-log.png).
+bottega make studio
+copy assets/textures/rock.png studio/textures/walls/Rock Face.png
+copy assets/models/crate.glb studio/models/Crate.glb
+copy assets/models/post.glb studio/models/fence/post.glb
+copy rock.glb studio/models/rock.glb
+rescan
+renderset quality normal
+save empty.map
+# ---------------------------------------------------------------- 1: the rich map
+# (as tests/ui/idle/rich_map.script: terrain, brushes, a dome, primitives, props, 3 lights)
+block -512 -512 -64 512 512 0
+terrain pick
+wpress 1 0 0
+release
+terrain make 16
+tool terrain
+terrainset mode raise
+terrainset radius 200
+terrainset amount 40
+terrainset falloff soft
+wpress 1 -200 0
+wdrag -100 0
+wdrag 0 0
+release
+texture Tile_19
+terrainset mode paint
+terrainset radius 200
+terrainset strength 80
+wpress 1 150 100
+wdrag 250 100
+release
+tool select
+key Esc
+texture Bricks_24
+block -480 480 0 480 512 160
+applytexture
+blockshape cylinder 16
+texture textures/walls/Rock_Face
+block 600 -100 0 700 0 200
+applytexture
+blockshape box
+tool curve
+curveshape dome
+curveset segments 12
+curveset rings 3
+wpress 1 -700 -200
+wdrag -572 -72
+release
+key Return
+tool select
+key Esc
+prim sphere -70 0 300 120 120 120
+prim sphere 70 0 300 120 120 120
+primedit texture Grass_20
+prim capsule 0 0 380 40 40 140 0 90 0
+primselect 0 1 2
+combine
+primselect 1 2
+primedit blend 45
+prim torus 300 300 150 160 160 160
+primedit texture Tile_13
+prim cube -300 -300 100 100 100 100
+primedit round 12
+primselect none
+prop models/Crate -200 250 0 0 0 30 1.5
+prop models/fence 200 -250 0 0 0 0 1
+tool light
+lightset kind point
+lightset color 255 170 90
+lightset brightness 300
+lightset range 600
+lightset pos -64 -200 120
+key Return
+lightset kind spot
+lightset color 150 190 255
+lightset brightness 400
+lightset range 900
+lightset pitch -50
+lightset yaw 60
+lightset pos -400 -400 300
+key Return
+lightset kind sun
+lightset color 255 240 220
+lightset brightness 300
+lightset pitch -35
+lightset yaw 135
+lightset spread 2
+lightset pos 0 0 600
+key Return
+tool select
+key Esc
+environment sky Panorama_Sky_04
+environment fog on
+environment fogcolor 170 190 220
+environment fogrange 600 3000
+tool camera
+cameraset lens 35
+cameraset size 1280 720
+cameraset pos -800 -800 300
+key Return
+cameraedit angles -15 45 0
+tool select
+key Esc
+render
+expect render saved
+rendercopy render-1-rich.png
+shot render-1-rich-log.png
+closedialogs
+# ---------------------------------------------------------------- 2: 1000 boxes and 8 terrains
+open empty.map
+bench brushes 1000 8 5
+block -1800 -1800 -64 1800 1800 0
+tool light
+lightset kind sun
+lightset color 255 245 230
+lightset brightness 350
+lightset pitch -40
+lightset yaw 30
+lightset spread 1
+lightset pos 0 0 900
+key Return
+lightset kind point
+lightset brightness 300
+lightset color 255 160 90
+lightset pos 0 0 200
+key Return
+tool select
+key Esc
+environment sky Panorama_Sky_04
+tool camera
+cameraset lens 28
+cameraset size 1280 720
+cameraset pos -2200 -2200 1100
+key Return
+cameraedit angles -25 45 0
+tool select
+key Esc
+render
+expect render saved
+rendercopy render-2-1000-boxes.png
+shot render-2-1000-boxes-log.png
+closedialogs
+# ---------------------------------------------------------------- 3: 4000 boxes and 16 terrains
+open empty.map
+bench brushes 4000 16 5
+block -3400 -3400 -64 3400 3400 0
+tool light
+lightset kind sun
+lightset color 255 245 230
+lightset brightness 350
+lightset pitch -40
+lightset yaw 30
+lightset pos 0 0 900
+key Return
+tool select
+key Esc
+environment sky Panorama_Sky_04
+tool camera
+cameraset lens 28
+cameraset size 1280 720
+cameraset pos -4000 -4000 1800
+key Return
+cameraedit angles -25 45 0
+tool select
+key Esc
+render
+expect render saved
+rendercopy render-3-4000-boxes.png
+shot render-3-4000-boxes-log.png
+closedialogs
+# ---------------------------------------------------------------- 4: 1000 rocks (props)
+open empty.map
+block -6000 -6000 -64 6000 6000 0
+key Esc
+bench props 1000 models/rock 250
+tool light
+lightset kind sun
+lightset color 255 245 230
+lightset brightness 350
+lightset pitch -35
+lightset yaw 30
+lightset pos 0 0 900
+key Return
+tool select
+key Esc
+environment sky Panorama_Sky_04
+tool camera
+cameraset lens 28
+cameraset size 1280 720
+cameraset pos -3000 -3000 900
+key Return
+cameraedit angles -15 45 0
+tool select
+key Esc
+render
+expect render saved
+rendercopy render-4-1000-rocks.png
+shot render-4-1000-rocks-log.png
+quit

@@ -28,7 +28,8 @@ texture licenses; `releases/` has the notes for each version.
   v0.11.0 (cameras, step 1: camera objects and options), v0.11.1 (cameras, step 2:
   Camera Preview and presets; milestone 11 done), **v0.11.2** (built-in Sky Lab skies;
   plain sky bottoms out of graphics memory), **v0.12.0** (Render, step 1: the pipeline),
-  **v0.12.1** (Render, step 2: baked light and shadows).
+  **v0.12.1** (Render, step 2: baked light and shadows), **v0.12.2** (Render, step 3:
+  bounced light).
 - **Milestone 10 — Props is done (v0.10.0):** `.glb` models from Bottega's `models/`; `.mazz`
   waits for Mazzuola's final format. The user confirmed the choices made while building it
   (2026-11-19), including even scaling as the default for primitives too.
@@ -53,8 +54,10 @@ texture licenses; `releases/` has the notes for each version.
   is done** and reported; **v0.12.1 (batch 2, baked direct light and shadows) is built**
   (PLAN.md Roadmap item 5, "Batch 2 decided with the user", "VRAD reference" and
   "v0.12.1, decided without asking"; flagged choices under Open questions). Released and
-  reported. **Batch 3 (v0.12.2, bounces) is agreed** (PLAN.md "Batch 3 decided with the
-  user"); build it when the user says go. The bake is `core/bake.*` (no graphics, tested in
+  reported. **v0.12.2 (batch 3, bounces) is built** (PLAN.md "Batch 3 decided with the
+  user", "v0.12.2, decided without asking"). Next: report, then discuss batch 4 (light
+  grid). The user wants renders of the busy test maps reported with each lighting step:
+  `tests/bench/run.sh <app> render` (DEV.md "Benchmark"). The bake is `core/bake.*` (no graphics, tested in
   `testBake`); drawing is `render/baked_light.*`.
   Read PLAN.md Roadmap item 5 first: the Camera Preview becomes a draft render (the real
   renderer at lower settings), ignores the View menu and shows hidden things (the user

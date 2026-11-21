@@ -11,6 +11,11 @@
 //    picture). Shadows from brushes (nodraw ones too), terrain, primitives and props that
 //    cast shadows. Smooth normals across faces less than `smoothAngle` apart.
 //  - Source's numbers are in Hammer units (inches): distances are converted (cm / 2.54).
+//  - Bounces (v0.12.2): VRAD's radiosity. Surfaces are cut into patches (4 luxels), each
+//    patch's direct light is passed between patches that see each other (form factors,
+//    gathered until a bounce adds less than 1/255), and blended back onto the lightmaps.
+//    Primitives and props reflect light too (patches of their own; Source doesn't), and
+//    primitives gather it into their 3D lightmaps (VRAD's ambient-cube gather).
 //  - Light is linear: 1 = the texture as it is (VRAD's 255).
 #include "core/brush.hpp"
 #include "core/mathprim.hpp"
@@ -18,6 +23,7 @@
 #include "core/world.hpp"
 #include <atomic>
 #include <cstdint>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -50,7 +56,13 @@ struct BakeInput {
     Environment env;
     SkyPicture sky;              // invalid: the ambient colour lights from every open direction
     BakeQuality quality = BakeQuality::Normal;
+    // Bounces: how much of the light each texture reflects, and in what colour (its average
+    // colour, linear), by texture name; a prop's by model name. Missing: kDefaultReflectivity.
+    std::map<std::string, Vec3> reflectivity;
+    std::map<std::string, Vec3> modelReflectivity;
+    int maxBounces = -1;         // -1: as the quality says (Draft 10, else VRAD's 100)
 };
+constexpr double kDefaultReflectivity = 0.2;
 
 // One face's lightmap. Plain faces: a point P is at luxel (s, t) with
 //   s = dot(axisS, P) - s0, t = dot(axisT, P) - t0 (luxel i's centre at s = i).
@@ -81,7 +93,10 @@ struct BakeResult {
     std::vector<FaceLightmap> faces;
     std::vector<PrimLightmap> prims;
     std::vector<std::string> notes; // for the render log (warnings, lights not used...)
+    std::vector<std::string> bounces; // VRAD's "Bounce #n added RGB(r, g, b)" lines
     size_t luxels = 0, cells = 0, triangles = 0;
+    size_t patches = 0, transfers = 0;
+    double secondsDirect = 0, secondsTransfers = 0, secondsBounce = 0; // where the time went
     double seconds = 0;
     bool cancelled = false;
 };

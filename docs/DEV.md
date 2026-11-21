@@ -186,8 +186,14 @@ policy), and it must hold **with a map open**, not only with an empty app.
 
 ## Benchmark
 
-A development tool, not a test: `tests/bench/run.sh <absolute path to Scalpellino> [props|brushes]`
-(Linux + Xvfb; both by default). Two benchmarks:
+A development tool, not a test: `tests/bench/run.sh <absolute path to Scalpellino> [props|brushes|render]`
+(Linux + Xvfb; props and brushes by default). Three benchmarks:
+
+**Render** (`tests/bench/render.script`, several minutes): busy maps rendered at Normal
+quality with the baked light: the rich map (as the idle test's), 1000 boxes + 8 terrains,
+4000 boxes + 16 terrains, 1000 rocks. Prints each render log's bake lines; with
+`SCAL_BENCH_OUT=<folder>` it also copies the pictures and render windows there. The user
+wants these renders reported with each lighting step.
 
 **Brushes and terrain** (`tests/bench/brushes.script`, about 10 s): a square of boxes,
 optionally with terrain patches (32 x 32 cells, raised with noise and painted). Each line:

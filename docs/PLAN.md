@@ -47,7 +47,11 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   choices made without asking are under "v0.12.1, decided without asking" (**the user
   confirmed them, 2026-11-21**). Released (CI green). **Batch 3 (v0.12.2, bounces) was
   discussed and agreed (2026-11-21)**: see "Batch 3 decided with the user" under Roadmap
-  item 5. Next: **build v0.12.2 when the user says go** (one release).
+  item 5. **v0.12.2 is built and pushed** (the user said go, 2026-11-21): bounced light
+  (VRAD's radiosity in `core/bake.*`); its choices made without asking are under "v0.12.2,
+  decided without asking". Renders of the busy test maps (`tests/bench/render.script`) are
+  in `docs/screenshots/m12-13` to `m12-16`. Next: **report** (with the big-map bake times,
+  as agreed in batch 3 question 12), then discuss batch 4 (v0.12.3, light grid).
 - **Review fixes (2026-11-20), merged into `main`** (fast-forward from
   `fix/review-findings` after the user's go-ahead; no new version, so only "Latest build"
   is refreshed): version releases are
@@ -122,6 +126,43 @@ Each archive's SHA-256 is in `cmake/Deps.cmake` (checked at configure time).
   numbers loosely (`atoi`, `strtod`): not in the review's list; worth the same strict
   reading some time (a bad value there only changes a generated shape).
 
+- **v0.12.2 (bounces), decided without asking (confirm with the user):**
+  - **Face patches:** VRAD's split along the widest world axis while a piece is 4 luxels or
+    more across (maxchop = minchop = 4); Draft's coarser lightmaps make them twice as big.
+    A patch's direct light is the average of the luxels on it (VRAD's AddSampleToPatch),
+    without the minimum light.
+  - **Terrain patches:** blocks of cells about 4 luxels wide; their reflectivity is the face
+    texture's, blended toward each painted layer by its average strength in the block.
+  - **Primitive patches:** their surface cells (within half a cell of the surface) in blocks
+    of 4 x 4 x 4 cells, split by facing (6 directions); area = cells x cell^2; colour of the
+    nearest piece (texture average x its colour, linear).
+  - **Prop patches:** triangles grouped by patch-sized cells (160 units) and 6 facings;
+    their direct light is computed at the patch's centre (props have no lightmaps yet);
+    colour = the model's materials (texture average x colour factor) by how many triangles
+    use each. Only props that cast shadows reflect (the others aren't in the ray tests).
+  - **Transfers:** both patches must face each other (VRAD leaves that to visibility); the
+    polygon form factor is taken unsigned (either winding order); transfers under
+    1e-5 x pi are dropped (VRAD: 1e-7), which keeps big maps quicker; rays start 1 unit off
+    the patches. Normalized to pi per receiver as VRAD.
+  - **Onto the lightmaps:** each luxel blends its face's own patches with weights falling to
+    0 at 1.25 patch widths (an approximation of VRAD's radial blending; nearest patch if
+    none is that close); terrain: bilinear between its blocks.
+  - **Primitives' gather:** 162 rays (Draft 40) from each surface cell; the hit patch's
+    direct + bounced light x its reflectivity, cosine-weighted and normalized like the sky
+    light.
+  - **Stop rule as VRAD:** the light added by a bounce, summed over all patches, under 1 in
+    VRAD's 0..255 units in every channel. Bounce strength 0 = no radiosity at all (no
+    bounce lines).
+  - **Textures that can't be read** bounce 20% grey.
+  - **The log** adds where the time went (direct light, transfers, bounces).
+  - **Transfers are found pair by pair once (i < j, one ray for both directions)**, and only
+    between patches near enough to pass the minimum (patches sorted by area into grids):
+    the same transfers as checking every pair, about twice as quick.
+  - **Measured (2 threads, cloud workspace, `tests/bench/run.sh ... render`):** the rich
+    map 1.5 s; 1000 boxes + 8 terrains 23 s (direct 15, transfers 7); 4000 boxes + 16
+    terrains 137 s (direct 59, transfers 76); 1000 rocks of 5000 triangles 287 s (direct
+    39, transfers 234: 52 000 patches, mostly the rocks'). Transfers grow with the square
+    of the patch count. Reported to the user before adding anything (agreed).
 - **v0.12.1 (baked light and shadows), decided without asking (confirm with the user):**
   - **Default lightmap scale 40 cm** (Hammer's 16 units are 40.64; rounded), allowed 1 to
     512. Faces needing more than 512 luxels a side get a coarser lightmap (doubled until it
@@ -854,6 +895,9 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
      16. The v0.12.1 choices made without asking stand (sky light %, lightmap scale 40,
          at least 4 cells across a primitive, the Camera Preview baking while the editor
          waits).
+     - **Built (v0.12.2, 2026-11-21)** as one release; choices made while building are under
+       "v0.12.2, decided without asking". The user also asked for renders of the busy test
+       maps: `tests/bench/render.script`.
      - **Also agreed:** sun and sky light count a ray that hits nothing as sky (there are
        no sky brushes); the bake runs on the processor with all threads, in the core
        (testable without a graphics card), with ray tests against brushes, terrain,

@@ -33,6 +33,9 @@ public:
     // GPU texture for `name` (loads it on first use). Unknown or broken -> magenta checker.
     const Texture2D& get(const std::string& name);
     TexSize size(const std::string& name);
+    // The texture's average colour, linear, 0..1 (how much light it bounces, as Source's
+    // $reflectivity). Read once from the file; missing textures: -1 in x.
+    Vec3 reflectivity(const std::string& name);
 
     // Nearest (crisp pixels, default) or smooth filtering for every texture.
     void setSmooth(bool smooth);
@@ -47,6 +50,8 @@ private:
         Texture2D tex{};
         bool loaded = false;
         bool failed = false;
+        bool reflDone = false;
+        Vec3 refl{-1, 0, 0};
     };
     void scanFolder(const std::string& dir, const std::string& keyRoot = "");
     void applyFilter(Texture2D& t) const;

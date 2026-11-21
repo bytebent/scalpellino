@@ -27,7 +27,7 @@ class SkyLibrary;
 
 // What the bake needs from the map, as a picture shows it (hidden brushes too). Props'
 // models are looked up now, so the bake can run on other threads.
-BakeInput bakeInput(const Document& doc, ModelLibrary& models, SkyLibrary& skies, BakeQuality quality);
+BakeInput bakeInput(const Document& doc, ModelLibrary& models, SkyLibrary& skies, BakeQuality quality, TextureLibrary* textures = nullptr);
 
 // A bake running on other threads (the render window polls it; Esc cancels it).
 struct BakeTask {

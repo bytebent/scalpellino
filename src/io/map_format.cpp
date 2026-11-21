@@ -389,8 +389,10 @@ std::string writeMap(const Document& doc) {
         world.emplace_back("_scal_fog", std::string(env.fogOn ? "1 " : "0 ") + vec(env.fog.color) + " " + num(env.fog.start) + " " + num(env.fog.end) +
                                             (env.fog.base != 0 || env.fog.thickness != 0 ? " " + num(env.fog.base) + " " + num(env.fog.thickness) : std::string()));
     if (env.skylab.used) world.emplace_back("_scal_skylab", skyLabToString(env.skylab));
-    if (env.skyLight != defaults.skyLight || env.minLight != defaults.minLight || env.smoothAngle != defaults.smoothAngle)
-        world.emplace_back("_scal_bake", "skylight=" + num(env.skyLight) + ";minlight=" + (env.minLight ? "1" : "0") + ";smooth=" + num(env.smoothAngle));
+    if (env.skyLight != defaults.skyLight || env.minLight != defaults.minLight || env.smoothAngle != defaults.smoothAngle ||
+        env.bounceScale != defaults.bounceScale)
+        world.emplace_back("_scal_bake", "skylight=" + num(env.skyLight) + ";minlight=" + (env.minLight ? "1" : "0") + ";smooth=" + num(env.smoothAngle) +
+                                             ";bounce=" + num(env.bounceScale));
     if (!doc.bookmarks().empty()) {
         // x y z yaw pitch name;...
         std::string cams;
@@ -838,6 +840,7 @@ MapReadResult readMap(const std::string& text, Document& doc) {
                 if (f == "skylight") extra.env.skyLight = std::clamp(numOr(val, extra.env.skyLight), 0.0, 100000.0);
                 else if (f == "minlight") extra.env.minLight = numOr(val, 0) != 0;
                 else if (f == "smooth") extra.env.smoothAngle = std::clamp(numOr(val, extra.env.smoothAngle), 0.0, 180.0);
+                else if (f == "bounce") extra.env.bounceScale = std::clamp(numOr(val, extra.env.bounceScale), 0.0, 100.0);
             }
         }
         else if (k == "_scal_fog") {

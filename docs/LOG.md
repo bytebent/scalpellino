@@ -4,6 +4,37 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-21 — v0.12.2: bounced light (M12 batch 3)
+- Built as agreed (PLAN.md "Batch 3 decided with the user"); choices made while building
+  are under "v0.12.2, decided without asking".
+- **Core (`core/bake.*`):** VRAD's radiosity after the direct light: patches on brush faces
+  (VRAD's split, 4 luxels), terrain blocks, primitives' surface cells and props'
+  triangles; direct light per patch from its luxels; transfers with VRAD's form factors
+  (point-to-point, polygon-to-point inside the "5 times rule"), a ray per facing pair,
+  normalized to pi; Jacobi gathering with VRAD's stop rule and `Bounce #n added RGB(...)`
+  lines; bounced light blended onto the luxels, bilinear on terrain, gathered by
+  primitives' cells (162 rays to the hit patch). The ray tracer now also finds the nearest
+  hit and what it belongs to. Bounce strength in Environment (`_scal_bake` "bounce").
+- **Render:** textures' average colours (`TextureLibrary::reflectivity`) and props' models'
+  colours go into the bake; the render log shows patches, transfers, where the time went
+  and the bounce lines.
+- **Tests:** core `testBounce` (no bounce without bounces; the red floor's bounce on the
+  wall is red, weaker higher up, less than the floor; the floor gets a little back;
+  strength 0; Normal stops before 100; a sphere gathers the red bounce; a sunlit sphere
+  reflects onto the wall; the key follows reflectivity). The v0.12.1 direct-light tests
+  bake without bounces. 4866 checks, 0 failed. New UI script `v122_bounces.script`. All UI
+  scripts pass at 1x and 2x; idle 0 ticks.
+- **Busy maps** (`tests/bench/render.script`, new; `tests/bench/run.sh ... render`): the rich
+  map (as the idle test's), 1000 boxes + 8 terrains, 4000 boxes + 16 terrains, 1000 rocks
+  of 5000 triangles. Bake times on 2 threads: 1.5 s, 23 s, 137 s, 287 s (transfers 0.1,
+  7, 76, 234 s); transfers now looked at once per pair and only within reach (about twice
+  as quick as the first version: 4000 boxes 182 s -> 137 s).
+- **Screenshots:** `m12-10-bounce.png`, `m12-11-bounce-log.png`, `m12-12-no-bounce.png` (UI
+  script: a room lit by a sunbeam, with and without bounces), `m12-13-busy-rich.png`,
+  `m12-14-busy-1000-boxes.png`, `m12-15-busy-4000-boxes.png`, `m12-16-busy-1000-rocks.png`
+  (the busy maps).
+- Next: report; then discuss batch 4 (light grid).
+
 ### 2026-11-21 — Batch 3 (v0.12.2, bounces) agreed (docs only)
 - v0.12.1 released (CI green); reported. The user confirmed the v0.12.1 choices made
   without asking.

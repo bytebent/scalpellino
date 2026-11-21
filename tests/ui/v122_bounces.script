@@ -1,0 +1,61 @@
+# v0.12.2: bounces (M12 batch 3). The bake passes the light between patches the way VRAD
+# does (radiosity) and logs each bounce; World > Environment's bounce strength 0 turns it
+# off. A sunbeam through a doorway lights the whole room.
+bottega make studio
+texture Tile_19
+block -512 -512 -32 512 512 0
+texture Bricks_24
+block -512 -512 300 512 512 332
+block -544 -512 0 -512 512 300
+block 512 -512 0 544 512 300
+block -512 512 0 512 544 300
+block -512 -544 0 -100 -512 300
+block 100 -544 0 512 -512 300
+texture Grass_20
+block -200 100 0 -100 200 120
+prim sphere 200 200 60 120 120 120
+tool light
+lightset kind sun
+lightset pitch -40
+lightset yaw 90
+lightset brightness 700
+lightset pos 0 -900 600
+key Return
+environment sky Panorama_Sky_04
+tool select
+key Esc
+tool camera
+cameraset lens 20
+cameraset size 640 360
+cameraset pos 450 -450 250
+key Return
+cameraedit angles -20 135 0
+tool select
+key Esc
+renderset quality normal
+# -- bounces: VRAD's log lines
+render
+expect render saved
+expect renderlog bounces:
+expect renderlog patches,
+expect renderlog Bounce #1 added RGB(
+expect renderlog Bounce #2 added RGB(
+expect renderlog not warning
+rendercopy m12-10-bounce.png
+shot m12-11-bounce-log.png
+closedialogs
+# -- bounce strength 0: no bounce (a darker room)
+environment bounce 0
+render
+expect renderlog not Bounce #
+expect rendersame no
+rendercopy m12-12-no-bounce.png
+closedialogs
+# -- the Camera Preview (Draft: at most 10 bounces)
+environment bounce 1
+camerapreview
+expect camerapreview 1 stale 0
+save bounce.map
+open bounce.map
+expect lights 1
+quit

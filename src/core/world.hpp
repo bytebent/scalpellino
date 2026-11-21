@@ -82,9 +82,10 @@ struct Environment {
     double skyLight = 100;      // sky light, % of the sky picture's colours (no sky: the ambient colour)
     bool minLight = false;      // also light everything a little with the ambient colour (the old flat ambient)
     double smoothAngle = 45;    // faces closer than this (degrees) are lit smoothly (VRAD's default)
+    double bounceScale = 1;     // how much light surfaces reflect, x their colour (VRAD's -reflectivityScale)
     bool operator==(const Environment& o) const {
         return sky == o.sky && ambient == o.ambient && fogOn == o.fogOn && fog == o.fog && skylab == o.skylab &&
-               skyLight == o.skyLight && minLight == o.minLight && smoothAngle == o.smoothAngle;
+               skyLight == o.skyLight && minLight == o.minLight && smoothAngle == o.smoothAngle && bounceScale == o.bounceScale;
     }
     bool operator!=(const Environment& o) const { return !(*this == o); }
 };

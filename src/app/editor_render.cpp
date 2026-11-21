@@ -88,7 +88,7 @@ void Editor::startRender() {
 }
 
 std::shared_ptr<const BakeResult> Editor::bakeNow(BakeQuality q) {
-    BakeInput in = bakeInput(doc_, models_, skies_, q);
+    BakeInput in = bakeInput(doc_, models_, skies_, q, &textures_);
     const std::uint64_t key = bakeKey(in);
     KeptBake& k = bakes_[(int)q];
     if (k.result && k.key == key) return k.result;
@@ -189,7 +189,7 @@ void Editor::stepRender() {
         // The light bake (VRAD's way, core/bake.hpp): kept from the last bake at this
         // quality if nothing that lights the map has changed, else made on other threads.
         const BakeQuality q = (BakeQuality)(int)j.settings.quality;
-        BakeInput in = bakeInput(doc_, models_, skies_, q);
+        BakeInput in = bakeInput(doc_, models_, skies_, q, &textures_);
         const std::uint64_t key = bakeKey(in);
         const KeptBake& kept = bakes_[(int)q];
         if (!in.env.sky.empty() && !in.sky.valid() && in.env.skyLight > 0)
@@ -232,6 +232,13 @@ void Editor::stepRender() {
             std::snprintf(b, sizeof b, "  %zu luxels on %zu faces, %zu primitive cells, %zu triangles block light; %.1f s", r.luxels, r.faces.size(),
                           r.cells, r.triangles, r.seconds);
             renderLog(b);
+            // VRAD's radiosity lines (v0.12.2)
+            if (r.patches) {
+                std::snprintf(b, sizeof b, "  bounces: %zu patches, %zu transfers (direct light %.1f s, transfers %.1f s, bounces %.1f s)", r.patches,
+                              r.transfers, r.secondsDirect, r.secondsTransfers, r.secondsBounce);
+                renderLog(b);
+                for (const std::string& l : r.bounces) renderLog("  " + l);
+            }
             for (const std::string& n : r.notes) renderLog("  " + n);
             bakes_[(int)j.bake->in.quality] = {j.bake->key, j.bake->result};
             j.baked = j.bake->result;

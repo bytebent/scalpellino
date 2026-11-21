@@ -1,4 +1,5 @@
 #include "render/texture_library.hpp"
+#include "core/bake.hpp"
 #include "core/bottega.hpp"
 #include <algorithm>
 #include <cctype>
@@ -116,6 +117,29 @@ const Texture2D& TextureLibrary::get(const std::string& name) {
         e.loaded = true;
     }
     return e.failed ? missing() : e.tex;
+}
+
+Vec3 TextureLibrary::reflectivity(const std::string& name) {
+    auto it = entries_.find(name);
+    if (it == entries_.end()) return {-1, 0, 0};
+    Entry& e = it->second;
+    if (!e.reflDone) {
+        e.reflDone = true;
+        Image img = LoadImage(e.path.c_str());
+        if (img.data) {
+            ImageFormat(&img, PIXELFORMAT_UNCOMPRESSED_R8G8B8);
+            const unsigned char* p = (const unsigned char*)img.data;
+            const size_t n = (size_t)img.width * img.height;
+            double lut[256];
+            for (int i = 0; i < 256; ++i) lut[i] = srgbToLinear(i / 255.0);
+            double acc[3] = {0, 0, 0};
+            for (size_t i = 0; i < n; ++i)
+                for (int c = 0; c < 3; ++c) acc[c] += lut[p[3 * i + c]];
+            if (n) e.refl = {acc[0] / n, acc[1] / n, acc[2] / n};
+            UnloadImage(img);
+        }
+    }
+    return e.refl;
 }
 
 TexSize TextureLibrary::size(const std::string& name) {

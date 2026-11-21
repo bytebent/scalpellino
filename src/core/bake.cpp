@@ -3,6 +3,7 @@
 #include "core/terrain.hpp"
 #include "core/texture.hpp"
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstring>
@@ -30,15 +31,18 @@ Vec3 linColor(const Vec3& c255) {
 }
 Vec3 mul(const Vec3& a, const Vec3& b) { return {a.x * b.x, a.y * b.y, a.z * b.z}; }
 double maxc(const Vec3& v) { return std::max({v.x, v.y, v.z}); }
+double lengthSq(const Vec3& v) { return dot(v, v); }
 
 // ---------------------------------------------------------------- ray tests
 struct Tri { Vec3 a, e1, e2; };
 
 class Tracer {
 public:
-    void addTri(const Vec3& a, const Vec3& b, const Vec3& c) {
+    // `tag`: what the triangle belongs to (closestHit reports it; -1 = nothing that bounces).
+    void addTri(const Vec3& a, const Vec3& b, const Vec3& c, int tag = -1) {
         if (length(cross(b - a, c - a)) < 1e-9) return;
         tris_.push_back({a, b - a, c - a});
+        tags_.push_back(tag);
     }
     void addPrims(std::vector<MathPrim> members) {
         PrimObj o;
@@ -65,6 +69,56 @@ public:
         if (!tris_.empty()) buildNode(0, (int)tris_.size());
     }
     size_t triangles() const { return tris_.size(); }
+    size_t primObjects() const { return prims_.size(); }
+
+    // The nearest thing along the ray (d unit), up to maxT: its distance, the triangle's tag
+    // (or -1) and the primitive object's index (or -1). False if nothing.
+    struct Hit { double t = 0; int tag = -1; int prim = -1; };
+    bool closestHit(const Vec3& o, const Vec3& d, double maxT, Hit& hit) const {
+        const Vec3 inv{1.0 / (d.x != 0 ? d.x : 1e-30), 1.0 / (d.y != 0 ? d.y : 1e-30), 1.0 / (d.z != 0 ? d.z : 1e-30)};
+        double best = maxT;
+        bool any = false;
+        if (!nodes_.empty()) {
+            int stack[96];
+            int sp = 0;
+            stack[sp++] = 0;
+            while (sp) {
+                const Node& n = nodes_[stack[--sp]];
+                if (!hitBox(n.box, o, inv, best)) continue;
+                if (n.count) {
+                    for (int i = n.first; i < n.first + n.count; ++i) {
+                        double t;
+                        if (hitTriT(tris_[idx_[i]], o, d, best, t)) {
+                            best = t;
+                            hit.t = t;
+                            hit.tag = tags_[idx_[i]];
+                            hit.prim = -1;
+                            any = true;
+                        }
+                    }
+                } else if (sp + 2 <= 96) {
+                    stack[sp++] = n.left;
+                    stack[sp++] = n.right;
+                }
+            }
+        }
+        for (size_t pi = 0; pi < prims_.size(); ++pi) {
+            const PrimObj& p = prims_[pi];
+            if (!hitBox(p.box, o, inv, best)) continue;
+            const std::vector<RayInterval> iv = p.members.size() == 1 ? primIntervals(p.members[0], o, d) : comboIntervals(p.ptrs, o, d);
+            for (const RayInterval& r : iv) {
+                const double t = r.t0 > 1e-3 ? r.t0 : r.t1;
+                if (t > 1e-3 && t < best) {
+                    best = t;
+                    hit.t = t;
+                    hit.tag = -1;
+                    hit.prim = (int)pi;
+                    any = true;
+                }
+            }
+        }
+        return any;
+    }
 
     // Anything between o and o + d * maxT (d unit)?
     bool occluded(const Vec3& o, const Vec3& d, double maxT) const {
@@ -98,6 +152,7 @@ private:
     struct Node { AABB box; int left = -1, right = -1, first = 0, count = 0; };
     struct PrimObj { std::vector<MathPrim> members; std::vector<const MathPrim*> ptrs; AABB box; };
     std::vector<Tri> tris_;
+    std::vector<int> tags_;
     std::vector<int> idx_;
     std::vector<Node> nodes_;
     std::vector<PrimObj> prims_;
@@ -112,6 +167,20 @@ private:
             if (t0 > t1) return false;
         }
         return true;
+    }
+    static bool hitTriT(const Tri& t, const Vec3& o, const Vec3& d, double maxT, double& tt) {
+        const Vec3 p = cross(d, t.e2);
+        const double det = dot(t.e1, p);
+        if (std::fabs(det) < 1e-12) return false;
+        const double inv = 1.0 / det;
+        const Vec3 s = o - t.a;
+        const double u = dot(s, p) * inv;
+        if (u < 0 || u > 1) return false;
+        const Vec3 q = cross(s, t.e1);
+        const double v = dot(d, q) * inv;
+        if (v < 0 || u + v > 1) return false;
+        tt = dot(t.e2, q) * inv;
+        return tt > 1e-4 && tt < maxT;
     }
     static bool hitTri(const Tri& t, const Vec3& o, const Vec3& d, double maxT) {
         const Vec3 p = cross(d, t.e2);
@@ -249,6 +318,7 @@ struct SmoothNormals {
 // A plain face being baked.
 struct FaceWork {
     FaceLightmap* out = nullptr;
+    std::string texture;
     Vec3 n;                       // face normal
     double planeD = 0;
     std::vector<Vec3> verts;
@@ -328,6 +398,7 @@ struct FaceWork {
 
 struct TerrainWork {
     FaceLightmap* out = nullptr;
+    const Brush* brush = nullptr;
     TerrainGrid g;
     std::vector<Vec3> vn; // smooth normal per grid point
     // Position and normal at grid coordinates (u, v) in 0..n-1.
@@ -353,7 +424,95 @@ struct PrimWork {
     std::vector<MathPrim> members;
     std::vector<const MathPrim*> ptrs;
     double dist(const Vec3& p) const { return members.size() == 1 ? primDistance(members[0], p) : comboDistance(ptrs, p); }
+    // Per cell: lit (near the surface), its surface point, normal and distance to the surface.
+    std::vector<char> lit;
+    std::vector<Vec3> surf, nrm;
+    std::vector<float> sd;
 };
+
+// A radiosity patch (VRAD's patch_t, flattened: only the leaves).
+struct Patch {
+    std::vector<Vec3> wind;   // its polygon (brush faces); others: a square of its area
+    std::vector<std::pair<double, double>> st; // brush faces: the polygon in luxel coordinates
+    Vec3 origin, normal;
+    double area = 0;
+    Vec3 refl;                // reflectivity (x bounce strength, < 0.99)
+    Vec3 direct;              // incident direct light, the average over the patch
+    Vec3 total;               // incident bounce light, summed over the bounces
+    Vec3 emit, add;
+    std::vector<std::pair<int, float>> transfers; // (patch it receives from, transfer)
+};
+
+// A square polygon of `area` around `o`, facing `n` (for the polygon-to-point form factor).
+std::vector<Vec3> squareWinding(const Vec3& o, const Vec3& n, double area) {
+    Vec3 a, b;
+    defaultTexAxes(n, a, b);
+    a = normalize(a - n * dot(a, n));
+    b = normalize(cross(n, a));
+    const double h = std::sqrt(std::max(area, 1e-9)) / 2;
+    return {o - a * h - b * h, o + a * h - b * h, o + a * h + b * h, o - a * h + b * h};
+}
+
+// Splits a convex polygon by the plane x[axis] = at: below and above.
+void splitPoly(const std::vector<Vec3>& p, int axis, double at, std::vector<Vec3>& lo, std::vector<Vec3>& hi) {
+    lo.clear();
+    hi.clear();
+    for (size_t i = 0; i < p.size(); ++i) {
+        const Vec3& a = p[i];
+        const Vec3& b = p[(i + 1) % p.size()];
+        const double da = a[axis] - at, db = b[axis] - at;
+        if (da <= 0) lo.push_back(a);
+        if (da >= 0) hi.push_back(a);
+        if ((da < 0 && db > 0) || (da > 0 && db < 0)) {
+            const Vec3 m = a + (b - a) * (da / (da - db));
+            lo.push_back(m);
+            hi.push_back(m);
+        }
+    }
+}
+double polyArea(const std::vector<Vec3>& p) {
+    Vec3 s;
+    for (size_t i = 1; i + 1 < p.size(); ++i) s += cross(p[i] - p[0], p[i + 1] - p[0]);
+    return length(s) / 2;
+}
+Vec3 polyCentroid(const std::vector<Vec3>& p) {
+    Vec3 c;
+    double w = 0;
+    for (size_t i = 1; i + 1 < p.size(); ++i) {
+        const double a = length(cross(p[i] - p[0], p[i + 1] - p[0])) / 2;
+        c += (p[0] + p[i] + p[i + 1]) * (a / 3);
+        w += a;
+    }
+    if (w <= 0) {
+        for (const Vec3& v : p) c += v;
+        return c / (double)std::max<size_t>(1, p.size());
+    }
+    return c / w;
+}
+
+// VRAD's form factors (vrad.cpp): differential to differential, and polygon to
+// differential (Dutre's formula 81; the caller multiplies by the polygon's area).
+double formDiffToDiff(const Patch& from, const Patch& to) {
+    Vec3 d = from.origin - to.origin;
+    const double len = length(d);
+    if (len < 1e-9) return 0;
+    d = d / len;
+    return -dot(d, from.normal) * dot(d, to.normal) / (len * len);
+}
+double formPolyToDiff(const Patch& poly, const Patch& diff) {
+    double f = 0;
+    const size_t n = poly.wind.size();
+    for (size_t i = 0; i < n; ++i) {
+        const Vec3 v1 = normalize(poly.wind[i] - diff.origin), v2 = normalize(poly.wind[(i + 1) % n] - diff.origin);
+        Vec3 g = cross(v1, v2);
+        const double s = length(g);
+        if (s > 1) return 0;
+        if (s < 1e-12) continue;
+        g = g / s * std::asin(s);
+        f += dot(g, diff.normal);
+    }
+    return std::fabs(f) * (0.5 / std::max(poly.area, 1e-9)); // either winding order
+}
 
 struct QualityParams {
     double scaleMul = 1;
@@ -612,6 +771,10 @@ std::uint64_t bakeKey(const BakeInput& in) {
             h.i(b.terrain->power);
             h.v(b.terrain->start);
             for (double x : b.terrain->heights) h.d(x);
+            for (const TerrainLayer& l : b.terrain->layers) {
+                h.s(l.texture);
+                for (float a : l.alpha) h.d(a);
+            }
         }
     }
     for (const Light& l : in.lights) {
@@ -628,7 +791,11 @@ std::uint64_t bakeKey(const BakeInput& in) {
         h.s(p.model); h.v(p.pos); h.v(p.rot); h.v(p.scale); h.i(p.castShadows);
         h.i(in.models && in.models(p.model) ? 1 : 0);
     }
-    h.v(in.env.ambient); h.d(in.env.skyLight); h.i(in.env.minLight); h.d(in.env.smoothAngle);
+    h.v(in.env.ambient); h.d(in.env.skyLight); h.i(in.env.minLight); h.d(in.env.smoothAngle); h.d(in.env.bounceScale);
+    h.i(in.maxBounces);
+    for (const auto& [k, v] : in.reflectivity) { h.s(k); h.v(v); }
+    for (const auto& [k, v] : in.modelReflectivity) { h.s(k); h.v(v); }
+    for (const MathPrim& p : in.prims) { h.s(p.texture); h.v(p.color); }
     h.i(in.env.skylab.used); h.d(in.env.skylab.sunDiffuse);
     h.i(in.sky.w); h.i(in.sky.h);
     if (in.sky.valid()) h.bytes(in.sky.rgb.data(), in.sky.rgb.size() * sizeof(float));
@@ -641,24 +808,38 @@ BakeResult bakeLight(const BakeInput& in, BakeProgress* progress, int threads) {
     const QualityParams Q = qualityParams(in.quality);
     const bool fast = in.quality == BakeQuality::Draft;
 
-    // ---- what blocks light: every brush face (nodraw too), terrain, primitives, props
+    // ---- what blocks light: every brush face (nodraw too), terrain, primitives, props.
+    // Triangles are tagged with what they belong to, so a bounce ray knows which patch it hit.
+    struct Owner { int kind; int a, b; }; // kind 0: lit face (face index), 1: terrain (terrain, cell), 2: prop patch
+    std::vector<Owner> owners;
     Tracer tracer;
     std::vector<std::optional<TerrainGrid>> grids(in.brushes.size());
-    for (size_t bi = 0; bi < in.brushes.size(); ++bi) {
-        const Brush& b = in.brushes[bi];
-        grids[bi] = terrainGrid(b);
-        for (const Polygon& p : b.polygons()) {
-            if (grids[bi] && p.face == grids[bi]->face) continue;
-            for (size_t i = 1; i + 1 < p.verts.size(); ++i) tracer.addTri(p.verts[0], p.verts[i], p.verts[i + 1]);
-        }
-        if (grids[bi]) {
-            const TerrainGrid& g = *grids[bi];
-            for (int j = 0; j + 1 < g.n; ++j)
-                for (int i = 0; i + 1 < g.n; ++i) {
-                    const Vec3 a = g.at(i, j), b2 = g.at(i + 1, j), c = g.at(i + 1, j + 1), d = g.at(i, j + 1);
-                    tracer.addTri(a, b2, c);
-                    tracer.addTri(a, c, d);
+    {
+        int fi = 0, ti = 0;
+        for (size_t bi = 0; bi < in.brushes.size(); ++bi) {
+            const Brush& b = in.brushes[bi];
+            grids[bi] = terrainGrid(b);
+            for (const Polygon& p : b.polygons()) {
+                if (grids[bi] && p.face == grids[bi]->face) continue;
+                int tag = -1;
+                if (p.face >= 0 && p.face < (int)b.faces.size() && p.verts.size() >= 3 && !isNoDraw(b.faces[p.face].texture)) {
+                    tag = (int)owners.size();
+                    owners.push_back({0, fi++, 0});
                 }
+                for (size_t i = 1; i + 1 < p.verts.size(); ++i) tracer.addTri(p.verts[0], p.verts[i], p.verts[i + 1], tag);
+            }
+            if (grids[bi]) {
+                const TerrainGrid& g = *grids[bi];
+                for (int j = 0; j + 1 < g.n; ++j)
+                    for (int i = 0; i + 1 < g.n; ++i) {
+                        const int tag = (int)owners.size();
+                        owners.push_back({1, ti, j * (g.n - 1) + i});
+                        const Vec3 a = g.at(i, j), b2 = g.at(i + 1, j), c = g.at(i + 1, j + 1), d = g.at(i, j + 1);
+                        tracer.addTri(a, b2, c, tag);
+                        tracer.addTri(a, c, d, tag);
+                    }
+                ++ti;
+            }
         }
     }
     std::map<std::uint32_t, std::vector<MathPrim>> combos;
@@ -669,12 +850,20 @@ BakeResult bakeLight(const BakeInput& in, BakeProgress* progress, int threads) {
     }
     for (auto& [id, m] : combos) objects.push_back(m);
     for (const auto& o : objects) tracer.addPrims(o);
+    // Props: their triangles block light; grouped by place (patch-sized cells) and facing,
+    // they become patches that reflect light (a difference from Source, agreed 2026-11-21).
+    std::vector<Patch> patches;
+    std::vector<int> propPatchIds;
+    const double patchSize = kDefaultLightmapScale * 4 * Q.scaleMul;
     size_t propsCasting = 0;
     for (const Prop& p : in.props) {
         if (!p.castShadows || !in.models) continue;
         const Model* m = in.models(p.model);
         if (!m) continue;
         ++propsCasting;
+        auto rit = in.modelReflectivity.find(p.model);
+        const Vec3 refl = rit != in.modelReflectivity.end() ? rit->second : Vec3{kDefaultReflectivity, kDefaultReflectivity, kDefaultReflectivity};
+        std::map<std::tuple<long long, long long, long long, int>, int> bucket;
         for (const ModelMesh& mesh : m->meshes) {
             auto P = [&](std::uint32_t k) {
                 return propToWorld(p, {mesh.pos[3 * k], mesh.pos[3 * k + 1], mesh.pos[3 * k + 2]});
@@ -682,7 +871,33 @@ BakeResult bakeLight(const BakeInput& in, BakeProgress* progress, int threads) {
             const size_t nv = mesh.pos.size() / 3;
             for (size_t t = 0; t + 2 < mesh.index.size(); t += 3) {
                 if (mesh.index[t] >= nv || mesh.index[t + 1] >= nv || mesh.index[t + 2] >= nv) continue;
-                tracer.addTri(P(mesh.index[t]), P(mesh.index[t + 1]), P(mesh.index[t + 2]));
+                const Vec3 a = P(mesh.index[t]), b = P(mesh.index[t + 1]), c = P(mesh.index[t + 2]);
+                const Vec3 cr = cross(b - a, c - a);
+                const double area = length(cr) / 2;
+                if (area < 1e-9) continue;
+                const Vec3 n = cr / (2 * area), ctr = (a + b + c) / 3.0;
+                const int bin = std::fabs(n.x) >= std::fabs(n.y) && std::fabs(n.x) >= std::fabs(n.z) ? (n.x > 0 ? 0 : 1)
+                                : std::fabs(n.y) >= std::fabs(n.z)                                ? (n.y > 0 ? 2 : 3)
+                                                                                                   : (n.z > 0 ? 4 : 5);
+                const auto key = std::make_tuple((long long)std::floor(ctr.x / patchSize), (long long)std::floor(ctr.y / patchSize),
+                                                 (long long)std::floor(ctr.z / patchSize), bin);
+                auto it = bucket.find(key);
+                int pid;
+                if (it == bucket.end()) {
+                    pid = (int)patches.size();
+                    bucket[key] = pid;
+                    patches.push_back({});
+                    patches.back().refl = refl;
+                    propPatchIds.push_back(pid);
+                } else
+                    pid = it->second;
+                Patch& pa = patches[pid];
+                pa.area += area;
+                pa.origin += ctr * area;
+                pa.normal += n * area;
+                const int tag = (int)owners.size();
+                owners.push_back({2, pid, 0});
+                tracer.addTri(a, b, c, tag);
             }
         }
     }
@@ -774,6 +989,7 @@ BakeResult bakeLight(const BakeInput& in, BakeProgress* progress, int threads) {
                 if (isNoDraw(b.faces[p.face].texture)) continue;
                 FaceWork& w = faces[fi++];
                 const Face& f = b.faces[p.face];
+                w.texture = f.texture;
                 double L = std::clamp(f.lightmapScale, kMinLightmapScale, kMaxLightmapScale) * Q.scaleMul;
                 Vec3 aS = length(f.u.axis) > 1e-9 ? normalize(f.u.axis) : Vec3{1, 0, 0};
                 Vec3 aT = length(f.v.axis) > 1e-9 ? normalize(f.v.axis) : Vec3{0, 1, 0};
@@ -834,6 +1050,7 @@ BakeResult bakeLight(const BakeInput& in, BakeProgress* progress, int threads) {
             }
         const Brush* b = nullptr;
         for (const Brush& bb : in.brushes) if (bb.id == t.out->brush) b = &bb;
+        t.brush = b;
         const double L = std::clamp(b ? b->faces[g.face].lightmapScale : kDefaultLightmapScale, kMinLightmapScale, kMaxLightmapScale) * Q.scaleMul;
         const double lu = length(g.corners[1] - g.corners[0]), lv = length(g.corners[3] - g.corners[0]);
         t.out->w = std::clamp((int)std::ceil(lu / L) + 1, 2, kMaxLuxels);
@@ -966,7 +1183,11 @@ BakeResult bakeLight(const BakeInput& in, BakeProgress* progress, int threads) {
             PrimWork& w = *wp;
             PrimLightmap& lm = *w.out;
             const double cell = lm.cell;
-            std::vector<char> have((size_t)lm.nx * lm.ny * lm.nz, 0);
+            const size_t ncell = (size_t)lm.nx * lm.ny * lm.nz;
+            w.lit.assign(ncell, 0);
+            w.surf.assign(ncell, Vec3{});
+            w.nrm.assign(ncell, Vec3{});
+            w.sd.assign(ncell, 0.0f);
             auto idx = [&](int i, int j, int k) { return ((size_t)k * lm.ny + j) * lm.nx + i; };
             const double hgrad = std::max(0.05, cell * 0.05);
             for (int k = 0; k < lm.nz && !cancelled(); ++k) {
@@ -992,53 +1213,32 @@ BakeResult bakeLight(const BakeInput& in, BakeProgress* progress, int threads) {
                         lm.rgb[3 * q] = (float)col.x;
                         lm.rgb[3 * q + 1] = (float)col.y;
                         lm.rgb[3 * q + 2] = (float)col.z;
-                        have[q] = 1;
+                        w.lit[q] = 1;
+                        w.surf[q] = p;
+                        w.nrm[q] = g;
+                        w.sd[q] = (float)d;
                     }
                 tick((long long)lm.nx * lm.ny / 4);
             }
-            // Cells far from the surface take their neighbours' light, so reading between
-            // cells near the surface never mixes in black.
-            for (int pass = 0; pass < 4; ++pass) {
-                std::vector<char> nh = have;
-                std::vector<float> nr = lm.rgb;
-                bool any = false;
-                for (int k = 0; k < lm.nz; ++k)
-                    for (int j = 0; j < lm.ny; ++j)
-                        for (int i = 0; i < lm.nx; ++i) {
-                            if (have[idx(i, j, k)]) continue;
-                            float acc[3] = {0, 0, 0};
-                            int cnt = 0;
-                            for (int dk = -1; dk <= 1; ++dk)
-                                for (int dj = -1; dj <= 1; ++dj)
-                                    for (int di = -1; di <= 1; ++di) {
-                                        const int a = i + di, b = j + dj, c = k + dk;
-                                        if (a < 0 || b < 0 || c < 0 || a >= lm.nx || b >= lm.ny || c >= lm.nz) continue;
-                                        const size_t q = idx(a, b, c);
-                                        if (!have[q]) continue;
-                                        for (int ch = 0; ch < 3; ++ch) acc[ch] += lm.rgb[3 * q + ch];
-                                        ++cnt;
-                                    }
-                            if (!cnt) continue;
-                            const size_t q = idx(i, j, k);
-                            for (int ch = 0; ch < 3; ++ch) nr[3 * q + ch] = acc[ch] / cnt;
-                            nh[q] = 1;
-                            any = true;
-                        }
-                have.swap(nh);
-                lm.rgb.swap(nr);
-                if (!any) break;
-            }
         });
 
-    // ---- run them on all threads
+    // ---- run job lists on all threads
     int nt = threads > 0 ? threads : (int)std::thread::hardware_concurrency();
     nt = std::max(1, std::min(nt, 64));
-    std::atomic<size_t> next{0};
-    auto worker = [&] {
-        for (;;) {
-            const size_t j = next++;
-            if (j >= jobs.size() || cancelled()) return;
-            jobs[j]();
+    auto runJobs = [&](std::vector<std::function<void()>>& list) {
+        std::atomic<size_t> next{0};
+        auto worker = [&] {
+            for (;;) {
+                const size_t j = next++;
+                if (j >= list.size() || cancelled()) return;
+                list[j]();
+            }
+        };
+        if (nt == 1 || list.size() <= 1) worker();
+        else {
+            std::vector<std::thread> pool;
+            for (int i = 0; i < nt; ++i) pool.emplace_back(worker);
+            for (std::thread& t : pool) t.join();
         }
     };
     // Big jobs first, so one large face doesn't finish last on its own.
@@ -1053,13 +1253,546 @@ BakeResult bakeLight(const BakeInput& in, BakeProgress* progress, int threads) {
         for (auto& o : order) sorted.push_back(std::move(jobs[o.second]));
         jobs.swap(sorted);
     }
-    if (nt == 1 || jobs.size() <= 1) worker();
-    else {
-        std::vector<std::thread> pool;
-        for (int i = 0; i < nt; ++i) pool.emplace_back(worker);
-        for (std::thread& t : pool) t.join();
+    runJobs(jobs);
+    auto since = [&] { return std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count(); };
+    res.secondsDirect = since();
+
+    // ======== bounces: VRAD's radiosity (vrad.cpp MakeTransfer, GatherLight, CollectLight)
+    const int maxBounces = in.env.bounceScale <= 0 ? 0 : in.maxBounces >= 0 ? in.maxBounces : (fast ? 10 : 100); // strength 0: none
+    const Vec3 minL = G.minLight;
+    auto clampRefl = [&](Vec3 r) {
+        r = r * std::max(0.0, in.env.bounceScale);
+        return Vec3{std::clamp(r.x, 0.0, 0.99), std::clamp(r.y, 0.0, 0.99), std::clamp(r.z, 0.0, 0.99)};
+    };
+    auto texRefl = [&](const std::string& t) {
+        auto it = in.reflectivity.find(t);
+        return it != in.reflectivity.end() ? it->second : Vec3{kDefaultReflectivity, kDefaultReflectivity, kDefaultReflectivity};
+    };
+    std::vector<std::vector<int>> facePatches(faces.size());
+    struct TerrainBlocks { int k = 1, nb = 1, first = 0; };
+    std::vector<TerrainBlocks> terrainBlocks(terrains.size());
+    std::vector<std::vector<int>> primPatches(primWork.size());
+    auto insideSt = [](const std::vector<std::pair<double, double>>& st, double s, double t) {
+        int sign = 0;
+        for (size_t i = 0; i < st.size(); ++i) {
+            const auto& a = st[i];
+            const auto& b = st[(i + 1) % st.size()];
+            const double c = (b.first - a.first) * (t - a.second) - (b.second - a.second) * (s - a.first);
+            if (std::fabs(c) < 1e-12) continue;
+            const int sg = c > 0 ? 1 : -1;
+            if (sign == 0) sign = sg;
+            else if (sg != sign) return false;
+        }
+        return true;
+    };
+    // The patch of face `fi` holding world point P (or the nearest).
+    auto facePatchAt = [&](int fi, const Vec3& P) {
+        const std::vector<int>& list = facePatches[fi];
+        if (list.empty()) return -1;
+        double s, t;
+        faces[fi].lux(P, s, t);
+        for (int id : list)
+            if (insideSt(patches[id].st, s, t)) return id;
+        int best = list[0];
+        double bd = 1e300;
+        for (int id : list) {
+            const double d = lengthSq(patches[id].origin - P);
+            if (d < bd) { bd = d; best = id; }
+        }
+        return best;
+    };
+    auto patchOfHit = [&](const Tracer::Hit& h, const Vec3& P) -> int {
+        if (h.prim >= 0) {
+            const std::vector<int>& list = primPatches[h.prim];
+            int best = -1;
+            double bd = 1e300;
+            for (int id : list) {
+                const double d = lengthSq(patches[id].origin - P);
+                if (d < bd) { bd = d; best = id; }
+            }
+            return best;
+        }
+        if (h.tag < 0 || h.tag >= (int)owners.size()) return -1;
+        const Owner& o = owners[h.tag];
+        if (o.kind == 0) return facePatchAt(o.a, P);
+        if (o.kind == 2) return o.a;
+        const TerrainBlocks& tb = terrainBlocks[o.a];
+        const int n1 = terrains[o.a].g.n - 1;
+        const int ci = o.b % n1, cj = o.b / n1;
+        return tb.first + (cj / tb.k) * tb.nb + (ci / tb.k);
+    };
+
+    if (maxBounces > 0 && !cancelled()) {
+        // ---- patches on brush faces: VRAD's split along the widest world axis until each is
+        // under 4 luxels (maxchop = minchop = 4)
+        for (size_t fi = 0; fi < faces.size(); ++fi) {
+            FaceWork& w = faces[fi];
+            const double luxscale = (length(w.out->axisS) + length(w.out->axisT)) / 2; // luxels per cm
+            const Vec3 refl = clampRefl(texRefl(w.texture));
+            std::vector<std::vector<Vec3>> stack{w.verts};
+            while (!stack.empty()) {
+                std::vector<Vec3> poly = std::move(stack.back());
+                stack.pop_back();
+                AABB box;
+                for (const Vec3& v : poly) box.add(v);
+                const Vec3 total = box.size() * luxscale;
+                const int axis = total.x >= total.y && total.x >= total.z ? 0 : total.y >= total.z ? 1 : 2;
+                if (total[axis] >= 4 && poly.size() >= 3) {
+                    std::vector<Vec3> lo, hi;
+                    splitPoly(poly, axis, (box.min[axis] + box.max[axis]) / 2, lo, hi);
+                    if (lo.size() >= 3 && hi.size() >= 3 && polyArea(lo) > 1e-6 && polyArea(hi) > 1e-6) {
+                        stack.push_back(std::move(lo));
+                        stack.push_back(std::move(hi));
+                        continue;
+                    }
+                }
+                Patch pa;
+                pa.area = polyArea(poly);
+                if (pa.area <= 1e-6) continue;
+                pa.origin = polyCentroid(poly);
+                double s, t;
+                w.lux(pa.origin, s, t);
+                pa.normal = w.shadingNormal(s, t);
+                for (const Vec3& v : poly) {
+                    double a, b;
+                    w.lux(v, a, b);
+                    pa.st.emplace_back(a, b);
+                }
+                pa.wind = std::move(poly);
+                pa.refl = refl;
+                facePatches[fi].push_back((int)patches.size());
+                patches.push_back(std::move(pa));
+            }
+            // the patches' direct light: the average of the luxels on them (VRAD's AddSampleToPatch)
+            const FaceLightmap& lm = *w.out;
+            std::vector<Vec3> sum(facePatches[fi].size());
+            std::vector<int> cnt(facePatches[fi].size(), 0);
+            for (int j = 0; j < lm.h; ++j)
+                for (int i = 0; i < lm.w; ++i) {
+                    double s = i, t = j;
+                    w.clampInside(s, t);
+                    const Vec3 P = w.point(s + lm.s0, t + lm.t0);
+                    const int id = facePatchAt((int)fi, P);
+                    if (id < 0) continue;
+                    const size_t k = (size_t)(std::find(facePatches[fi].begin(), facePatches[fi].end(), id) - facePatches[fi].begin());
+                    const size_t q = ((size_t)j * lm.w + i) * 3;
+                    sum[k] += Vec3{lm.rgb[q], lm.rgb[q + 1], lm.rgb[q + 2]} - minL;
+                    ++cnt[k];
+                }
+            for (size_t k = 0; k < facePatches[fi].size(); ++k) {
+                Patch& pa = patches[facePatches[fi][k]];
+                pa.direct = cnt[k] ? sum[k] / (double)cnt[k] : G.at(pa.origin, pa.normal, w.n, fast) - minL;
+            }
+        }
+        // ---- terrain: blocks of cells about 4 luxels wide
+        for (size_t ti = 0; ti < terrains.size(); ++ti) {
+            TerrainWork& t = terrains[ti];
+            const TerrainGrid& g = t.g;
+            const int n1 = g.n - 1;
+            const double cellSize = std::max(1e-6, length(g.corners[1] - g.corners[0]) / n1);
+            const double L = std::clamp(t.brush ? t.brush->faces[g.face].lightmapScale : kDefaultLightmapScale, kMinLightmapScale, kMaxLightmapScale) * Q.scaleMul;
+            TerrainBlocks& tb = terrainBlocks[ti];
+            tb.k = std::max(1, (int)std::lround(4 * L / cellSize));
+            tb.nb = (n1 + tb.k - 1) / tb.k;
+            tb.first = (int)patches.size();
+            const Vec3 base = t.brush ? texRefl(t.brush->faces[g.face].texture) : Vec3{kDefaultReflectivity, kDefaultReflectivity, kDefaultReflectivity};
+            for (int by = 0; by < tb.nb; ++by)
+                for (int bx = 0; bx < tb.nb; ++bx) {
+                    Patch pa;
+                    Vec3 refl = base;
+                    for (int cj = by * tb.k; cj < std::min(n1, (by + 1) * tb.k); ++cj)
+                        for (int ci = bx * tb.k; ci < std::min(n1, (bx + 1) * tb.k); ++ci) {
+                            const Vec3 a = g.at(ci, cj), b = g.at(ci + 1, cj), c = g.at(ci + 1, cj + 1), d = g.at(ci, cj + 1);
+                            for (const auto& tri : {std::array<Vec3, 3>{a, b, c}, std::array<Vec3, 3>{a, c, d}}) {
+                                Vec3 cr = cross(tri[1] - tri[0], tri[2] - tri[0]);
+                                if (dot(cr, g.normal) < 0) cr = -cr;
+                                const double ar = length(cr) / 2;
+                                pa.area += ar;
+                                pa.origin += (tri[0] + tri[1] + tri[2]) * (ar / 3);
+                                pa.normal += cr / 2;
+                            }
+                        }
+                    // painted layers over the base, by their average strength in the block
+                    if (t.brush && t.brush->terrain)
+                        for (const TerrainLayer& lay : t.brush->terrain->layers) {
+                            double al = 0;
+                            int an = 0;
+                            for (int cj = by * tb.k; cj <= std::min(n1, (by + 1) * tb.k); ++cj)
+                                for (int ci = bx * tb.k; ci <= std::min(n1, (bx + 1) * tb.k); ++ci) {
+                                    const size_t k = (size_t)cj * g.n + ci;
+                                    if (k < lay.alpha.size()) { al += lay.alpha[k]; ++an; }
+                                }
+                            if (an) refl = refl + (texRefl(lay.texture) - refl) * std::clamp(al / an, 0.0, 1.0);
+                        }
+                    if (pa.area > 1e-9) {
+                        pa.origin = pa.origin / pa.area;
+                        pa.normal = length(pa.normal) > 1e-12 ? normalize(pa.normal) : g.normal;
+                    } else {
+                        pa.origin = g.at(std::min(n1, bx * tb.k), std::min(n1, by * tb.k));
+                        pa.normal = g.normal;
+                    }
+                    pa.refl = clampRefl(refl);
+                    patches.push_back(std::move(pa));
+                }
+            const FaceLightmap& lm = *t.out;
+            std::vector<Vec3> sum((size_t)tb.nb * tb.nb);
+            std::vector<int> cnt((size_t)tb.nb * tb.nb, 0);
+            for (int j = 0; j < lm.h; ++j)
+                for (int i = 0; i < lm.w; ++i) {
+                    const double u = (double)i / (lm.w - 1) * n1, v = (double)j / (lm.h - 1) * n1;
+                    const int bx = std::min(tb.nb - 1, (int)(u / tb.k)), by = std::min(tb.nb - 1, (int)(v / tb.k));
+                    const size_t q = ((size_t)j * lm.w + i) * 3;
+                    sum[(size_t)by * tb.nb + bx] += Vec3{lm.rgb[q], lm.rgb[q + 1], lm.rgb[q + 2]} - minL;
+                    ++cnt[(size_t)by * tb.nb + bx];
+                }
+            for (int k = 0; k < tb.nb * tb.nb; ++k) {
+                Patch& pa = patches[tb.first + k];
+                pa.direct = cnt[k] ? sum[k] / (double)cnt[k] : G.at(pa.origin, pa.normal, pa.normal, fast) - minL;
+            }
+        }
+        // ---- primitives: their surface cells, in blocks of 4 cells and by facing
+        for (size_t oi = 0; oi < primWork.size(); ++oi) {
+            PrimWork& w = primWork[oi];
+            const PrimLightmap& lm = *w.out;
+            if (w.lit.empty()) continue;
+            struct Acc { double area = 0; Vec3 o, n, d; int c = 0; };
+            std::map<std::tuple<int, int, int, int>, Acc> blocks;
+            for (int k = 0; k < lm.nz; ++k)
+                for (int j = 0; j < lm.ny; ++j)
+                    for (int i = 0; i < lm.nx; ++i) {
+                        const size_t q = ((size_t)k * lm.ny + j) * lm.nx + i;
+                        if (!w.lit[q] || std::fabs(w.sd[q]) > lm.cell * 0.5) continue;
+                        const Vec3& n = w.nrm[q];
+                        const int bin = std::fabs(n.x) >= std::fabs(n.y) && std::fabs(n.x) >= std::fabs(n.z) ? (n.x > 0 ? 0 : 1)
+                                        : std::fabs(n.y) >= std::fabs(n.z)                                ? (n.y > 0 ? 2 : 3)
+                                                                                                           : (n.z > 0 ? 4 : 5);
+                        Acc& a = blocks[{i / 4, j / 4, k / 4, bin}];
+                        a.area += lm.cell * lm.cell;
+                        a.o += w.surf[q];
+                        a.n += n;
+                        a.d += Vec3{lm.rgb[3 * q], lm.rgb[3 * q + 1], lm.rgb[3 * q + 2]} - minL;
+                        ++a.c;
+                    }
+            for (auto& [key, a] : blocks) {
+                if (a.c == 0 || length(a.n) < 1e-9) continue;
+                Patch pa;
+                pa.area = a.area;
+                pa.origin = a.o / (double)a.c;
+                pa.normal = normalize(a.n);
+                pa.direct = a.d / (double)a.c;
+                // the colour of the piece nearest to it
+                const MathPrim* near = &w.members[0];
+                double bd = 1e300;
+                for (const MathPrim& m : w.members) {
+                    if (m.op != PrimOp::Add && w.members.size() > 1) continue;
+                    const double d = std::fabs(primDistance(m, pa.origin));
+                    if (d < bd) { bd = d; near = &m; }
+                }
+                Vec3 col = linColor(near->color);
+                if (!near->texture.empty()) col = mul(col, texRefl(near->texture));
+                pa.refl = clampRefl(col);
+                primPatches[oi].push_back((int)patches.size());
+                patches.push_back(std::move(pa));
+            }
+        }
+        // ---- props' patches (made with their triangles above)
+        for (int id : propPatchIds) {
+            Patch& pa = patches[id];
+            if (pa.area <= 1e-9 || length(pa.normal) < 1e-12) { pa.area = 0; continue; }
+            pa.origin = pa.origin / pa.area;
+            pa.normal = normalize(pa.normal);
+            pa.refl = clampRefl(pa.refl);
+            pa.direct = G.at(pa.origin, pa.normal, pa.normal, fast) - minL;
+        }
+        for (Patch& pa : patches) {
+            if (pa.wind.empty() && pa.area > 0) pa.wind = squareWinding(pa.origin, pa.normal, pa.area);
+            pa.direct = Vec3{std::max(0.0, pa.direct.x), std::max(0.0, pa.direct.y), std::max(0.0, pa.direct.z)};
+        }
+        res.patches = patches.size();
+
+        // ---- transfers: every pair that faces each other and sees each other (no VVIS:
+        // a ray per pair), tiny ones dropped; per receiver normalized to pi as VRAD
+        const double kTransferMin = 1e-5 * kPi;
+        if (progress) progress->total = progress->done.load() + (long long)patches.size() + 1;
+        std::vector<std::function<void()>> tjobs;
+        const size_t NP = patches.size();
+        const size_t chunk = 16;
+        // Only patches near enough can pass the minimum: a transfer is at most
+        // area / distance^2, so patches of area A matter within sqrt(A / min). Patches are
+        // sorted into classes by area (powers of 2), each in a grid; a receiver looks only at
+        // the cells within reach of each class (the same transfers, much quicker).
+        struct AreaClass { double reach = 0, cellSize = 1; std::unordered_map<std::uint64_t, std::vector<int>> cells; std::vector<int> ids; bool everywhere = false; };
+        std::map<int, AreaClass> classes;
+        auto cellKey = [](long long x, long long y, long long z) {
+            return ((std::uint64_t)(x & 0x1FFFFF)) | ((std::uint64_t)(y & 0x1FFFFF) << 21) | ((std::uint64_t)(z & 0x1FFFFF) << 42);
+        };
+        for (size_t j = 0; j < NP; ++j) {
+            const Patch& pj = patches[j];
+            if (pj.area <= 0) continue;
+            const int c = (int)std::ceil(std::log2(std::max(pj.area, 1e-6)));
+            AreaClass& ac = classes[c];
+            if (ac.reach == 0) {
+                ac.reach = std::sqrt(std::pow(2.0, c) / kTransferMin) + 1;
+                ac.cellSize = std::max(ac.reach / 4, 64.0);
+            }
+            const Vec3& o = pj.origin;
+            ac.ids.push_back((int)j);
+            ac.cells[cellKey((long long)std::floor(o.x / ac.cellSize), (long long)std::floor(o.y / ac.cellSize), (long long)std::floor(o.z / ac.cellSize))]
+                .push_back((int)j);
+        }
+        AABB all;
+        for (const Patch& pa : patches) all.add(pa.origin);
+        const double extent = length(all.size());
+        bool allEverywhere = true;
+        for (auto& [c, ac] : classes) {
+            ac.everywhere = ac.reach >= extent; // reaches across the whole map
+            allEverywhere = allEverywhere && ac.everywhere;
+        }
+        // Each pair is looked at once (i < j): one ray for both directions.
+        struct PairT { int i, j; float tij, tji; };
+        std::vector<std::vector<PairT>> found((NP + chunk - 1) / chunk);
+        auto transfer = [&](const Patch& recv, const Patch& send, double r2) -> double {
+            if (recv.area <= 0 || send.area <= 0 || maxc(send.refl) <= 0) return 0;
+            double scale = formDiffToDiff(send, recv);
+            if (scale <= 0) return 0;
+            if (kPi * 0.04 * r2 < send.area) {
+                scale = formPolyToDiff(send, recv);
+                if (scale <= 0) return 0;
+            }
+            const double t = send.area * scale;
+            return t > kTransferMin ? t : 0;
+        };
+        for (size_t start = 0; start < NP; start += chunk)
+            tjobs.push_back([&, start] {
+                std::vector<PairT>& out = found[start / chunk];
+                std::vector<int> near;
+                for (size_t i = start; i < std::min(NP, start + chunk) && !cancelled(); ++i) {
+                    const Patch& pi = patches[i];
+                    if (pi.area <= 0) { tick(1); continue; }
+                    const Vec3 oi = pi.origin + pi.normal * 1.0;
+                    const double ownReach = std::sqrt(pi.area / kTransferMin) + 1; // as a sender
+                    near.clear();
+                    if (allEverywhere || ownReach >= extent) {
+                        for (size_t j = i + 1; j < NP; ++j) near.push_back((int)j);
+                    } else
+                        for (const auto& [c, ac] : classes) {
+                            const double reach = std::max(ac.reach, ownReach);
+                            if (reach >= extent) {
+                                for (int j : ac.ids) if ((size_t)j > i) near.push_back(j);
+                                continue;
+                            }
+                            const Vec3 lo = pi.origin - Vec3{1, 1, 1} * reach, hi = pi.origin + Vec3{1, 1, 1} * reach;
+                            const long long x0 = (long long)std::floor(std::max(lo.x, all.min.x) / ac.cellSize), x1 = (long long)std::floor(std::min(hi.x, all.max.x) / ac.cellSize);
+                            const long long y0 = (long long)std::floor(std::max(lo.y, all.min.y) / ac.cellSize), y1 = (long long)std::floor(std::min(hi.y, all.max.y) / ac.cellSize);
+                            const long long z0 = (long long)std::floor(std::max(lo.z, all.min.z) / ac.cellSize), z1 = (long long)std::floor(std::min(hi.z, all.max.z) / ac.cellSize);
+                            for (long long x = x0; x <= x1; ++x)
+                                for (long long y = y0; y <= y1; ++y)
+                                    for (long long z = z0; z <= z1; ++z) {
+                                        auto it = ac.cells.find(cellKey(x, y, z));
+                                        if (it == ac.cells.end()) continue;
+                                        for (int j : it->second) if ((size_t)j > i) near.push_back(j);
+                                    }
+                        }
+                    for (int jj : near) {
+                        const Patch& pj = patches[jj];
+                        const Vec3 d = pj.origin - pi.origin;
+                        const double r2 = lengthSq(d);
+                        if (r2 < 1e-6) continue;
+                        // each must face the other (VRAD leaves this to visibility)
+                        if (dot(d, pi.normal) <= 0 || dot(d, pj.normal) >= 0) continue;
+                        const double tij = transfer(pi, pj, r2), tji = transfer(pj, pi, r2);
+                        if (tij <= 0 && tji <= 0) continue;
+                        const Vec3 oj = pj.origin + pj.normal * 1.0;
+                        const Vec3 dd = oj - oi;
+                        const double dl = length(dd);
+                        if (dl > 1e-6 && tracer.occluded(oi, dd / dl, dl - 1.0)) continue;
+                        out.push_back({(int)i, jj, (float)tij, (float)tji});
+                    }
+                    tick(1);
+                }
+            });
+        runJobs(tjobs);
+        for (const std::vector<PairT>& list : found)
+            for (const PairT& p : list) {
+                if (p.tij > 0) patches[p.i].transfers.push_back({p.j, p.tij});
+                if (p.tji > 0) patches[p.j].transfers.push_back({p.i, p.tji});
+            }
+        found.clear();
+        // per receiver normalized to pi (VRAD's MakeScales: "the total transfer should be PI")
+        for (Patch& pa : patches) {
+            double total = 0;
+            for (auto& t : pa.transfers) total += t.second;
+            const double norm = total > kPi ? 1.0 / total : 1.0 / kPi;
+            for (auto& t : pa.transfers) t.second = (float)(t.second * norm);
+        }
+        for (const Patch& pa : patches) res.transfers += pa.transfers.size();
+        res.secondsTransfers = since() - res.secondsDirect;
+
+        // ---- bounce: gather from the patches each patch sees, until a bounce adds less
+        // than 1 (in VRAD's 0..255) over all the patches together
+        for (Patch& pa : patches) {
+            pa.emit = pa.direct;
+            pa.total = {};
+        }
+        for (int b = 0; b < maxBounces && !cancelled(); ++b) {
+            std::vector<std::function<void()>> bjobs;
+            for (size_t start = 0; start < NP; start += 64)
+                bjobs.push_back([&, start] {
+                    for (size_t i = start; i < std::min(NP, start + 64); ++i) {
+                        Vec3 sum;
+                        for (const auto& [j, t] : patches[i].transfers) sum += mul(patches[j].emit, patches[j].refl) * (double)t;
+                        patches[i].add = sum;
+                    }
+                });
+            runJobs(bjobs);
+            Vec3 added;
+            for (Patch& pa : patches) {
+                pa.total += pa.add;
+                pa.emit = pa.add;
+                added += pa.add;
+            }
+            added = added * 255.0;
+            char line[96];
+            std::snprintf(line, sizeof line, "Bounce #%d added RGB(%.0f, %.0f, %.0f)", b + 1, added.x, added.y, added.z);
+            res.bounces.push_back(line);
+            if (added.x < 1.0 && added.y < 1.0 && added.z < 1.0) break;
+        }
+
+        // ---- bounce light onto the lightmaps: brush faces (smooth blend of the face's
+        // patches, as VRAD's radial blending), terrain (between its blocks), primitives
+        // (a gather from the patches, as VRAD's ambient cubes)
+        std::vector<std::function<void()>> fjobs;
+        for (size_t fi = 0; fi < faces.size(); ++fi)
+            fjobs.push_back([&, fi] {
+                FaceWork& w = faces[fi];
+                FaceLightmap& lm = *w.out;
+                const std::vector<int>& list = facePatches[fi];
+                if (list.empty()) return;
+                const double R = 4.0 / std::max(1e-9, (length(w.out->axisS) + length(w.out->axisT)) / 2) * 1.25;
+                for (int j = 0; j < lm.h; ++j)
+                    for (int i = 0; i < lm.w; ++i) {
+                        double s = i, t = j;
+                        w.clampInside(s, t);
+                        const Vec3 P = w.point(s + lm.s0, t + lm.t0);
+                        Vec3 acc;
+                        double ws = 0;
+                        int nearest = list[0];
+                        double nd = 1e300;
+                        for (int id : list) {
+                            const double d = length(patches[id].origin - P);
+                            if (d < nd) { nd = d; nearest = id; }
+                            const double wgt = 1 - d / R;
+                            if (wgt <= 0) continue;
+                            acc += patches[id].total * wgt;
+                            ws += wgt;
+                        }
+                        const Vec3 bounce = ws > 0 ? acc / ws : patches[nearest].total;
+                        const size_t q = ((size_t)j * lm.w + i) * 3;
+                        lm.rgb[q] += (float)bounce.x;
+                        lm.rgb[q + 1] += (float)bounce.y;
+                        lm.rgb[q + 2] += (float)bounce.z;
+                    }
+            });
+        for (size_t ti = 0; ti < terrains.size(); ++ti)
+            fjobs.push_back([&, ti] {
+                TerrainWork& t = terrains[ti];
+                FaceLightmap& lm = *t.out;
+                const TerrainBlocks& tb = terrainBlocks[ti];
+                const int n1 = t.g.n - 1;
+                auto P = [&](int bx, int by) {
+                    bx = std::clamp(bx, 0, tb.nb - 1);
+                    by = std::clamp(by, 0, tb.nb - 1);
+                    return patches[tb.first + by * tb.nb + bx].total;
+                };
+                for (int j = 0; j < lm.h; ++j)
+                    for (int i = 0; i < lm.w; ++i) {
+                        const double u = (double)i / (lm.w - 1) * n1 / tb.k - 0.5, v = (double)j / (lm.h - 1) * n1 / tb.k - 0.5;
+                        const int bx = (int)std::floor(u), by = (int)std::floor(v);
+                        const double fu = u - bx, fv = v - by;
+                        const Vec3 b = P(bx, by) * ((1 - fu) * (1 - fv)) + P(bx + 1, by) * (fu * (1 - fv)) + P(bx, by + 1) * ((1 - fu) * fv) +
+                                       P(bx + 1, by + 1) * (fu * fv);
+                        const size_t q = ((size_t)j * lm.w + i) * 3;
+                        lm.rgb[q] += (float)b.x;
+                        lm.rgb[q + 1] += (float)b.y;
+                        lm.rgb[q + 2] += (float)b.z;
+                    }
+            });
+        const std::vector<Vec3>& gdirs = fast ? G.skyDirsFast : haltonSphere(kSkySamples);
+        for (size_t oi = 0; oi < primWork.size(); ++oi)
+            fjobs.push_back([&, oi] {
+                PrimWork& w = primWork[oi];
+                PrimLightmap& lm = *w.out;
+                for (size_t q = 0; q < w.lit.size() && !cancelled(); ++q) {
+                    if (!w.lit[q]) continue;
+                    const Vec3 n = w.nrm[q];
+                    const Vec3 o = w.surf[q] + n * kOffset;
+                    Vec3 acc;
+                    double sumdot = 0;
+                    for (const Vec3& d : gdirs) {
+                        const double c = dot(n, d);
+                        if (c <= 1e-6) continue;
+                        sumdot += c;
+                        Tracer::Hit h;
+                        if (!tracer.closestHit(o, d, kFar, h)) continue;
+                        const int id = patchOfHit(h, o + d * h.t);
+                        if (id < 0) continue;
+                        const Patch& pa = patches[id];
+                        if (dot(pa.normal, d) >= 0) continue; // its back
+                        acc += mul(pa.direct + pa.total, pa.refl) * c;
+                    }
+                    if (sumdot > 0) {
+                        const Vec3 b = acc / sumdot;
+                        lm.rgb[3 * q] += (float)b.x;
+                        lm.rgb[3 * q + 1] += (float)b.y;
+                        lm.rgb[3 * q + 2] += (float)b.z;
+                    }
+                }
+            });
+        runJobs(fjobs);
+        res.secondsBounce = since() - res.secondsDirect - res.secondsTransfers;
     }
+
+    // ---- primitives: cells far from the surface take their neighbours' light, so reading
+    // between cells near the surface never mixes in black
+    for (PrimWork& w : primWork) {
+        PrimLightmap& lm = *w.out;
+        if (w.lit.empty()) continue;
+        std::vector<char> have = w.lit;
+        auto idx = [&](int i, int j, int k) { return ((size_t)k * lm.ny + j) * lm.nx + i; };
+        for (int pass = 0; pass < 4; ++pass) {
+            std::vector<char> nh = have;
+            std::vector<float> nr = lm.rgb;
+            bool any = false;
+            for (int k = 0; k < lm.nz; ++k)
+                for (int j = 0; j < lm.ny; ++j)
+                    for (int i = 0; i < lm.nx; ++i) {
+                        if (have[idx(i, j, k)]) continue;
+                        float acc[3] = {0, 0, 0};
+                        int cnt = 0;
+                        for (int dk = -1; dk <= 1; ++dk)
+                            for (int dj = -1; dj <= 1; ++dj)
+                                for (int di = -1; di <= 1; ++di) {
+                                    const int a = i + di, b = j + dj, c = k + dk;
+                                    if (a < 0 || b < 0 || c < 0 || a >= lm.nx || b >= lm.ny || c >= lm.nz) continue;
+                                    const size_t q = idx(a, b, c);
+                                    if (!have[q]) continue;
+                                    for (int ch = 0; ch < 3; ++ch) acc[ch] += lm.rgb[3 * q + ch];
+                                    ++cnt;
+                                }
+                        if (!cnt) continue;
+                        const size_t q = idx(i, j, k);
+                        for (int ch = 0; ch < 3; ++ch) nr[3 * q + ch] = acc[ch] / cnt;
+                        nh[q] = 1;
+                        any = true;
+                    }
+            have.swap(nh);
+            lm.rgb.swap(nr);
+            if (!any) break;
+        }
+    }
+
     res.cancelled = cancelled();
+    if (progress && !res.cancelled) progress->done = progress->total.load();
     if (propsCasting) res.notes.push_back(std::to_string(propsCasting) + (propsCasting == 1 ? " prop casts" : " props cast") + " shadows");
     res.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
     return res;

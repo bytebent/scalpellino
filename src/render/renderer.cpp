@@ -80,7 +80,7 @@ Scene Renderer::scene(const Document& doc, TextureLibrary& textures, ModelLibrar
     return s;
 }
 
-BakeInput bakeInput(const Document& doc, ModelLibrary& models, SkyLibrary& skies, BakeQuality quality) {
+BakeInput bakeInput(const Document& doc, ModelLibrary& models, SkyLibrary& skies, BakeQuality quality, TextureLibrary* textures) {
     BakeInput in;
     in.brushes = doc.brushes();
     in.lights = doc.lights();
@@ -96,6 +96,57 @@ BakeInput bakeInput(const Document& doc, ModelLibrary& models, SkyLibrary& skies
         return it == found->end() ? nullptr : it->second;
     };
     if (!in.env.sky.empty()) in.sky = skies.picture(in.env.sky);
+    // What surfaces bounce (v0.12.2): textures' average colours; props' models by their
+    // materials (texture average x colour factor, by how many triangles use each).
+    if (textures) {
+        auto addTex = [&](const std::string& t) {
+            if (t.empty() || in.reflectivity.count(t)) return;
+            const Vec3 r = textures->reflectivity(t);
+            if (r.x >= 0) in.reflectivity[t] = r;
+        };
+        for (const Brush& b : in.brushes) {
+            for (const Face& f : b.faces) addTex(f.texture);
+            if (b.terrain)
+                for (const TerrainLayer& l : b.terrain->layers) addTex(l.texture);
+        }
+        for (const MathPrim& p : in.prims) addTex(p.texture);
+    }
+    for (const auto& [name, m] : *found) {
+        if (!m || in.modelReflectivity.count(name)) continue;
+        std::vector<Vec3> matRefl(m->materials.size(), Vec3{1, 1, 1});
+        for (size_t i = 0; i < m->materials.size(); ++i) {
+            const ModelMaterial& mat = m->materials[i];
+            Vec3 avg{1, 1, 1};
+            Image img{};
+            if (!mat.image.empty()) {
+                const bool png = mat.image.size() > 4 && mat.image[0] == 0x89 && mat.image[1] == 'P';
+                img = LoadImageFromMemory(png ? ".png" : ".jpg", mat.image.data(), (int)mat.image.size());
+            } else if (!mat.imageFile.empty())
+                img = LoadImage(mat.imageFile.c_str());
+            if (img.data) {
+                ImageResize(&img, std::min(img.width, 64), std::min(img.height, 64));
+                ImageFormat(&img, PIXELFORMAT_UNCOMPRESSED_R8G8B8);
+                const unsigned char* px = (const unsigned char*)img.data;
+                const size_t n = (size_t)img.width * img.height;
+                double acc[3] = {0, 0, 0};
+                for (size_t k = 0; k < n; ++k)
+                    for (int c = 0; c < 3; ++c) acc[c] += srgbToLinear(px[3 * k + c] / 255.0);
+                if (n) avg = {acc[0] / n, acc[1] / n, acc[2] / n};
+                UnloadImage(img);
+            }
+            const Vec3 f{srgbToLinear(mat.color.x / 255), srgbToLinear(mat.color.y / 255), srgbToLinear(mat.color.z / 255)};
+            matRefl[i] = {avg.x * f.x, avg.y * f.y, avg.z * f.z};
+        }
+        Vec3 sum;
+        double w = 0;
+        for (const ModelMesh& mesh : m->meshes) {
+            const double t = (double)mesh.triangles();
+            const Vec3 r = mesh.material >= 0 && mesh.material < (int)matRefl.size() ? matRefl[mesh.material] : Vec3{kDefaultReflectivity, kDefaultReflectivity, kDefaultReflectivity};
+            sum += r * t;
+            w += t;
+        }
+        if (w > 0) in.modelReflectivity[name] = sum / w;
+    }
     return in;
 }
 
