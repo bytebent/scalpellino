@@ -50,8 +50,8 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   item 5. **v0.12.2 is built and pushed** (the user said go, 2026-11-21): bounced light
   (VRAD's radiosity in `core/bake.*`); its choices made without asking are under "v0.12.2,
   decided without asking". Renders of the busy test maps (`tests/bench/render.script`) are
-  in `docs/screenshots/m12-13` to `m12-16`. Next: **report** (with the big-map bake times,
-  as agreed in batch 3 question 12), then discuss batch 4 (v0.12.3, light grid).
+  in `docs/screenshots/m12-13` to `m12-16`. Reported (CI green, released); the user is
+  fine with the slow bakes. Next: **discuss batch 4 (v0.12.3, light grid)** in depth.
 - **Review fixes (2026-11-20), merged into `main`** (fast-forward from
   `fix/review-findings` after the user's go-ahead; no new version, so only "Latest build"
   is refreshed): version releases are
@@ -162,7 +162,8 @@ Each archive's SHA-256 is in `cmake/Deps.cmake` (checked at configure time).
     map 1.5 s; 1000 boxes + 8 terrains 23 s (direct 15, transfers 7); 4000 boxes + 16
     terrains 137 s (direct 59, transfers 76); 1000 rocks of 5000 triangles 287 s (direct
     39, transfers 234: 52 000 patches, mostly the rocks'). Transfers grow with the square
-    of the patch count. Reported to the user before adding anything (agreed).
+    of the patch count. Reported to the user before adding anything (agreed). **The user
+    is fine with these bake times (2026-11-21): no speed-up or cutoff added.**
 - **v0.12.1 (baked light and shadows), decided without asking (confirm with the user):**
   - **Default lightmap scale 40 cm** (Hammer's 16 units are 40.64; rounded), allowed 1 to
     512. Faces needing more than 512 luxels a side get a coarser lightmap (doubled until it
