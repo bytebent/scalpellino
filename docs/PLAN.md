@@ -58,8 +58,9 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   asking are under "v0.12.3, decided without asking"; the busy maps rendered again
   (`docs/screenshots/m12-20` to `m12-22`). **The 1000-rocks map didn't finish within the
   benchmark's hour** (2.6 million prop vertices at full quality, about 325 rays each, on 2
-  threads): to report and ask about (fewer rays for props was the other choice in batch 4
-  question 9). Next: **report**, then discuss batch 5 (v0.12.4, the material system).
+  threads). Reported; **the user wants an option for fewer rays for props, in the next
+  batch** (see Roadmap item 5, batch 5). Next: **discuss batch 5 (v0.12.4, the material
+  system)** in depth.
 - **Review fixes (2026-11-20), merged into `main`** (fast-forward from
   `fix/review-findings` after the user's go-ahead; no new version, so only "Latest build"
   is refreshed): version releases are
@@ -791,7 +792,9 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
         (VRAD's `-StaticPropLighting`), or per prop "like a Source model" (the nearest
         sample of a real 3D grid of ambient cubes + its 2 strongest lights); primitives
         already have their lightmaps from v0.12.1.
-     5. **v0.12.4 material system:** material files, GLSL shaders in Bottega `shaders/`,
+     5. **v0.12.4 material system:** (also: **an option for fewer rays for props**, user
+        2026-11-21, after the 1000-rocks map took over an hour; where it goes is asked in
+        the batch 5 discussion) material files, GLSL shaders in Bottega `shaders/`,
         specular, emissive, detail textures, alpha cutout, rim lighting; editor
         placeholder.
      6. **v0.12.5 reflection probes:** placed by hand, "building cubemaps", reflection

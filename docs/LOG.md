@@ -4,6 +4,10 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-21 — v0.12.3 reported
+- The user wants an option for fewer rays for props (the rocks map's per-vertex bake),
+  recorded for batch 5. Next: the batch 5 (materials) discussion.
+
 ### 2026-11-21 — v0.12.3 busy-map renders
 - `tests/bench/run.sh ... render`: the rich map 1.4 s, 1000 boxes 25 s, 4000 boxes 159 s
   (screenshots `m12-20-busy-rich.png`, `m12-21-busy-1000-boxes.png`,
