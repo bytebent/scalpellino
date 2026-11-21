@@ -67,7 +67,10 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   maps, Source's shaders as GLSL files, glow, cheap chrome, cutouts, cheap glass, detail,
   texlights, `$reflectivity`, Render > Prop light; its choices made without asking are under
   "v0.12.4, decided without asking", the open points under Open questions ("v0.12.4 parked").
-  Next: **report, then discuss v0.12.4b (bump maps) with the user before building it**.
+  Released (CI green). Busy maps rendered (`docs/screenshots/m12-26` to `m12-29`): rich 1.2 s,
+  1000 boxes 21.6 s, 4000 boxes 133.9 s, 1000 rocks with quick prop light 56 minutes (props
+  2886 s of it). Next: **report, then discuss v0.12.4b (bump maps) with the user before
+  building it**.
 - **Review fixes (2026-11-20), merged into `main`** (fast-forward from
   `fix/review-findings` after the user's go-ahead; no new version, so only "Latest build"
   is refreshed): version releases are

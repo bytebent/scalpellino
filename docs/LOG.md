@@ -4,6 +4,16 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-21 — v0.12.4 busy-map renders
+- Released (CI green). `tests/bench/run.sh ... render`, Normal quality, 2 threads (v0.12.3 in
+  brackets): the rich map 1.2 s (1.4), 1000 boxes 21.6 s (25), 4000 boxes 133.9 s (159), 1000
+  rocks with Render > Prop light > Quick 3353 s, about 56 minutes (v0.12.3, full: stopped by
+  the hour limit). Of the rocks' time, props per vertex took 2886 s (2.6 million vertices),
+  transfers 204 s, direct light 33 s: even a quarter of the rays leaves the props the slow
+  part. A first run was stopped part-way by an interruption; this is the second.
+- Screenshots: `m12-26-busy-rich.png`, `m12-27-busy-1000-boxes.png`,
+  `m12-28-busy-4000-boxes.png`, `m12-29-busy-1000-rocks.png`.
+
 ### 2026-11-21 — v0.12.4: materials (M12 batch 5)
 - Built as agreed (PLAN.md "Batch 5 decided with the user", items 1-5, 9-14, 16, 17, 19-25);
   choices made while building are under "v0.12.4, decided without asking", open points
