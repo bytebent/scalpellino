@@ -55,8 +55,10 @@ texture licenses; `releases/` has the notes for each version.
   (PLAN.md Roadmap item 5, "Batch 2 decided with the user", "VRAD reference" and
   "v0.12.1, decided without asking"; flagged choices under Open questions). Released and
   reported. **v0.12.2 (batch 3, bounces) is built** (PLAN.md "Batch 3 decided with the
-  user", "v0.12.2, decided without asking"). Next: report, then discuss batch 4 (light
-  grid). The user wants renders of the busy test maps reported with each lighting step:
+  user", "v0.12.2, decided without asking"). Then v0.12.3 (props and the light grid) was
+  built and reported, and **batch 5 (materials: v0.12.4, then v0.12.4b bump maps) is
+  agreed** (PLAN.md "Batch 5 decided with the user"); build it when the user says go.
+  The user wants renders of the busy test maps reported with each lighting step:
   `tests/bench/run.sh <app> render` (DEV.md "Benchmark"). The bake is `core/bake.*` (no graphics, tested in
   `testBake`); drawing is `render/baked_light.*`.
   Read PLAN.md Roadmap item 5 first: the Camera Preview becomes a draft render (the real

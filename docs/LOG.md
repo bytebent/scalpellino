@@ -4,6 +4,18 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-21 — Batch 5 (v0.12.4 materials, v0.12.4b bump maps) agreed (docs only)
+- 18 numbered questions on the material system; the user agreed with the recommendations,
+  with changes: material variants (a "wet" copy of a texture's material, with presets),
+  cheap and full versions (cheap chrome now, chrome with probes; cheap glass now, glass
+  with mirrors; cheap water and water in milestone 6), and decals / overlays added as their
+  own step. The steps after materials reordered: v0.12.4b bump maps, v0.12.5 decals,
+  v0.12.6 probes, v0.12.7 mirrors and glass. The fewer-rays option for props goes in the
+  Render menu. Recorded as "Batch 5 decided with the user".
+- The user corrected an old note: they never called the sky-only reflection "the Y2K
+  chrome look" (fixed in PLAN.md).
+- No code changed. Next: build v0.12.4 when the user says go.
+
 ### 2026-11-21 — v0.12.3 reported
 - The user wants an option for fewer rays for props (the rocks map's per-vertex bake),
   recorded for batch 5. Next: the batch 5 (materials) discussion.

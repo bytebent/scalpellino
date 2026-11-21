@@ -59,8 +59,9 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   (`docs/screenshots/m12-20` to `m12-22`). **The 1000-rocks map didn't finish within the
   benchmark's hour** (2.6 million prop vertices at full quality, about 325 rays each, on 2
   threads). Reported; **the user wants an option for fewer rays for props, in the next
-  batch** (see Roadmap item 5, batch 5). Next: **discuss batch 5 (v0.12.4, the material
-  system)** in depth.
+  batch** (see Roadmap item 5, batch 5). **Batch 5 (materials) was discussed and agreed
+  (2026-11-21)**: see "Batch 5 decided with the user" under Roadmap item 5; the steps after
+  it were reordered (decals added). Next: **build v0.12.4 when the user says go**.
 - **Review fixes (2026-11-20), merged into `main`** (fast-forward from
   `fix/review-findings` after the user's go-ahead; no new version, so only "Latest build"
   is refreshed): version releases are
@@ -792,16 +793,24 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
         (VRAD's `-StaticPropLighting`), or per prop "like a Source model" (the nearest
         sample of a real 3D grid of ambient cubes + its 2 strongest lights); primitives
         already have their lightmaps from v0.12.1.
-     5. **v0.12.4 material system:** (also: **an option for fewer rays for props**, user
-        2026-11-21, after the 1000-rocks map took over an hour; where it goes is asked in
-        the batch 5 discussion) material files, GLSL shaders in Bottega `shaders/`,
-        specular, emissive, detail textures, alpha cutout, rim lighting; editor
-        placeholder.
-     6. **v0.12.5 reflection probes:** placed by hand, "building cubemaps", reflection
-        kind per material, probe quality in the render options.
-     7. **v0.12.6 mirror reflections** on flat surfaces.
-     HDR stays a later refinement. Batches 5–7 have open design points (material file
-     format, probe details), settled in their own discussions.
+     5. **v0.12.4 materials:** `.vmt` material files, variants, the Material panel,
+        Source's shaders as GLSL files, cheap chrome (sky reflection), cheap glass, glow,
+        detail textures, cutouts, texlights, `$reflectivity`, and the fewer-rays option for
+        props (agreed 2026-11-21, see "Batch 5 decided").
+     6. **v0.12.4b bump maps:** Source's radiosity normal mapping (4 lightmaps on bumped
+        faces), SSBump, bump on props, Phong and rim light on props.
+     7. **v0.12.5 decals and overlays** (Hammer's `infodecal` / `info_overlay`; added by the
+        user 2026-11-21): stickers on surfaces (posters, cracks, stains, puddles), a new
+        placeable object with its own material shader. Details in their own discussion.
+     8. **v0.12.6 reflection probes:** placed by hand, "building cubemaps"; chrome (shiny
+        materials reflect the nearest probe instead of the sky), probe quality in the
+        render options.
+     9. **v0.12.7 mirrors and glass:** mirror reflections on flat surfaces, and glass that
+        bends what is behind it (Source's `Refract`); both draw the scene into a picture
+        first.
+     Then milestone 6: water (cheap water and water, as Source), clouds and endless
+     planes, made with the material system. HDR stays a later refinement. Probe, decal
+     and mirror details are settled in their own discussions.
    - **Batch 1 decided with the user (2026-11-20):**
      - **The editor waits while rendering** (it doesn't have to stay usable); only the
        terminal window updates. The render uses the map as it is when Render is clicked.
@@ -979,6 +988,55 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
      13. **One release** (v0.12.3).
      - **Built (v0.12.3, 2026-11-21)**; choices made while building are under "v0.12.3,
        decided without asking".
+   - **Batch 5 decided with the user (2026-11-21), v0.12.4 materials and v0.12.4b bump
+     maps.** The user agreed with the recommendations ("it all seems to be good"), with
+     changes; numbered as asked:
+     1. **`.vmt` syntax with Source's key names** (`LightmappedGeneric { "$basetexture"
+        "..." }`), so Source materials read almost as they are.
+     2. **Every texture is a material already; a `.vmt` next to it adds settings, and
+        variants make more** (user: a "wet" copy of a tileset). As Source, several `.vmt`
+        can use one texture. The Material panel's **"Make a variant..."** copies the
+        current material into a new `.vmt` next to it under a typed name (e.g. `..._wet`),
+        same texture; it shows in the texture browser as its own entry (with a small mark)
+        and goes on faces like a texture. Faces store the name (texture or variant), so maps
+        don't change. **Variants start from presets** (e.g. "wet": darker, a reflection
+        masked by the texture; "polished"; "glowing"), every setting still editable.
+     3. **Shaders:** Source's own (`LightmappedGeneric`, `VertexLitGeneric`, `UnlitGeneric`)
+        ship with the app as GLSL files with the agreed header; a `.vmt` names its shader;
+        the user's shaders in Bottega `shaders/` get the same inputs (texture, baked light,
+        normal, view direction, reflection).
+     4. **A Material panel** in the Texture tool (fields for every setting, for the picked
+        face's material) that writes the `.vmt`; the files stay editable as text.
+     5. **The editor shows the base texture** (no bump, shine or glow); materials show in
+        renders and the Camera Preview.
+     6. **Bump maps on brushes and terrain** (radiosity normal mapping, 4 lightmaps on
+        bumped faces) — in **v0.12.4b**.
+     7. **Bump on props** (both lighting modes; per-vertex props store 4 values per vertex)
+        in v0.12.4b; **primitives later**.
+     8. **SSBump** in v0.12.4b.
+     9. **Cheap chrome** (`$envmap` reflecting the sky picture, with mask, tint and Fresnel)
+        in v0.12.4; **chrome** (the nearest probe) with the probes (v0.12.6). The user's
+        idea: cheap and full versions, as Source's cheap water and water.
+     10. **Glow** (`$selfillum`, the texture's alpha marks what glows).
+     11. **Texlights:** a material key (colour + brightness) makes a surface light the map
+         in the bake, as VRAD's surface lights (direct light with shadows, and it bounces).
+     12. **Detail textures:** the "mod2x" blend (others when needed).
+     13. **Alpha cutouts on brush textures** (`$alphatest`) cast cut-out shadows in the
+         bake (as VRAD's -TextureShadows; Source's default for brushes is solid).
+     14. **Cheap glass** (`$translucent`, blended, with a sky reflection, no bending; doesn't
+         block light, as VRAD) in v0.12.4; **glass** (`Refract`) with mirrors (v0.12.7).
+     15. **Phong and rim light on props** (`$phong`, `$rimlight`), from the 2 strongest
+         lights and the ambient cube (per-vertex props store their 2 lights too) — in
+         v0.12.4b. Not on brushes (Source's world shader has none).
+     16. **`$reflectivity`** overrides how much a material bounces.
+     17. **Fewer rays for props: in the Render menu**, next to Quality: "Prop light: full /
+         quick (a quarter of the rays)", default full, for the whole render.
+     18. **Two releases:** v0.12.4 (files, variants, panel, glow, detail, cutouts, cheap
+         glass, cheap chrome, `$reflectivity`, texlights, the props option) and v0.12.4b
+         (bump maps, SSBump, Phong and rim).
+     - **Other Source shaders:** `UnlitGeneric` in v0.12.4; `Refract` with mirrors;
+       blending several textures is covered by the terrain's painted layers (brushes
+       later if missed); character, particle and moving-screen shaders are left out.
      - **Also agreed:** sun and sky light count a ray that hits nothing as sky (there are
        no sky brushes); the bake runs on the processor with all threads, in the core
        (testable without a graphics card), with ray tests against brushes, terrain,
