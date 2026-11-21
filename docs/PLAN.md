@@ -71,6 +71,20 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   1000 boxes 21.6 s, 4000 boxes 133.9 s, 1000 rocks with quick prop light 56 minutes (props
   2886 s of it). Next: **report, then discuss v0.12.4b (bump maps) with the user before
   building it**.
+  **v0.12.4b discussed (2026-11-21), the user said yes to every recommendation:** (1) Source
+  SDK 2013's bump blend: squared weights over their sum; (2) the bake fills all 4 lightmaps
+  (direct, sky and bounce per bump direction), as VRAD; (3) Source's green-channel
+  convention plus a per-material "flip green" tick (our own `%` key); (4) SSBump as Source
+  (`_ssbump` / `$ssbump 1`, read as the 3 coefficients); (5) each terrain layer its own bump
+  map over the terrain's 4 lightmaps; (6) props: the glTF's own normal map automatically, a
+  `.vmt` beside a model's texture file adds settings; (7) Phong as Source (the 2 strongest
+  lights, unshadowed; per-vertex props keep their 2 lights); (8) rim light as Source (ambient
+  cube along the view, Fresnel, `$rimlight*` keys); (9) read VRAD's code (needs the user's
+  approval of the page) and fix the texlight scale; (10) textures with alpha and no `.vmt`
+  stay opaque (Source); (11) expose the sky behind the scene too; (12) materials on
+  primitives later. One release. The busy-map render benchmark drops the 1000 rocks.
+  Before building, the user asked whether bakes can be faster without changing the look:
+  proposal sent (tracer speed-ups that give the same picture), waiting for the answer.
 - **Review fixes (2026-11-20), merged into `main`** (fast-forward from
   `fix/review-findings` after the user's go-ahead; no new version, so only "Latest build"
   is refreshed): version releases are

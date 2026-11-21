@@ -171,35 +171,7 @@ expect render saved
 rendercopy render-3-4000-boxes.png
 shot render-3-4000-boxes-log.png
 closedialogs
-# ---------------------------------------------------------------- 4: 1000 rocks (props)
-open empty.map
-block -6000 -6000 -64 6000 6000 0
-key Esc
-bench props 1000 models/rock 250
-tool light
-lightset kind sun
-lightset color 255 245 230
-lightset brightness 350
-lightset pitch -35
-lightset yaw 30
-lightset pos 0 0 900
-key Return
-tool select
-key Esc
-environment sky Panorama_Sky_04
-tool camera
-cameraset lens 28
-cameraset size 1280 720
-cameraset pos -3000 -3000 900
-key Return
-cameraedit angles -15 45 0
-tool select
-key Esc
-# 2.6 million prop vertices: with full prop light this took over the benchmark's hour
-# (v0.12.3); Render > Prop light > Quick (v0.12.4) bakes them with a quarter of the rays.
-renderset props quick
-render
-expect render saved
-rendercopy render-4-1000-rocks.png
-shot render-4-1000-rocks-log.png
+# The 1000 rocks (props) map was dropped on 2026-11-21 (the user's call): it took 56 minutes
+# even with quick prop light. The props benchmark still measures drawing them.
+
 quit

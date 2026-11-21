@@ -198,8 +198,8 @@ A development tool, not a test: `tests/bench/run.sh <absolute path to Scalpellin
 
 **Render** (`tests/bench/render.script`, several minutes): busy maps rendered at Normal
 quality with the baked light: the rich map (as the idle test's), 1000 boxes + 8 terrains,
-4000 boxes + 16 terrains, 1000 rocks (with Render > Prop light > Quick since v0.12.4: with
-full prop light it passed the benchmark's hour). Prints each render log's bake lines; with
+4000 boxes + 16 terrains. (The 1000 rocks were dropped on 2026-11-21: 56 minutes even with
+quick prop light.) Prints each render log's bake lines; with
 `SCAL_BENCH_OUT=<folder>` it also copies the pictures and render windows there. The user
 wants these renders reported with each lighting step.
 

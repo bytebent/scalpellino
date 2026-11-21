@@ -4,6 +4,11 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-21 — v0.12.4b agreed; benchmark without the rocks
+- The user said yes to all twelve v0.12.4b recommendations (PLAN.md, current status) and to
+  dropping the 1000 rocks from the busy-map render benchmark (`tests/bench/render.script`,
+  DEV.md). Bake speed-ups that keep the look were proposed; no code changed.
+
 ### 2026-11-21 — v0.12.4 busy-map renders
 - Released (CI green). `tests/bench/run.sh ... render`, Normal quality, 2 threads (v0.12.3 in
   brackets): the rich map 1.2 s (1.4), 1000 boxes 21.6 s (25), 4000 boxes 133.9 s (159), 1000
