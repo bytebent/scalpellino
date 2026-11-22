@@ -87,6 +87,9 @@ texture licenses; `releases/` has the notes for each version.
   record the answers in PLAN.md ("Batch N decided with the user") the same day; build when
   they say go; one release per step; then a short plain report with screenshots and the
   busy-map bake times. Choices made while building go under "vX, decided without asking".
+  **Write questions for someone who doesn't read the code** (user, 2026-11-22): say in
+  plain words what each option does and what they would see in the app; no bare file keys
+  or jargon ("tint", entity names) without explaining them.
   Don't render the 1000-rocks map any more (it takes about an hour): `tests/bench/render.script`
   has no rocks now.
 - **Shift = no snapping** when turning: brushes (Option+drag a corner), object rings

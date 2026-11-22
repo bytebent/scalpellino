@@ -260,7 +260,7 @@ Numbers (v0.10.3; before in brackets, v0.10.2):
   its own zips. If not (that build failed, or its release job was skipped or cancelled
   because main moved on), it tags the notes commit and starts this workflow on the tag;
   that run builds exactly that commit and publishes it. A later commit's build is never
-  published under an older version (this happened once: v0.3.1 holds code from after it).
+  published under an older version.
   If the tag build fails, there is no release and the next pushes warn about it; fix
   and re-run that run (Actions → build → ref `vX.Y.Z`). Pushing a `vX.Y.Z` tag by hand
   also publishes that commit. "The commit that added the notes" is counted along

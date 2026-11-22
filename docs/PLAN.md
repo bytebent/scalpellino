@@ -111,8 +111,9 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   Brushes (Option+drag a corner) and decal rings already worked this way. Next: v0.12.6
   reflection probes, discussed with the user first.
   **Batch 7 (v0.12.6 reflection probes) discussed (2026-11-22):** 13 of 16 questions
-  answered (see "Batch 7 decided with the user" under Roadmap item 5); 1, 11 and a
-  follow-up on blending (17) are open (Open questions). Built when the user says go.
+  answered, then 1, 11 and a blending follow-up (17) the same evening (see "Batch 7
+  decided with the user" under Roadmap item 5). Question 22 (colouring the surfaces a
+  selected probe reflects on) is open. Built when the user says go.
 - **Review fixes (2026-11-20), merged into `main`** (fast-forward from
   `fix/review-findings` after the user's go-ahead; no new version, so only "Latest build"
   is refreshed): version releases are
@@ -153,8 +154,9 @@ Each archive's SHA-256 is in `cmake/Deps.cmake` (checked at configure time).
 - **Batch 7 (v0.12.6 probes), still open (2026-11-22):** question 1 (save probes as
   Hammer's `env_cubemap` or our own `scal_probe`), question 11 (which `$envmap` value means
   "the nearest probes" and which means "only the sky"), and question 17 (blending details:
-  how many probes, how they are weighed). Asked again in plain words; the build waits for
-  the user's go anyway.
+  how many probes, how they are weighed). **Answered the same evening:** see items 1, 11
+  and 17 of "Batch 7 decided with the user". Only question 22 (the probe-use colouring)
+  is open: asked again with an explanation.
 
 - **v0.12.5 parked (later, agreed "for now"):** a face list per decal (add / remove faces
   by hand, as info_overlay's sides); two separate objects (infodecal and overlay) if one
@@ -200,14 +202,6 @@ Each archive's SHA-256 is in `cmake/Deps.cmake` (checked at configure time).
     none), sky light (Q3, yes), primitives lit already in v0.12.1 (Q4), linear light
     (Q5: brighter than the texture is allowed; no fixed 2x overbright).
 
-- **The v0.3.1 release holds the wrong code** (split / carve / hollow from after v0.3.1;
-  the release bug fixed on `fix/review-findings`). Not changed: replacing a published
-  release is the user's call. The automatic rebuild can't do it: started on the v0.3.1
-  tag, GitHub runs that commit's old `build.yml`, whose release job only runs on pushes.
-  By hand: delete the v0.3.1 release (keep the tag, it already points at the right
-  commit), run the workflow on the tag (its `macos` job makes the zip), download the zip
-  and attach it to a new v0.3.1 release made from the tag with its notes. Or just leave a
-  note in v0.3.1's release text.
 - **Curve generator parameters** in a `.map` (`core/curves.cpp curveFromKeys`) still read
   numbers loosely (`atoi`, `strtod`): not in the review's list; worth the same strict
   reading some time (a bad value there only changes a generated shape).
@@ -1216,8 +1210,8 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
      (so "no probe = the sky" is Source's own behaviour); a face takes the probe nearest its
      centre, preferring probes in front of it, no visibility test; `cubemapsize` 0 = 32, else
      2^(n-1). Numbered as asked:
-     1. **The object's name in the file:** open (asked again in plain words, see question 1
-        under Open questions). In the UI it is a "reflection probe".
+     1. **Saved as Hammer's `env_cubemap`** point entity (`origin`, `cubemapsize`; unknown
+        keys kept), so Hammer / TrenchBroom recognise it. In the UI it is a "reflection probe".
      2. **Probe tool on Shift+E** (World and Tools menus): click in a view, Return creates,
         Esc cancels, like lights. A 3D click on a floor puts it **170 cm** above it (the
         user's height; Source's eye height is 64 units = 163 cm); on a wall or ceiling 81 cm
@@ -1228,10 +1222,14 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
      4. **Which probe: blended (a deliberate difference from Source, which takes one probe
         per face / prop).** Each shaded point blends its nearest 2-4 probes (Source 2-like),
         so there are no jumps between faces and one big terrain doesn't hang on a single
-        probe. How many and the weights: see question 17 under Open questions.
+        probe. **Details (question 17, agreed):** every pixel blends its 4 nearest probes,
+        weighed by 1 / distance^2, probes behind the surface weighed down (keeps Source's
+        preference for probes in front of a face). All probes in one texture so any pixel
+        reaches any probe. Where probes see different things a reflection can show both
+        faintly (accepted).
      5. **Hammer's `sides` override: later** (parked, like the decals' face list).
-        (The "tint the faces using the selected probe" aid was offered with 5; with blending
-        it would show the faces a probe takes part in. Not decided: ask when building.)
+        (Colouring the surfaces a selected probe reflects on, in the editor's 3D view: asked
+        again with an explanation, question 22.)
      6. **Size per probe as Hammer's `cubemapsize`** (default 32 a side), scaled by the
         render's Quality: Draft half, Normal as set, High double (at most 512). The Camera
         Preview builds at Draft.
@@ -1248,8 +1246,9 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
          Source** (DirectX 9 filters each cube face alone, so at 32 a side the edges can
          show): say so in ARCHITECTURE and the release notes. No extra blur; softness comes
          from the small size, as Source.
-     11. **What `$envmap` values mean:** open (asked again in plain words, see question 11
-         under Open questions).
+     11. **`$envmap env_cubemap` = the probes** (the sky when the map has none, as Source);
+         **any other value** (e.g. `$envmap sky`) **= only the map's sky** (cheap chrome). No
+         named sky pictures as values.
      12. **No box (parallax) correction**, as Source 2013; an optional box per probe noted
          as "maybe later" (Source 2 / mods). Mirrors (v0.12.7) handle flat floors.
      13. **Memory only**, rebuilt when the bake, materials, props or probes change (like the
@@ -1260,6 +1259,11 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
      15. **Editing like lights:** click to select, drag in 2D, Properties (position, size),
          Delete, Cmd+D, the 3D rectangle select; no visgroups, hiding or Replicate.
      16. **One release** (v0.12.6); mirrors and glass stay in v0.12.7.
+     - **Also answered the same evening:** (18) the "decided without asking" lists stay as
+       they are, neither confirmed nor rejected; (19) the default texture scale change
+       stays "later"; (20) the old v0.3.1 release is left as it is (old releases aren't
+       used; the note about it was removed from PLAN.md); (21) the rough light preview
+       keeps its old fade for now (maybe changed in the far future).
    - **Batch 6 decided with the user (2026-11-22), v0.12.5 decals.** Always called
      **decal** in the UI and docs (never "sticker").
      1. **One object** (for now): a decal with info_overlay's features (free size, rotation,
