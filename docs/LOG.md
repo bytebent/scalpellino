@@ -18,8 +18,8 @@ too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
   probes (1 / distance^2, those behind the surface weighed down). The unconfirmed
   "decided without asking" lists stay as they are; texture scale change later; the old
   v0.3.1 note removed from PLAN.md and DEV.md (old releases aren't used); rough light
-  preview unchanged for now. Question 22 (colouring the surfaces a probe reflects on) asked
-  again with an explanation; HANDOFF notes the user wants questions explained plainly. No
+  preview unchanged for now. Question 22: colouring the surfaces a selected probe reflects
+  on is a View toggle, off by default (shiny surfaces only); HANDOFF notes the user wants questions explained plainly. No
   code changes.
 
 ### 2026-11-22 — v0.12.5b: Shift turns object rings freely

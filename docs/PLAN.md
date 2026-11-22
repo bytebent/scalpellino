@@ -112,8 +112,9 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   reflection probes, discussed with the user first.
   **Batch 7 (v0.12.6 reflection probes) discussed (2026-11-22):** 13 of 16 questions
   answered, then 1, 11 and a blending follow-up (17) the same evening (see "Batch 7
-  decided with the user" under Roadmap item 5). Question 22 (colouring the surfaces a
-  selected probe reflects on) is open. Built when the user says go.
+  decided with the user" under Roadmap item 5), and 22 (colouring the surfaces a selected
+  probe reflects on: a View toggle, off by default). All agreed; built when the user says
+  go.
 - **Review fixes (2026-11-20), merged into `main`** (fast-forward from
   `fix/review-findings` after the user's go-ahead; no new version, so only "Latest build"
   is refreshed): version releases are
@@ -155,8 +156,8 @@ Each archive's SHA-256 is in `cmake/Deps.cmake` (checked at configure time).
   Hammer's `env_cubemap` or our own `scal_probe`), question 11 (which `$envmap` value means
   "the nearest probes" and which means "only the sky"), and question 17 (blending details:
   how many probes, how they are weighed). **Answered the same evening:** see items 1, 11
-  and 17 of "Batch 7 decided with the user". Only question 22 (the probe-use colouring)
-  is open: asked again with an explanation.
+  and 17 of "Batch 7 decided with the user"; question 22 (the probe-use colouring) too
+  (a View toggle, off by default). Nothing open.
 
 - **v0.12.5 parked (later, agreed "for now"):** a face list per decal (add / remove faces
   by hand, as info_overlay's sides); two separate objects (infodecal and overlay) if one
@@ -1228,8 +1229,11 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
         reaches any probe. Where probes see different things a reflection can show both
         faintly (accepted).
      5. **Hammer's `sides` override: later** (parked, like the decals' face list).
-        (Colouring the surfaces a selected probe reflects on, in the editor's 3D view: asked
-        again with an explanation, question 22.)
+        **Question 22 (agreed):** a View menu toggle, off by default: while on, selecting a
+        probe colours the surfaces that use it in the 3D view (strong where it counts most,
+        fading where other probes take over). Only shiny surfaces (`$envmap env_cubemap`)
+        are coloured (my recommendation; the user didn't pick, can change). Drawn only when
+        the selection changes.
      6. **Size per probe as Hammer's `cubemapsize`** (default 32 a side), scaled by the
         render's Quality: Draft half, Normal as set, High double (at most 512). The Camera
         Preview builds at Draft.
