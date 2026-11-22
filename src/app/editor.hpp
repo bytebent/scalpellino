@@ -30,6 +30,7 @@
 #include "tools/camera_tool.hpp"
 #include "tools/prim_tool.hpp"
 #include "tools/prop_tool.hpp"
+#include "tools/decal_tool.hpp"
 #include "render/sky_library.hpp"
 #include "render/lighting.hpp"
 #include "core/replicate.hpp"
@@ -233,6 +234,22 @@ private:
     bool propPerAxis_ = false;       // show a scale per axis (else one even scale)
     double propPend_[3] = {0, 0, 0}; // typed position of the pending prop
     std::string propMessage_;
+    // Decals (v0.12.5), editor_decals.cpp
+    void drawDecalPanel();    // Properties for the Decal tool / selected decals
+    void drawDecalDialog();   // Decals > Decal... (typed position, size, turn, reach, order)
+    void decalOrder(int step); // Bring forward (+1) / Send back (-1)
+    void decalSizeFromPicture();
+    // Applies `fn` to every selected decal (or the pending one) as one undo step.
+    void editDecals(const char* name, const std::function<void(Decal&)>& fn);
+    void addDecals(Scene& s);  // the shown decals, their meshes cached per map revision
+    std::function<bool(const std::string&, int&, int&, double&)> decalPicture_;
+    std::map<DecalId, std::pair<Decal, std::shared_ptr<const std::vector<DecalTri>>>> decalMeshes_;
+    unsigned long long decalMeshRev_ = ~0ull;
+    bool askDecal_ = false;
+    Decal decalPanel_;        // Properties fields (refreshed when not being typed in)
+    std::set<DecalId> decalPanelFor_;
+    unsigned long long decalPanelRev_ = ~0ull;
+    double decalBuf_[8] = {}; // dialog: x y z, width, height, turn, reach, order
     void drawWorldDialogs();
     // Applies `fn` to every selected light as one undo step (if anything changed).
     template <class Fn> void editLights(const char* name, Fn fn);
@@ -419,6 +436,7 @@ private:
     CameraTool cameraTool_;
     PrimTool primTool_;
     PropTool propTool_;
+    DecalTool decalTool_;
     Tool* tool_ = &selectTool_;
 
     int capture_ = -1;          // view that owns the current left-button drag

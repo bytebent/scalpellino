@@ -72,7 +72,7 @@ void PrimTool::press(ToolEnv& env, const Pointer& p) {
     drawing_ = true;
     view_ = p.view;
     env.doc.setPrimSelection({});
-    env.doc.setPropSelection({});
+    env.doc.setPropSelection({}); env.doc.setDecalSelection({});
     env.doc.setLightSelection({});
     env.doc.setCameraSelection({});
 }
@@ -105,17 +105,18 @@ bool PrimTool::key(ToolEnv& env, int key) {
     if (key == KEY_ESCAPE) {
         if (objects_.active()) objects_.cancel();
         else if (box_) box_.reset();
-        else { env.doc.setPrimSelection({}); env.doc.setPropSelection({}); }
+        else { env.doc.setPrimSelection({}); env.doc.setPropSelection({}); env.doc.setDecalSelection({}); }
         drawing_ = false;
         return true;
     }
     if ((key == KEY_DELETE || key == KEY_BACKSPACE) && !objects_.active() &&
-        (!env.doc.primSelection().empty() || !env.doc.lightSelection().empty() || !env.doc.propSelection().empty() ||
+        (!env.doc.primSelection().empty() || !env.doc.lightSelection().empty() || !env.doc.propSelection().empty() || !env.doc.decalSelection().empty() ||
          !env.doc.cameraSelection().empty())) {
         Command c = env.doc.makeDelete({}, "Delete");
         env.doc.addLightDeletes(c, env.doc.lightSelection());
         env.doc.addPrimDeletes(c, env.doc.primSelection());
         env.doc.addPropDeletes(c, env.doc.propSelection());
+        env.doc.addDecalDeletes(c, env.doc.decalSelection());
         env.doc.addCameraDeletes(c, env.doc.cameraSelection());
         env.doc.apply(std::move(c));
         return true;

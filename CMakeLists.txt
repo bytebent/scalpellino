@@ -36,6 +36,7 @@ add_library(scal_core STATIC
   src/core/texture.cpp
   src/core/csg.cpp
   src/core/curves.cpp
+    src/core/decal.cpp
   src/core/primitives.cpp
   src/core/terrain.cpp
   src/core/world.cpp
@@ -96,6 +97,7 @@ if(SCAL_BUILD_APP)
     src/app/editor_visibility.cpp
     src/app/editor_world.cpp
     src/app/editor_cameras.cpp
+    src/app/editor_decals.cpp
     src/app/editor_skylab.cpp
     src/app/editor_render.cpp
     src/app/settings.cpp
@@ -116,6 +118,8 @@ if(SCAL_BUILD_APP)
     src/tools/texture_tool.cpp
     src/tools/clip_tool.cpp
     src/tools/curve_tool.cpp
+    src/tools/decal_edit.cpp
+    src/tools/decal_tool.cpp
     src/tools/terrain_tool.cpp
     src/tools/object_edit.cpp
     src/tools/light_tool.cpp

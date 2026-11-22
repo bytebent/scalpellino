@@ -43,7 +43,7 @@ void Editor::selectAll() {
 void Editor::selectNone() {
     tool_->cancel();
     doc_.setSelection({});
-    doc_.setPropSelection({});
+    doc_.setPropSelection({}); doc_.setDecalSelection({});
     doc_.setCameraSelection({});
 }
 
@@ -125,7 +125,7 @@ void Editor::duplicate() {
 }
 
 void Editor::deleteSelection() {
-    if (doc_.selection().empty() && doc_.lightSelection().empty() && doc_.primSelection().empty() && doc_.propSelection().empty() &&
+    if (doc_.selection().empty() && doc_.lightSelection().empty() && doc_.primSelection().empty() && doc_.propSelection().empty() && doc_.decalSelection().empty() &&
         doc_.cameraSelection().empty())
         return;
     tool_->cancel();
@@ -133,6 +133,7 @@ void Editor::deleteSelection() {
     doc_.addLightDeletes(c, doc_.lightSelection());
     doc_.addPrimDeletes(c, doc_.primSelection());
     doc_.addPropDeletes(c, doc_.propSelection());
+        doc_.addDecalDeletes(c, doc_.decalSelection());
     doc_.addCameraDeletes(c, doc_.cameraSelection());
     doc_.apply(std::move(c));
 }

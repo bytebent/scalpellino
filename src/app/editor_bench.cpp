@@ -49,7 +49,7 @@ void Editor::benchProps(int count, const std::string& model, double spacing) {
         props.push_back(p);
     }
     const double add = timeMs(1, [&] { doc_.apply(doc_.makeAddProps(props, "Bench")); });
-    doc_.setPropSelection({});
+    doc_.setPropSelection({}); doc_.setDecalSelection({});
     const Model* m = models_.find(model);
     const size_t tris = m ? m->triangles() : 0;
 
@@ -100,7 +100,7 @@ void Editor::benchProps(int count, const std::string& model, double spacing) {
     doc_.setPropSelection(sel);
     LandingResult landed;
     const double land = timeMs(1, [&] { landed = landSelection(doc_, modelFinder_); });
-    doc_.setPropSelection({});
+    doc_.setPropSelection({}); doc_.setDecalSelection({});
 
     std::printf("bench props: %d x %s (%zu triangles each): add %.1f ms | scene %.2f ms (built per view: x4 per redraw)"
                 " | 3D view %.1f ms (%zu skipped, %zu draw calls), close up %.1f ms (%zu skipped) | 2D view %.1f ms | pick %.2f ms per click (%d/%d hit) | land %zu: %.0f ms\n",

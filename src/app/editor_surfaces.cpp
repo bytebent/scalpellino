@@ -466,6 +466,12 @@ void Editor::drawFacePanel() {
         ImGui::End();
         return;
     }
+    if (tool_ == &decalTool_ || (tool_ != &textureTool_ && !doc_.decalSelection().empty() && doc_.selection().empty() &&
+                                 doc_.propSelection().empty() && doc_.primSelection().empty())) {
+        if (ImGui::Begin("Properties###face", nullptr, ImGuiWindowFlags_NoCollapse)) drawDecalPanel();
+        ImGui::End();
+        return;
+    }
     if (tool_ == &propTool_ || ((tool_ == &selectTool_ || tool_ == &lightTool_ || tool_ == &primTool_) && doc_.primSelection().empty() && !doc_.propSelection().empty())) {
         if (ImGui::Begin("Properties###face", nullptr, ImGuiWindowFlags_NoCollapse)) drawPropPanel();
         ImGui::End();

@@ -240,6 +240,51 @@ void Editor::registerScriptExpects() {
         std::string w; size_t n = 0; in >> w >> n;
         if (doc_.props().size() != n) { std::fprintf(stderr, "script FAIL (command %d): expected %zu props, got %zu\n", scriptLine_, n, doc_.props().size()); ++scriptFailures_; }
     });
+    // Decals (v0.12.5): expect decals <n> | decalsel <n> | decal <field> <value...> (the first
+    // selected decal, else the Decal tool's pending one): material, pos x y z, normal x y z,
+    // width, height, turn, reach, order, visgroup, brush <index>, drawn <triangles> (> 0: any)
+    add({"decals"}, [this](const std::string&, std::istringstream& in) {
+        std::string w; size_t n = 0; in >> w >> n;
+        if (doc_.decalCount() != n) { std::fprintf(stderr, "script FAIL (command %d): expected %zu decals, got %zu\n", scriptLine_, n, doc_.decalCount()); ++scriptFailures_; }
+    });
+    add({"decalsel"}, [this](const std::string&, std::istringstream& in) {
+        std::string w; size_t n = 0; in >> w >> n;
+        if (doc_.decalSelection().size() != n) { std::fprintf(stderr, "script FAIL (command %d): expected %zu selected decals, got %zu\n", scriptLine_, n, doc_.decalSelection().size()); ++scriptFailures_; }
+    });
+    add({"decal"}, [this](const std::string&, std::istringstream& in) {
+        std::string w, k; in >> w >> k;
+        const Decal* d = nullptr;
+        const Brush* holder = nullptr;
+        if (!doc_.decalSelection().empty()) {
+            const Document::DecalRef r = doc_.findDecal(*doc_.decalSelection().begin());
+            d = r.decal;
+            holder = r.brush;
+        } else if (tool_ == &decalTool_) d = decalTool_.pending();
+        auto bad = [&](const std::string& got) { std::fprintf(stderr, "script FAIL (command %d): decal %s is %s\n", scriptLine_, k.c_str(), got.c_str()); ++scriptFailures_; };
+        if (!d) { std::fprintf(stderr, "script FAIL (command %d): no decal selected or pending\n", scriptLine_); ++scriptFailures_; return; }
+        char b[160];
+        if (k == "material") { std::string m; in >> m; if (d->material != m) bad(d->material); }
+        else if (k == "pos" || k == "normal") {
+            Vec3 v; in >> v.x >> v.y >> v.z;
+            const Vec3 got = k == "pos" ? d->pos : d->normal;
+            std::snprintf(b, sizeof b, "%g %g %g", got.x, got.y, got.z);
+            if (length(got - v) > (k == "pos" ? 0.5 : 1e-3)) bad(b);
+        } else if (k == "brush") {
+            size_t i = 0; in >> i;
+            const size_t at = holder ? (size_t)(holder - doc_.brushes().data()) : (size_t)-1;
+            if (at != i) bad(std::to_string(at));
+        } else if (k == "drawn") {
+            size_t n = 0; in >> n;
+            const size_t got = decalMesh(*d, doc_.brushes(), [this](const Brush& x) { return doc_.visible(x); }).size();
+            if ((n == 0 && got != 0) || (n > 0 && got == 0)) bad(std::to_string(got) + " triangles");
+        } else {
+            double v = 0; in >> v;
+            const double got = k == "width" ? d->width : k == "height" ? d->height : k == "turn" ? decalRotation(*d) : k == "reach" ? d->reach
+                             : k == "order" ? d->order : k == "visgroup" ? (double)d->visgroup : 1e300;
+            std::snprintf(b, sizeof b, "%g", got);
+            if (std::fabs(got - v) > 0.01) bad(b);
+        }
+    });
     add({"propsel"}, [this](const std::string&, std::istringstream& in) {
         std::string w; size_t n = 0; in >> w >> n;
         if (doc_.propSelection().size() != n) { std::fprintf(stderr, "script FAIL (command %d): expected %zu selected props, got %zu\n", scriptLine_, n, doc_.propSelection().size()); ++scriptFailures_; }

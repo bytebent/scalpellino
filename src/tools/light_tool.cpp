@@ -28,7 +28,7 @@ void LightTool::press(ToolEnv& env, const Pointer& p) {
     pending = at;
     doc.setLightSelection({});
     doc.setPrimSelection({});
-    doc.setPropSelection({});
+    doc.setPropSelection({}); doc.setDecalSelection({});
     doc.setCameraSelection({});
 }
 

@@ -79,7 +79,7 @@ void CameraTool::press(ToolEnv& env, const Pointer& p) {
     doc.setCameraSelection({});
     doc.setLightSelection({});
     doc.setPrimSelection({});
-    doc.setPropSelection({});
+    doc.setPropSelection({}); doc.setDecalSelection({});
 }
 
 void CameraTool::drag(ToolEnv& env, const Pointer& p) {

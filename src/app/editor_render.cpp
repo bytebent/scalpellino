@@ -174,6 +174,7 @@ void Editor::stepRender() {
                       st.prims, st.props, st.lights);
         renderLog(b);
         if (!st.lights) renderLog("  no lights: only the sky light (World > Light tool)");
+        if (st.decals) renderLog("  " + std::to_string(st.decals) + (st.decals == 1 ? " decal" : " decals") + " (lit by the surface under them)");
         if (st.terrains) renderLog("  " + std::to_string(st.terrains) + " terrain patches");
         if (st.nodrawFaces) renderLog("  " + std::to_string(st.nodrawFaces) + " nodraw faces left out");
         if (st.missingProps) renderLog("  warning: " + std::to_string(st.missingProps) + " props have no model file (left out; Rescan the Bottega?)");

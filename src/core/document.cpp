@@ -106,7 +106,148 @@ void Document::setLight(LightId id, const std::optional<Light>& l) {
     }
 }
 
+Document::DecalRef Document::findDecal(DecalId id) const {
+    if (id == 0) return {};
+    for (const Brush& b : brushes_)
+        for (const Decal& d : b.decals)
+            if (d.id == id) return {&b, &d};
+    return {};
+}
+
+bool Document::visible(const Brush& b, const Decal& d) const {
+    if (!decalsShown_ || !visible(b)) return false;
+    if (d.visgroup)
+        for (const Visgroup& v : visgroups_)
+            if (v.id == d.visgroup) return v.visible;
+    return true;
+}
+
+void Document::setDecalsShown(bool on) {
+    if (on == decalsShown_) return;
+    decalsShown_ = on;
+    if (!on) decalSelection_.clear();
+    bump();
+}
+
+size_t Document::decalCount() const {
+    size_t n = 0;
+    for (const Brush& b : brushes_) n += b.decals.size();
+    return n;
+}
+
+void Document::pruneDecalSelection() {
+    if (decalSelection_.empty()) return;
+    std::set<DecalId> keep;
+    for (const Brush& b : brushes_)
+        for (const Decal& d : b.decals)
+            if (decalSelection_.count(d.id)) keep.insert(d.id);
+    decalSelection_ = std::move(keep);
+}
+
+void Document::normalizeDecals(Command& c) {
+    std::set<BrushId> touched;
+    for (const BrushChange& ch : c.changes) touched.insert(ch.id);
+    std::set<DecalId> elsewhere;
+    for (const Brush& b : brushes_)
+        if (!touched.count(b.id))
+            for (const Decal& d : b.decals) elsewhere.insert(d.id);
+    std::map<DecalId, std::vector<Brush*>> holders;
+    for (BrushChange& ch : c.changes) {
+        if (!ch.after) continue;
+        for (Decal& d : ch.after->decals) {
+            if (d.id == 0 || elsewhere.count(d.id)) d.id = newDecalId();
+            holders[d.id].push_back(&*ch.after);
+        }
+    }
+    for (auto& [id, hs] : holders) {
+        if (hs.size() < 2) continue;
+        // the piece whose box is nearest to the decal's centre keeps it
+        Vec3 at;
+        for (const Decal& d : hs[0]->decals) if (d.id == id) at = d.pos;
+        Brush* best = nullptr;
+        double bestD = 1e300;
+        for (Brush* b : hs) {
+            const AABB bb = b->bounds();
+            double dd = 0;
+            for (int k = 0; k < 3; ++k) {
+                const double e = std::max({bb.min[k] - at[k], 0.0, at[k] - bb.max[k]});
+                dd += e * e;
+            }
+            if (dd < bestD) { bestD = dd; best = b; }
+        }
+        for (Brush* b : hs)
+            if (b != best)
+                b->decals.erase(std::remove_if(b->decals.begin(), b->decals.end(), [&](const Decal& d) { return d.id == id; }),
+                                b->decals.end());
+    }
+}
+
+Command Document::makeAddDecal(Decal d, BrushId on, const std::string& name) {
+    Command c;
+    c.name = name;
+    c.selectionBefore = selection_;
+    c.selectionAfter = {};
+    c.lightSelectionBefore = lightSelection_;
+    c.lightSelectionAfter = std::set<LightId>{};
+    c.primSelectionBefore = primSelection_;
+    c.primSelectionAfter = std::set<MathPrimId>{};
+    c.propSelectionBefore = propSelection_;
+    c.propSelectionAfter = std::set<PropId>{};
+    c.cameraSelectionBefore = cameraSelection_;
+    c.cameraSelectionAfter = std::set<CameraId>{};
+    const Brush* b = find(on);
+    if (!b) return c;
+    d.id = newDecalId();
+    Brush nb = *b;
+    nb.decals.push_back(d);
+    c.changes.push_back({on, *b, std::move(nb)});
+    c.decalSelectionAfter = std::set<DecalId>{d.id};
+    return c;
+}
+
+Command Document::makeModifyDecals(const std::vector<Decal>& modified, const std::string& name) {
+    Command c;
+    c.name = name;
+    c.selectionBefore = selection_;
+    c.selectionAfter = selection_;
+    std::map<BrushId, Brush> changed;
+    for (const Decal& d : modified) {
+        const DecalRef r = findDecal(d.id);
+        if (!r) continue;
+        auto it = changed.find(r.brush->id);
+        if (it == changed.end()) it = changed.emplace(r.brush->id, *r.brush).first;
+        for (Decal& x : it->second.decals)
+            if (x.id == d.id) x = d;
+    }
+    for (auto& [id, b] : changed) c.changes.push_back({id, *find(id), std::move(b)});
+    return c;
+}
+
+void Document::addDecalDeletes(Command& c, const std::set<DecalId>& ids) const {
+    if (ids.empty()) return;
+    c.decalSelectionBefore = decalSelection_;
+    std::set<DecalId> after = decalSelection_;
+    for (DecalId id : ids) {
+        after.erase(id);
+        const DecalRef r = findDecal(id);
+        if (!r) continue;
+        BrushChange* ch = nullptr;
+        for (BrushChange& x : c.changes)
+            if (x.id == r.brush->id) ch = &x;
+        if (ch && !ch->after) continue; // the brush goes anyway
+        if (!ch) {
+            c.changes.push_back({r.brush->id, *r.brush, *r.brush});
+            ch = &c.changes.back();
+        }
+        auto& v = ch->after->decals;
+        v.erase(std::remove_if(v.begin(), v.end(), [&](const Decal& d) { return d.id == id; }), v.end());
+    }
+    c.decalSelectionAfter = after;
+}
+
 void Document::setBrush(BrushId id, const std::optional<Brush>& b) {
+    if (b)
+        for (const Decal& d : b->decals) nextDecalId_ = std::max(nextDecalId_, d.id + 1);
     auto it = std::find_if(brushes_.begin(), brushes_.end(), [&](const Brush& x) { return x.id == id; });
     if (b) {
         if (it != brushes_.end()) *it = *b;
@@ -121,6 +262,7 @@ void Document::setBrush(BrushId id, const std::optional<Brush>& b) {
 }
 
 void Document::apply(Command cmd) {
+    normalizeDecals(cmd);
     pruneEmptyGroups(cmd); // a group whose last brush goes away goes with it (undoable)
     for (const GroupChange& g : cmd.groupChanges) setGroup(g.id, g.after);
     for (const BrushChange& c : cmd.changes) setBrush(c.id, c.after);
@@ -134,12 +276,16 @@ void Document::apply(Command cmd) {
     if (cmd.primSelectionAfter) primSelection_ = *cmd.primSelectionAfter;
     if (cmd.propSelectionAfter) propSelection_ = *cmd.propSelectionAfter;
     if (cmd.cameraSelectionAfter) cameraSelection_ = *cmd.cameraSelectionAfter;
+    if (cmd.decalSelectionAfter) decalSelection_ = *cmd.decalSelectionAfter;
+    pruneDecalSelection();
     if (!cmd.fileChanges.empty()) writeFiles(cmd.fileChanges, true);
     // Material files aren't the map: an edit of files only leaves "saved?" as it was.
     cmd.serial = cmd.filesOnly() ? historyTop() : ++nextSerial_;
     // New primitives or props show them again if they were hidden.
     for (const PrimChange& c : cmd.primChanges) if (c.after && !c.before) primsShown_ = true;
     for (const PropChange& c : cmd.propChanges) if (c.after && !c.before) propsShown_ = true;
+    for (const BrushChange& c : cmd.changes)
+        if (c.after && c.after->decals.size() > (c.before ? c.before->decals.size() : 0)) decalsShown_ = true;
     for (std::size_t b : redoBytes_) historyBytes_ -= b;
     redo_.clear();
     redoBytes_.clear();
@@ -161,6 +307,7 @@ std::size_t keysBytes(const KeyValues& kv) {
 std::size_t brushBytes(const Brush& b) {
     std::size_t n = sizeof(Brush) + b.faces.capacity() * sizeof(Face);
     for (const Face& f : b.faces) n += strBytes(f.texture) - sizeof(std::string);
+    n += b.decals.capacity() * sizeof(Decal);
     if (b.terrain) {
         n += b.terrain->heights.capacity() * sizeof(double) + b.terrain->layers.capacity() * sizeof(TerrainLayer);
         for (const TerrainLayer& l : b.terrain->layers)
@@ -242,6 +389,8 @@ bool Document::undo() {
     if (cmd.primSelectionBefore) primSelection_ = *cmd.primSelectionBefore;
     if (cmd.propSelectionBefore) propSelection_ = *cmd.propSelectionBefore;
     if (cmd.cameraSelectionBefore) cameraSelection_ = *cmd.cameraSelectionBefore;
+    if (cmd.decalSelectionBefore) decalSelection_ = *cmd.decalSelectionBefore;
+    pruneDecalSelection();
     if (!cmd.fileChanges.empty()) writeFiles(cmd.fileChanges, false);
     redo_.push_back(std::move(cmd));
     bump();
@@ -266,6 +415,8 @@ bool Document::redo() {
     if (cmd.primSelectionAfter) primSelection_ = *cmd.primSelectionAfter;
     if (cmd.propSelectionAfter) propSelection_ = *cmd.propSelectionAfter;
     if (cmd.cameraSelectionAfter) cameraSelection_ = *cmd.cameraSelectionAfter;
+    if (cmd.decalSelectionAfter) decalSelection_ = *cmd.decalSelectionAfter;
+    pruneDecalSelection();
     if (!cmd.fileChanges.empty()) writeFiles(cmd.fileChanges, true);
     undo_.push_back(std::move(cmd));
     bump();
@@ -361,8 +512,11 @@ void Document::reset(KeyValues world, std::vector<Brush> brushes, std::vector<Ra
     brushes_.clear();
     brushStamps_.clear();
     nextId_ = 1;
+    decalSelection_.clear();
+    nextDecalId_ = 1;
     for (Brush& b : brushes) {
         b.id = nextId_++;
+        for (Decal& d : b.decals) d.id = nextDecalId_++;
         stampBrush(b.id);
         brushes_.push_back(std::move(b));
     }
@@ -427,6 +581,8 @@ Command Document::makeAddLights(std::vector<Light> lights, const std::string& na
     c.propSelectionAfter = std::set<PropId>{};
     c.cameraSelectionBefore = cameraSelection_;
     c.cameraSelectionAfter = std::set<CameraId>{};
+    c.decalSelectionBefore = decalSelection_;
+    c.decalSelectionAfter = std::set<DecalId>{};
     for (Light& l : lights) {
         if (l.id == 0) l.id = newLightId();
         c.lightSelectionAfter->insert(l.id);
@@ -498,6 +654,8 @@ Command Document::makeAddPrims(std::vector<MathPrim> prims, const std::string& n
     c.propSelectionAfter = std::set<PropId>{};
     c.cameraSelectionBefore = cameraSelection_;
     c.cameraSelectionAfter = std::set<CameraId>{};
+    c.decalSelectionBefore = decalSelection_;
+    c.decalSelectionAfter = std::set<DecalId>{};
     for (MathPrim& p : prims) {
         if (p.id == 0) p.id = newPrimId();
         c.primSelectionAfter->insert(p.id);
@@ -559,6 +717,8 @@ Command Document::makeAddProps(std::vector<Prop> props, const std::string& name)
     c.propSelectionAfter = std::set<PropId>{};
     c.cameraSelectionBefore = cameraSelection_;
     c.cameraSelectionAfter = std::set<CameraId>{};
+    c.decalSelectionBefore = decalSelection_;
+    c.decalSelectionAfter = std::set<DecalId>{};
     for (Prop& p : props) {
         if (p.id == 0) p.id = newPropId();
         c.propSelectionAfter->insert(p.id);
@@ -679,6 +839,8 @@ Command Document::makeAddCameras(std::vector<Camera> cams, const std::string& na
     c.propSelectionAfter = std::set<PropId>{};
     c.cameraSelectionBefore = cameraSelection_;
     c.cameraSelectionAfter = std::set<CameraId>{};
+    c.decalSelectionBefore = decalSelection_;
+    c.decalSelectionAfter = std::set<DecalId>{};
     const bool hadActive = activeCamera() != nullptr;
     for (Camera& x : cams) {
         if (x.id == 0) x.id = newCameraId();

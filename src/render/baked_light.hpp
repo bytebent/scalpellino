@@ -75,6 +75,10 @@ struct BakedDrawContext {
     bool translucent = false;
     std::vector<std::string>* problems = nullptr; // shaders that fail, textures materials miss
     TextureLibrary* textures = nullptr;    // props' settings files find textures here too (v0.12.4b)
+    // Decals (v0.12.5): set -> this pass draws these decals (in their order) on the brushes'
+    // lit surfaces instead of the brushes; `nearDist` is the camera's near distance.
+    const std::vector<Scene::SceneDecal>* decals = nullptr;
+    double nearDist = 2;
 };
 
 // Draws the brushes (textured, terrain with its painted layers) lit by `baked`. Inside the

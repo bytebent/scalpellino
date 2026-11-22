@@ -1,0 +1,7 @@
+"LightmappedGeneric"
+{
+	"$envmap" "env_cubemap"
+	"$envmaptint" "[0.4 0.4 0.45]"
+	"$fresnelreflection" "0.3"
+	"$decalscale" "1.2"
+}

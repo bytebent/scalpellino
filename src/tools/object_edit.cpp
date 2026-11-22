@@ -306,6 +306,7 @@ bool ObjectEdit::press(ToolEnv& env, const Pointer& p) {
         propNow_ = propStart_;
         cameraNow_ = cameraStart_;
     };
+    if (decals_.pressHandles(env, p)) return true; // the selected decal's corners and ring
     lightStart_.clear();
     primStart_.clear();
     propStart_.clear();
@@ -396,10 +397,11 @@ bool ObjectEdit::press(ToolEnv& env, const Pointer& p) {
         }
         if (!sel.count(id)) {
             doc.setCameraSelection({id});
+            doc.setDecalSelection({});
             doc.setSelection({});
             doc.setLightSelection({});
             doc.setPrimSelection({});
-            doc.setPropSelection({});
+            doc.setPropSelection({}); doc.setDecalSelection({});
         }
         if (!vp.is2D()) return true;
         lightsMode_ = false;
@@ -419,9 +421,10 @@ bool ObjectEdit::press(ToolEnv& env, const Pointer& p) {
         }
         if (!sel.count(id)) {
             doc.setLightSelection({id});
+            doc.setDecalSelection({});
             doc.setSelection({});
             doc.setPrimSelection({});
-            doc.setPropSelection({});
+            doc.setPropSelection({}); doc.setDecalSelection({});
             doc.setCameraSelection({});
         }
         if (!vp.is2D()) return true;
@@ -479,6 +482,7 @@ bool ObjectEdit::press(ToolEnv& env, const Pointer& p) {
             doc.setLightSelection({});
             doc.setPrimSelection({});
             doc.setCameraSelection({});
+            doc.setDecalSelection({});
         }
         if (!vp.is2D()) return true;
         lightsMode_ = false;
@@ -492,6 +496,15 @@ bool ObjectEdit::press(ToolEnv& env, const Pointer& p) {
     MathPrimId piece = 0;
     const MathPrimId pid = pickPrim(doc, vp, p.local, &tPrim, &piece, env.alt);
     const PropId prid = pickProp(doc, vp, p.local, env.models, &tProp);
+    // A decal (v0.12.5): unless a primitive or prop is in front of it.
+    double tDecal = 0;
+    if (const DecalId did = pickDecal(doc, vp, p.local, &tDecal)) {
+        const bool hidden = !vp.is2D() && ((pid && tPrim < tDecal - 1) || (prid && tProp < tDecal - 1));
+        if (!hidden) {
+            decals_.pressDecal(env, p, did);
+            return true;
+        }
+    }
     if (!pid && !prid) return false;
     if (prid && pid) {
         // Both under the cursor: the nearer one in 3D, the smaller one in a 2D view.
@@ -548,7 +561,7 @@ bool ObjectEdit::press(ToolEnv& env, const Pointer& p) {
         doc.setPrimSelection(group);
         doc.setSelection({});
         doc.setLightSelection({});
-        doc.setPropSelection({});
+        doc.setPropSelection({}); doc.setDecalSelection({});
         doc.setCameraSelection({});
     }
     if (!vp.is2D()) return true;
@@ -560,6 +573,7 @@ bool ObjectEdit::press(ToolEnv& env, const Pointer& p) {
 }
 
 void ObjectEdit::drag(ToolEnv& env, const Pointer& p) {
+    if (decals_.active()) { decals_.drag(env, p); return; }
     if (mode_ == Mode::None || p.view != view_) return;
     const Viewport& vp = *view_;
     if (mode_ == Mode::Move) {
@@ -693,6 +707,7 @@ void ObjectEdit::dragPropSize(ToolEnv& env, const Pointer& p) {
 }
 
 void ObjectEdit::release(ToolEnv& env) {
+    if (decals_.active()) { decals_.release(env); return; }
     if (mode_ == Mode::None) return;
     const char* name = mode_ == Mode::Ring ? "Turn" : mode_ == Mode::Size ? (sizeProp_ ? "Resize prop" : "Resize primitive") : "Move";
     mode_ = Mode::None;
@@ -716,6 +731,7 @@ void ObjectEdit::release(ToolEnv& env) {
 }
 
 void ObjectEdit::cancel() {
+    decals_.cancel();
     mode_ = Mode::None;
     lightStart_.clear();
     lightNow_.clear();
@@ -729,6 +745,7 @@ void ObjectEdit::cancel() {
 }
 
 void ObjectEdit::decorate(const Document& doc, Scene& scene) const {
+    decals_.decorate(doc, scene);
     if (mode_ == Mode::Ring) scene.activeRing = axis_;
     for (const Light& l : lightNow_)
         for (Scene::SceneLight& s : scene.lights)
@@ -790,6 +807,7 @@ void ObjectEdit::decorate(const Document& doc, Scene& scene) const {
 }
 
 const char* ObjectEdit::hint() const {
+    if (const char* h = decals_.hint()) return h;
     switch (mode_) {
         case Mode::Move:
             std::snprintf(hintBuf_, sizeof hintBuf_, "moving by %g %g %g", moved_.x, moved_.y, moved_.z);

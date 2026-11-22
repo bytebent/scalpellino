@@ -183,6 +183,7 @@ HullResult brushFromVertices(const std::vector<Vec3>& input, const Brush& source
 
     Brush out;
     out.id = source.id;
+    out.decals = source.decals; // they stay where they are (v0.12.5)
     for (const Plane& pl : planes) {
         std::vector<Vec3> on;
         for (const Vec3& p : pts)

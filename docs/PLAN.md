@@ -99,9 +99,12 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   exposed, and the faster bakes above. Choices made while building are under "v0.12.4b,
   decided without asking".
   **v0.12.4c** (2026-11-22): VRAD's code checked (item 9 and the bump question): texlights
-  get VRAD's DIRECT_SCALE, bumped lightmaps the engine's correction (no seam). Next: batch
-  6 (v0.12.5, decals) agreed with the user (2026-11-22, "Batch 6 decided with the user");
-  building it once the user says go.
+  get VRAD's DIRECT_SCALE, bumped lightmaps the engine's correction (no seam).
+  **v0.12.5 decals is built and pushed** (batch 6, the user said go, 2026-11-22): the Decal
+  tool, decals kept in their brush, projected onto the surfaces in their box, editing like
+  props (handles, Properties, Decals > Decal...), order, DecalModulate, renders lit by the
+  surface's baked light. Choices made while building are under "v0.12.5, decided without
+  asking". Next: report; then v0.12.6 reflection probes, discussed with the user first.
 - **Review fixes (2026-11-20), merged into `main`** (fast-forward from
   `fix/review-findings` after the user's go-ahead; no new version, so only "Latest build"
   is refreshed): version releases are
@@ -139,6 +142,9 @@ Each archive's SHA-256 is in `cmake/Deps.cmake` (checked at configure time).
 
 ## Open questions (parked)
 
+- **v0.12.5 parked (later, agreed "for now"):** a face list per decal (add / remove faces
+  by hand, as info_overlay's sides); two separate objects (infodecal and overlay) if one
+  turns out not to be enough; decals on math primitives once they get materials.
 - **v0.12.4b parked (to discuss with the user):**
   - **Bump blend energy and texlight brightness: answered from VRAD's code (v0.12.4c,
     2026-11-22, the user said check it).** Bump: VRAD bakes each bump map as plain cosine
@@ -191,6 +197,40 @@ Each archive's SHA-256 is in `cmake/Deps.cmake` (checked at configure time).
 - **Curve generator parameters** in a `.map` (`core/curves.cpp curveFromKeys`) still read
   numbers loosely (`atoi`, `strtod`): not in the review's list; worth the same strict
   reading some time (a bad value there only changes a generated shape).
+
+- **v0.12.5 (decals), decided without asking (confirm with the user):**
+  - **Kept in the brush** (`Brush::decals`), so undo, copies, deletes and transforms follow
+    the brush with no extra bookkeeping; in the map file as a `//@ decal` line in the brush
+    block. A decal left in several pieces by clip / carve stays on the piece nearest to it.
+  - **Size from the picture:** texels x `$decalscale` x 1 Hammer unit (2.54 cm), as Source's
+    infodecal; `$decalscale` (default 1) added to LightmappedGeneric, UnlitGeneric and
+    DecalModulate; Decals > Size from its picture sets it again.
+  - **Which surfaces:** within its box (reach: 4 Hammer units in front and behind, typed in
+    Properties) and facing it within 75 degrees, projected straight along its facing (as
+    info_overlay). So it wraps over bevels and gentle slopes, but not round a square corner
+    (that face is left out rather than smeared).
+  - **Turn** is measured from world up on walls, from +Y on floors and ceilings,
+    counter-clockwise seen from the front. Mirroring its brush never mirrors the picture.
+  - **Renders:** a decal's picture alpha always blends (even without `$translucent`: most
+    Source decal materials set it; a plain picture with alpha still works as a poster). Drawn
+    without writing depth, lifted towards the camera by about 3 depth-buffer steps at its
+    distance (raylib has no polygon offset). Every decal is drawn, also on brushes hidden in
+    the editor (as renders draw those brushes). The render log says how many.
+  - **DecalModulate** as Source: `mix(0.5, picture, alpha)` times what is there, twice; fog
+    fades it to grey. Shader files say so with a new header line `// blend: modulate`.
+  - **Editor 3D view:** the picture shaded like the surface under it (the editor's own flat
+    shading), DecalModulate multiplied; in the flat-colours view a tinted rectangle. 2D
+    views: the outline and a short tick along its facing; a click within 7 pixels of the
+    outline selects it; no dragging in 2D (3D handles or typed values).
+  - **Decal tool:** clicking an existing decal selects it; Option+click puts a new one over
+    it. The new one faces the surface clicked, snapped to the grid along that surface.
+  - **Handles:** corner drags round to 0.1 cm; the ring turns in 15 degree steps (Shift:
+    freely), as the object rings; sliding snaps to the grid along the surface and moves the
+    decal to the brush it ends up on.
+  - **Order:** new decals get 0 (the later one on top among equals); Bring forward / Send
+    back add / take 1.
+  - **Visgroups:** a decal has its own visgroup ("+" and "New from selection" take selected
+    decals too); it is also hidden with its brush.
 
 - **v0.12.4c (VRAD's code checked), decided without asking (confirm with the user):**
   - Texlights keep a 1-Hammer-unit minimum distance (VRAD's emit_surface has none; it only
@@ -968,10 +1008,9 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
         props (agreed 2026-11-21, see "Batch 5 decided").
      6. **v0.12.4b bump maps:** Source's radiosity normal mapping (4 lightmaps on bumped
         faces), SSBump, bump on props, Phong and rim light on props.
-     7. **v0.12.5 decals** (Hammer's `infodecal` / `info_overlay` as one object; added by the
-        user 2026-11-21): posters, cracks, stains, puddles on surfaces, a new placeable
-        object with its own material shaders. Agreed 2026-11-22: see "Batch 6 decided with
-        the user".
+     7. **v0.12.5 decals (built)** (Hammer's `infodecal` / `info_overlay` as one object;
+        added by the user 2026-11-21): posters, cracks, stains, puddles on surfaces.
+        Agreed 2026-11-22: see "Batch 6 decided with the user".
      8. **v0.12.6 reflection probes:** placed by hand, "building cubemaps"; chrome (shiny
         materials reflect the nearest probe instead of the sky), probe quality in the
         render options.

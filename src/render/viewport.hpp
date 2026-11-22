@@ -84,6 +84,8 @@ public:
 private:
     void render2D(const Grid& grid, const Scene& scene);
     void render3D(const Grid& grid, const Scene& scene);
+    // Decals in the editor's 3D view: the picture flat on the surfaces (v0.12.5).
+    void drawEditorDecals(const Scene& scene, const Vec3& cam);
 
     ViewKind kind_;
     RenderTexture2D rt_{};

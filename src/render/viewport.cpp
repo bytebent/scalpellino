@@ -30,6 +30,7 @@ const Color kPrimLine {200, 170, 255, 255};
 const Color kPrimCut  {255, 150,  80, 255};
 const Color kPrimKeep { 90, 220, 200, 255};
 const Color kPropLine { 130, 225, 140, 255};
+const Color kDecalLine { 235, 150, 225, 255}; // decals in 2D (v0.12.5)
 const Color kPropMissing {255, 170,  60, 255};
 
 const Color kBg3D      { 22,  22,  26, 255};
@@ -221,6 +222,69 @@ Color shade(Color c, const Vec3& n) {
 } // namespace
 
 Viewport::Viewport(ViewKind kind) : kind_(kind) {}
+
+void Viewport::drawEditorDecals(const Scene& scene, const Vec3& cam) {
+    // DecalModulate: the picture darkens / lightens what is under it (Source's mod2x blend,
+    // 0.5 grey = no change, its alpha fading to that grey).
+    static Shader mod{};
+    static bool tried = false;
+    if (!tried) {
+        tried = true;
+        mod = LoadShaderFromMemory(nullptr, R"(#version 330
+in vec2 fragTexCoord;
+in vec4 fragColor;
+uniform sampler2D texture0;
+out vec4 finalColor;
+void main() {
+    vec4 c = texture(texture0, fragTexCoord);
+    finalColor = vec4(mix(vec3(0.5), c.rgb, c.a * fragColor.a), 1.0);
+}
+)");
+        if (mod.id == rlGetShaderIdDefault()) mod.id = 0;
+    }
+    // Drawn a little towards the camera so they sit on the surface (more far away, where
+    // the depth buffer is coarser).
+    auto lift = [&](const Vec3& p) {
+        const double d = length(p - cam);
+        return std::max(0.05, 3.0 * d * d / (2.0 * 16777216.0));
+    };
+    rlDrawRenderBatchActive();
+    rlDisableDepthMask();
+    for (const auto& sd : scene.decals) {
+        if (!sd.tris || sd.tris->empty()) continue;
+        unsigned tex = 0;
+        bool modulate = false;
+        if (scene.textures) {
+            tex = scene.textures->get(sd.decal.material).id;
+            if (const MaterialIndex::Entry* e = scene.textures->material(sd.decal.material)) modulate = e->mat.shader == "DecalModulate";
+        }
+        if (modulate && (!tex || !mod.id)) continue;
+        if (modulate) {
+            rlSetBlendFactors(0x0306 /* GL_DST_COLOR */, 0x0300 /* GL_SRC_COLOR */, 0x8006 /* GL_FUNC_ADD */);
+            BeginBlendMode(BLEND_CUSTOM);
+            BeginShaderMode(mod);
+        } else
+            BeginBlendMode(BLEND_ALPHA);
+        rlCheckRenderBatchLimit((int)sd.tris->size() * 3);
+        if (tex) rlSetTexture(tex);
+        rlBegin(RL_TRIANGLES);
+        for (const DecalTri& t : *sd.tris) {
+            const Color c = !tex ? Color{kDecalLine.r, kDecalLine.g, kDecalLine.b, 110} : modulate ? WHITE : shade(WHITE, t.n);
+            rlColor4ub(c.r, c.g, c.b, c.a);
+            for (int k = 0; k < 3; ++k) {
+                const Vec3 q = t.p[k] + t.n * lift(t.p[k]);
+                rlTexCoord2f((float)t.u[k], (float)t.v[k]);
+                rlVertex3f((float)q.x, (float)q.y, (float)q.z);
+            }
+        }
+        rlEnd();
+        rlSetTexture(0);
+        rlDrawRenderBatchActive();
+        if (modulate) EndShaderMode();
+        EndBlendMode();
+    }
+    rlEnableDepthMask();
+}
 
 Viewport::~Viewport() {
     if (rt_.id) UnloadRenderTexture(rt_);
@@ -422,6 +486,20 @@ void Viewport::render2D(const Grid& grid, const Scene& scene) {
             if (!sp.selected) drawProp(sp, sp.missing ? kPropMissing : kPropLine);
         for (const auto& sp : scene.props) if (sp.selected) drawProp(sp, kSelected);
         for (const auto& sp : scene.pendingProps) drawProp(sp, kPreview);
+        // Decals (v0.12.5): the rectangle's outline and a tick along its facing.
+        auto drawDecal = [&](const Scene::SceneDecal& sd, Color c) {
+            const std::array<Vec3, 4> k = decalCorners(sd.decal);
+            if (!inView(decalBounds(sd.decal))) return;
+            for (int i = 0; i < 4; ++i) {
+                const Vec3 &a = k[i], &e = k[(i + 1) % 4];
+                segment(phys(a[U], a[V]), phys(e[U], e[V]), thick, c);
+            }
+            const Vec3 tip = sd.decal.pos + normalize(sd.decal.normal) * (8 * P / zoom_);
+            segment(phys(sd.decal.pos[U], sd.decal.pos[V]), phys(tip[U], tip[V]), thick, c);
+        };
+        for (const auto& sd : scene.decals) if (!sd.selected && !sd.pending) drawDecal(sd, kDecalLine);
+        for (const auto& sd : scene.decals) if (sd.selected) drawDecal(sd, kSelected);
+        for (const auto& sd : scene.decals) if (sd.pending) drawDecal(sd, kPreview);
         // Rings around the selected primitives / props (the one around this view's axis) and
         // the size handles seen side-on.
         for (const Scene::PrimGizmo& gz : scene.gizmos) {
@@ -1042,6 +1120,15 @@ void main() {
         for (const auto& sp : scene.props) ps.push_back(sp.prop);
         scene.models->draw(ps, pctx);
     }
+    // Decals (v0.12.5): renders and the Camera Preview light them with the surface's baked
+    // light; the editor lays the picture flat on the surfaces (as Hammer), shaded like them.
+    if (bakedBrushes && !scene.decals.empty()) {
+        BakedDrawContext d = bctx;
+        d.decals = &scene.decals;
+        d.nearDist = lens_ ? lens_->nearDist : 2.0;
+        drawBakedBrushes(scene.brushes, *scene.baked, *scene.textures, d);
+    } else if (!bakedBrushes && !scene.decals.empty())
+        drawEditorDecals(scene, {eye.x, eye.y, eye.z});
     // See-through faces (materials with $translucent or $alpha < 1) last, far to near.
     if (bakedBrushes) {
         BakedDrawContext t = bctx;
@@ -1130,6 +1217,30 @@ void main() {
             if (scene.selected.count(b.id)) drawEdges(b, kSelected);
     for (const SceneBrush& g : scene.ghosts) drawEdges(g, kSelected);
     for (const SceneBrush& g : scene.invalidGhosts) drawEdges(g, kInvalid);
+    // Decals (v0.12.5), on top too: selected ones and the Decal tool's next one outlined; the handles of
+    // the one selected decal (corners: size, a ring in its plane: turn).
+    for (const auto& sd : scene.decals) {
+        if (!sd.selected && !sd.pending) continue;
+        const std::array<Vec3, 4> k = decalCorners(sd.decal);
+        const Vec3 lift = normalize(sd.decal.normal) * 0.2;
+        for (int i = 0; i < 4; ++i) DrawLine3D(toRl(k[i] + lift), toRl(k[(i + 1) % 4] + lift), sd.pending ? kPreview : kSelected);
+    }
+    if (scene.decalGizmo) {
+        const Scene::DecalGizmo& g = *scene.decalGizmo;
+        const Vec3 lift = normalize(g.normal) * 0.2;
+        Vec3 r, u, n;
+        Decal tmp;
+        tmp.normal = g.normal;
+        tmp.up = g.corners[0] - g.corners[3];
+        decalFrame(tmp, r, u, n);
+        const int N = 64;
+        for (int i = 0; i < N; ++i) {
+            const double a0 = 2 * 3.14159265358979 * i / N, a1 = 2 * 3.14159265358979 * (i + 1) / N;
+            const Vec3 p0 = g.center + (r * std::cos(a0) + u * std::sin(a0)) * g.ringRadius + lift;
+            const Vec3 p1 = g.center + (r * std::cos(a1) + u * std::sin(a1)) * g.ringRadius + lift;
+            DrawLine3D(toRl(p0), toRl(p1), g.active == 4 ? WHITE : kAxisCol[2]);
+        }
+    }
     for (const SceneBrush& b : scene.brushes)
         for (const Polygon& p : b.polys)
             if (scene.selectedFaces.count({b.id, p.face}))
@@ -1241,6 +1352,17 @@ void main() {
             const float hs = 3 * P;
             DrawRectangleRec({std::floor(c.x - hs - P), std::floor(c.y - hs - P), 2 * (hs + P) + 1, 2 * (hs + P) + 1}, BLACK);
             DrawRectangleRec({std::floor(c.x - hs), std::floor(c.y - hs), 2 * hs + 1, 2 * hs + 1}, kHandle);
+        }
+    if (scene.decalGizmo) // a decal's corner handles (size)
+        for (int i = 0; i < 4; ++i) {
+            Vector2 c;
+            if (!worldToLocal3D(scene.decalGizmo->corners[i], c)) continue;
+            c.x *= P;
+            c.y *= P;
+            const float hs = 3 * P;
+            DrawRectangleRec({std::floor(c.x - hs - P), std::floor(c.y - hs - P), 2 * (hs + P) + 1, 2 * (hs + P) + 1}, BLACK);
+            DrawRectangleRec({std::floor(c.x - hs), std::floor(c.y - hs), 2 * hs + 1, 2 * hs + 1},
+                             scene.decalGizmo->active == i ? kSelected : kHandle);
         }
     if (scene.pendingLight) marker3D(*scene.pendingLight, kPreview, 2 * P);
     for (const Light& l : scene.previewLights) marker3D(l, kPreview, 2 * P);

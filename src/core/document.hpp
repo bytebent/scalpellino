@@ -105,6 +105,8 @@ struct Command {
     std::optional<std::set<PropId>> propSelectionBefore, propSelectionAfter;
     std::vector<CameraChange> cameraChanges;
     std::optional<std::set<CameraId>> cameraSelectionBefore, cameraSelectionAfter;
+    // Decals live in brushes (their edits are brush changes); their selection (v0.12.5).
+    std::optional<std::set<DecalId>> decalSelectionBefore, decalSelectionAfter;
     std::vector<FileChange> fileChanges;
     std::uint64_t serial = 0; // set by Document::apply: which edit this is (for "saved?")
     // Only files change (nothing of the map itself).
@@ -184,6 +186,23 @@ public:
     CameraId newCameraId() { return nextCameraId_++; }
     const std::set<CameraId>& cameraSelection() const { return cameraSelection_; }
     void setCameraSelection(std::set<CameraId> s) { cameraSelection_ = std::move(s); }
+
+    // Decals (v0.12.5): kept in the brush they were put on (Brush::decals), selected on their
+    // own like props. Edits are brush changes, so undo, copies and deletes follow the brush.
+    struct DecalRef {
+        const Brush* brush = nullptr;
+        const Decal* decal = nullptr;
+        explicit operator bool() const { return decal != nullptr; }
+    };
+    DecalRef findDecal(DecalId id) const;
+    DecalId newDecalId() { return nextDecalId_++; }
+    const std::set<DecalId>& decalSelection() const { return decalSelection_; }
+    void setDecalSelection(std::set<DecalId> s) { decalSelection_ = std::move(s); }
+    // Shown: its brush shown, decals shown (View), its own visgroup shown.
+    bool visible(const Brush& b, const Decal& d) const;
+    bool decalsShown() const { return decalsShown_; }
+    void setDecalsShown(bool on);
+    size_t decalCount() const;
 
     // View options (v0.10.2): all primitives / all props shown or hidden. Hidden ones are
     // not drawn, picked, selected or landed on; hiding drops them from the selection.
@@ -269,6 +288,12 @@ public:
     void addPrimDeletes(Command& c, const std::set<MathPrimId>& ids) const;
     // Props: new ones get ids and become the prop selection (everything else deselected).
     Command makeAddProps(std::vector<Prop> props, const std::string& name);
+    // Decals: a new one gets an id, goes into brush `on` and becomes the decal selection
+    // (everything else deselected). Modified ones replace theirs in their brushes.
+    Command makeAddDecal(Decal d, BrushId on, const std::string& name);
+    Command makeModifyDecals(const std::vector<Decal>& modified, const std::string& name);
+    // Adds deleting these decals to any command (brushes it already deletes are left).
+    void addDecalDeletes(Command& c, const std::set<DecalId>& ids) const;
     Command makeModifyProps(const std::vector<Prop>& modified, const std::string& name);
     void addPropDeletes(Command& c, const std::set<PropId>& ids) const;
     // Cameras: new ones get ids and become the camera selection (everything else
@@ -298,6 +323,10 @@ private:
     void keepOneActive(Command& c, CameraId prefer = 0) const;
     // Adds group removals to `c` for groups that would have no brushes left.
     void pruneEmptyGroups(Command& c) const;
+    // Decals after a new command: copies of decals that stay elsewhere get new ids; a decal
+    // in several new pieces of a brush (clip, carve) stays only in the one nearest to it.
+    void normalizeDecals(Command& c);
+    void pruneDecalSelection();
     void bump() { ++revision_; }
     void stampBrush(BrushId id) { brushStamps_[id] = ++stampCounter_; }
     void touchLighting() { lightingStamp_ = ++stampCounter_; }
@@ -323,6 +352,9 @@ private:
     std::vector<Prop> props_;
     std::set<PropId> propSelection_;
     PropId nextPropId_ = 1;
+    std::set<DecalId> decalSelection_;
+    DecalId nextDecalId_ = 1;
+    bool decalsShown_ = true;
     std::vector<Camera> cameras_;
     std::set<CameraId> cameraSelection_;
     CameraId nextCameraId_ = 1;

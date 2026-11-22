@@ -343,6 +343,39 @@ Static models next to brushes, lights and primitives. `core/model.hpp`, `core/pr
 - **File:** a `scal_prop` point entity: `model`, `origin`, `rotation`, `scale` (3 numbers),
   other keys kept.
 
+### Decals (v0.12.5, done)
+Hammer's `infodecal` and `info_overlay` as one object, always called **decal** (agreed with
+the user 2026-11-22, "Batch 6 decided"). `core/decal.hpp`.
+- **Decal:** `{id, material, pos, normal, up, width, height (cm), reach, order, visgroup}`.
+  Frame: n = normal, up in the surface, right = up x n (seen from the front). Picture
+  coordinates u along right, v down the picture.
+- **Where it lands:** projected straight along its facing onto every surface in its box
+  (the rectangle +- `reach`, default 4 Hammer units) that faces it within 75 degrees: brush
+  faces and terrain cells, its own brush's or others'. Not on props; on primitives when they
+  get materials.
+- **Belongs to a brush:** `Brush::decals`. Moving, turning, sizing and mirroring a brush
+  maps its decals (`mapDecal`: the picture is never mirrored); copies carry them;
+  deleting the brush deletes them; undo is the brush's. A command that leaves one decal in
+  several pieces (clip, carve) keeps it on the piece nearest to it; copies get new ids
+  (`Document::normalizeDecals`, at apply). The vertex tool and snap-to-grid keep them where
+  they are.
+- **Size:** placed at its picture's size: texels x `$decalscale` (a material setting,
+  default 1) x 1 Hammer unit, as Source sizes an infodecal; then any size.
+- **Order:** drawn by `order` (higher on top), equal ones in the order they were placed.
+  Bring forward / Send back change it by 1; the number can be typed.
+- **Selecting and editing:** like props (`tools/decal_edit.hpp`, inside the shared object
+  editing): click it (3D: its picture unless something is in front; 2D: its outline),
+  Cmd+click, rectangle-select in 3D, Delete; 3D handles: corners (size, the opposite corner
+  stays; Shift keeps proportions), a ring in its plane (turn: 15 degree steps, Shift free),
+  drag to slide over the surfaces (snapped to the grid along the surface; onto another
+  brush, it belongs to that one). Properties and Decals > Decal... take typed values.
+- **Showing:** View > Show decals; its own visgroup; hidden with its brush. Renders draw
+  every decal (as they draw hidden brushes).
+- **Drawing:** editor 3D: the picture flat on the surfaces, shaded like them, DecalModulate
+  multiplied; 2D: the outline and a tick along its facing. Renders: §9.
+- **File:** a `//@ decal pos= n= up= size=w,h reach= order= [vg=] mat=<name>` line inside
+  its brush's block.
+
 ### Snap to Land / Ground and Multi-Replicate (v0.9.2, from Bryce)
 - **Snap to Land** (Cmd+J, Transform menu; `core/landing`): selected primitives drop
   straight down onto visible brushes (terrain surfaces, not their flat faces), terrain
@@ -442,6 +475,8 @@ it appears below the top view's centre). Editor-only, never exported.
   image size, aim at a point, depth of field and exposure later; the user can save their
   own presets (saved in Bottega's `presets/camera_presets`). Details in §6 "Cameras". A map can hold several; exactly one is
   **active**, the only one the Camera Preview and Render use.
+- **Decals** (v0.12.5) — pictures laid on surfaces (Hammer's infodecal / info_overlay as
+  one object); kept in the brush they were put on. Details in §6 "Decals".
 - **Reflection probes** (planned) — placed by hand; Render bakes a picture of their
   surroundings for shiny materials to reflect.
 - **Environment** — sky color/texture, fog, ambient light.
@@ -470,6 +505,7 @@ That's all. No gameplay entities (doors, triggers, physics, scripting).
   Editor-only data (visgroups, camera bookmarks, curve-generator parameters) stored as
   extra keys other tools ignore.
 - **Cameras** (v0.11.0): `scal_camera` point entities (see §6 "Cameras").
+- **Decals** (v0.12.5): `//@ decal ...` lines inside their brush's block (see §6 "Decals").
 - **Props** (v0.10.0): `scal_prop` point entities with `model` ("models/tree"), `origin`,
   `rotation` (degrees X Y Z), `scale` (3 numbers) and any other keys, kept as they are.
 - **nodraw:** faces textured `nodraw` (also recognised: `tools/toolsnodraw`, `common/nodraw`)
@@ -502,7 +538,7 @@ That's all. No gameplay entities (doors, triggers, physics, scripting).
 - **Shader files** (v0.12.4, `core/shader_file.*`, `render/shader_library.*`): GLSL, one file
   per shader, a comment header (`// scalpellino shader 1`, `// name:`, `// kind: material`,
   `// about:`, `// setting: <key> <type> [default] | help`; types texture, float, int, bool,
-  color, text, light) and a body defining `vec4 shade()` (linear colour before exposure,
+  color, text, light; optional `// blend: modulate`, v0.12.5) and a body defining `vec4 shade()` (linear colour before exposure,
   alpha). The app compiles prelude + body for each kind of geometry (World: brushes and
   terrain; Model: props); the prelude gives `baseColor()`, `baseUV()`, `bakedLight()`,
   `worldPos()`, `worldNormal()`, `eyeVector()`, `envmap(dir)`, `toLinear`, `toSrgb`,
@@ -620,7 +656,15 @@ Preview and in renders.
   to near, without writing depth. Props are drawn by the VertexLitGeneric file with their
   model's own materials, plus a `.vmt` per material (§8): bump maps, Phong and rim light
   from the prop's 2 strongest lights and its ambient cube (Source's `phong`; not shadowed).
-  The sky drawn behind the scene takes the render's exposure (v0.12.4b). Primitives keep their own shader and show
+  The sky drawn behind the scene takes the render's exposure (v0.12.4b).
+  **Decals** (v0.12.5) are drawn after the opaque surfaces and props, before see-through
+  faces, in their order: each clips the lit triangles in its box (carrying their lightmap
+  coordinates, bump offset and normal), so its light is the surface's baked light (and its
+  bump maps when the decal's material has a bump map); its material's World program with
+  `decalPass` = 1 (the picture's alpha always blends), without writing depth, lifted towards
+  the camera by about 3 depth steps at its distance. A shader file with `// blend: modulate`
+  (DecalModulate) multiplies what is there, twice (0.5 grey = no change), and fog fades it
+  to grey. Primitives keep their own shader and show
   their material's base texture. The normal travels in the vertex colour (8 bits a channel);
   reflections read a 128-pixel-wide copy of the sky (about Source's default cubemap size).
   A shader that doesn't compile is reported in the render log and LightmappedGeneric draws
@@ -703,7 +747,7 @@ docs/         this file, roadmap
 | 10b | Random Replicate (Bryce): random offset / turn / size ranges for props and primitives | done (v0.10.1) |
 | 10c | Sky Lab (Bryce, all of it): generated skies (sun, moon, stars, clouds, atmosphere) with live preview in the 3D view, baked to panoramas in Bottega's `skies/`; settings kept in the map; tick box to lock the sun to the map's sun light; eclipses. Steps: v0.10.4 window / bake / sky modes / sun / haze / lock, v0.10.5 clouds, v0.10.6 night sky and effects | done (v0.10.6) |
 | 11 | Cameras and Camera Preview: camera objects (many, one active), options and presets, the on-request preview in a docked panel (editor look until M12 replaces it). Steps: v0.11.0 camera objects and options, v0.11.1 presets and the preview | done (v0.11.0, v0.11.1) |
-| 12 | Render, the Source look, with materials: render window, terminal log, light baking, reflection probes, mirrors, the material system (GLSL shaders from Bottega's `shaders/`, reflection kind per material), PNG to `renders/`. Steps: v0.12.0 pipeline, v0.12.1 direct light and shadows, v0.12.2 bounces, v0.12.3 props and the light grid, v0.12.4 materials, v0.12.4b bump maps, v0.12.5 decals, v0.12.6 probes, v0.12.7 mirrors and glass | in progress (v0.12.4b) |
+| 12 | Render, the Source look, with materials: render window, terminal log, light baking, reflection probes, mirrors, the material system (GLSL shaders from Bottega's `shaders/`, reflection kind per material), PNG to `renders/`. Steps: v0.12.0 pipeline, v0.12.1 direct light and shadows, v0.12.2 bounces, v0.12.3 props and the light grid, v0.12.4 materials, v0.12.4b bump maps, v0.12.5 decals, v0.12.6 probes, v0.12.7 mirrors and glass | in progress (v0.12.5) |
 | 13 | Water, cloud and endless planes: materials made with the system above | |
 | 14 | Camera effects (lowest priority): dithering, palette, bloom | |
 | 15 | Export: `.glb`, optional and last (not confirmed by the user) | |

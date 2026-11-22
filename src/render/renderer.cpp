@@ -41,6 +41,18 @@ Scene Renderer::scene(const Document& doc, TextureLibrary& textures, ModelLibrar
         if (sp.missing) ++st.missingProps;
         s.props.push_back(std::move(sp));
     }
+    // Decals (v0.12.5), in their drawing order; lit by the surfaces' baked light. All of
+    // them, as brushes hidden in the editor are drawn anyway.
+    for (const Brush& b : doc.brushes())
+        for (const Decal& d : b.decals) {
+            Scene::SceneDecal sd;
+            sd.decal = d;
+            s.decals.push_back(std::move(sd));
+            ++st.decals;
+        }
+    std::stable_sort(s.decals.begin(), s.decals.end(), [](const Scene::SceneDecal& a, const Scene::SceneDecal& b) {
+        return a.decal.order != b.decal.order ? a.decal.order < b.decal.order : a.decal.id < b.decal.id;
+    });
     st.lights = s.lights.size();
     st.prims = s.prims.size();
     st.props = s.props.size();
@@ -56,6 +68,7 @@ Scene Renderer::scene(const Document& doc, TextureLibrary& textures, ModelLibrar
     }
     for (const MathPrim& p : doc.prims())
         want(p.texture);
+    for (const Scene::SceneDecal& sd : s.decals) want(sd.decal.material);
     st.missingTextures.assign(missing.begin(), missing.end());
     // Materials with settings (v0.12.4)
     {

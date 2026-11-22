@@ -45,6 +45,7 @@ in vec3 fragPos;
 flat in float fragBump;
 uniform sampler2D texture0;
 uniform sampler2D lightmap;
+uniform int decalPass;  // 1: drawing decals (v0.12.5): the picture's alpha always shows
 uniform vec4 colDiffuse;
 out vec4 finalColor;
 vec2 baseUV() { return fragTexCoord; }
@@ -120,6 +121,7 @@ uniform sampler2D texture0;
 uniform vec4 colDiffuse;
 uniform int hasTex;
 uniform float cutoff;        // the model's own cutout (glTF alpha mask), < 0 none
+const int decalPass = 0;     // decals are on brushes only
 uniform int base;
 uniform int bumpedVL;
 uniform vec3 cube[6];
@@ -295,9 +297,16 @@ vec3 envmap(vec3 d) {
 const char* kMain = R"(
 void main() {
     vec4 c = shade();
+#ifdef BLEND_MODULATE
+    // DecalModulate (v0.12.5): the colour multiplies what is there, twice (0.5 = no change)
+    vec3 rgb = c.rgb;
+    if (fogOn == 1) rgb = mix(rgb, vec3(0.5), fogAmount(worldPos()));
+    finalColor = vec4(rgb, 1.0);
+#else
     vec3 rgb = toSrgb(c.rgb * exposure);
     if (fogOn == 1) rgb = mix(rgb, fogColor, fogAmount(worldPos()));
     finalColor = vec4(rgb, clamp(c.a, 0.0, 1.0) * layerAlpha());
+#endif
 }
 )";
 
@@ -406,7 +415,9 @@ ShaderLibrary::Program* ShaderLibrary::program(const std::string& name, ShaderGe
     Program& p = programs_[key];
     p.file = f;
     const bool world = geom == ShaderGeometry::World;
-    const std::string fs = std::string(world ? kWorldFS : kModelFS) + kCommon + settingUniforms(*f) + "#line " +
+    std::string fs0 = world ? kWorldFS : kModelFS;
+    if (f->blend == "modulate") fs0.insert(fs0.find('\n') + 1, "#define BLEND_MODULATE\n");
+    const std::string fs = fs0 + kCommon + settingUniforms(*f) + "#line " +
                            std::to_string(f->bodyLine) + "\n" + f->body + "\n#line 100000\n" + kMain;
     // The compiler's complaint goes to raylib's log; keep it short for ours.
     p.shader = LoadShaderFromMemory(world ? kWorldVS : kModelVS, fs.c_str());

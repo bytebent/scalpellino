@@ -39,7 +39,7 @@ void Editor::registerScriptCommands() {
         std::string t; in >> t;
         setTool(t == "block" ? (Tool*)&blockTool_ : t == "vertex" ? (Tool*)&vertexTool_
               : t == "texture" ? (Tool*)&textureTool_ : t == "clip" ? (Tool*)&clipTool_
-              : t == "curve" ? (Tool*)&curveTool_ : t == "terrain" ? (Tool*)&terrainTool_ : t == "light" ? (Tool*)&lightTool_ : t == "prim" ? (Tool*)&primTool_ : t == "props" ? (Tool*)&propTool_ : t == "camera" ? (Tool*)&cameraTool_ : (Tool*)&selectTool_);
+              : t == "curve" ? (Tool*)&curveTool_ : t == "terrain" ? (Tool*)&terrainTool_ : t == "light" ? (Tool*)&lightTool_ : t == "prim" ? (Tool*)&primTool_ : t == "props" ? (Tool*)&propTool_ : t == "decal" ? (Tool*)&decalTool_ : t == "camera" ? (Tool*)&cameraTool_ : (Tool*)&selectTool_);
     });
     add({"press"}, [this](const std::string& cmd, std::istringstream& in) {
         int v; float x, y; in >> v >> x >> y;
@@ -287,7 +287,7 @@ void Editor::registerScriptCommands() {
             if (w == "all") for (const Camera& c : doc_.cameras()) sel.insert(c.id);
             else if (w != "none") { const size_t i = (size_t)std::atoi(w.c_str()); if (i < doc_.cameras().size()) sel.insert(doc_.cameras()[i].id); }
         }
-        doc_.setCameraSelection(sel); doc_.setSelection({}); doc_.setLightSelection({}); doc_.setPrimSelection({}); doc_.setPropSelection({});
+        doc_.setCameraSelection(sel); doc_.setSelection({}); doc_.setLightSelection({}); doc_.setPrimSelection({}); doc_.setPropSelection({}); doc_.setDecalSelection({});
     });
     add({"camerapreview"}, [this](const std::string&, std::istringstream&) {
         // camerapreview: draw the Camera Preview now (as Cmd+K; drawn with the next frame)
@@ -446,6 +446,53 @@ void Editor::registerScriptCommands() {
         Vec3 r; if (in >> r.x >> r.y >> r.z) p.rot = r;
         double k = 1; if (in >> k) p.scale = {k, k, k};
         doc_.apply(doc_.makeAddProps({p}, "Create prop"));
+    });
+    // Decals (v0.12.5).
+    add({"decalat"}, [this](const std::string&, std::istringstream& in) {
+        // decalat ox oy oz dx dy dz : the Decal tool's next decal where this ray meets a surface
+        Vec3 o, d;
+        in >> o.x >> o.y >> o.z >> d.x >> d.y >> d.z;
+        if (tool_ != &decalTool_) setTool(&decalTool_);
+        ToolEnv e = env();
+        if (!decalTool_.placeOn(e, o, d)) { std::fprintf(stderr, "script FAIL (command %d): decalat: %s\n", scriptLine_, decalTool_.hint()); ++scriptFailures_; }
+    });
+    add({"decalselect"}, [this](const std::string&, std::istringstream& in) {
+        // decalselect all | none | <index>... (decals in brush order, from 0)
+        std::vector<DecalId> all;
+        for (const Brush& b : doc_.brushes()) for (const Decal& d : b.decals) all.push_back(d.id);
+        std::set<DecalId> sel;
+        std::string w;
+        while (in >> w) {
+            if (w == "all") sel.insert(all.begin(), all.end());
+            else if (w != "none") { const size_t i = (size_t)std::atoi(w.c_str()); if (i < all.size()) sel.insert(all[i]); }
+        }
+        doc_.setDecalSelection(sel); doc_.setSelection({}); doc_.setLightSelection({}); doc_.setPrimSelection({}); doc_.setPropSelection({}); doc_.setCameraSelection({});
+    });
+    add({"decalset"}, [this](const std::string&, std::istringstream& in) {
+        // decalset pos x y z | width w | height h | turn deg | reach r | order n | material <name>
+        // (the selected decals, else the pending one; as Properties does)
+        std::string k, rest; in >> k; std::getline(in, rest);
+        std::istringstream v(rest);
+        if (k == "material") { std::string m; v >> m; editDecals("Decal picture", [m](Decal& d) { d.material = m; }); }
+        else if (k == "pos") { Vec3 p; v >> p.x >> p.y >> p.z; editDecals("Move decal", [p](Decal& d) { d.pos = p; }); }
+        else {
+            double x = 0; v >> x;
+            if (k == "width") editDecals("Size decal", [x](Decal& d) { d.width = x; });
+            else if (k == "height") editDecals("Size decal", [x](Decal& d) { d.height = x; });
+            else if (k == "turn") editDecals("Turn decal", [x](Decal& d) { setDecalRotation(d, x); });
+            else if (k == "reach") editDecals("Decal reach", [x](Decal& d) { d.reach = x; });
+            else if (k == "order") editDecals("Decal order", [x](Decal& d) { d.order = (int)std::lround(x); });
+        }
+    });
+    add({"decalorder"}, [this](const std::string&, std::istringstream& in) {
+        std::string w; in >> w;
+        decalOrder(w == "back" ? -1 : +1);
+    });
+    add({"decalsize"}, [this](const std::string&, std::istringstream&) { decalSizeFromPicture(); });
+    add({"decaldialog"}, [this](const std::string&, std::istringstream&) { askDecal_ = true; });
+    add({"decalsshown"}, [this](const std::string&, std::istringstream& in) {
+        std::string w; in >> w;
+        doc_.setDecalsShown(w != "off");
     });
     add({"propselect"}, [this](const std::string&, std::istringstream& in) {
         // propselect all | none | <index>...

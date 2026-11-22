@@ -19,6 +19,7 @@
 #include "core/bottega.hpp"
 #include "core/prop.hpp"
 #include "core/bake.hpp"
+#include "core/decal.hpp"
 #include "core/material.hpp"
 #include "core/shader_file.hpp"
 #include "core/tracer.hpp"
@@ -4268,6 +4269,156 @@ static void testBakeMaterials() {
 
 // The bake's tracer (speed-up before v0.12.4b): a model placed as an instance answers like the
 // same triangles put in the world one by one.
+static void testDecals() {
+    // frame and turn: a wall facing -Y, the picture's up is +Z, its right is +X seen from the front
+    Decal d;
+    d.pos = {0, -64, 64};
+    d.normal = {0, -1, 0};
+    d.up = decalDefaultUp(d.normal);
+    d.width = 32;
+    d.height = 16;
+    Vec3 r, u, n;
+    decalFrame(d, r, u, n);
+    CHECK(nearV(u, {0, 0, 1}) && nearV(r, {1, 0, 0}) && nearV(n, {0, -1, 0}));
+    CHECK(near(decalRotation(d), 0));
+    setDecalRotation(d, 90);
+    CHECK(near(decalRotation(d), 90, 1e-9));
+    decalFrame(d, r, u, n);
+    CHECK(nearV(u, {-1, 0, 0}, 1e-9)); // counter-clockwise seen from the front
+    setDecalRotation(d, 0);
+    double pu = 0, pv = 0;
+    decalUV(d, {16, -64, 72}, pu, pv);
+    CHECK(near(pu, 1) && near(pv, 0)); // top right
+    decalSizeFromPicture(d, 64, 32, 0.5);
+    CHECK(near(d.width, 64 * 0.5 * 2.54) && near(d.height, 32 * 0.5 * 2.54));
+    d.width = 32;
+    d.height = 16;
+
+    // on a box: lands on the face it looks at, clipped to its size; not on side faces
+    Brush wall = makeBox(box({-128, -64, 0}, {128, 64, 128}), "brick");
+    wall.id = 7;
+    std::vector<Brush> bs{wall};
+    std::vector<DecalTri> m = decalMesh(d, bs);
+    double area = 0;
+    for (const DecalTri& t : m) {
+        area += 0.5 * length(cross(t.p[1] - t.p[0], t.p[2] - t.p[0]));
+        CHECK(nearV(t.n, {0, -1, 0}));
+    }
+    CHECK(near(area, 32 * 16, 1e-6));
+    // at an edge: wraps over it onto a face turned less than 75 degrees, not a square one
+    Decal e = d;
+    e.pos = {128, -64, 64};
+    CHECK(near(decalMesh(e, bs).empty() ? 0 : 1, 1));
+    double ea = 0;
+    for (const DecalTri& t : decalMesh(e, bs)) ea += 0.5 * length(cross(t.p[1] - t.p[0], t.p[2] - t.p[0]));
+    CHECK(near(ea, 16 * 16, 1e-6));
+    CHECK(rayHitDecal(d, {0, -500, 64}, {0, 1, 0}) > 0 && rayHitDecal(d, {100, -500, 64}, {0, 1, 0}) < 0);
+
+    // the decal follows its brush: move, turn, size
+    wall.decals.push_back(d);
+    Brush w2 = wall;
+    w2.translate({10, 0, 5}, false);
+    CHECK(nearV(w2.decals[0].pos, {10, -64, 69}));
+    Brush w3 = wall;
+    w3.rotate({0, 0, 0}, {0, 0, 1}, 3.14159265358979323846 / 2, false);
+    CHECK(nearV(w3.decals[0].pos, {64, 0, 64}, 1e-9) && nearV(w3.decals[0].normal, {1, 0, 0}, 1e-9) &&
+          nearV(w3.decals[0].up, {0, 0, 1}, 1e-9));
+    Brush w4 = wall;
+    w4.remapBounds(wall.bounds(), box({-256, -64, 0}, {256, 64, 256}), false);
+    CHECK(near(w4.decals[0].width, 64, 1e-9) && near(w4.decals[0].height, 32, 1e-9) && nearV(w4.decals[0].pos, {0, -64, 128}, 1e-9));
+    { // a mirror: still facing out, the picture not mirrored
+        std::string err;
+        TransformSpec t;
+        t.kind = TransformKind::Scale;
+        t.scale = {1, -1, 1};
+        std::vector<Brush> out = applyTransform({wall}, t, false, err);
+        CHECK(out.size() == 1 && nearV(out[0].decals[0].normal, {0, 1, 0}, 1e-9) && nearV(out[0].decals[0].pos, {0, 64, 64}, 1e-9));
+    }
+
+    // in a document: added, modified, deleted, undone; copies get new ids; a split keeps one
+    Document doc;
+    Brush plain = makeBox(box({-128, -64, 0}, {128, 64, 128}), "brick");
+    doc.apply(doc.makeAdd({plain}, "add"));
+    const BrushId bid = *doc.selection().begin();
+    Decal nd = d;
+    nd.id = 0;
+    doc.apply(doc.makeAddDecal(nd, bid, "Place decal"));
+    CHECK(doc.decalCount() == 1 && doc.decalSelection().size() == 1 && doc.selection().empty());
+    const DecalId did = *doc.decalSelection().begin();
+    CHECK(doc.findDecal(did) && doc.findDecal(did).brush->id == bid);
+    Decal md = *doc.findDecal(did).decal;
+    md.order = 3;
+    doc.apply(doc.makeModifyDecals({md}, "Decal order"));
+    CHECK(doc.findDecal(did).decal->order == 3);
+    doc.undo();
+    CHECK(doc.findDecal(did).decal->order == 0);
+    doc.redo();
+    // a copy of the brush: its decal gets a new id
+    Brush copy = *doc.find(bid);
+    copy.id = 0;
+    copy.translate({0, 0, 256}, false);
+    doc.apply(doc.makeAdd({copy}, "Duplicate"));
+    CHECK(doc.decalCount() == 2);
+    std::set<DecalId> ids;
+    for (const Brush& b : doc.brushes()) for (const Decal& x : b.decals) ids.insert(x.id);
+    CHECK(ids.size() == 2 && ids.count(did));
+    // carving the first brush in two: the decal stays once, on the piece it is on
+    {
+        const Brush& b0 = *doc.find(bid);
+        Brush cutter = makeBox(box({-8, -100, -10}, {8, 100, 300}), "x");
+        std::vector<Brush> pieces = carveBrush(b0, cutter);
+        CHECK(pieces.size() >= 2);
+        doc.apply(doc.makeChange({}, pieces, {bid}, "Carve"));
+        size_t holders = 0;
+        for (const Brush& b : doc.brushes())
+            for (const Decal& x : b.decals)
+                if (x.id == did) ++holders;
+        CHECK(holders == 1 && doc.decalCount() == 2);
+        doc.undo();
+        CHECK(doc.findDecal(did) && doc.findDecal(did).brush->id == bid);
+    }
+    // deleting the decal (with the selection), undo
+    doc.setDecalSelection({did});
+    {
+        Command c = doc.makeDelete({}, "Delete");
+        doc.addDecalDeletes(c, doc.decalSelection());
+        doc.apply(std::move(c));
+    }
+    CHECK(!doc.findDecal(did) && doc.decalSelection().empty() && doc.decalCount() == 1);
+    doc.undo();
+    CHECK(doc.findDecal(did) && doc.decalSelection().count(did));
+    // hidden with View > Decals, with their visgroup, with their brush
+    CHECK(doc.visible(*doc.findDecal(did).brush, *doc.findDecal(did).decal));
+    doc.setDecalsShown(false);
+    CHECK(!doc.visible(*doc.findDecal(did).brush, *doc.findDecal(did).decal) && doc.decalSelection().empty());
+    doc.setDecalsShown(true);
+
+    // saved and read back
+    {
+        Decal sd = *doc.findDecal(did).decal;
+        sd.material = "decals/poster one";
+        sd.visgroup = 2;
+        sd.reach = 4;
+        doc.apply(doc.makeModifyDecals({sd}, "x"));
+        const std::string text = writeMap(doc);
+        CHECK(text.find("//@ decal ") != std::string::npos);
+        Document e;
+        CHECK(readMap(text, e).ok);
+        CHECK(e.decalCount() == 2);
+        bool found = false;
+        for (const Brush& b : e.brushes())
+            for (const Decal& x : b.decals)
+                if (x.material == "decals/poster one") {
+                    found = true;
+                    CHECK(nearV(x.pos, sd.pos) && nearV(x.normal, sd.normal) && nearV(x.up, sd.up) && near(x.width, sd.width) &&
+                          near(x.height, sd.height) && x.order == 3 && x.visgroup == 2 && near(x.reach, 4));
+                }
+        CHECK(found);
+        Document bad;
+        CHECK(!readMap("{\n\"classname\" \"worldspawn\"\n{\n//@ decal size=0,4 mat=x\n( 0 0 0 ) ( 0 1 0 ) ( 1 0 0 ) a [ 1 0 0 0 ] [ 0 -1 0 0 ] 0 1 1\n}\n}\n", bad).ok);
+    }
+}
+
 static void testBumpBake() {
     // A floor with a bump-mapped material, a slanted sun from +x: the 3 bump maps hold the
     // light along Source's 3 directions; the flat map is the same as without the bump map.
@@ -4611,6 +4762,7 @@ int main() {
     testMaterials();
     testBakeMaterials();
     testBumpBake();
+    testDecals();
     testTracer();
     testMapQuakeFormat();
     testMapErrors();

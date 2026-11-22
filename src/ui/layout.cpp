@@ -47,6 +47,7 @@ MenuActions drawMenuBar(const MenuState& st) {
         if (ImGui::MenuItem("Camera", "Shift+K", st.cameraTool)) a.toolCamera = true;
         if (ImGui::MenuItem("Math primitive", "Shift+M", st.primTool)) a.toolPrim = true;
         if (ImGui::MenuItem("Props (models)", "Shift+P", st.propTool)) a.toolProp = true;
+        if (ImGui::MenuItem("Decal", "Shift+D", st.decalTool)) a.toolDecal = true;
         ImGui::Separator();
         if (ImGui::BeginMenu("Clip: keep")) {
             if (ImGui::MenuItem("Both pieces", nullptr, st.clipKeep == 0)) a.clipKeep = 0;
@@ -186,6 +187,22 @@ MenuActions drawMenuBar(const MenuState& st) {
         ImGui::TextDisabled("the Bottega's models folder (File > Bottega folder...).");
         ImGui::EndMenu();
     }
+    if (ImGui::BeginMenu("Decals")) {
+        if (ImGui::MenuItem("Decal tool", "Shift+D", st.decalTool)) a.toolDecal = true;
+        if (ImGui::MenuItem("Place decal", "Return", false, st.decalPending)) a.createDecal = true;
+        if (ImGui::MenuItem("Cancel", "Esc", false, st.decalPending)) a.cancel = true;
+        ImGui::Separator();
+        if (ImGui::MenuItem("Decal...", nullptr, false, st.decalsSelected == 1 || st.decalPending)) a.decalDialog = true;
+        if (ImGui::MenuItem("Bring forward", nullptr, false, st.decalsSelected > 0)) a.decalForward = true;
+        if (ImGui::MenuItem("Send back", nullptr, false, st.decalsSelected > 0)) a.decalBack = true;
+        if (ImGui::MenuItem("Size from its picture", nullptr, false, st.decalsSelected > 0 || st.decalPending)) a.decalPictureSize = true;
+        if (ImGui::MenuItem("Show decals", nullptr, st.decalsShown)) a.toggleDecals = true;
+        ImGui::Separator();
+        ImGui::TextDisabled("Pick a picture in the Textures panel, then click a surface");
+        ImGui::TextDisabled("in the 3D view; Return places it. A selected decal: corners");
+        ImGui::TextDisabled("size it, the ring turns it, dragging slides it.");
+        ImGui::EndMenu();
+    }
     if (ImGui::BeginMenu("World")) {
         if (ImGui::MenuItem("Light tool", "Shift+L", st.lightTool)) a.toolLight = true;
         static const char* kinds[] = {"New point light", "New spot light", "New sun"};
@@ -263,6 +280,7 @@ MenuActions drawMenuBar(const MenuState& st) {
         if (ImGui::MenuItem("Show all", "Cmd+U")) a.showAll = true;
         if (ImGui::MenuItem("Show primitives", nullptr, st.primsShown)) a.togglePrims = true;
         if (ImGui::MenuItem("Show props", nullptr, st.propsShown)) a.toggleProps = true;
+        if (ImGui::MenuItem("Show decals", nullptr, st.decalsShown)) a.toggleDecals = true;
         ImGui::TextDisabled("Visgroups: the tab next to Textures");
         ImGui::Separator();
         if (ImGui::MenuItem("Center 2D views on selection", "Cmd+E", false, st.hasSelection)) a.centerViews = true;
@@ -326,6 +344,8 @@ void drawControlsWindow(bool* open) {
             {"Terrain points", "Vertex tool on a selected terrain: click a point (Cmd+click adds), drag in the 3D view or a side view; Cmd+Shift+T types a height"},
             {"Terrain tool", "Shift+G: drag over terrain (3D, or a 2D view facing it); mode, radius, amount in Properties; Esc cancels a stroke"},
             {"Primitive tool", "Shift+M (Primitives menu): pick sphere, cube, cylinder, cone, torus, capsule or disc in Properties, drag a box in a 2D view, Return creates, Esc cancels"},
+            {"Decal tool", "Shift+D (Decals menu): pick a picture in the Textures panel, click a surface in the 3D view, drag to slide it, Return places it, Esc cancels; Option+click puts a new one over a decal"},
+            {"Decals", "click one to select (Cmd+click adds); 3D: corners size it (Shift: proportions), the ring turns it (Shift: freely), drag slides it; Properties or Decals > Decal... for typed values; Decals > Bring forward / Send back; Delete; View > Show decals"},
             {"Props tool", "Shift+P (Props menu): pick a model in the Props panel (search by name), click a surface in 3D or a spot in a 2D view, drag to move it, type position / turn / scale in Properties, Return places it, Esc cancels"},
             {"Select / move / turn / scale props", "click a prop (any tool that selects; 3D picks its triangles, a 2D view its turned box); drag it in a 2D view; rings turn it (15 degrees); size handles scale it evenly (Shift: one axis); Delete removes, Cmd+D duplicates, Cmd+J drops it onto what is below"},
             {"Select / move primitives", "click a primitive (Select, Light or Primitive tool; a combination selects whole); drag it in a 2D view; Delete removes, Cmd+D duplicates"},

@@ -81,6 +81,14 @@ void writeBrush(std::ostringstream& o, const Brush& b) {
         for (const Face& f : b.faces) o << ' ' << num(f.lightmapScale);
         o << '\n';
     }
+    // Decals put on this brush (v0.12.5), the material last (the rest of the line).
+    auto v3 = [](const Vec3& v) { return num(v.x) + ',' + num(v.y) + ',' + num(v.z); };
+    for (const Decal& d : b.decals) {
+        o << "//@ decal pos=" << v3(d.pos) << " n=" << v3(d.normal) << " up=" << v3(d.up) << " size=" << num(d.width) << ','
+          << num(d.height) << " reach=" << num(d.reach) << " order=" << d.order;
+        if (d.visgroup) o << " vg=" << d.visgroup;
+        o << " mat=" << d.material << '\n';
+    }
     o << "}\n";
 }
 
@@ -656,6 +664,53 @@ public:
                 if (i < b.faces.size()) b.faces[i].lightmapScale = std::clamp(x, kMinLightmapScale, kMaxLightmapScale);
                 ++i;
             }
+            return;
+        }
+        if (first == "decal") {
+            Decal d;
+            std::string kv;
+            auto vec = [&](const std::string& v, Vec3& out) {
+                double x = 0, y = 0, z = 0;
+                if (std::sscanf(v.c_str(), "%lf,%lf,%lf", &x, &y, &z) != 3 || !finite3(x, y, z)) fail(tok, "bad decal value '" + v + "'");
+                out = {x, y, z};
+            };
+            while (in >> kv) {
+                const size_t eq = kv.find('=');
+                if (eq == std::string::npos) continue;
+                const std::string k = kv.substr(0, eq), v = kv.substr(eq + 1);
+                if (k == "mat") {
+                    std::string rest;
+                    std::getline(in, rest);
+                    d.material = v + rest;
+                    while (!d.material.empty() && (d.material.back() == ' ' || d.material.back() == '\r')) d.material.pop_back();
+                    break;
+                }
+                if (k == "pos") vec(v, d.pos);
+                else if (k == "n") vec(v, d.normal);
+                else if (k == "up") vec(v, d.up);
+                else if (k == "size") {
+                    double w = 0, h = 0;
+                    if (std::sscanf(v.c_str(), "%lf,%lf", &w, &h) != 2 || !(w > 0) || !(h > 0) || !std::isfinite(w) || !std::isfinite(h))
+                        fail(tok, "bad decal size '" + v + "'");
+                    d.width = w;
+                    d.height = h;
+                } else if (k == "reach") {
+                    double r = 0;
+                    if (!parseNumber(v, r) || !(r >= 0)) fail(tok, "bad decal reach '" + v + "'");
+                    d.reach = r;
+                } else if (k == "order") {
+                    long x = 0;
+                    if (!parseInt(v, -1000000, 1000000, x)) fail(tok, "bad decal order '" + v + "'");
+                    d.order = (int)x;
+                } else if (k == "vg") {
+                    long x = 0;
+                    if (!parseInt(v, 0, 1L << 30, x)) fail(tok, "bad decal visgroup '" + v + "'");
+                    d.visgroup = (std::uint32_t)x;
+                }
+            }
+            if (length(d.normal) < 1e-9) fail(tok, "a decal has no facing");
+            d.normal = normalize(d.normal);
+            b.decals.push_back(std::move(d));
             return;
         }
         if (first == "tl") {

@@ -99,8 +99,13 @@ bool Brush::valid() const {
     return s.x > 0 && s.y > 0 && s.z > 0 && s.x < kWorldHalf * 4 && s.y < kWorldHalf * 4 && s.z < kWorldHalf * 4;
 }
 
+void Brush::mapDecals(const std::function<Vec3(const Vec3&)>& f) {
+    for (Decal& d : decals) mapDecal(d, f);
+}
+
 void Brush::translate(const Vec3& delta, bool textureLock) {
     if (terrain) terrain->start += delta;
+    for (Decal& d : decals) d.pos = cleanVec(d.pos + delta);
     for (Face& f : faces) {
         for (Vec3& p : f.p) p += delta;
         if (textureLock) {
@@ -118,6 +123,7 @@ Vec3 rotateVec(const Vec3& v, const Vec3& k, double a) {
 
 void Brush::rotate(const Vec3& center, const Vec3& axis, double radians, bool textureLock) {
     if (terrain) terrain->start = center + rotateVec(terrain->start - center, axis, radians);
+    mapDecals([&](const Vec3& p) { return center + rotateVec(p - center, axis, radians); });
     for (Face& f : faces) {
         for (Vec3& p : f.p) p = cleanVec(center + rotateVec(p - center, axis, radians));
         if (textureLock) {
@@ -142,6 +148,7 @@ void Brush::remapBounds(const AABB& from, const AABB& to, bool textureLock) {
         for (int a = 0; a < 3; ++a) r[a] = to.min[a] + (p[a] - from.min[a]) * k[a];
         return r;
     };
+    mapDecals(map);
     if (terrain && terrain->face >= 0 && terrain->face < (int)faces.size()) {
         // Heights go along the face normal: they stretch with the scale along it.
         const Vec3 n = faces[terrain->face].plane().n;

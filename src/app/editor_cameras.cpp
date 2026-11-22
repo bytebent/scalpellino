@@ -261,7 +261,7 @@ void Editor::drawCameraPanel() {
                 doc_.setSelection({});
                 doc_.setLightSelection({});
                 doc_.setPrimSelection({});
-                doc_.setPropSelection({});
+                doc_.setPropSelection({}); doc_.setDecalSelection({});
             }
             ImGui::PopID();
         }

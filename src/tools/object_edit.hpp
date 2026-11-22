@@ -21,6 +21,7 @@
 //    default, v0.10.0); Shift+drag changes one axis with the opposite face staying put.
 //    Changes snap to the grid (a prop's size in units, so its scale changes by that).
 // Every change is one undoable command on release; Esc during a drag cancels it.
+#include "tools/decal_edit.hpp"
 #include "tools/tool.hpp"
 #include <vector>
 
@@ -61,7 +62,7 @@ public:
     bool press(ToolEnv& env, const Pointer& p);
     void drag(ToolEnv& env, const Pointer& p);
     void release(ToolEnv& env);
-    bool active() const { return mode_ != Mode::None; }
+    bool active() const { return mode_ != Mode::None || decals_.active(); }
     void cancel();
     // Objects being dragged replace the document's in the scene; rings/handles shown.
     void decorate(const Document& doc, Scene& scene) const;
@@ -69,6 +70,7 @@ public:
 
 private:
     void dragPropSize(ToolEnv& env, const Pointer& p);
+    DecalEdit decals_; // decals (v0.12.5)
     enum class Mode { None, Move, Ring, Size } mode_ = Mode::None;
     const Viewport* view_ = nullptr;
     double u0_ = 0, v0_ = 0;

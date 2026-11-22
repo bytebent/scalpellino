@@ -46,6 +46,8 @@ bool parseShaderFile(const std::string& text, ShaderFile& out, std::string* erro
             out.name = trim(v);
         } else if (const char* v = value("kind:")) {
             out.kind = lowerCase(trim(v));
+        } else if (const char* v = value("blend:")) {
+            out.blend = lowerCase(trim(v)) == "modulate" ? "modulate" : "normal";
         } else if (const char* v = value("about:")) {
             if (!out.about.empty()) out.about += ' ';
             out.about += trim(v);

@@ -36,6 +36,8 @@ struct MenuState {
     bool primsInCombo = false;
     bool propTool = false, propPending = false;
     size_t propsSelected = 0;
+    bool decalTool = false, decalPending = false, decalsShown = true; // decals (v0.12.5)
+    size_t decalsSelected = 0;
     bool cameraTool = false, cameraPending = false, cameraAiming = false;
     size_t camerasSelected = 0;
     bool selectedCameraActive = false; // the one selected camera is the active one already
@@ -82,6 +84,8 @@ struct MenuActions {
     int primOp = -1;      // PrimOp for the selected primitives
     bool replicate = false, randomReplicate = false, snapLand = false, snapGround = false;
     bool toolProp = false, createProp = false;
+    bool toolDecal = false, createDecal = false, decalDialog = false, decalForward = false, decalBack = false;
+    bool decalPictureSize = false, toggleDecals = false;
     bool toolCamera = false, createCamera = false, activateCamera = false, aimCamera = false;
     bool updatePreview = false;
     bool render = false;      // Render... (Cmd+Shift+K)

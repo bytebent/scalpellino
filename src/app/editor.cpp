@@ -98,6 +98,18 @@ ToolEnv Editor::env() {
     e.textureLock = tfTexLock_;
     e.currentTexture = &currentTexture_;
     e.models = &modelFinder_;
+    if (!decalPicture_)
+        decalPicture_ = [this](const std::string& name, int& w, int& h, double& scale) {
+            if (!textures_.exists(name)) return false;
+            const Texture2D& t = textures_.get(name);
+            w = std::max(1, t.width);
+            h = std::max(1, t.height);
+            const MaterialIndex::Entry* m = textures_.material(name);
+            scale = m ? m->mat.num("$decalscale", 1) : 1;
+            if (!(scale > 0)) scale = 1;
+            return true;
+        };
+    e.decalPicture = &decalPicture_;
     return e;
 }
 
@@ -167,6 +179,7 @@ bool Editor::frame(float dt) {
     st.canRedo = doc_.canRedo();
     st.hasSelection = !doc_.selection().empty();
     st.hasAnything = st.hasSelection || !doc_.lightSelection().empty() || !doc_.primSelection().empty() || !doc_.propSelection().empty() ||
+                     !doc_.decalSelection().empty() ||
                      !doc_.cameraSelection().empty();
     st.cameraTool = tool_ == &cameraTool_;
     st.cameraPending = st.cameraTool && cameraTool_.pending.has_value();
@@ -178,6 +191,10 @@ bool Editor::frame(float dt) {
     st.propTool = tool_ == &propTool_;
     st.propPending = st.propTool && propTool_.hasPending();
     st.propsSelected = doc_.propSelection().size();
+    st.decalTool = tool_ == &decalTool_;
+    st.decalPending = st.decalTool && decalTool_.hasPending();
+    st.decalsSelected = doc_.decalSelection().size();
+    st.decalsShown = doc_.decalsShown();
     st.selectTool = tool_ == &selectTool_;
     st.blockTool = tool_ == &blockTool_;
     st.blockPreview = st.blockTool && blockTool_.hasPreview();
@@ -296,6 +313,13 @@ bool Editor::frame(float dt) {
     if (m.toolLight) setTool(&lightTool_);
     if (m.toolPrim) setTool(&primTool_);
     if (m.toolProp) setTool(&propTool_);
+    if (m.toolDecal) setTool(&decalTool_);
+    if (m.createDecal) onKey(KEY_ENTER);
+    if (m.decalDialog) askDecal_ = true;
+    if (m.decalForward) decalOrder(+1);
+    if (m.decalBack) decalOrder(-1);
+    if (m.decalPictureSize) decalSizeFromPicture();
+    if (m.toggleDecals) { tool_->cancel(); doc_.setDecalsShown(!doc_.decalsShown()); }
     if (m.toolCamera) setTool(&cameraTool_);
     if (m.createCamera) cameraTool_.create(doc_);
     if (m.activateCamera && doc_.cameraSelection().size() == 1) activateCamera(*doc_.cameraSelection().begin());
@@ -390,6 +414,7 @@ bool Editor::frame(float dt) {
     drawDialogs();
     drawTransformDialog();
     drawPrecisionDialogs();
+    drawDecalDialog();
     drawShapingDialogs();
     drawTerrainDialogs();
     drawMaterialDialogs();
@@ -465,6 +490,7 @@ void Editor::handleKeyboard() {
     if (shift_ && IsKeyPressed(KEY_K)) setTool(&cameraTool_);
     if (shift_ && IsKeyPressed(KEY_M)) setTool(&primTool_);
     if (shift_ && IsKeyPressed(KEY_P)) setTool(&propTool_);
+    if (shift_ && IsKeyPressed(KEY_D) && !cmd_) setTool(&decalTool_);
     if (IsKeyPressed(KEY_H)) { if (shift_) hideUnselected(); else hideSelected(); }
     if (shift_ && IsKeyPressed(KEY_X)) { if (tool_ == &clipTool_) clipTool_.cycleKeep(); else setTool(&clipTool_); }
     if (shift_ && IsKeyPressed(KEY_T)) applyCurrentTexture();
@@ -492,6 +518,7 @@ Scene Editor::buildScene() {
         sp.missing = m == nullptr;
         s.props.push_back(std::move(sp));
     }
+    addDecals(s);
     s.lightPreview = lightPreview_;
     s.ambient = doc_.environment().ambient;
     if (replicating_ || randomizing_) { // Multi- / Random Replicate preview

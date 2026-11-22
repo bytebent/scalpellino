@@ -278,6 +278,140 @@ struct Item {
     double dist = 0;        // see-through faces: from the camera (far first)
 };
 bool isSeeThrough(const Material* m) { return m && (m->flag("$translucent") || m->num("$alpha", 1) < 1); }
+
+bool boxesMeet(const AABB& a, const AABB& b) {
+    for (int k = 0; k < 3; ++k)
+        if (a.max[k] < b.min[k] || b.max[k] < a.min[k]) return false;
+    return true;
+}
+
+// Decals (v0.12.5): each one clips the lit surfaces in its box (their lightmap coordinates,
+// bump offset and normal carried along), and is drawn over them by its material's shader,
+// alpha-blended (DecalModulate: multiplied), a little towards the camera, without writing
+// depth, in order.
+template <class Use, class Release, class BindPage>
+void drawDecalsPass(const SceneBrushes& brushes, const BakedLight& baked, TextureLibrary& textures, const BakedDrawContext& ctx,
+                    Use& use, Release& release, BindPage& bindPage) {
+    const std::vector<BakedLight::Page>& pages = baked.pages();
+    const BakedLight::FaceRef full{0, -1, -1, nullptr};
+    auto lift = [&](const Vec3& p) {
+        const double d = length(p - ctx.camPos);
+        return std::max(0.05, 3.0 * d * d / (std::max(ctx.nearDist, 0.01) * 16777216.0));
+    };
+    // DecalVert::a: 0, 1 lightmap u, v; 2 bump offset; 3..5 normal
+    auto vert = [](const Vec3& p, float lu, float lv, float bz, const Vec3& n) {
+        DecalVert v;
+        v.p = p;
+        v.a = {lu, lv, bz, (float)n.x, (float)n.y, (float)n.z, 0, 0};
+        return v;
+    };
+    rlDrawRenderBatchActive();
+    rlDisableDepthMask();
+    for (const Scene::SceneDecal& sd : *ctx.decals) {
+        if (sd.pending) continue;
+        const Decal& dc = sd.decal;
+        const AABB box = decalBounds(dc);
+        std::map<int, std::vector<DecalVert>> tris; // by lightmap page, 3 a triangle
+        auto add = [&](int page, const std::vector<DecalVert>& poly) {
+            const std::vector<DecalVert> c = clipToDecal(dc, poly);
+            for (size_t i = 1; i + 1 < c.size(); ++i) {
+                std::vector<DecalVert>& t = tris[page];
+                t.push_back(c[0]);
+                t.push_back(c[i]);
+                t.push_back(c[i + 1]);
+            }
+        };
+        for (const SceneBrush& b : brushes) {
+            if (!boxesMeet(box, b.bounds)) continue;
+            const size_t plain = b.terrain ? b.terrainFirst : b.polys.size();
+            for (size_t pi = 0; pi < plain; ++pi) {
+                const Polygon& p = b.polys[pi];
+                if (p.face < 0 || p.face >= (int)b.faces.size() || p.verts.size() < 3 || !decalTakes(dc, p.normal)) continue;
+                const BakedLight::FaceRef* ref = baked.face(b.id, p.face, false);
+                if (!ref) ref = &full;
+                const BakedLight::Page& pg = pages[ref->page];
+                const float bz = bumpZ(*ref, pg);
+                std::vector<DecalVert> poly;
+                for (const Vec3& v : p.verts) {
+                    float lu = 1.5f / pg.w, lv = 1.5f / pg.h;
+                    if (ref->lm) BakedLight::uv(*ref, pg, dot(ref->lm->axisS, v) - ref->lm->s0, dot(ref->lm->axisT, v) - ref->lm->t0, lu, lv);
+                    poly.push_back(vert(v, lu, lv, bz, p.normal));
+                }
+                add(ref->page, poly);
+            }
+            if (!b.terrain) continue;
+            const BakedLight::FaceRef* ref = baked.face(b.id, b.terrain->face, true);
+            if (!ref) ref = &full;
+            const BakedLight::Page& pg = pages[ref->page];
+            const float bz = bumpZ(*ref, pg);
+            const int n = b.terrain->n;
+            const size_t cells = b.polys.size() - b.terrainFirst;
+            for (size_t c = 0; c < cells; ++c) {
+                const Polygon& p = b.polys[b.terrainFirst + c];
+                AABB cb;
+                for (const Vec3& v : p.verts) cb.add(v);
+                if (!boxesMeet(box, cb)) continue;
+                const int ci = (int)(c % (size_t)(n - 1)), cj = (int)(c / (size_t)(n - 1));
+                const int gi[4] = {ci, ci + 1, ci + 1, ci}, gj[4] = {cj, cj, cj + 1, cj + 1};
+                DecalVert q[4];
+                for (int k = 0; k < 4; ++k) {
+                    float lu = 1.5f / pg.w, lv = 1.5f / pg.h;
+                    if (ref->lm)
+                        BakedLight::uv(*ref, pg, (double)gi[k] / (n - 1) * (ref->lm->w - 1), (double)gj[k] / (n - 1) * (ref->lm->h - 1), lu, lv);
+                    const Vec3 nn = 4 * c + k < b.cellNormals.size() ? b.cellNormals[4 * c + k] : b.terrain->normal;
+                    q[k] = vert(p.verts[k], lu, lv, bz, nn);
+                }
+                for (const auto& t : {std::array<int, 3>{0, 1, 2}, std::array<int, 3>{0, 2, 3}}) {
+                    Vec3 gn = normalize(cross(q[t[1]].p - q[t[0]].p, q[t[2]].p - q[t[0]].p));
+                    if (dot(gn, b.terrain->normal) < 0) gn = gn * -1;
+                    if (!decalTakes(dc, gn)) continue;
+                    add(ref->page, {q[t[0]], q[t[1]], q[t[2]]});
+                }
+            }
+        }
+        if (tris.empty()) continue;
+        auto bd = use(dc.material);
+        if (!bd.sh.id) continue;
+        const bool modulate = bd.prog && bd.prog->file && bd.prog->file->blend == "modulate";
+        if (bd.prog) {
+            const int one = 1;
+            SetShaderValue(bd.sh, bd.prog->at("decalPass"), &one, SHADER_UNIFORM_INT);
+        }
+        if (modulate) {
+            rlSetBlendFactors(0x0306 /* GL_DST_COLOR */, 0x0300 /* GL_SRC_COLOR */, 0x8006 /* GL_FUNC_ADD */);
+            BeginBlendMode(BLEND_CUSTOM);
+        } else
+            BeginBlendMode(BLEND_ALPHA);
+        const Texture2D& tex = textures.get(dc.material);
+        for (const auto& [page, vs] : tris) {
+            bindPage(page);
+            rlCheckRenderBatchLimit((int)vs.size());
+            rlSetTexture(tex.id);
+            rlBegin(RL_TRIANGLES);
+            for (const DecalVert& v : vs) {
+                const Vec3 nn{v.a[3], v.a[4], v.a[5]};
+                auto ch = [](double x) { return (unsigned char)std::clamp((int)std::lround((x * 0.5 + 0.5) * 255), 0, 255); };
+                rlColor4ub(ch(nn.x), ch(nn.y), ch(nn.z), 255);
+                double u = 0, w = 0;
+                decalUV(dc, v.p, u, w);
+                rlTexCoord2f((float)u, (float)w);
+                rlNormal3f(v.a[0], v.a[1], v.a[2]);
+                const Vec3 p = v.p + normalize(nn) * lift(v.p);
+                rlVertex3f((float)p.x, (float)p.y, (float)p.z);
+            }
+            rlEnd();
+            rlSetTexture(0);
+        }
+        rlDrawRenderBatchActive();
+        if (bd.prog) {
+            const int zero = 0;
+            SetShaderValue(bd.sh, bd.prog->at("decalPass"), &zero, SHADER_UNIFORM_INT);
+        }
+        release(bd);
+        EndBlendMode();
+    }
+    rlEnableDepthMask();
+}
 } // namespace
 
 bool drawBakedBrushes(const SceneBrushes& brushes, const BakedLight& baked, TextureLibrary& textures, const BakedDrawContext& ctx) {
@@ -293,7 +427,7 @@ bool drawBakedBrushes(const SceneBrushes& brushes, const BakedLight& baked, Text
 
     // ---- what to draw in this pass
     std::vector<Item> items;
-    for (const SceneBrush& b : brushes) {
+    if (!ctx.decals) for (const SceneBrush& b : brushes) {
         const size_t plain = b.terrain ? b.terrainFirst : b.polys.size();
         for (size_t pi = 0; pi < plain; ++pi) {
             const Polygon& p = b.polys[pi];
@@ -327,7 +461,7 @@ bool drawBakedBrushes(const SceneBrushes& brushes, const BakedLight& baked, Text
             items.push_back(it);
         }
     }
-    if (items.empty()) return true;
+    if (items.empty() && !ctx.decals) return true;
     if (ctx.translucent)
         std::stable_sort(items.begin(), items.end(), [](const Item& a, const Item& b) { return a.dist > b.dist; });
     else // terrain layers after everything else (bottom layer first), then by material and page
@@ -475,6 +609,15 @@ bool drawBakedBrushes(const SceneBrushes& brushes, const BakedLight& baked, Text
         }
     };
 
+    if (ctx.decals) {
+        drawDecalsPass(brushes, baked, textures, ctx, use, release, bindPage);
+        rlActiveTextureSlot(kLightmapUnit);
+        rlDisableTexture();
+        rlActiveTextureSlot(kSkyUnit);
+        rlDisableTexture();
+        rlActiveTextureSlot(0);
+        return true;
+    }
     Bound bd;
     const std::string* curMat = nullptr;
     int curPage = -1;

@@ -161,6 +161,21 @@ void Editor::drawVisgroupsPanel() {
         ImGui::TextDisabled("%zu hidden", hidden);
         ImGui::Separator();
         ImGui::TextUnformatted("Visgroups");
+        // The selected brushes and decals (v0.12.5) into visgroup `id` (0: none), one step.
+        auto assign = [&](std::uint32_t id, const char* what) {
+            std::map<BrushId, Brush> out;
+            for (BrushId bid : doc_.selection())
+                if (const Brush* b = doc_.find(bid)) { out[bid] = *b; out[bid].visgroup = id; }
+            for (DecalId did : doc_.decalSelection())
+                if (const Document::DecalRef r = doc_.findDecal(did)) {
+                    auto it = out.find(r.brush->id);
+                    if (it == out.end()) it = out.emplace(r.brush->id, *r.brush).first;
+                    for (Decal& d : it->second.decals) if (d.id == did) d.visgroup = id;
+                }
+            std::vector<Brush> v;
+            for (auto& [k, b] : out) v.push_back(std::move(b));
+            if (!v.empty()) doc_.apply(doc_.makeModify(v, what));
+        };
         std::vector<Visgroup> vg = doc_.visgroups();
         int removeIdx = -1;
         bool changed = false;
@@ -168,7 +183,10 @@ void Editor::drawVisgroupsPanel() {
             Visgroup& v = vg[i];
             ImGui::PushID((int)v.id);
             size_t count = 0;
-            for (const Brush& b : doc_.brushes()) count += b.visgroup == v.id;
+            for (const Brush& b : doc_.brushes()) {
+                count += b.visgroup == v.id;
+                for (const Decal& d : b.decals) count += d.visgroup == v.id;
+            }
             if (ImGui::Checkbox("##vis", &v.visible)) { setVisgroupVisible(v.id, v.visible); vg = doc_.visgroups(); ImGui::PopID(); break; }
             ImGui::SameLine();
             char name[64];
@@ -180,16 +198,17 @@ void Editor::drawVisgroupsPanel() {
             ImGui::SameLine();
             if (ImGui::SmallButton("Select")) {
                 std::set<BrushId> sel;
-                for (const Brush& b : doc_.brushes()) if (b.visgroup == v.id && doc_.visible(b)) sel.insert(b.id);
+                std::set<DecalId> ds;
+                for (const Brush& b : doc_.brushes()) {
+                    if (b.visgroup == v.id && doc_.visible(b)) sel.insert(b.id);
+                    for (const Decal& d : b.decals) if (d.visgroup == v.id && doc_.visible(b, d)) ds.insert(d.id);
+                }
                 doc_.setSelection(sel);
+                doc_.setDecalSelection(ds);
             }
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Select its visible brushes");
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Select its visible brushes and decals");
             ImGui::SameLine();
-            if (ImGui::SmallButton("+")) {
-                std::vector<Brush> out;
-                for (BrushId id : doc_.selection()) if (const Brush* b = doc_.find(id)) { Brush c = *b; c.visgroup = v.id; out.push_back(c); }
-                if (!out.empty()) doc_.apply(doc_.makeModify(out, "Add to visgroup"));
-            }
+            if (ImGui::SmallButton("+")) assign(v.id, "Add to visgroup");
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Add the selection to this visgroup");
             ImGui::SameLine();
             if (ImGui::SmallButton("x")) removeIdx = (int)i;
@@ -199,7 +218,13 @@ void Editor::drawVisgroupsPanel() {
         if (removeIdx >= 0) {
             const std::uint32_t id = vg[(size_t)removeIdx].id;
             std::vector<Brush> out;
-            for (const Brush& b : doc_.brushes()) if (b.visgroup == id) { Brush c = b; c.visgroup = 0; out.push_back(c); }
+            for (const Brush& b : doc_.brushes()) {
+                bool touched = false;
+                Brush c = b;
+                if (c.visgroup == id) { c.visgroup = 0; touched = true; }
+                for (Decal& d : c.decals) if (d.visgroup == id) { d.visgroup = 0; touched = true; }
+                if (touched) out.push_back(c);
+            }
             if (!out.empty()) doc_.apply(doc_.makeModify(out, "Remove visgroup"));
             vg.erase(vg.begin() + removeIdx);
             changed = true;
@@ -210,15 +235,13 @@ void Editor::drawVisgroupsPanel() {
         ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 140);
         ImGui::InputTextWithHint("##newvg", "name", newVisgroupName_, sizeof newVisgroupName_);
         ImGui::SameLine();
-        ImGui::BeginDisabled(doc_.selection().empty() || !newVisgroupName_[0]);
+        ImGui::BeginDisabled((doc_.selection().empty() && doc_.decalSelection().empty()) || !newVisgroupName_[0]);
         if (ImGui::Button("New from selection")) {
             std::vector<Visgroup> all = doc_.visgroups();
             const std::uint32_t id = doc_.newVisgroupId();
             all.push_back({id, newVisgroupName_, true});
             doc_.setVisgroups(all);
-            std::vector<Brush> out;
-            for (BrushId bid : doc_.selection()) if (const Brush* b = doc_.find(bid)) { Brush c = *b; c.visgroup = id; out.push_back(c); }
-            doc_.apply(doc_.makeModify(out, "New visgroup"));
+            assign(id, "New visgroup");
             newVisgroupName_[0] = 0;
         }
         ImGui::EndDisabled();

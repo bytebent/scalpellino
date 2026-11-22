@@ -1,0 +1,152 @@
+# v0.12.5: decals (Hammer's infodecal and info_overlay as one object). The Decal tool
+# (Shift+D) puts the current texture on the surface clicked in the 3D view, at its
+# picture's size (texels x $decalscale x 1 Hammer unit); Return places it. A decal belongs
+# to the brush it is on (moves and copies with it), lands on every surface in its box that
+# faces it, and is lit by the surface's baked light in renders. DecalModulate darkens.
+bottega make studio
+copy assets/bump/bumpbrick.png studio/textures/bump/bumpbrick.png
+copy assets/bump/bumpbrick_normal.png studio/textures/bump/bumpbrick_normal.png
+copy assets/bump/ssstone.png studio/textures/bump/ssstone.png
+copy assets/bump/ssstone_ssbump.png studio/textures/bump/ssstone_ssbump.png
+copy assets/decals/poster.png studio/textures/decals/poster.png
+copy assets/decals/grime.png studio/textures/decals/grime.png
+copy assets/decals/grime.vmt studio/textures/decals/grime.vmt
+copy assets/decals/puddle.png studio/textures/decals/puddle.png
+copy assets/decals/puddle.vmt studio/textures/decals/puddle.vmt
+rescan
+expect matshader textures/decals/grime DecalModulate
+# -- a floor and a wall
+texture textures/bump/ssstone
+block -1024 -1024 -32 1024 1024 0
+texscale 2
+texture textures/bump/bumpbrick
+block -600 300 0 600 332 360
+texscale 1
+key Esc
+# -- the Decal tool: the current texture, at its picture's size (96 x 128 texels)
+texture textures/decals/poster
+tool decal
+decalat 0 -500 150 0 1 0
+expect decal material textures/decals/poster
+expect decal pos 0 300 144
+expect decal normal 0 -1 0
+expect decal width 243.84
+expect decal height 325.12
+expect decals 0
+key Esc
+expect decals 0
+decalat 0 -500 150 0 1 0
+key Return
+expect decals 1
+expect decalsel 1
+expect decal brush 1
+expect decal drawn 1
+undo
+expect decals 0
+redo
+expect decals 1
+# -- Properties: size, turn, order; undoable
+decalselect 0
+decalset width 160
+decalset turn 10
+expect decal width 160
+expect decal turn 10
+undo
+expect decal turn 0
+decalset height 200
+expect decal height 200
+# -- picked by clicking it (select tool); a click beside it takes the wall
+camera 0 -700 150 90 0
+tool select
+key Esc
+press3d 0 0
+release
+expect decalsel 1
+expect selected 0
+press3d 150 0
+release
+expect selected 1
+expect decalsel 0
+# -- it moves with its wall, and a copy of the wall has its own
+transform move 0 -40 0
+decalselect 0
+expect decal pos 0 260 144
+decalselect none
+press3d 150 0
+release
+duplicate
+expect decals 2
+undo
+expect decals 1
+key Esc
+# -- a puddle and grime (DecalModulate) on the floor, overlapping: order
+texture textures/decals/puddle
+tool decal
+decalat 120 -150 300 0 0 -1
+key Return
+texture textures/decals/grime
+decalat 150 -120 300 0 0 -1
+key Return
+expect decals 3
+expect decal material textures/decals/grime
+expect decal width 325.12
+expect decal order 0
+decalorder back
+expect decal order -1
+decalset order 2
+expect decal order 2
+decalorder forward
+expect decal order 3
+undo
+expect decal order 2
+# -- the dialog (Decals > Decal...)
+decaldialog
+shot m12-38-decal-dialog.png
+closedialogs
+# -- hidden with View > Show decals
+decalsshown off
+expect decalsel 0
+decalsshown on
+# -- save and open: kept with the brushes
+save decals_test.map
+open decals_test.map
+expect decals 3
+# -- the editor's 3D view
+camera -420 -820 520 52 -28
+tool decal
+decalselect 0
+shot m12-36-decals-editor.png
+# -- a render: lit by the surface under them
+tool light
+lightset kind sun
+lightset pitch -35
+lightset yaw 300
+lightset brightness 320
+lightset pos 0 0 900
+key Return
+environment sky Panorama_Sky_04
+environment skylight 45
+tool select
+key Esc
+tool camera
+cameraset lens 24
+cameraset size 640 360
+cameraset pos -380 -760 260
+key Return
+cameraedit angles -14 60 0
+tool select
+key Esc
+renderset quality normal
+render
+expect render saved
+expect renderlog 3 decals
+expect renderlog not warning
+rendercopy m12-37-decals-render.png
+closedialogs
+# -- deleted with Delete, undone
+decalselect 0
+key Delete
+expect decals 2
+undo
+expect decals 3
+quit

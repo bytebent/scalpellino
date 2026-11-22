@@ -13,6 +13,7 @@
 // setting: $alphatestreference float 0.5 | cutout threshold
 // setting: $translucent bool 0 | see-through by the base alpha
 // setting: $alpha float 1 | opacity of the whole surface
+// setting: $decalscale float 1 | as a decal: Hammer units per texel when placed (size)
 // setting: $nocull bool 0 | draw both sides
 // setting: $envmap text | reflection: env_cubemap = the sky (cheap chrome)
 // setting: $envmaptint color 1 1 1 | reflection colour and strength
@@ -38,6 +39,6 @@ vec4 shade() {
         e = mix(e, e * e, u_envmapcontrast);
         spec = mix(vec3(luminance(e)), e, u_envmapsaturation);
     }
-    float alpha = (u_translucent != 0 ? base.a : 1.0) * u_alpha;
+    float alpha = (u_translucent != 0 || decalPass != 0 ? base.a : 1.0) * u_alpha; // decals: the picture's alpha always shows
     return vec4(albedo + spec, alpha);
 }

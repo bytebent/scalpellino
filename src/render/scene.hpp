@@ -1,11 +1,13 @@
 #pragma once
 // What the viewports draw this frame: brush polygons (cached per document revision,
 // with tool previews substituted), selection, and tool overlays.
+#include "core/decal.hpp"
 #include "core/document.hpp"
 #include "core/terrain.hpp"
 #include "core/world.hpp"
 #include "core/mathprim.hpp"
 #include "core/prop.hpp"
+#include <array>
 #include <iterator>
 #include <map>
 #include <memory>
@@ -135,6 +137,24 @@ struct Scene {
     std::vector<SceneProp> props;
     std::vector<SceneProp> pendingProps;  // Props tool / Multi-Replicate preview (yellow boxes)
     ModelLibrary* models = nullptr;       // set -> props are drawn as models in 3D
+    // Decals (v0.12.5): in their drawing order (order, then placed first). 3D: the picture
+    // laid on the surfaces (`tris`, the editor's flat view; renders clip the lit surfaces
+    // themselves); 2D: the rectangle's outline.
+    struct SceneDecal {
+        Decal decal;
+        bool selected = false;
+        bool pending = false;   // the Decal tool's next one (yellow)
+        std::shared_ptr<const std::vector<DecalTri>> tris;
+    };
+    std::vector<SceneDecal> decals;
+    // Handles of the one selected decal (3D): its corners (size), a ring in its plane (turn).
+    struct DecalGizmo {
+        std::array<Vec3, 4> corners;
+        Vec3 center, normal;
+        double ringRadius = 0;
+        int active = -1;        // 0..3 a corner, 4 the ring, 5 the decal itself
+    };
+    std::optional<DecalGizmo> decalGizmo;
     // Rings and size handles of the selected primitives and props (tools that edit objects set them;
     // views make the rings at least kRingPx across, and show only handles they see side-on).
     struct PrimGizmo {

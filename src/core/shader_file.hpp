@@ -9,6 +9,7 @@
 //   // scalpellino shader 1
 //   // name: LightmappedGeneric
 //   // kind: material
+//   // blend: modulate            (optional, v0.12.5)
 //   // about: Source's world shader: ...
 //   // setting: $basetexture texture | the picture
 //   // setting: $detailscale float 4 | detail repeats per base texture
@@ -33,6 +34,10 @@ struct ShaderSetting {
 struct ShaderFile {
     std::string name;  // as a .vmt names it
     std::string kind = "material";
+    // How the result goes over what is behind it (v0.12.5): "normal" (alpha), or
+    // "modulate" (Source's DecalModulate: twice the colour times what is there; 0.5 = no
+    // change; the shader returns that colour, fog fades it to 0.5).
+    std::string blend = "normal";
     std::string about;
     int version = 1;
     std::vector<ShaderSetting> settings;

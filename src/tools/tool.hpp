@@ -6,6 +6,7 @@
 #include "core/grid.hpp"
 #include "render/scene.hpp"
 #include "render/viewport.hpp"
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -31,6 +32,8 @@ struct ToolEnv {
     bool textureLock = true;                     // textures stay put when brushes move
     std::string* currentTexture = nullptr;       // texture tool eyedropper target
     const ModelFinder* models = nullptr;         // props: model of a name (null = none loaded)
+    // Decals (v0.12.5): a material's picture size and $decalscale (false: not there).
+    const std::function<bool(const std::string&, int& w, int& h, double& decalScale)>* decalPicture = nullptr;
 };
 
 // The model of `name` through an optional finder (null finder or unknown name = null).

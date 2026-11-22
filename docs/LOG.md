@@ -4,6 +4,33 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-22 — v0.12.5: decals
+- **Core:** `core/decal.*` (frame, turn, corners, size from the picture, clipping to the
+  decal's box, the mesh on brushes and terrain, mapping under brush transforms, ray test).
+  `Brush::decals`; translate / rotate / remapBounds and the hull rebuild carry them.
+  `Document`: decal selection, find, makeAddDecal / makeModifyDecals / addDecalDeletes,
+  View > Show decals, visibility with visgroups; `normalizeDecals` at apply (copies get new
+  ids, a decal split by clip / carve stays on the nearest piece). Map file: `//@ decal`
+  lines in the brush block.
+- **Editor:** Decal tool (Shift+D, Tools and Decals menus): click a surface in 3D, Return
+  places, Esc cancels; `tools/decal_edit.*` in the shared object editing (pick in 3D / 2D,
+  corner, ring and slide handles); select tool rectangle and Esc; Delete everywhere objects
+  are deleted; Properties panel and Decals > Decal... dialog; Bring forward / Send back;
+  Size from its picture; visgroups take decals. The editor's 3D view lays the picture flat
+  on the surfaces (meshes cached per map revision); 2D views show outlines.
+- **Renders:** `drawBakedBrushes` with `ctx.decals` draws the decals over the lit surfaces
+  (lightmap and bump offset carried by clipping), in order; `decalPass` uniform; new
+  `DecalModulate.glsl` with `// blend: modulate`; `$decalscale` setting. Render log line.
+- **Tests:** core `testDecals` (frame, turn, projection and wrapping, follow move / turn /
+  size / mirror, add / modify / undo / copy / carve / delete, hidden, save and read back,
+  a bad line): 5045 checks, 0 failed. New UI script `v125_decals.script` (placing, size
+  from the picture, Properties, undo, picking by clicking, moving and copying with the
+  wall, order, the dialog, Show decals, save / open, a render, Delete): all 35 scripts pass
+  at 1x and 2x; idle 0 ticks at 1x and 2x. Busy maps (Normal, 2 threads, no decals in
+  them): rich 1.2 s, 1000 boxes 9.3 s, 4000 boxes 58.1 s (as before).
+- Screenshots: `m12-36-decals-editor.png`, `m12-37-decals-render.png`,
+  `m12-38-decal-dialog.png`.
+
 ### 2026-11-22 — Batch 6 (v0.12.5 decals) agreed
 - Discussed 12 questions with the user; all recorded in PLAN.md "Batch 6 decided with the
   user". One decal object (overlay features, decal sizing), a Decal tool (Shift+D, Return /

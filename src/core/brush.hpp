@@ -1,7 +1,9 @@
 #pragma once
 // Convex brush defined by planes (Quake/Hammer style), with Valve 220 texture axes.
+#include "core/decal.hpp"
 #include "core/math.hpp"
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -73,6 +75,8 @@ struct Brush {
     bool hidden = false;        // hidden with "Hide selected" (until "Show all")
     std::vector<Face> faces;
     std::optional<Terrain> terrain;
+    // Decals put on this brush (v0.12.5): they move, turn, size and copy with it.
+    std::vector<Decal> decals;
 
     // Computes face polygons. Faces that clip away completely produce no polygon.
     std::vector<Polygon> polygons() const;
@@ -86,6 +90,8 @@ struct Brush {
     void rotate(const Vec3& center, const Vec3& axis, double radians, bool textureLock);
     // Maps the brush's bounds from `from` to `to` (per-axis scale + move).
     void remapBounds(const AABB& from, const AABB& to, bool textureLock);
+    // Moves the decals with any other change of the brush's points (`f`: old -> new).
+    void mapDecals(const std::function<Vec3(const Vec3&)>& f);
 };
 
 // Rotates v about unit `axis` by `radians` (Rodrigues).
