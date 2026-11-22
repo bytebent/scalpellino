@@ -2,7 +2,7 @@
 // name: UnlitGeneric
 // kind: material
 // about: Source's unlit shader: the texture as it is, no light (screens, signs, skies on
-// about: brushes), with Source's detail texture, cutouts, see-through and cheap chrome.
+// about: brushes), with Source's detail texture, cutouts, see-through and chrome (probes or the sky).
 // setting: $basetexture texture | the picture
 // setting: $color color 1 1 1 | tint and brightness (linear)
 // setting: $detail texture | detail texture (mod2x)
@@ -15,7 +15,7 @@
 // setting: $alpha float 1 | opacity of the whole surface
 // setting: $decalscale float 1 | as a decal: Hammer units per texel when placed (size)
 // setting: $nocull bool 0 | draw both sides
-// setting: $envmap text | reflection: env_cubemap = the sky (cheap chrome)
+// setting: $envmap text | reflection: env_cubemap = the nearest reflection probes (no probes: the sky); any other value = the sky (cheap chrome)
 // setting: $envmaptint color 1 1 1 | reflection colour and strength
 // setting: $envmapmask texture | reflection mask (rgb)
 // setting: $envmapcontrast float 0 | reflection contrast

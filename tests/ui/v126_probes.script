@@ -105,7 +105,7 @@ closedialogs
 viewset probeballs on
 viewset probeuse on
 probeselect 0
-camera -500 -500 350 45 -25
+camera -500 550 200 -32 -6
 shot m12-42-probe-balls.png
 viewset probeballs off
 viewset probeuse off

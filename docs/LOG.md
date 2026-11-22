@@ -4,6 +4,42 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-23 — v0.12.6: reflection probes
+- **Core:** `core/probe.*` (Hammer's cubemapsize, quality sizes, placing 170 cm above a floor /
+  81 cm from a wall, the blending weights, cube faces); `Document` probes with commands,
+  selection and undo; `env_cubemap` read and written (`io/map_format.cpp`), other keys kept.
+- **Editor:** Probe tool (Shift+E, World and Tools menus, tool strip "Probe"); probes picked,
+  moved, rectangle-selected, deleted and duplicated like lights (`ObjectEdit`); Properties
+  (position, size; several: the size of all); markers in every view; View > mirror balls and
+  View > where the selected probe reflects (editor shaders in `render/viewport.cpp`); Help >
+  Controls and README.
+- **Renders:** `render/probes.*`: "building cubemaps" after the bake, each probe drawn 6 times
+  through the renderer into a float target (linear, no exposure: `linearOut` in the material,
+  primitive and sky shaders), 2 passes (Draft 1), all probes in one RGB16F atlas with borders
+  and per-slot mipmaps plus a data texture; `envmap()` in the material prelude blends the 4
+  nearest for `$envmap env_cubemap`, else the sky. Kept per quality (`Editor::probeKey`); the
+  Camera Preview builds Draft probes. Log lines per probe, warnings (probe inside a brush,
+  shiny surfaces without probes). Shader file headers updated.
+- **Checked in Valve's SDK 2013** (VBSP `cubemap.cpp`, scratch folder, not kept): default
+  cubemap = the skybox at 32; nearest probe in front of a face; cubemapsize 0 = 32, else
+  2^(n-1).
+- **Tests:** core `testProbes` (sizes, placing, cube faces round trip, weights incl. the
+  smooth hand-over, document undo / delete, file round trip, a bad size): 5195 checks, 0
+  failed. New UI script `v126_probes.script` (no-probes warning, the tool in 3D, undo,
+  typed values, 2-pass build, kept cubemaps, rebuilt after a move, View toggles, Draft 1
+  pass, save / open, a probe inside a brush, Delete, duplicate); `v124_materials.script`
+  expects the new no-probes warning; `rich_map.script` (idle) has 2 probes, mirror balls and
+  the reach view on. All 36 UI scripts pass at 1x and 2x; idle 0 ticks at 1x and 2x.
+- **Busy maps** (`tests/bench/run.sh ... render`, Normal, 2 threads; now with probes on a
+  grid and a shiny floor): rich 2.8 s (bake 0.8 s, cubemaps 0.4 s, 3 probes); 1000 boxes
+  16.8 s (bake 12.7 s, cubemaps 2.9 s, 16 probes); 4000 boxes 96.1 s (bake 77.8 s, cubemaps
+  17.0 s, 36 probes). The bake code didn't change; its times were 9.3 / 58.1 s at v0.12.5
+  (the floor's texture changed too, and the workspace's speed varies; a first run here gave
+  12.0 / 72.2 s).
+- Screenshots: `m12-39-probe-tool.png`, `m12-40-probes-log.png`, `m12-41-probes-render.png`,
+  `m12-42-probe-balls.png`, `m12-43-probes-rich.png`, `m12-44-probes-1000-boxes.png`,
+  `m12-45-probes-4000-boxes.png`, `m12-46-probes-4000-boxes-log.png`.
+
 ### 2026-11-22 — Batch 7 (v0.12.6 reflection probes) discussed
 - Read VBSP's `cubemap.cpp` and the SDK 2013 world shader (scratch folder outside the
   repo, not kept): default cubemap = the skybox at 32 a side; a face takes the nearest

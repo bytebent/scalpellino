@@ -80,8 +80,10 @@ texture licenses; `releases/` has the notes for each version.
   **v0.12.5b** (Shift turns object rings freely) are released. VRAD's code (Valve's public
   Source SDK 2013 repository, `src/utils/vrad`, and the shaders in
   `src/materialsystem/stdshaders`) can be cloned into a scratch folder outside the repo
-  and read when a Source detail is in doubt; never commit any of it. **Next: v0.12.6
-  reflection probes** (batch 7), discussed with the user first.
+  and read when a Source detail is in doubt; never commit any of it. **v0.12.6 reflection
+  probes** (batch 7, discussed first: PLAN.md "Batch 7 decided with the user") is built and
+  released (`core/probe.*`, `tools/probe_tool.*`, `render/probes.*`). **Next: v0.12.7 mirrors
+  and glass**, discussed with the user first.
 - **How the user runs each batch:** numbered questions, each with options, their
   consequences and your opinion; they answer by number ("yes to the rest" is common);
   record the answers in PLAN.md ("Batch N decided with the user") the same day; build when

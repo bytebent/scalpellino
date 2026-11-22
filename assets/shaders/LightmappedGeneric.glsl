@@ -3,9 +3,9 @@
 // kind: material
 // about: Source's world shader (brushes and terrain): the base texture times the baked
 // about: light, with Source's detail texture (mod2x), glow ($selfillum), cutouts
-// about: ($alphatest), see-through ($translucent, $alpha) and cheap chrome ($envmap: the
-// about: sky picture until the reflection probes, with mask, tint, contrast, saturation
-// about: and Fresnel), as in Source SDK 2013's lightmappedgeneric. Bump maps (v0.12.4b):
+// about: ($alphatest), see-through ($translucent, $alpha) and chrome ($envmap env_cubemap:
+// about: the 4 nearest reflection probes, blended; other values or no probes: the sky,
+// about: cheap chrome; with mask, tint, contrast, saturation and Fresnel), as in Source SDK 2013's lightmappedgeneric. Bump maps (v0.12.4b):
 // about: radiosity normal mapping over the face's 3 bump lightmaps, and SSBump.
 // setting: $basetexture texture | the picture
 // setting: $bumpmap texture | bump map (normal map, Source's convention: green down; or an SSBump)
@@ -26,7 +26,7 @@
 // setting: $alpha float 1 | opacity of the whole surface (under 1 = see-through)
 // setting: $decalscale float 1 | as a decal: Hammer units per texel when placed (size)
 // setting: $nocull bool 0 | draw both sides
-// setting: $envmap text | reflection: env_cubemap = the sky (cheap chrome; the nearest probe later)
+// setting: $envmap text | reflection: env_cubemap = the nearest reflection probes (no probes: the sky); any other value = the sky (cheap chrome)
 // setting: $envmaptint color 1 1 1 | reflection colour and strength
 // setting: $envmapmask texture | reflection mask (rgb)
 // setting: $basealphaenvmapmask bool 0 | the base texture's alpha masks the reflection

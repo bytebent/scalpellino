@@ -3,7 +3,7 @@
 // kind: material
 // about: Source's model shader (props): the base texture times the prop's baked light (per
 // about: vertex, or like a Source model: its ambient cube and 2 strongest lights with
-// about: Half-Lambert), with glow, cutouts, see-through and cheap chrome; bump maps (the
+// about: Half-Lambert), with glow, cutouts, see-through and chrome (probes or the sky); bump maps (the
 // about: model's own normal map by itself), Phong and rim light from the prop's 2 strongest
 // about: lights and its ambient cube (v0.12.4b), as Source SDK 2013's vertexlit / phong.
 // setting: $basetexture texture | the picture
@@ -29,7 +29,7 @@
 // setting: $translucent bool 0 | see-through by the base alpha
 // setting: $alpha float 1 | opacity
 // setting: $nocull bool 0 | draw both sides
-// setting: $envmap text | reflection: env_cubemap = the sky (cheap chrome)
+// setting: $envmap text | reflection: env_cubemap = the nearest reflection probes (no probes: the sky); any other value = the sky (cheap chrome)
 // setting: $envmaptint color 1 1 1 | reflection colour and strength
 // setting: $envmapmask texture | reflection mask (rgb)
 // setting: $basealphaenvmapmask bool 0 | the base alpha masks the reflection (inverted, as Source's model shader)

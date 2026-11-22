@@ -1417,7 +1417,8 @@ void main() {
         DrawCircleV(c, 5 * P, kProbe);
         DrawCircleV({c.x - 1.5f * P, c.y - 1.5f * P}, 1.5f * P, kProbeShine);
     };
-    for (const auto& sr : scene.probes) probeMarker3D(sr.probe, sr.selected ? kSelected : BLACK, sr.selected ? 2 * P : P);
+    for (const auto& sr : scene.probes) // with mirror balls shown, only the selected ones get a marker
+        if (sr.selected || !scene.probeAtlas) probeMarker3D(sr.probe, sr.selected ? kSelected : BLACK, sr.selected ? 2 * P : P);
     if (scene.pendingProbe) probeMarker3D(*scene.pendingProbe, kPreview, 2 * P);
     for (const Scene::PrimGizmo& gz : scene.gizmos)
         for (const auto& [pos, ax] : gz.handles) {
@@ -1641,7 +1642,7 @@ void Viewport::drawProbeBalls(const Scene& scene, const Vec3& cam) {
     if (!a || !a->tex) return;
     Shader& sh = usageShader(true);
     if (!sh.id) return;
-    constexpr double R = 16; // cm, about Hammer's env_cubemap sphere
+    constexpr double R = 24; // cm, about Hammer's env_cubemap sphere (16 units across)
     constexpr int NU = 24, NV = 12;
     rlDrawRenderBatchActive();
     rlDisableBackfaceCulling();

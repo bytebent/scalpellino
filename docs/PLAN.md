@@ -10,7 +10,7 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 
 ## Current status
 
-- **Released:** v0.1.0 … v0.12.5b (CI green). Milestones 0–11, Random Replicate and Sky Lab are done (see the
+- **Released:** v0.1.0 … v0.12.6 (CI green). Milestones 0–11, Random Replicate and Sky Lab are done (see the
   milestone sections below and the log); the user confirmed the choices of M10, Random
   Replicate and v0.10.2 (2026-11-19). **v0.10.3 is built and pushed** (asked by the user
   before Sky Lab): `editor.cpp` split by topic (step 1: code moved unchanged; step 2:
@@ -113,8 +113,13 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   **Batch 7 (v0.12.6 reflection probes) discussed (2026-11-22):** 13 of 16 questions
   answered, then 1, 11 and a blending follow-up (17) the same evening (see "Batch 7
   decided with the user" under Roadmap item 5), and 22 (colouring the surfaces a selected
-  probe reflects on: a View toggle, off by default). All agreed; built when the user says
-  go.
+  probe reflects on: a View toggle, off by default). All agreed.
+  **v0.12.6 is built** (the user said go, 2026-11-22): reflection probes (`core/probe.*`,
+  `tools/probe_tool.*`, `render/probes.*`): the Probe tool, `env_cubemap` in the map file,
+  "building cubemaps" in renders (2 passes, 1 at Draft), blended reflections of the 4 nearest
+  probes, the two View toggles. Choices made while building are under "v0.12.6, decided
+  without asking". Busy maps (now with probes and a shiny floor): see the LOG entry. Next:
+  report, then discuss v0.12.7 (mirrors and glass) with the user.
 - **Review fixes (2026-11-20), merged into `main`** (fast-forward from
   `fix/review-findings` after the user's go-ahead; no new version, so only "Latest build"
   is refreshed): version releases are
@@ -151,6 +156,41 @@ are in [`DEV.md`](DEV.md). One-step-per-release: add `docs/releases/vX.Y.Z.md` a
 Each archive's SHA-256 is in `cmake/Deps.cmake` (checked at configure time).
 
 ## Open questions (parked)
+
+- **v0.12.6 parked (later, agreed):** Hammer's `sides` face list on a probe (kept in the file,
+  not used); an optional box (parallax correction) per probe (Source 2 / mods).
+- **v0.12.6, decided without asking (confirm with the user):**
+  - **Blending weights:** 1 / (d^2 + 16^2) (16 cm keeps the weight finite at a probe), a probe
+    behind the surface x 0.05, the 5th largest weight taken off the 4 kept (so a probe fades
+    out just as another replaces it; at exactly equal distances an even share). The same in
+    `core/probe.cpp` (tested) and the shader. Props blend per pixel like surfaces (Source gives
+    a model one probe).
+  - **Building:** each face drawn 2x larger and averaged down (Draft: as is), near plane 1 cm,
+    a 1-pixel margin; the background (no sky) and the sky turned linear; fog mixed in linear
+    light (renders mix it in sRGB: a small difference only inside probes); decals and
+    see-through faces blend in linear light there too. Hammer's 1 x 1 and 2 x 2 are drawn 4 x 4
+    (the smallest that works with the border).
+  - **The atlas:** RGB 16-bit float; slot border side / 4 (at least 2); mipmaps made per slot,
+    as many as the border allows (at most 6); the level from how fast the reflection turns
+    per pixel; tiles in rows of 4096 pixels; more than 64 million pixels: not built (a
+    warning, the sky instead). Texture units 14 and 15 are the probes' (material textures
+    now 7..13).
+  - **Kept in memory** while the bake key, the probes, the decals, the material files written
+    through the panel (the files stamp) and texture filtering are the same. A `.vmt` edited
+    outside the app and then Rescanned only rebuilds if the bake changes.
+  - **Placing:** a 3D click snaps to the grid along the surface, the height above a floor
+    (normal z > 0.7) and the distance from a wall exact; a click on nothing says so. The
+    tool strip button is "Probe"; menus say "Reflection probe tool".
+  - **Looks in the editor:** a grey-blue ball with a highlight (red frame when selected) in
+    every view. Mirror balls: 24 cm, each its own picture (not blended), the sharpest level,
+    sRGB without exposure. Reach colouring: blue, up to 65% opacity by the probe's share,
+    brush faces and terrain only (props not coloured), the 128 probes nearest the selected
+    one considered.
+  - **Log:** "reflected by N shiny faces" = shiny brush faces whose centre gives the probe more
+    than 1% weight; "inside a brush" = inside every face plane of a brush by 0.5 cm; the
+    no-probes warning counts shiny brush faces and terrains (not props or decals).
+  - **Tests:** `v124_materials.script` now expects the no-probes warning; the busy-map
+    benchmark has probes (3, 16, 36) and a shiny floor (Rock_Face, `$envmaptint` 0.3).
 
 - **Batch 7 (v0.12.6 probes), still open (2026-11-22):** question 1 (save probes as
   Hammer's `env_cubemap` or our own `scal_probe`), question 11 (which `$envmap` value means
@@ -1020,9 +1060,9 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
      7. **v0.12.5 decals (built)** (Hammer's `infodecal` / `info_overlay` as one object;
         added by the user 2026-11-21): posters, cracks, stains, puddles on surfaces.
         Agreed 2026-11-22: see "Batch 6 decided with the user".
-     8. **v0.12.6 reflection probes:** placed by hand, "building cubemaps"; chrome (shiny
-        materials reflect the nearest probe instead of the sky), probe quality in the
-        render options.
+     8. **v0.12.6 reflection probes (built):** placed by hand, "building cubemaps"; chrome
+        (shiny materials reflect the 4 nearest probes, blended, instead of the sky), probe
+        quality follows Render > Quality. See "Batch 7 decided with the user".
      9. **v0.12.7 mirrors and glass:** mirror reflections on flat surfaces, and glass that
         bends what is behind it (Source's `Refract`); both draw the scene into a picture
         first.

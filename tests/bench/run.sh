@@ -14,7 +14,7 @@ for b in $WHICH; do
   if [ "$b" = render ]; then
     ( cd "$work" && timeout 3600 xvfb-run -a -s "-screen 0 1600x1000x24" "$APP" --script "$HERE/render.script" ) || code=1
     [ -n "${SCAL_BENCH_OUT:-}" ] && mkdir -p "$SCAL_BENCH_OUT" && cp "$work"/render-*.png "$SCAL_BENCH_OUT"/ 2>/dev/null
-    for f in "$work"/studio/renders/*.log; do grep -h "luxels\|patches\|props:\|prop light\|Done in" "$f"; done
+    for f in "$work"/studio/renders/*.log; do grep -h "luxels\|patches\|props:\|prop light\|cubemaps built\|Building cubemaps\|Done in" "$f"; done
   else
     ( cd "$work" && timeout 900 xvfb-run -a -s "-screen 0 1600x1000x24" "$APP" --script "$HERE/$b.script" ) | grep "^bench" || code=1
   fi

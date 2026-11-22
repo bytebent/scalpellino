@@ -376,6 +376,30 @@ the user 2026-11-22, "Batch 6 decided"). `core/decal.hpp`.
 - **File:** a `//@ decal pos= n= up= size=w,h reach= order= [vg=] mat=<name>` line inside
   its brush's block.
 
+### Reflection probes (v0.12.6, done)
+Hammer's `env_cubemap` (agreed with the user 2026-11-22, "Batch 7 decided"). `core/probe.hpp`
+(data, placing, blending weights, cube faces), `tools/probe_tool.*`, `render/probes.*`.
+- **Probe:** `{id, pos, size}`; `size` is Hammer's cubemapsize (0 = default 32 a side, n =
+  2^(n-1), up to 9 = 256). Unknown keys kept (Hammer's `sides`; the face list itself is parked).
+- **Probe tool** (Shift+E, World and Tools menus): a 3D click on a floor puts it 170 cm above
+  it (the user's height; Source's eye height is 163), on a wall or ceiling 81 cm (32 Hammer
+  units) out; snapped to the grid along the surface. A 2D click: the depth of the last box.
+  Return creates, Esc cancels; the size is chosen in Properties first.
+- **Editing:** like lights (shared object editing): click the marker (a small grey-blue ball),
+  Cmd+click, 3D rectangle select, drag in a 2D view, Properties (position, size; several
+  selected: the size of all), Delete, Cmd+D. No rings, visgroups, hiding or Replicate.
+- **Which probes a surface reflects: blended** (a deliberate difference from Source, whose
+  VBSP gives each face the probe nearest its centre, preferring probes in front of it, and
+  each model one probe): every shaded point takes its 4 nearest probes, each weighed
+  1 / (d^2 + 16^2), times 0.05 for a probe behind the surface (Source's preference for probes
+  in front), with the 5th largest weight taken off the others (so the blend changes smoothly
+  when another probe comes into the 4), normalised. Brushes, terrain, decals and props alike.
+  No box (parallax) correction, as Source 2013.
+- **View menu** (editor 3D view, both off by default): the probes as mirror balls (24 cm, each
+  its own last built picture), and where the selected probe reflects (shiny brush faces and
+  terrain tinted blue by its share).
+- **File:** an `env_cubemap` point entity: `origin`, `cubemapsize`, other keys kept.
+
 ### Snap to Land / Ground and Multi-Replicate (v0.9.2, from Bryce)
 - **Snap to Land** (Cmd+J, Transform menu; `core/landing`): selected primitives drop
   straight down onto visible brushes (terrain surfaces, not their flat faces), terrain
@@ -477,8 +501,8 @@ it appears below the top view's centre). Editor-only, never exported.
   **active**, the only one the Camera Preview and Render use.
 - **Decals** (v0.12.5) — pictures laid on surfaces (Hammer's infodecal / info_overlay as
   one object); kept in the brush they were put on. Details in §6 "Decals".
-- **Reflection probes** (planned) — placed by hand; Render bakes a picture of their
-  surroundings for shiny materials to reflect.
+- **Reflection probes** (v0.12.6) — Hammer's `env_cubemap`, placed by hand; Render builds a
+  picture of their surroundings ("building cubemaps") for shiny materials to reflect. §6.
 - **Environment** — sky color/texture, fog, ambient light.
 - **Camera bookmarks** — saved viewpoints of the editor's 3D view, for moving around.
   Editor-only, and not the same thing as the camera objects.
@@ -506,6 +530,8 @@ That's all. No gameplay entities (doors, triggers, physics, scripting).
   extra keys other tools ignore.
 - **Cameras** (v0.11.0): `scal_camera` point entities (see §6 "Cameras").
 - **Decals** (v0.12.5): `//@ decal ...` lines inside their brush's block (see §6 "Decals").
+- **Reflection probes** (v0.12.6): Hammer's `env_cubemap` point entities (`origin`,
+  `cubemapsize`; see §6 "Reflection probes").
 - **Props** (v0.10.0): `scal_prop` point entities with `model` ("models/tree"), `origin`,
   `rotation` (degrees X Y Z), `scale` (3 numbers) and any other keys, kept as they are.
 - **nodraw:** faces textured `nodraw` (also recognised: `tools/toolsnodraw`, `common/nodraw`)
@@ -541,7 +567,7 @@ That's all. No gameplay entities (doors, triggers, physics, scripting).
   color, text, light; optional `// blend: modulate`, v0.12.5) and a body defining `vec4 shade()` (linear colour before exposure,
   alpha). The app compiles prelude + body for each kind of geometry (World: brushes and
   terrain; Model: props); the prelude gives `baseColor()`, `baseUV()`, `bakedLight()`,
-  `worldPos()`, `worldNormal()`, `eyeVector()`, `envmap(dir)`, `toLinear`, `toSrgb`,
+  `worldPos()`, `worldNormal()`, `eyeVector()`, `envmap(dir)` (the probes or the sky, v0.12.6), `toLinear`, `toSrgb`,
   `luminance`; bump maps (v0.12.4b): `bumpNormal(texel, flipGreen)` (Source's convention, X+
   Y- Z+), `bakedLightBumped(n)` (SDK 2013's radiosity normal mapping: squared weights over
   their sum), `bakedLightSSBump(w)`, `tangentToWorld(n)` (the texture's frame from screen
@@ -646,9 +672,29 @@ Preview and in renders.
   textures and multi-texture blending, alpha cutouts, fog, rim lighting, HDR lighting as a
   later refinement. Bloom and colour correction are optional extras. Nothing dynamic
   (shadows of moving things, particles, motion blur): nothing moves.
-- **Reflections:** a material chooses: sky only; baked reflection from the nearest
-  probe; live mirror reflection on flat surfaces (water, floors). Probe quality is a
-  render-option preset.
+- **Reflections:** a material chooses: sky only (`$envmap` with any value but
+  `env_cubemap`: cheap chrome); the reflection probes (`$envmap env_cubemap`, v0.12.6; the sky
+  if the map has none, as Source's default cubemap is the skybox); live mirror reflection on
+  flat surfaces (water, floors; v0.12.7).
+- **Reflection probes** (v0.12.6, `render/probes.*`): a render's "building cubemaps" step,
+  after the bake: each probe drawn 6 times (OpenGL's cube face order) through the renderer
+  itself, into a 16-bit float target, in linear light before exposure (fog mixed in linear
+  light), 2x larger and averaged down (Draft: as is), with a 1-pixel margin. Sizes: the
+  probe's own (Hammer's cubemapsize), halved at Draft (at least 4), doubled at High (at most
+  512). **Two passes** at Normal and High (the 2nd sees the 1st's probes on shiny things:
+  reflections in reflections), one at Draft (shiny things in it reflect the sky). All probes
+  go into one RGB16F atlas (tiles of 3 x 2 face slots; a slot is the face plus a border of
+  side / 4, at least 2, filled from the neighbouring faces, so bilinear filtering never
+  crosses into another face: **seamless filtering, a difference from Source**, whose DirectX
+  9 filtering can show the cube's edges at 32 a side), with mipmaps made per slot; the shader
+  picks the level from how fast the reflection turns per pixel (soft on far or bumpy
+  surfaces, as Source's mipmapped cubemaps), at most as many levels as the border allows. A
+  2-texel-per-probe float texture holds positions and tiles (texelFetch), so any number of
+  probes works. Texture units 14 and 15 (material textures use 7..13). Kept in memory per
+  quality while the bake key, the probes, the decals, material edits and texture filtering
+  are the same (`Editor::probeKey`). The Camera Preview builds Draft probes on Update. The
+  log: one line per probe (position, size, time, how many shiny faces it reflects on), the
+  total; warnings for a probe inside a brush and for shiny surfaces in a map without probes.
 - **Materials and shaders** (v0.12.4; formats in §8): a surface's look is its material.
   In renders and the Camera Preview each brush face and terrain layer is drawn by its
   material's shader file (grouped by material, then lightmap page; terrain layers after the
@@ -666,7 +712,8 @@ Preview and in renders.
   (DecalModulate) multiplies what is there, twice (0.5 grey = no change), and fog fades it
   to grey. Primitives keep their own shader and show
   their material's base texture. The normal travels in the vertex colour (8 bits a channel);
-  reflections read a 128-pixel-wide copy of the sky (about Source's default cubemap size).
+  cheap chrome reads a 128-pixel-wide copy of the sky (about Source's default cubemap size);
+`$envmap env_cubemap` reads the reflection probes (above).
   A shader that doesn't compile is reported in the render log and LightmappedGeneric draws
   instead. The bake takes from materials: `$reflectivity`, `%texlight` (VRAD's surface
   lights: one per patch, intensity = baselight x the texture's repeats on the patch x
@@ -747,7 +794,7 @@ docs/         this file, roadmap
 | 10b | Random Replicate (Bryce): random offset / turn / size ranges for props and primitives | done (v0.10.1) |
 | 10c | Sky Lab (Bryce, all of it): generated skies (sun, moon, stars, clouds, atmosphere) with live preview in the 3D view, baked to panoramas in Bottega's `skies/`; settings kept in the map; tick box to lock the sun to the map's sun light; eclipses. Steps: v0.10.4 window / bake / sky modes / sun / haze / lock, v0.10.5 clouds, v0.10.6 night sky and effects | done (v0.10.6) |
 | 11 | Cameras and Camera Preview: camera objects (many, one active), options and presets, the on-request preview in a docked panel (editor look until M12 replaces it). Steps: v0.11.0 camera objects and options, v0.11.1 presets and the preview | done (v0.11.0, v0.11.1) |
-| 12 | Render, the Source look, with materials: render window, terminal log, light baking, reflection probes, mirrors, the material system (GLSL shaders from Bottega's `shaders/`, reflection kind per material), PNG to `renders/`. Steps: v0.12.0 pipeline, v0.12.1 direct light and shadows, v0.12.2 bounces, v0.12.3 props and the light grid, v0.12.4 materials, v0.12.4b bump maps, v0.12.5 decals, v0.12.6 probes, v0.12.7 mirrors and glass | in progress (v0.12.5) |
+| 12 | Render, the Source look, with materials: render window, terminal log, light baking, reflection probes, mirrors, the material system (GLSL shaders from Bottega's `shaders/`, reflection kind per material), PNG to `renders/`. Steps: v0.12.0 pipeline, v0.12.1 direct light and shadows, v0.12.2 bounces, v0.12.3 props and the light grid, v0.12.4 materials, v0.12.4b bump maps, v0.12.5 decals, v0.12.6 probes, v0.12.7 mirrors and glass | in progress (v0.12.6) |
 | 13 | Water, cloud and endless planes: materials made with the system above | |
 | 14 | Camera effects (lowest priority): dithering, palette, bloom | |
 | 15 | Export: `.glb`, optional and last (not confirmed by the user) | |
