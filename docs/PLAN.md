@@ -10,7 +10,7 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 
 ## Current status
 
-- **Released:** v0.1.0 … v0.12.4b (CI green); v0.12.4c pushed, see below. Milestones 0–11, Random Replicate and Sky Lab are done (see the
+- **Released:** v0.1.0 … v0.12.4c (CI green). Milestones 0–11, Random Replicate and Sky Lab are done (see the
   milestone sections below and the log); the user confirmed the choices of M10, Random
   Replicate and v0.10.2 (2026-11-19). **v0.10.3 is built and pushed** (asked by the user
   before Sky Lab): `editor.cpp` split by topic (step 1: code moved unchanged; step 2:

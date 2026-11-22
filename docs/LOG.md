@@ -21,6 +21,7 @@ too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 - Screenshots updated: `m12-23-material-panel.png`, `m12-24-materials-log.png`,
   `m12-31-bump-render.png`, `m12-32-bump-log.png`, `m12-33-bump-model-style.png`,
   `m12-34-exposure-sky.png`, `m12-35-bump-seam.png`.
+- Pushed; CI green; release `v0.12.4c` published.
 
 ### 2026-11-21 — v0.12.4b: bump maps, Phong and rim light
 - **Bake** (`core/bake.*`): bumped faces, terrain and per-vertex props get the light along
