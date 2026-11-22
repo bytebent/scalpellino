@@ -4,6 +4,14 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-22 — Batch 6 (v0.12.5 decals) agreed
+- Discussed 12 questions with the user; all recorded in PLAN.md "Batch 6 decided with the
+  user". One decal object (overlay features, decal sizing), a Decal tool (Shift+D, Return /
+  Esc), handles and typed fields, projected onto nearby faces, attached to its brush, on
+  brushes and terrain, DecalModulate, full materials, shown flat in the editor, placement
+  order plus a typed order number, ignored by the bake, selection like props. The name is
+  always "decal". No code changes.
+
 ### 2026-11-22 — v0.12.4c: VRAD's code checked (texlight scale, bump correction)
 - Read VRAD's code (Source SDK 2013, `utils/vrad`; the user said go). Not kept in the repo.
 - **Bump maps:** VRAD bakes each bump map as cosine light (`GatherSampleLightAt4Points`);

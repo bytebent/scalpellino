@@ -100,7 +100,8 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   decided without asking".
   **v0.12.4c** (2026-11-22): VRAD's code checked (item 9 and the bump question): texlights
   get VRAD's DIRECT_SCALE, bumped lightmaps the engine's correction (no seam). Next: batch
-  6 (v0.12.5, decals and overlays), discussed with the user first.
+  6 (v0.12.5, decals) agreed with the user (2026-11-22, "Batch 6 decided with the user");
+  building it once the user says go.
 - **Review fixes (2026-11-20), merged into `main`** (fast-forward from
   `fix/review-findings` after the user's go-ahead; no new version, so only "Latest build"
   is refreshed): version releases are
@@ -967,9 +968,10 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
         props (agreed 2026-11-21, see "Batch 5 decided").
      6. **v0.12.4b bump maps:** Source's radiosity normal mapping (4 lightmaps on bumped
         faces), SSBump, bump on props, Phong and rim light on props.
-     7. **v0.12.5 decals and overlays** (Hammer's `infodecal` / `info_overlay`; added by the
-        user 2026-11-21): stickers on surfaces (posters, cracks, stains, puddles), a new
-        placeable object with its own material shader. Details in their own discussion.
+     7. **v0.12.5 decals** (Hammer's `infodecal` / `info_overlay` as one object; added by the
+        user 2026-11-21): posters, cracks, stains, puddles on surfaces, a new placeable
+        object with its own material shaders. Agreed 2026-11-22: see "Batch 6 decided with
+        the user".
      8. **v0.12.6 reflection probes:** placed by hand, "building cubemaps"; chrome (shiny
         materials reflect the nearest probe instead of the sky), probe quality in the
         render options.
@@ -1156,6 +1158,33 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
      13. **One release** (v0.12.3).
      - **Built (v0.12.3, 2026-11-21)**; choices made while building are under "v0.12.3,
        decided without asking".
+   - **Batch 6 decided with the user (2026-11-22), v0.12.5 decals.** Always called
+     **decal** in the UI and docs (never "sticker").
+     1. **One object** (for now): a decal with info_overlay's features (free size, rotation,
+        projected onto faces); placing one starts at infodecal's size (the picture's size x
+        `$decalscale`), so the simple case is one click.
+     2. **Decal tool** (Shift+D, also in the Tools menu): click a surface in the 3D view, a
+        preview appears, **Return** commits, **Esc** cancels. Uses the current texture.
+     3. **Editing:** handles in the 3D view (corners size it, a ring rotates it, dragging
+        slides it along the surface), typed fields in Properties and a "Decal..." dialog for
+        exact values. No mouse wheel.
+     4. **Surfaces:** every face within reach of its box, projected along its facing (wraps
+        over edges), as infodecal (for now; a face list to add / remove faces may come later).
+     5. **Attached** to the brush it was placed on: moves, rotates and copies with it.
+     6. **On** brushes and terrain now; math primitives when they get materials; not props.
+     7. **Blending:** normal (alpha, cutout, see-through) and Source's **DecalModulate**
+        (darkens / lightens what is under it), as a new shader file.
+     8. **Full materials:** a decal's own bump map over the face's 4 lightmaps when there,
+        `$envmap` (wet puddles), as Source.
+     9. **Editor:** the 3D view shows the base picture with its alpha, unlit and flat (as
+        Hammer); renders and the Camera Preview shade them fully; 2D views show an outline.
+     10. **Order when they overlap:** placement order (Bring forward / Send back in the menu
+        and Properties) **and** an order number you can type for precision (both edit the
+        same number).
+     11. **The bake ignores decals** (as Source): they don't block or tint light, and adding
+        one doesn't need a new bake.
+     12. **Selecting:** like props (select, delete, rectangle-select in the 3D view), with
+        their own entry in the selection filters and visgroups.
    - **Batch 5 decided with the user (2026-11-21), v0.12.4 materials and v0.12.4b bump
      maps.** The user agreed with the recommendations ("it all seems to be good"), with
      changes; numbered as asked:
