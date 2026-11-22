@@ -4,6 +4,17 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-22 — Batch 7 (v0.12.6 reflection probes) discussed
+- Read VBSP's `cubemap.cpp` and the SDK 2013 world shader (scratch folder outside the
+  repo, not kept): default cubemap = the skybox at 32 a side; a face takes the nearest
+  probe in front of it; `cubemapsize` 0 = 32, else 2^(n-1).
+- 16 questions; the user answered 13 (PLAN.md "Batch 7 decided with the user"): Probe tool
+  on Shift+E, 170 cm above a floor; mirror-ball View toggle; probes **blended** (a
+  difference from Source); `sides` later; per-probe size scaled by Quality; full scene in
+  probes; two passes at Normal / High; linear float; seamless filtering (noted as a
+  difference); no box correction (maybe later); memory only; log lines; edited like
+  lights; one release. Questions 1, 11 and a blending follow-up are open. No code changes.
+
 ### 2026-11-22 — v0.12.5b: Shift turns object rings freely
 - The user asked for unsnapped turning with Shift held. `ObjectEdit` rings (lights,
   cameras and their roll ring, primitives, props) now turn freely (0.1 degree) while Shift

@@ -110,6 +110,9 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   to a tenth of a degree, while Shift is held; without it, 15 degree steps as before.
   Brushes (Option+drag a corner) and decal rings already worked this way. Next: v0.12.6
   reflection probes, discussed with the user first.
+  **Batch 7 (v0.12.6 reflection probes) discussed (2026-11-22):** 13 of 16 questions
+  answered (see "Batch 7 decided with the user" under Roadmap item 5); 1, 11 and a
+  follow-up on blending (17) are open (Open questions). Built when the user says go.
 - **Review fixes (2026-11-20), merged into `main`** (fast-forward from
   `fix/review-findings` after the user's go-ahead; no new version, so only "Latest build"
   is refreshed): version releases are
@@ -146,6 +149,12 @@ are in [`DEV.md`](DEV.md). One-step-per-release: add `docs/releases/vX.Y.Z.md` a
 Each archive's SHA-256 is in `cmake/Deps.cmake` (checked at configure time).
 
 ## Open questions (parked)
+
+- **Batch 7 (v0.12.6 probes), still open (2026-11-22):** question 1 (save probes as
+  Hammer's `env_cubemap` or our own `scal_probe`), question 11 (which `$envmap` value means
+  "the nearest probes" and which means "only the sky"), and question 17 (blending details:
+  how many probes, how they are weighed). Asked again in plain words; the build waits for
+  the user's go anyway.
 
 - **v0.12.5 parked (later, agreed "for now"):** a face list per decal (add / remove faces
   by hand, as info_overlay's sides); two separate objects (infodecal and overlay) if one
@@ -1202,6 +1211,55 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
      13. **One release** (v0.12.3).
      - **Built (v0.12.3, 2026-11-21)**; choices made while building are under "v0.12.3,
        decided without asking".
+   - **Batch 7 decided with the user (2026-11-22), v0.12.6 reflection probes.** Checked
+     against VBSP's `cubemap.cpp` (SDK 2013): the default cubemap is the skybox at 32 a side
+     (so "no probe = the sky" is Source's own behaviour); a face takes the probe nearest its
+     centre, preferring probes in front of it, no visibility test; `cubemapsize` 0 = 32, else
+     2^(n-1). Numbered as asked:
+     1. **The object's name in the file:** open (asked again in plain words, see question 1
+        under Open questions). In the UI it is a "reflection probe".
+     2. **Probe tool on Shift+E** (World and Tools menus): click in a view, Return creates,
+        Esc cancels, like lights. A 3D click on a floor puts it **170 cm** above it (the
+        user's height; Source's eye height is 64 units = 163 cm); on a wall or ceiling 81 cm
+        (32 units) out from it.
+     3. **Editor look:** a plain marker ball, plus a View toggle (off by default) showing each
+        probe as a mirror ball of its last built picture (static, like the light grid view,
+        after a render or Camera Preview Update).
+     4. **Which probe: blended (a deliberate difference from Source, which takes one probe
+        per face / prop).** Each shaded point blends its nearest 2-4 probes (Source 2-like),
+        so there are no jumps between faces and one big terrain doesn't hang on a single
+        probe. How many and the weights: see question 17 under Open questions.
+     5. **Hammer's `sides` override: later** (parked, like the decals' face list).
+        (The "tint the faces using the selected probe" aid was offered with 5; with blending
+        it would show the faces a probe takes part in. Not decided: ask when building.)
+     6. **Size per probe as Hammer's `cubemapsize`** (default 32 a side), scaled by the
+        render's Quality: Draft half, Normal as set, High double (at most 512). The Camera
+        Preview builds at Draft.
+     7. **A probe sees the full render from its point:** lit brushes, terrain, primitives,
+        props, decals, see-through faces, sky and fog (fog measured from the probe).
+     8. **Reflections in reflections:** two passes at Normal and High (shiny things inside a
+        probe reflect the first pass's probes), one pass at Draft (they reflect the sky).
+        Source's `buildcubemaps` passes aren't in public code; Valve's advice is to build
+        twice.
+     9. **Linear float probes** (Source's HDR path, 16-bit float), captured before exposure:
+        a lamp seen in a reflection stays brighter than white; the camera's exposure applies
+        once.
+     10. **Seamless cube filtering** (no seams at the cube's edges). **A difference from
+         Source** (DirectX 9 filters each cube face alone, so at 32 a side the edges can
+         show): say so in ARCHITECTURE and the release notes. No extra blur; softness comes
+         from the small size, as Source.
+     11. **What `$envmap` values mean:** open (asked again in plain words, see question 11
+         under Open questions).
+     12. **No box (parallax) correction**, as Source 2013; an optional box per probe noted
+         as "maybe later" (Source 2 / mods). Mirrors (v0.12.7) handle flat floors.
+     13. **Memory only**, rebuilt when the bake, materials, props or probes change (like the
+         lightmaps); nothing saved to the Bottega.
+     14. **Render log:** a "building cubemaps" step, one line per probe (number, position,
+         size, time), the total; warnings for a probe inside a solid brush and for shiny
+         surfaces in a map without probes.
+     15. **Editing like lights:** click to select, drag in 2D, Properties (position, size),
+         Delete, Cmd+D, the 3D rectangle select; no visgroups, hiding or Replicate.
+     16. **One release** (v0.12.6); mirrors and glass stay in v0.12.7.
    - **Batch 6 decided with the user (2026-11-22), v0.12.5 decals.** Always called
      **decal** in the UI and docs (never "sticker").
      1. **One object** (for now): a decal with info_overlay's features (free size, rotation,
@@ -1506,7 +1564,8 @@ read and write. Agreed so far:
     - *Presets:* the user can **save their own presets** (for example a favourite lens
       plus size). They live in Bottega, in **`presets/camera_presets`** (user), so other
       tools share them.
-  - **Open:** probe details. (The order of the renderer part of the roadmap was confirmed
+  - **Probe details:** agreed 2026-11-22 ("Batch 7 decided with the user", Roadmap item
+    5). (The order of the renderer part of the roadmap was confirmed
     by the user on 2026-11-20.)
 
 ## Milestone 1 plan — Brushes (done)
