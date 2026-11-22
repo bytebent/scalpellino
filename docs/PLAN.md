@@ -10,7 +10,7 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 
 ## Current status
 
-- **Released:** v0.1.0 … v0.12.4c (CI green). Milestones 0–11, Random Replicate and Sky Lab are done (see the
+- **Released:** v0.1.0 … v0.12.5 (CI green). Milestones 0–11, Random Replicate and Sky Lab are done (see the
   milestone sections below and the log); the user confirmed the choices of M10, Random
   Replicate and v0.10.2 (2026-11-19). **v0.10.3 is built and pushed** (asked by the user
   before Sky Lab): `editor.cpp` split by topic (step 1: code moved unchanged; step 2:
@@ -100,7 +100,7 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   decided without asking".
   **v0.12.4c** (2026-11-22): VRAD's code checked (item 9 and the bump question): texlights
   get VRAD's DIRECT_SCALE, bumped lightmaps the engine's correction (no seam).
-  **v0.12.5 decals is built and pushed** (batch 6, the user said go, 2026-11-22): the Decal
+  **v0.12.5 decals is built and released, CI green** (batch 6, the user said go, 2026-11-22): the Decal
   tool, decals kept in their brush, projected onto the surfaces in their box, editing like
   props (handles, Properties, Decals > Decal...), order, DecalModulate, renders lit by the
   surface's baked light. Choices made while building are under "v0.12.5, decided without

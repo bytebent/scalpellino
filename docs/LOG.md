@@ -30,6 +30,7 @@ too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
   them): rich 1.2 s, 1000 boxes 9.3 s, 4000 boxes 58.1 s (as before).
 - Screenshots: `m12-36-decals-editor.png`, `m12-37-decals-render.png`,
   `m12-38-decal-dialog.png`.
+- Pushed; CI green; release `v0.12.5` published.
 
 ### 2026-11-22 — Batch 6 (v0.12.5 decals) agreed
 - Discussed 12 questions with the user; all recorded in PLAN.md "Batch 6 decided with the
