@@ -1,6 +1,7 @@
 #include "render/baked_light.hpp"
 #include "core/texture.hpp"
 #include "render/shader_library.hpp"
+#include "render/probes.hpp"
 #include "render/texture_library.hpp"
 #include "raylib.h"
 #include "rlgl.h"
@@ -259,6 +260,20 @@ void setMaterialCommon(Shader& sh, const std::function<int(const char*)>& loc, c
     f3("skyBelow", ctx.skyBelow / 255.0);
     f3("skyFlat", ctx.skyFlat);
     i1("lightmap", kLightmapUnit);
+    // Reflection probes (v0.12.6). Their two textures stay bound on units 14 and 15 (nothing
+    // else samples those units).
+    i1("linearOut", ctx.linearOut ? 1 : 0);
+    i1("probeTex", kProbeTexUnit);
+    i1("probeData", kProbeDataUnit);
+    const ProbeAtlas* pa = ctx.probes && ctx.probes->tex && ctx.probes->data ? ctx.probes : nullptr;
+    i1("probeCount", pa ? (int)pa->slots.size() : 0);
+    const float as[2] = {pa ? (float)pa->w : 1.0f, pa ? (float)pa->h : 1.0f};
+    SetShaderValue(sh, loc("probeAtlasSize"), as, SHADER_UNIFORM_VEC2);
+    rlActiveTextureSlot(kProbeTexUnit);
+    rlEnableTexture(pa ? pa->tex : rlGetTextureIdDefault());
+    rlActiveTextureSlot(kProbeDataUnit);
+    rlEnableTexture(pa ? pa->data : rlGetTextureIdDefault());
+    rlActiveTextureSlot(0);
 }
 
 namespace {

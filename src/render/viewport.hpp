@@ -34,6 +34,9 @@ public:
     // units; `scale` is the display's pixels per point (2 on Retina). The texture is
     // w*scale x h*scale so drawing is 1:1 with real screen pixels.
     void resize(int w, int h, float scale);
+    // Draw into a 16-bit float target (building reflection probes: linear light, v0.12.6).
+    // Takes effect at the next resize to another size, or now if the kind changes.
+    void setFloatTarget(bool on) { if (on != float_) { float_ = on; w_ = h_ = 0; } }
     float scale() const { return scale_; }
     const RenderTexture2D& target() const { return rt_; }
     int width()  const { return w_; }
@@ -86,11 +89,16 @@ private:
     void render3D(const Grid& grid, const Scene& scene);
     // Decals in the editor's 3D view: the picture flat on the surfaces (v0.12.5).
     void drawEditorDecals(const Scene& scene, const Vec3& cam);
+    // Reflection probes in the editor's 3D view (v0.12.6): the shiny surfaces a selected probe
+    // reaches (View menu), and the last built probes as mirror balls (View menu).
+    void drawProbeUsage(const Scene& scene);
+    void drawProbeBalls(const Scene& scene, const Vec3& cam);
 
     ViewKind kind_;
     RenderTexture2D rt_{};
     int w_ = 0, h_ = 0;      // logical size
     float scale_ = 1.0f;     // physical pixels per logical pixel
+    bool float_ = false;     // float target (probes)
 
     // 2D: world point at the view center, and pixels per world unit.
     double panU_ = 0.0, panV_ = 0.0;

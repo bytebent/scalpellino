@@ -52,6 +52,7 @@ private:
     std::set<DecalId> decal0_;
     std::set<LightId> light0_;
     std::set<CameraId> camera0_;
+    std::set<ProbeId> probe0_;
 };
 
 } // namespace scal

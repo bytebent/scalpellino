@@ -126,6 +126,20 @@ struct Scene {
     std::optional<Camera> pendingCamera;  // camera tool: where Return will create one
     static constexpr double kRollRingScale = 1.35; // roll ring radius / the other rings'
 
+    // Reflection probes (v0.12.6): a marker ball in every view. `usage`: the probe whose
+    // reach the 3D view colours on shiny surfaces (View menu, off by default; its index in
+    // `probes`, -1 none). `probeAtlas`: the last built probes, drawn as mirror balls (View).
+    struct SceneProbe { Probe probe; bool selected = false; };
+    std::vector<SceneProbe> probes;
+    std::optional<Probe> pendingProbe;    // probe tool: where Return will create one
+    int probeUsage = -1;
+    const class TextureLibrary* probeMaterials = nullptr; // which faces are shiny (probe usage)
+    const struct ProbeAtlas* probeAtlas = nullptr;
+    // Renders: the probes shiny materials reflect (null: the sky); `linearOut` draws linear
+    // light without exposure (building the probes' own pictures).
+    const struct ProbeAtlas* reflections = nullptr;
+    bool linearOut = false;
+
     // Math primitives (milestone 9): exact shapes in 3D, outlines in 2D.
     struct ScenePrim { MathPrim prim; bool selected = false; };
     std::vector<ScenePrim> prims;

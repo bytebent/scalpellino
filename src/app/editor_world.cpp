@@ -346,4 +346,82 @@ void Editor::drawWorldDialogs() {
     }
 }
 
+// Reflection probes (v0.12.6): Properties for the Probe tool and the selected probes.
+void Editor::drawProbePanel() {
+    auto sizeCombo = [&](const char* label, int& size) {
+        bool changed = false;
+        ImGui::SetNextItemWidth(170);
+        if (ImGui::BeginCombo(label, probeSizeLabel(size).c_str())) {
+            for (int n = 0; n <= kProbeMaxSize; ++n)
+                if (ImGui::Selectable(probeSizeLabel(n).c_str(), n == size)) { size = n; changed = true; }
+            ImGui::EndCombo();
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Hammer's cubemapsize: pixels a side of the probe's picture. Smaller = softer reflections.\n"
+                              "Render quality: Draft half of it, Normal as set, High double (at most 512).");
+        return changed;
+    };
+    const std::set<ProbeId>& sel = doc_.probeSelection();
+    ImGui::PushID("probes");
+    if (sel.size() > 1) {
+        ImGui::Text("%zu reflection probes selected", sel.size());
+        int size = doc_.findProbe(*sel.begin()) ? doc_.findProbe(*sel.begin())->size : 0;
+        if (sizeCombo("size (all)", size)) {
+            std::vector<Probe> mod;
+            for (ProbeId id : sel)
+                if (const Probe* r = doc_.findProbe(id)) { Probe v = *r; v.size = size; mod.push_back(v); }
+            doc_.apply(doc_.makeModifyProbes(mod, "Probe size"));
+        }
+        ImGui::TextDisabled("drag in a 2D view to move them; Delete removes, Cmd+D duplicates");
+        if (tool_ != &probeTool_) { ImGui::PopID(); return; }
+        ImGui::Separator();
+    } else if (sel.size() == 1) {
+        const ProbeId id = *sel.begin();
+        const Probe* r = doc_.findProbe(id);
+        if (!r) { ImGui::PopID(); return; }
+        if ((id != probeBufFor_ || doc_.revision() != probeBufRev_) && !ImGui::IsAnyItemActive()) {
+            probeBufPos_ = r->pos;
+            probeBufFor_ = id;
+            probeBufRev_ = doc_.revision();
+        }
+        ImGui::TextUnformatted("Reflection probe (env_cubemap)");
+        double p[3] = {probeBufPos_.x, probeBufPos_.y, probeBufPos_.z};
+        ImGui::SetNextItemWidth(220);
+        if (ImGui::InputScalarN("position", ImGuiDataType_Double, p, 3, nullptr, nullptr, "%g")) probeBufPos_ = {p[0], p[1], p[2]};
+        if (ImGui::IsItemDeactivatedAfterEdit() && probeBufPos_ != r->pos) {
+            Probe v = *r;
+            v.pos = probeBufPos_;
+            doc_.apply(doc_.makeModifyProbes({v}, "Move reflection probe"));
+        }
+        int size = r->size;
+        if (sizeCombo("size", size)) {
+            Probe v = *r;
+            v.size = size;
+            doc_.apply(doc_.makeModifyProbes({v}, "Probe size"));
+        }
+        ImGui::TextDisabled("renders: Draft %d, Normal %d, High %d pixels a side", probeSideForQuality(r->size, 0), probeSideForQuality(r->size, 1),
+                            probeSideForQuality(r->size, 2));
+        ImGui::TextDisabled("drag in a 2D view to move it; Delete removes, Cmd+D duplicates");
+        if (tool_ != &probeTool_) { ImGui::PopID(); return; }
+        ImGui::Separator();
+    }
+    ProbeTool& t = probeTool_;
+    ImGui::PushID("new probe");
+    ImGui::Text("New reflection probe (%zu in the map)", doc_.probes().size());
+    sizeCombo("size", t.templ.size);
+    if (t.pending) {
+        double p[3] = {t.pending->x, t.pending->y, t.pending->z};
+        ImGui::SetNextItemWidth(220);
+        if (ImGui::InputScalarN("position", ImGuiDataType_Double, p, 3, nullptr, nullptr, "%g")) t.pending = Vec3{p[0], p[1], p[2]};
+    }
+    ImGui::BeginDisabled(!t.pending);
+    if (ImGui::Button("Create (Return)")) t.create(doc_);
+    ImGui::EndDisabled();
+    if (!t.pending) ImGui::TextWrapped("Click a floor in the 3D view (the probe goes 170 cm above it) or a wall (81 cm out), or a spot in a 2D view.");
+    ImGui::TextWrapped("Renders build a small picture from each probe (\"building cubemaps\"). Materials with $envmap env_cubemap reflect the "
+                       "4 nearest probes, blended; without probes they reflect the sky.");
+    ImGui::PopID();
+    ImGui::PopID();
+}
+
 } // namespace scal

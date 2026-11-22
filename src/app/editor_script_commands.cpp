@@ -39,7 +39,7 @@ void Editor::registerScriptCommands() {
         std::string t; in >> t;
         setTool(t == "block" ? (Tool*)&blockTool_ : t == "vertex" ? (Tool*)&vertexTool_
               : t == "texture" ? (Tool*)&textureTool_ : t == "clip" ? (Tool*)&clipTool_
-              : t == "curve" ? (Tool*)&curveTool_ : t == "terrain" ? (Tool*)&terrainTool_ : t == "light" ? (Tool*)&lightTool_ : t == "prim" ? (Tool*)&primTool_ : t == "props" ? (Tool*)&propTool_ : t == "decal" ? (Tool*)&decalTool_ : t == "camera" ? (Tool*)&cameraTool_ : (Tool*)&selectTool_);
+              : t == "curve" ? (Tool*)&curveTool_ : t == "terrain" ? (Tool*)&terrainTool_ : t == "light" ? (Tool*)&lightTool_ : t == "prim" ? (Tool*)&primTool_ : t == "props" ? (Tool*)&propTool_ : t == "decal" ? (Tool*)&decalTool_ : t == "camera" ? (Tool*)&cameraTool_ : t == "probe" ? (Tool*)&probeTool_ : (Tool*)&selectTool_);
     });
     add({"press"}, [this](const std::string& cmd, std::istringstream& in) {
         int v; float x, y; in >> v >> x >> y;
@@ -294,6 +294,45 @@ void Editor::registerScriptCommands() {
         }
         doc_.setCameraSelection(sel); doc_.setSelection({}); doc_.setLightSelection({}); doc_.setPrimSelection({}); doc_.setPropSelection({}); doc_.setDecalSelection({});
     });
+    // Reflection probes (v0.12.6)
+    add({"probeset"}, [this](const std::string&, std::istringstream& in) {
+        // probeset size <n> | pos x y z   (the next probe; pos places it, Return creates)
+        std::string k; in >> k;
+        if (k == "size") in >> probeTool_.templ.size;
+        else if (k == "pos") { Vec3 p; in >> p.x >> p.y >> p.z; probeTool_.pending = p; }
+    });
+    add({"probe"}, [this](const std::string&, std::istringstream& in) {
+        // probe x y z [size]: a new probe (one undo step)
+        Probe r;
+        in >> r.pos.x >> r.pos.y >> r.pos.z;
+        if (!(in >> r.size)) r.size = 0;
+        doc_.apply(doc_.makeAddProbes({r}, "Create reflection probe"));
+    });
+    add({"probeselect"}, [this](const std::string&, std::istringstream& in) {
+        // probeselect all | none | <index>...  (order in the map, 0-based)
+        std::set<ProbeId> sel;
+        std::string w;
+        while (in >> w) {
+            if (w == "all") for (const Probe& r : doc_.probes()) sel.insert(r.id);
+            else if (w != "none") { const size_t i = (size_t)std::atoi(w.c_str()); if (i < doc_.probes().size()) sel.insert(doc_.probes()[i].id); }
+        }
+        doc_.setProbeSelection(sel); doc_.setSelection({}); doc_.setLightSelection({}); doc_.setPrimSelection({}); doc_.setPropSelection({});
+        doc_.setDecalSelection({}); doc_.setCameraSelection({});
+    });
+    add({"probeedit"}, [this](const std::string&, std::istringstream& in) {
+        // probeedit pos x y z | size <n>   (the selected probes, one undo step)
+        std::string k; in >> k;
+        Vec3 p; int size = 0;
+        if (k == "pos") in >> p.x >> p.y >> p.z; else in >> size;
+        std::vector<Probe> out;
+        for (ProbeId id : doc_.probeSelection())
+            if (const Probe* r = doc_.findProbe(id)) {
+                Probe v = *r;
+                if (k == "pos") v.pos = p; else v.size = size;
+                out.push_back(v);
+            }
+        if (!out.empty()) doc_.apply(doc_.makeModifyProbes(out, "Edit reflection probe"));
+    });
     add({"camerapreview"}, [this](const std::string&, std::istringstream&) {
         // camerapreview: draw the Camera Preview now (as Cmd+K; drawn with the next frame)
         if (!doc_.cameras().empty()) requestCameraPreview();
@@ -471,7 +510,7 @@ void Editor::registerScriptCommands() {
             if (w == "all") sel.insert(all.begin(), all.end());
             else if (w != "none") { const size_t i = (size_t)std::atoi(w.c_str()); if (i < all.size()) sel.insert(all[i]); }
         }
-        doc_.setDecalSelection(sel); doc_.setSelection({}); doc_.setLightSelection({}); doc_.setPrimSelection({}); doc_.setPropSelection({}); doc_.setCameraSelection({});
+        doc_.setDecalSelection(sel); doc_.setSelection({}); doc_.setLightSelection({}); doc_.setPrimSelection({}); doc_.setPropSelection({}); doc_.setCameraSelection({}); doc_.setProbeSelection({});
     });
     add({"decalset"}, [this](const std::string&, std::istringstream& in) {
         // decalset pos x y z | width w | height h | turn deg | reach r | order n | material <name>
@@ -536,6 +575,8 @@ void Editor::registerScriptCommands() {
         else if (k == "fog") showFog_ = on;
         else if (k == "figure") showFigure_ = on;
         else if (k == "grid") showLightGrid_ = on;
+        else if (k == "probeballs") showProbeBalls_ = on;
+        else if (k == "probeuse") showProbeUsage_ = on;
         else if (k == "prims") { tool_->cancel(); doc_.setPrimsShown(on); }
         else if (k == "props") { tool_->cancel(); doc_.setPropsShown(on); }
     });

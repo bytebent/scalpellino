@@ -147,7 +147,11 @@ expect renderlog shaders: LightmappedGeneric
 expect renderlog surface lights from glowing materials
 expect renderlog cutout faces cast shadows through
 expect renderlog block no light
-expect renderlog not warning
+# (v0.12.6: the only warning is that the shiny materials have no reflection probes to reflect)
+expect renderlog but the map has no reflection probes
+expect renderlog not warning: material
+expect renderlog not warning: texture
+expect renderlog not warning: the
 expect renderlog prop light full
 shot m12-24-materials-log.png
 rendercopy m12-25-materials.png

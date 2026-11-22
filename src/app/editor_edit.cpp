@@ -44,7 +44,7 @@ void Editor::selectNone() {
     tool_->cancel();
     doc_.setSelection({});
     doc_.setPropSelection({}); doc_.setDecalSelection({});
-    doc_.setCameraSelection({});
+    doc_.setCameraSelection({}); doc_.setProbeSelection({});
 }
 
 void Editor::duplicate() {
@@ -97,6 +97,19 @@ void Editor::duplicate() {
         doc_.apply(doc_.makeAddCameras(std::move(copies), "Duplicate camera"));
         return;
     }
+    if (doc_.selection().empty() && !doc_.probeSelection().empty()) {
+        tool_->cancel();
+        std::vector<Probe> copies;
+        for (ProbeId id : doc_.probeSelection())
+            if (const Probe* p = doc_.findProbe(id)) {
+                Probe k = *p;
+                k.id = 0;
+                k.pos += Vec3{grid_.size, grid_.size, 0};
+                copies.push_back(std::move(k));
+            }
+        doc_.apply(doc_.makeAddProbes(std::move(copies), "Duplicate reflection probe"));
+        return;
+    }
     if (doc_.selection().empty() && !doc_.lightSelection().empty()) {
         tool_->cancel();
         std::vector<Light> copies;
@@ -126,7 +139,7 @@ void Editor::duplicate() {
 
 void Editor::deleteSelection() {
     if (doc_.selection().empty() && doc_.lightSelection().empty() && doc_.primSelection().empty() && doc_.propSelection().empty() && doc_.decalSelection().empty() &&
-        doc_.cameraSelection().empty())
+        doc_.cameraSelection().empty() && doc_.probeSelection().empty())
         return;
     tool_->cancel();
     Command c = doc_.makeDelete(doc_.selection(), "Delete");
@@ -135,6 +148,7 @@ void Editor::deleteSelection() {
     doc_.addPropDeletes(c, doc_.propSelection());
         doc_.addDecalDeletes(c, doc_.decalSelection());
     doc_.addCameraDeletes(c, doc_.cameraSelection());
+    doc_.addProbeDeletes(c, doc_.probeSelection());
     doc_.apply(std::move(c));
 }
 

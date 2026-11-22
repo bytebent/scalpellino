@@ -6,6 +6,8 @@
 #include "app/editor.hpp"
 #include "app/settings.hpp"
 #include "core/bottega.hpp"
+#include "core/probe.hpp"
+#include <cctype>
 #include "imgui.h"
 #include <algorithm>
 #include <cmath>
@@ -100,6 +102,84 @@ std::shared_ptr<const BakeResult> Editor::bakeNow(BakeQuality q) {
     return r;
 }
 
+namespace {
+struct Fnv {
+    std::uint64_t h = 1469598103934665603ull;
+    void bytes(const void* p, size_t n) {
+        const unsigned char* c = (const unsigned char*)p;
+        for (size_t i = 0; i < n; ++i) { h ^= c[i]; h *= 1099511628211ull; }
+    }
+    void d(double v) { bytes(&v, sizeof v); }
+    void u(std::uint64_t v) { bytes(&v, sizeof v); }
+    void v(const Vec3& x) { d(x.x); d(x.y); d(x.z); }
+    void s(const std::string& x) { u(x.size()); bytes(x.data(), x.size()); }
+};
+
+bool shinyName(const TextureLibrary& lib, const std::string& name) {
+    const MaterialIndex::Entry* e = lib.material(name);
+    if (!e) return false;
+    std::string v = e->mat.str("$envmap");
+    for (char& c : v) c = (char)std::tolower((unsigned char)c);
+    return v == "env_cubemap";
+}
+
+bool insideBrush(const Brush& b, const Vec3& p) {
+    for (const Face& f : b.faces)
+        if (f.plane().distance(p) > -0.5) return false;
+    return !b.faces.empty();
+}
+} // namespace
+
+std::uint64_t Editor::probeKey(int quality) const {
+    Fnv h;
+    auto it = bakes_.find(quality);
+    h.u(it != bakes_.end() ? it->second.key : 0);
+    h.u((std::uint64_t)quality);
+    h.u(renderSettings_.smooth ? 1 : 0);
+    h.u(doc_.filesStamp()); // material edits (the panel writes the .vmt files)
+    for (const Probe& r : doc_.probes()) { h.v(r.pos); h.u((std::uint64_t)r.size); }
+    for (const Brush& b : doc_.brushes()) // decals show in the probes but not in the bake
+        for (const Decal& d : b.decals) {
+            h.s(d.material); h.v(d.pos); h.v(d.normal); h.v(d.up);
+            h.d(d.width); h.d(d.height); h.d(d.reach); h.u((std::uint64_t)(std::int64_t)d.order);
+        }
+    return h.h;
+}
+
+size_t Editor::shinyProbeSurfaces() const {
+    size_t n = 0;
+    for (const Brush& b : doc_.brushes()) {
+        for (size_t i = 0; i < b.faces.size(); ++i)
+            if (!(b.terrain && (int)i == b.terrain->face) && !isNoDraw(b.faces[i].texture) && shinyName(textures_, b.faces[i].texture)) ++n;
+        if (b.terrain) {
+            bool shiny = shinyName(textures_, b.faces[b.terrain->face].texture);
+            for (const auto& l : b.terrain->layers) shiny = shiny || shinyName(textures_, l.texture);
+            if (shiny) ++n;
+        }
+    }
+    return n;
+}
+
+std::shared_ptr<ProbeAtlas> Editor::probesNow(int quality, const Scene& lit, bool smooth) {
+    if (doc_.probes().empty()) return nullptr;
+    const std::uint64_t key = probeKey(quality);
+    KeptProbes& k = keptProbes_[quality];
+    if (k.atlas && k.key == key) return lastProbes_ = k.atlas;
+    std::shared_ptr<ProbeAtlas> a;
+    const int passes = quality <= 0 ? 1 : 2;
+    for (int i = 0; i < passes; ++i) {
+        Scene s = lit;
+        s.reflections = a.get();
+        std::shared_ptr<ProbeAtlas> next = probeBuilder_.pass(doc_.probes(), quality, s, smooth);
+        if (!next) break;
+        a = std::move(next);
+    }
+    probeBuilder_.release();
+    k = {key, a};
+    lastProbes_ = a;
+    return a;
+}
+
 void Editor::stopRender() {
     if (!renderJob_ || !renderJob_->running) return;
     renderJob_->stopWanted = true;
@@ -174,6 +254,8 @@ void Editor::stepRender() {
                       st.prims, st.props, st.lights);
         renderLog(b);
         if (!st.lights) renderLog("  no lights: only the sky light (World > Light tool)");
+        if (!doc_.probes().empty())
+            renderLog("  " + std::to_string(doc_.probes().size()) + (doc_.probes().size() == 1 ? " reflection probe" : " reflection probes"));
         if (st.decals) renderLog("  " + std::to_string(st.decals) + (st.decals == 1 ? " decal" : " decals") + " (lit by the surface under them)");
         if (st.terrains) renderLog("  " + std::to_string(st.terrains) + " terrain patches");
         if (st.nodrawFaces) renderLog("  " + std::to_string(st.nodrawFaces) + " nodraw faces left out");
@@ -279,10 +361,101 @@ void Editor::stepRender() {
             std::snprintf(b, sizeof b, "  exposure %+g stops (x %g)", j.cam.exposure, std::pow(2.0, j.cam.exposure));
             renderLog(b);
         }
-        renderLog("Drawing...");
+        // Reflection probes (v0.12.6): "building cubemaps", or the ones kept in memory.
+        if (!doc_.probes().empty()) {
+            const int q = (int)j.settings.quality;
+            int n = 0;
+            for (const Probe& r : doc_.probes()) {
+                ++n;
+                for (const Brush& br : doc_.brushes())
+                    if (insideBrush(br, r.pos)) {
+                        char w[160];
+                        std::snprintf(w, sizeof w, "  warning: reflection probe %d at (%g %g %g) is inside a brush: it sees only that brush", n, r.pos.x,
+                                      r.pos.y, r.pos.z);
+                        renderLog(w);
+                        break;
+                    }
+            }
+            j.probeKey = probeKey(q);
+            const auto it = keptProbes_.find(q);
+            if (it != keptProbes_.end() && it->second.atlas && it->second.key == j.probeKey) {
+                j.probes = it->second.atlas;
+                lastProbes_ = j.probes;
+                renderLog("Cubemaps: nothing they show has changed since the last " + std::string(renderQualityName(j.settings.quality)) +
+                          " render (kept in memory)");
+            } else {
+                j.probePasses = q == 0 ? 1 : 2;
+                j.probePass = 0;
+                j.probeStart = GetTime();
+                char c[160];
+                std::snprintf(c, sizeof c, "Building cubemaps: %zu %s, %d %s...", doc_.probes().size(), doc_.probes().size() == 1 ? "probe" : "probes",
+                              j.probePasses, j.probePasses == 1 ? "pass (shiny things in them reflect the sky)" : "passes (the 2nd: reflections in reflections)");
+                renderLog(c);
+            }
+        } else if (const size_t shiny = shinyProbeSurfaces()) {
+            renderLog("  warning: " + std::to_string(shiny) + (shiny == 1 ? " surface reflects" : " surfaces reflect") +
+                      " env_cubemap, but the map has no reflection probes: they reflect the sky (World > Probe tool)");
+        }
         break;
     }
     case 3: {
+        // Reflection probes, one pass per step (Esc stops between them).
+        if (j.probePass < j.probePasses) {
+            const int q = (int)j.settings.quality;
+            Scene cs = j.scene;
+            cs.reflections = j.probes.get(); // the 1st pass: none (the sky)
+            std::shared_ptr<ProbeAtlas> a = probeBuilder_.pass(doc_.probes(), q, cs, j.settings.smooth);
+            if (!a) {
+                renderLog("  warning: the graphics card couldn't make the cubemaps; shiny surfaces reflect the sky");
+                j.probes.reset();
+                j.probePasses = 0;
+            } else {
+                j.probes = std::move(a);
+                ++j.probePass;
+                if (j.probePass < j.probePasses) {
+                    char c[96];
+                    std::snprintf(c, sizeof c, "  pass %d of %d done", j.probePass, j.probePasses);
+                    renderLog(c);
+                    --j.step; // the next pass
+                    break;
+                }
+                // one line per probe (VRAD-style), then how many shiny faces each one reaches
+                std::vector<Vec3> pos;
+                for (const Probe& r : doc_.probes()) pos.push_back(r.pos);
+                std::vector<size_t> uses(pos.size(), 0);
+                for (const Brush& br : doc_.brushes()) {
+                    const std::vector<Polygon> polys = br.polygons();
+                    for (const Polygon& p : polys) {
+                        if (p.face < 0 || p.face >= (int)br.faces.size() || p.verts.empty()) continue;
+                        if (br.terrain && p.face == br.terrain->face) continue;
+                        if (!shinyName(textures_, br.faces[p.face].texture)) continue;
+                        Vec3 c;
+                        for (const Vec3& v : p.verts) c += v;
+                        c = c / (double)p.verts.size();
+                        for (const ProbeWeight& w : probeWeights(pos, c, p.normal))
+                            if (w.weight > 0.01) ++uses[w.index];
+                    }
+                }
+                for (size_t i = 0; i < j.probes->slots.size(); ++i) {
+                    const ProbeAtlas::Slot& sl = j.probes->slots[i];
+                    char c[200];
+                    std::snprintf(c, sizeof c, "  cubemap %zu of %zu at (%g %g %g), %d a side, %.2f s; reflected by %zu shiny %s", i + 1,
+                                  j.probes->slots.size(), sl.pos.x, sl.pos.y, sl.pos.z, sl.side, sl.seconds, uses[i], uses[i] == 1 ? "face" : "faces");
+                    renderLog(c);
+                }
+                char c[96];
+                std::snprintf(c, sizeof c, "  cubemaps built in %.1f s", GetTime() - j.probeStart);
+                renderLog(c);
+                keptProbes_[q] = {j.probeKey, j.probes};
+                lastProbes_ = j.probes;
+            }
+            probeBuilder_.release();
+        }
+        j.scene.reflections = j.probes.get();
+        renderLog("Drawing...");
+        break;
+    }
+    case 4: {
         if (!j.draw.draw(j.cam, j.scene, j.cam.width * j.aa, j.cam.height * j.aa, 1.0f, j.settings.smooth)) {
             renderLog("The graphics card couldn't make a picture this large. Try less anti-aliasing (Render menu).");
             j.failed = true;
@@ -293,7 +466,7 @@ void Editor::stepRender() {
         renderLog(j.aa > 1 ? "Scaling down..." : "Reading the picture...");
         break;
     }
-    case 4: {
+    case 5: {
         int w = 0, h = 0;
         const std::vector<unsigned char> rgba = j.draw.read(w, h);
         j.rgb = downscaleRGB(rgba, w, h, j.aa);

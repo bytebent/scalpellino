@@ -28,6 +28,8 @@
 #include "tools/terrain_tool.hpp"
 #include "tools/light_tool.hpp"
 #include "tools/camera_tool.hpp"
+#include "tools/probe_tool.hpp"
+#include "render/probes.hpp"
 #include "tools/prim_tool.hpp"
 #include "tools/prop_tool.hpp"
 #include "tools/decal_tool.hpp"
@@ -192,6 +194,10 @@ private:
 
     // World (milestone 8)
     void drawLightPanel();
+    void drawProbePanel(); // reflection probes (v0.12.6): the Probe tool / selected probes
+    Vec3 probeBufPos_;
+    ProbeId probeBufFor_ = 0;
+    unsigned long long probeBufRev_ = ~0ull;
     // Math primitives (milestone 9)
     void combinePrims();   // selected primitives become one combination
     void separatePrims();  // selected primitives leave their combinations
@@ -318,7 +324,24 @@ private:
         int w = 0, h = 0;
         std::unique_ptr<BakeTask> bake;          // the light bake, while it runs
         std::shared_ptr<const BakeResult> baked; // its result (or the kept one)
+        // Reflection probes (v0.12.6): "building cubemaps", one pass per step.
+        int probePass = 0, probePasses = 0;
+        std::shared_ptr<ProbeAtlas> probes;      // the newest pass's (or the kept ones)
+        std::uint64_t probeKey = 0;
+        double probeStart = 0;
     };
+    // Reflection probes kept in memory, one set per quality, while nothing they show changed
+    // (agreed: memory only). The key: the bake's key, the probes, the decals, material edits.
+    struct KeptProbes { std::uint64_t key = 0; std::shared_ptr<ProbeAtlas> atlas; };
+    std::map<int, KeptProbes> keptProbes_;
+    std::shared_ptr<ProbeAtlas> lastProbes_;      // the last built or reused (mirror balls)
+    ProbeBuilder probeBuilder_;
+    std::uint64_t probeKey(int quality) const;
+    // The probes for the Camera Preview (Draft, one pass) now, kept or made; null: none.
+    std::shared_ptr<ProbeAtlas> probesNow(int quality, const Scene& lit, bool smooth);
+    // Shiny materials ($envmap env_cubemap) on the map's brush faces and terrain.
+    size_t shinyProbeSurfaces() const;
+    bool showProbeBalls_ = false, showProbeUsage_ = false; // View menu (v0.12.6)
     // Baked light kept in memory, one per quality, while the map's light doesn't change
     // (agreed 2026-11-20: memory only). The key is core/bake.hpp bakeKey.
     struct KeptBake { std::uint64_t key = 0; std::shared_ptr<const BakeResult> result; };
@@ -434,6 +457,7 @@ private:
     TerrainTool terrainTool_;
     LightTool lightTool_;
     CameraTool cameraTool_;
+    ProbeTool probeTool_;
     PrimTool primTool_;
     PropTool propTool_;
     DecalTool decalTool_;

@@ -177,7 +177,7 @@ void Editor::openMap(const std::string& path) {
     closeSkyLab();
     skyBake_.reset();
     doc_.reset(loaded.worldKeys, loaded.brushes(), loaded.otherEntities, loaded.groups(), loaded.visgroups(),
-               WorldData{loaded.lights(), loaded.environment(), loaded.bookmarks(), loaded.figure(), loaded.prims(), loaded.props(), loaded.cameras()});
+               WorldData{loaded.lights(), loaded.environment(), loaded.bookmarks(), loaded.figure(), loaded.prims(), loaded.props(), loaded.cameras(), loaded.probes()});
     path_ = path;
     // A Sky Lab sky whose PNG is gone (another machine, a moved Bottega) is made again
     // from the settings in the map.

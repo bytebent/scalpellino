@@ -1,0 +1,138 @@
+# v0.12.6: reflection probes (M12 batch 7). Hammer's env_cubemap: placed by hand with the
+# Probe tool (Shift+E), saved as env_cubemap entities. Renders build a small picture from
+# each probe ("building cubemaps", 2 passes at Normal / High, 1 at Draft) and materials with
+# $envmap env_cubemap reflect the 4 nearest probes, blended; other $envmap values, or no
+# probes, reflect the sky. View menu: the probes as mirror balls, the reach of a selected one.
+bottega make studio
+copy assets/materials/metal.png studio/textures/mat/metal.png
+copy assets/materials/brick_a.png studio/textures/mat/brick_a.png
+copy assets/materials/brick_b.png studio/textures/mat/brick_b.png
+copy assets/materials/lamp.png studio/textures/mat/lamp.png
+rescan
+expect hastexture textures/mat/metal
+# -- a shiny floor (metal: chrome from the probes) in a room of bricks
+tool texture
+matselect textures/mat/metal
+matset $envmap env_cubemap
+matset $envmaptint [0.6 0.6 0.65]
+expect mat textures/mat/metal $envmap env_cubemap
+tool select
+texture textures/mat/metal
+block -600 -600 -32 600 600 0
+texscale 0.5
+texture textures/mat/brick_a
+block -600 -632 0 600 -600 400
+block -600 600 0 600 632 400
+texture textures/mat/brick_b
+block -632 -600 0 -600 600 400
+block 600 -600 0 632 600 400
+texture Tile_19
+block -600 -600 400 600 600 432
+texture textures/mat/lamp
+block -200 -200 0 0 0 200
+tool select
+key Esc
+tool light
+lightset kind point
+lightset brightness 400
+lightset pos 200 200 300
+key Return
+tool select
+key Esc
+tool camera
+cameraset lens 24
+cameraset size 480 270
+cameraset pos -550 -550 260
+key Return
+cameraedit angles -25 45 0
+tool select
+key Esc
+renderset quality normal
+# -- no probes yet: the floor reflects the sky (here: none, the ambient colour), and the log says so
+render
+expect render saved
+expect renderlog surfaces reflect env_cubemap, but the map has no reflection probes
+expect renderlog not Building cubemaps
+closedialogs
+# -- the Probe tool: a 3D click on the floor puts a probe 170 cm above it; Return creates
+tool probe
+camera 0 -400 350 90 -90
+press3d 0 0
+key Return
+expect probes 1
+expect probesel 1
+expect probepos 0 -400 170
+probeedit pos 300 -300 170
+expect probepos 300 -300 170
+undo
+expect probepos 0 -400 170
+redo
+expect probepos 300 -300 170
+# a second one by typed values, size 64 (Hammer's cubemapsize 7)
+probeset size 7
+probeset pos -300 300 120
+key Return
+expect probes 2
+expect probesize 7
+shot m12-39-probe-tool.png
+tool select
+key Esc
+# -- now the render builds the cubemaps (2 passes at Normal)
+render
+expect render saved
+expect renderlog 2 reflection probes
+expect renderlog Building cubemaps: 2 probes, 2 passes
+expect renderlog cubemap 1 of 2
+expect renderlog cubemaps built in
+expect renderlog not warning
+expect rendersame no
+expect probeatlas 2
+shot m12-40-probes-log.png
+rendercopy m12-41-probes-render.png
+closedialogs
+# -- nothing changed: the cubemaps are kept
+render
+expect renderlog Cubemaps: nothing they show has changed
+expect rendersame yes
+closedialogs
+# -- a probe moved: built again
+probeselect 1
+probeedit pos 300 300 120
+render
+expect renderlog Building cubemaps
+closedialogs
+# -- the View menu: mirror balls, the reach of the selected probe
+viewset probeballs on
+viewset probeuse on
+probeselect 0
+camera -500 -500 350 45 -25
+shot m12-42-probe-balls.png
+viewset probeballs off
+viewset probeuse off
+# -- Draft (the Camera Preview's quality): one pass
+renderset quality draft
+render
+expect renderlog Building cubemaps: 2 probes, 1 pass
+closedialogs
+renderset quality normal
+# -- saved as Hammer's env_cubemap, read back
+save probes.map
+open probes.map
+expect probes 2
+probeselect 1
+expect probesize 7
+expect probepos 300 300 120
+# -- a probe inside a brush: a warning
+probe -100 -100 100
+render
+expect renderlog is inside a brush
+closedialogs
+# -- Delete and duplicate
+probeselect 2
+key Delete
+expect probes 2
+probeselect 0
+duplicate
+expect probes 3
+expect probesel 1
+quit

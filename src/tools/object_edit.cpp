@@ -157,6 +157,20 @@ CameraId pickCamera(const Document& doc, const Viewport& vp, Vector2 local) {
     return best;
 }
 
+ProbeId pickProbe(const Document& doc, const Viewport& vp, Vector2 local) {
+    ProbeId best = 0;
+    double bestKey = 1e300;
+    for (const Probe& r : doc.probes()) {
+        Vector2 s;
+        if (!vp.project(r.pos, s)) continue;
+        const double d = std::hypot(s.x - local.x, s.y - local.y);
+        if (d > kMarkerTol) continue;
+        const double key = vp.is2D() ? d : length(r.pos - cameraPos(vp)) + d;
+        if (key < bestKey) { bestKey = key; best = r.id; }
+    }
+    return best;
+}
+
 LightId pickLight(const Document& doc, const Viewport& vp, Vector2 local) {
     LightId best = 0;
     double bestKey = 1e300;
@@ -305,12 +319,14 @@ bool ObjectEdit::press(ToolEnv& env, const Pointer& p) {
         primNow_ = primStart_;
         propNow_ = propStart_;
         cameraNow_ = cameraStart_;
+        probeNow_ = probeStart_;
     };
     if (decals_.pressHandles(env, p)) return true; // the selected decal's corners and ring
     lightStart_.clear();
     primStart_.clear();
     propStart_.clear();
     cameraStart_.clear();
+    probeStart_.clear();
     propsMode_ = false;
     camerasMode_ = false;
     sizeProp_ = false;
@@ -397,6 +413,7 @@ bool ObjectEdit::press(ToolEnv& env, const Pointer& p) {
         }
         if (!sel.count(id)) {
             doc.setCameraSelection({id});
+            doc.setProbeSelection({});
             doc.setDecalSelection({});
             doc.setSelection({});
             doc.setLightSelection({});
@@ -412,6 +429,30 @@ bool ObjectEdit::press(ToolEnv& env, const Pointer& p) {
         begin(Mode::Move);
         return true;
     }
+    if (const ProbeId id = pickProbe(doc, vp, p.local)) {
+        std::set<ProbeId> sel = doc.probeSelection();
+        if (env.cmd) {
+            if (!sel.erase(id)) sel.insert(id);
+            doc.setProbeSelection(sel);
+            return true;
+        }
+        if (!sel.count(id)) {
+            doc.setProbeSelection({id});
+            doc.setSelection({});
+            doc.setLightSelection({});
+            doc.setPrimSelection({});
+            doc.setPropSelection({});
+            doc.setDecalSelection({});
+            doc.setCameraSelection({});
+        }
+        if (!vp.is2D()) return true;
+        lightsMode_ = false;
+        for (ProbeId r : doc.probeSelection())
+            if (const Probe* x = doc.findProbe(r)) probeStart_.push_back(*x);
+        anchor_ = doc.findProbe(id)->pos;
+        begin(Mode::Move);
+        return true;
+    }
     if (const LightId id = pickLight(doc, vp, p.local)) {
         std::set<LightId> sel = doc.lightSelection();
         if (env.cmd) {
@@ -421,11 +462,12 @@ bool ObjectEdit::press(ToolEnv& env, const Pointer& p) {
         }
         if (!sel.count(id)) {
             doc.setLightSelection({id});
+            doc.setProbeSelection({});
             doc.setDecalSelection({});
             doc.setSelection({});
             doc.setPrimSelection({});
             doc.setPropSelection({}); doc.setDecalSelection({});
-            doc.setCameraSelection({});
+            doc.setCameraSelection({}); doc.setProbeSelection({});
         }
         if (!vp.is2D()) return true;
         lightsMode_ = true;
@@ -481,7 +523,7 @@ bool ObjectEdit::press(ToolEnv& env, const Pointer& p) {
             doc.setSelection({});
             doc.setLightSelection({});
             doc.setPrimSelection({});
-            doc.setCameraSelection({});
+            doc.setCameraSelection({}); doc.setProbeSelection({});
             doc.setDecalSelection({});
         }
         if (!vp.is2D()) return true;
@@ -562,7 +604,7 @@ bool ObjectEdit::press(ToolEnv& env, const Pointer& p) {
         doc.setSelection({});
         doc.setLightSelection({});
         doc.setPropSelection({}); doc.setDecalSelection({});
-        doc.setCameraSelection({});
+        doc.setCameraSelection({}); doc.setProbeSelection({});
     }
     if (!vp.is2D()) return true;
     lightsMode_ = false;
@@ -591,6 +633,8 @@ void ObjectEdit::drag(ToolEnv& env, const Pointer& p) {
         for (Prop& m : propNow_) m.pos += d;
         cameraNow_ = cameraStart_;
         for (Camera& c : cameraNow_) c.pos += d;
+        probeNow_ = probeStart_;
+        for (Probe& r : probeNow_) r.pos += d;
         return;
     }
     if (mode_ == Mode::Ring) {
@@ -717,6 +761,11 @@ void ObjectEdit::release(ToolEnv& env) {
     bool lc = false, pc = false, qc = false, cc = false;
     for (size_t i = 0; i < cameraNow_.size(); ++i) cc = cc || cameraNow_[i] != cameraStart_[i];
     if (cc) env.doc.apply(env.doc.makeModifyCameras(cameraNow_, std::string(name) == "Turn" ? "Turn camera" : "Move camera"));
+    bool rc = false;
+    for (size_t i = 0; i < probeNow_.size(); ++i) rc = rc || probeNow_[i] != probeStart_[i];
+    if (rc) env.doc.apply(env.doc.makeModifyProbes(probeNow_, "Move reflection probe"));
+    probeStart_.clear();
+    probeNow_.clear();
     for (size_t i = 0; i < lightNow_.size(); ++i) lc = lc || lightNow_[i] != lightStart_[i];
     for (size_t i = 0; i < primNow_.size(); ++i) pc = pc || primNow_[i] != primStart_[i];
     for (size_t i = 0; i < propNow_.size(); ++i) qc = qc || propNow_[i] != propStart_[i];
@@ -744,6 +793,8 @@ void ObjectEdit::cancel() {
     propNow_.clear();
     cameraStart_.clear();
     cameraNow_.clear();
+    probeStart_.clear();
+    probeNow_.clear();
     view_ = nullptr;
 }
 
@@ -762,6 +813,9 @@ void ObjectEdit::decorate(const Document& doc, Scene& scene) const {
     for (const Camera& c : cameraNow_)
         for (Scene::SceneCamera& s : scene.cameras)
             if (s.cam.id == c.id) s.cam = c;
+    for (const Probe& r : probeNow_)
+        for (Scene::SceneProbe& s : scene.probes)
+            if (s.probe.id == r.id) s.probe = r;
     // The primitives' rings and handles follow what is being dragged.
     std::vector<MathPrim> sel;
     for (const Scene::ScenePrim& s : scene.prims)

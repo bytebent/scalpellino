@@ -318,6 +318,7 @@ void Editor::drawCameraPreview() {
             // hidden things included), at the panel's size, no anti-aliasing.
             Scene s = preview_.scene(doc_, textures_, models_, skies_);
             preview_.useBake(bakeNow(BakeQuality::Draft), (float)std::pow(2.0, cam->exposure), s);
+            s.reflections = probesNow(0, s, renderSettings_.smooth).get(); // Draft probes (v0.12.6), kept in lastProbes_
             previewDone_ = preview_.draw(*cam, s, (int)std::floor(w), (int)std::floor(h), viewScale_ > 0 ? viewScale_ : fb, renderSettings_.smooth);
             previewRev_ = doc_.revision();
             previewCam_ = cam->id;

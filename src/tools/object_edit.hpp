@@ -31,6 +31,8 @@ namespace scal {
 LightId pickLight(const Document& doc, const Viewport& vp, Vector2 local);
 // Camera whose marker is under `local` (nearest to the camera in 3D), or 0.
 CameraId pickCamera(const Document& doc, const Viewport& vp, Vector2 local);
+// Reflection probe whose marker is under `local` (nearest to the camera in 3D), or 0.
+ProbeId pickProbe(const Document& doc, const Viewport& vp, Vector2 local);
 // Primitive under `local`: what a click selects (first member of a combination), or 0.
 // `dist` gets the distance along the view ray in 3D; `piece` the piece itself that was
 // hit. With `outlinesFirst`, an outline near the cursor wins (so a piece hidden inside
@@ -93,6 +95,7 @@ private:
     std::vector<MathPrim> primStart_, primNow_;
     std::vector<Prop> propStart_, propNow_;
     std::vector<Camera> cameraStart_, cameraNow_;
+    std::vector<Probe> probeStart_, probeNow_; // reflection probes (v0.12.6): moved only
     mutable char hintBuf_[140] = "";
 };
 

@@ -6,6 +6,7 @@
 #include "core/mathprim.hpp"
 #include "core/prop.hpp"
 #include "core/camera.hpp"
+#include "core/probe.hpp"
 #include <map>
 #include <optional>
 #include <set>
@@ -81,6 +82,13 @@ struct CameraChange {
     std::optional<Camera> after;
 };
 
+// One reflection probe before/after an edit (v0.12.6).
+struct ProbeChange {
+    ProbeId id = 0;
+    std::optional<Probe> before;
+    std::optional<Probe> after;
+};
+
 // A file the command writes (materials, v0.12.4): its text before and after (nullopt = no
 // file). Material files aren't part of the map: commands holding only file changes don't
 // mark the map as changed.
@@ -105,6 +113,8 @@ struct Command {
     std::optional<std::set<PropId>> propSelectionBefore, propSelectionAfter;
     std::vector<CameraChange> cameraChanges;
     std::optional<std::set<CameraId>> cameraSelectionBefore, cameraSelectionAfter;
+    std::vector<ProbeChange> probeChanges;
+    std::optional<std::set<ProbeId>> probeSelectionBefore, probeSelectionAfter;
     // Decals live in brushes (their edits are brush changes); their selection (v0.12.5).
     std::optional<std::set<DecalId>> decalSelectionBefore, decalSelectionAfter;
     std::vector<FileChange> fileChanges;
@@ -112,7 +122,7 @@ struct Command {
     // Only files change (nothing of the map itself).
     bool filesOnly() const {
         return !fileChanges.empty() && changes.empty() && groupChanges.empty() && lightChanges.empty() && !envAfter &&
-               primChanges.empty() && propChanges.empty() && cameraChanges.empty();
+               primChanges.empty() && propChanges.empty() && cameraChanges.empty() && probeChanges.empty();
     }
 };
 
@@ -125,6 +135,7 @@ struct WorldData {
     std::vector<MathPrim> prims;
     std::vector<Prop> props;
     std::vector<Camera> cameras;
+    std::vector<Probe> probes;
 };
 
 class Document {
@@ -186,6 +197,13 @@ public:
     CameraId newCameraId() { return nextCameraId_++; }
     const std::set<CameraId>& cameraSelection() const { return cameraSelection_; }
     void setCameraSelection(std::set<CameraId> s) { cameraSelection_ = std::move(s); }
+
+    // Reflection probes (v0.12.6): selected on their own like lights.
+    const std::vector<Probe>& probes() const { return probes_; }
+    const Probe* findProbe(ProbeId id) const;
+    ProbeId newProbeId() { return nextProbeId_++; }
+    const std::set<ProbeId>& probeSelection() const { return probeSelection_; }
+    void setProbeSelection(std::set<ProbeId> s) { probeSelection_ = std::move(s); }
 
     // Decals (v0.12.5): kept in the brush they were put on (Brush::decals), selected on their
     // own like props. Edits are brush changes, so undo, copies and deletes follow the brush.
@@ -304,6 +322,11 @@ public:
     Command makeModifyCameras(const std::vector<Camera>& modified, const std::string& name);
     Command makeActivateCamera(CameraId id);
     void addCameraDeletes(Command& c, const std::set<CameraId>& ids) const;
+    // Reflection probes: new ones get ids and become the probe selection (everything else
+    // deselected).
+    Command makeAddProbes(std::vector<Probe> probes, const std::string& name);
+    Command makeModifyProbes(const std::vector<Probe>& modified, const std::string& name);
+    void addProbeDeletes(Command& c, const std::set<ProbeId>& ids) const;
     // Mixed edit as one undo step (clip, carve, hollow). New brushes get ids. The
     // selection afterwards is `selectAfter` if given, else the old selection minus
     // deleted brushes plus the added ones.
@@ -318,6 +341,7 @@ private:
     void setPrim(MathPrimId id, const std::optional<MathPrim>& p);
     void setProp(PropId id, const std::optional<Prop>& p);
     void setCamera(CameraId id, const std::optional<Camera>& c);
+    void setProbe(ProbeId id, const std::optional<Probe>& p);
     // Adds the changes that leave exactly one active camera after `c` (`prefer`: the one
     // to keep active when several would be).
     void keepOneActive(Command& c, CameraId prefer = 0) const;
@@ -358,6 +382,9 @@ private:
     std::vector<Camera> cameras_;
     std::set<CameraId> cameraSelection_;
     CameraId nextCameraId_ = 1;
+    std::vector<Probe> probes_;
+    std::set<ProbeId> probeSelection_;
+    ProbeId nextProbeId_ = 1;
     std::vector<Light> lights_;
     std::set<LightId> lightSelection_;
     LightId nextLightId_ = 1;

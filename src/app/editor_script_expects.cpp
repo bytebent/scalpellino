@@ -75,6 +75,29 @@ void Editor::registerScriptExpects() {
             if (std::fabs(l->pitch - p) > 0.01 || std::fabs(l->yaw - y) > 0.01) { std::fprintf(stderr, "script FAIL (command %d): light pitch %g yaw %g\n", scriptLine_, l->pitch, l->yaw); ++scriptFailures_; }
         }
     });
+    add({"probes", "probesel", "probeatlas"}, [this](const std::string&, std::istringstream& in) {
+        // expect probes <n> | probesel <n> | probeatlas <n> (probes in the last built cubemaps)
+        std::string w; size_t n = 0; in >> w >> n;
+        const size_t got = w == "probes" ? doc_.probes().size() : w == "probesel" ? doc_.probeSelection().size()
+                         : lastProbes_ ? lastProbes_->slots.size() : 0;
+        if (got != n) { std::fprintf(stderr, "script FAIL (command %d): expected %zu %s, got %zu\n", scriptLine_, n, w.c_str(), got); ++scriptFailures_; }
+    });
+    add({"probepos", "probesize"}, [this](const std::string&, std::istringstream& in) {
+        // expect probepos x y z | probesize <n>: the first selected probe (+-0.01)
+        std::string w; in >> w;
+        const Probe* r = doc_.probeSelection().empty() ? nullptr : doc_.findProbe(*doc_.probeSelection().begin());
+        if (!r) { std::fprintf(stderr, "script FAIL (command %d): no probe selected\n", scriptLine_); ++scriptFailures_; return; }
+        if (w == "probepos") {
+            Vec3 p; in >> p.x >> p.y >> p.z;
+            if (length(p - r->pos) > 0.01) {
+                std::fprintf(stderr, "script FAIL (command %d): probe at %g %g %g, expected %g %g %g\n", scriptLine_, r->pos.x, r->pos.y, r->pos.z, p.x, p.y, p.z);
+                ++scriptFailures_;
+            }
+        } else {
+            int n = 0; in >> n;
+            if (n != r->size) { std::fprintf(stderr, "script FAIL (command %d): probe size %d, expected %d\n", scriptLine_, r->size, n); ++scriptFailures_; }
+        }
+    });
     add({"cameras", "camerasel"}, [this](const std::string&, std::istringstream& in) {
         // expect cameras <n> | expect camerasel <n>
         std::string w; size_t n = 0; in >> w >> n;

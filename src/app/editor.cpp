@@ -180,8 +180,13 @@ bool Editor::frame(float dt) {
     st.hasSelection = !doc_.selection().empty();
     st.hasAnything = st.hasSelection || !doc_.lightSelection().empty() || !doc_.primSelection().empty() || !doc_.propSelection().empty() ||
                      !doc_.decalSelection().empty() ||
-                     !doc_.cameraSelection().empty();
+                     !doc_.cameraSelection().empty() || !doc_.probeSelection().empty();
     st.cameraTool = tool_ == &cameraTool_;
+    st.probeTool = tool_ == &probeTool_;
+    st.probePending = st.probeTool && probeTool_.pending.has_value();
+    st.showProbeBalls = showProbeBalls_;
+    st.haveProbeBalls = lastProbes_ != nullptr;
+    st.showProbeUsage = showProbeUsage_;
     st.cameraPending = st.cameraTool && cameraTool_.pending.has_value();
     st.cameraAiming = st.cameraTool && cameraTool_.aiming();
     st.camerasSelected = doc_.cameraSelection().size();
@@ -321,6 +326,10 @@ bool Editor::frame(float dt) {
     if (m.decalPictureSize) decalSizeFromPicture();
     if (m.toggleDecals) { tool_->cancel(); doc_.setDecalsShown(!doc_.decalsShown()); }
     if (m.toolCamera) setTool(&cameraTool_);
+    if (m.toolProbe) setTool(&probeTool_);
+    if (m.createProbe) probeTool_.create(doc_);
+    if (m.toggleProbeBalls) showProbeBalls_ = !showProbeBalls_;
+    if (m.toggleProbeUsage) showProbeUsage_ = !showProbeUsage_;
     if (m.createCamera) cameraTool_.create(doc_);
     if (m.activateCamera && doc_.cameraSelection().size() == 1) activateCamera(*doc_.cameraSelection().begin());
     if (m.aimCamera) startCameraAim();
@@ -488,6 +497,7 @@ void Editor::handleKeyboard() {
     if (shift_ && IsKeyPressed(KEY_G)) setTool(&terrainTool_);
     if (shift_ && IsKeyPressed(KEY_L)) setTool(&lightTool_);
     if (shift_ && IsKeyPressed(KEY_K)) setTool(&cameraTool_);
+    if (shift_ && IsKeyPressed(KEY_E)) setTool(&probeTool_);
     if (shift_ && IsKeyPressed(KEY_M)) setTool(&primTool_);
     if (shift_ && IsKeyPressed(KEY_P)) setTool(&propTool_);
     if (shift_ && IsKeyPressed(KEY_D) && !cmd_) setTool(&decalTool_);
@@ -507,6 +517,14 @@ Scene Editor::buildScene() {
     if (tool_ != &textureTool_) s.selected = doc_.selection();
     for (const Light& l : doc_.lights()) s.lights.push_back({l, doc_.lightSelection().count(l.id) > 0});
     for (const Camera& c : doc_.cameras()) s.cameras.push_back({c, doc_.cameraSelection().count(c.id) > 0});
+    for (const Probe& r : doc_.probes()) {
+        const bool sel = doc_.probeSelection().count(r.id) > 0;
+        // View > reflection probe reach: the first selected probe's share on shiny surfaces
+        if (sel && showProbeUsage_ && s.probeUsage < 0) s.probeUsage = (int)s.probes.size();
+        s.probes.push_back({r, sel});
+    }
+    if (s.probeUsage >= 0) s.probeMaterials = &textures_;
+    if (showProbeBalls_ && lastProbes_) s.probeAtlas = lastProbes_.get();
     if (doc_.primsShown())
         for (const MathPrim& p : doc_.prims()) s.prims.push_back({p, doc_.primSelection().count(p.id) > 0});
     if (doc_.propsShown()) for (const Prop& p : doc_.props()) {
@@ -727,6 +745,7 @@ void Editor::drawToolsPanel() {
         toolButton(&terrainTool_, "Shift+G");
         toolButton(&lightTool_, "Shift+L");
         toolButton(&cameraTool_, "Shift+K");
+        toolButton(&probeTool_, "Shift+E");
         toolButton(&primTool_, "Shift+M");
     }
     ImGui::End();

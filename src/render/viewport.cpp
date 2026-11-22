@@ -6,6 +6,9 @@
 #include "render/lighting.hpp"
 #include "render/mathprim_render.hpp"
 #include "render/model_library.hpp"
+#include "render/probes.hpp"
+#include "core/material.hpp"
+#include <cctype>
 #include <algorithm>
 #include <cmath>
 
@@ -31,6 +34,8 @@ const Color kPrimCut  {255, 150,  80, 255};
 const Color kPrimKeep { 90, 220, 200, 255};
 const Color kPropLine { 130, 225, 140, 255};
 const Color kDecalLine { 235, 150, 225, 255}; // decals in 2D (v0.12.5)
+const Color kProbe     { 150, 175, 200, 255}; // reflection probes (v0.12.6): a grey-blue ball
+const Color kProbeShine{ 240, 248, 255, 255};
 const Color kPropMissing {255, 170,  60, 255};
 
 const Color kBg3D      { 22,  22,  26, 255};
@@ -322,13 +327,43 @@ int Viewport::axD() const {
 const char* Viewport::axisU() const { static const char* n[] = {"X", "Y", "Z"}; return n[axU()]; }
 const char* Viewport::axisV() const { static const char* n[] = {"X", "Y", "Z"}; return n[axV()]; }
 
+namespace {
+// A 16-bit float colour target with a depth buffer (reflection probes, v0.12.6).
+RenderTexture2D floatTarget(int w, int h) {
+    RenderTexture2D t{};
+    t.id = rlLoadFramebuffer();
+    if (!t.id) return t;
+    rlEnableFramebuffer(t.id);
+    t.texture.id = rlLoadTexture(nullptr, w, h, PIXELFORMAT_UNCOMPRESSED_R16G16B16A16, 1);
+    t.texture.width = w;
+    t.texture.height = h;
+    t.texture.format = PIXELFORMAT_UNCOMPRESSED_R16G16B16A16;
+    t.texture.mipmaps = 1;
+    t.depth.id = rlLoadTextureDepth(w, h, true);
+    t.depth.width = w;
+    t.depth.height = h;
+    t.depth.format = 19; // DEPTH_COMPONENT_24BIT (as raylib's own render textures)
+    t.depth.mipmaps = 1;
+    rlFramebufferAttach(t.id, t.texture.id, RL_ATTACHMENT_COLOR_CHANNEL0, RL_ATTACHMENT_TEXTURE2D, 0);
+    rlFramebufferAttach(t.id, t.depth.id, RL_ATTACHMENT_DEPTH, RL_ATTACHMENT_RENDERBUFFER, 0);
+    const bool ok = rlFramebufferComplete(t.id);
+    rlDisableFramebuffer();
+    if (!ok || !t.texture.id) {
+        UnloadRenderTexture(t);
+        return RenderTexture2D{};
+    }
+    return t;
+}
+} // namespace
+
 void Viewport::resize(int w, int h, float scale) {
     w = std::max(w, 1);
     h = std::max(h, 1);
     if (scale <= 0) scale = 1;
     if (w == w_ && h == h_ && scale == scale_ && rt_.id) return;
     if (rt_.id) UnloadRenderTexture(rt_);
-    rt_ = LoadRenderTexture((int)std::lround(w * scale), (int)std::lround(h * scale));
+    rt_ = float_ ? floatTarget((int)std::lround(w * scale), (int)std::lround(h * scale))
+                 : LoadRenderTexture((int)std::lround(w * scale), (int)std::lround(h * scale));
     SetTextureFilter(rt_.texture, TEXTURE_FILTER_POINT);
     w_ = w;
     h_ = h;
@@ -607,6 +642,20 @@ void Viewport::render2D(const Grid& grid, const Scene& scene) {
         }
     }
 
+    // ---- reflection probes (v0.12.6): a small ball
+    {
+        auto drawProbe = [&](const Probe& r, bool sel, bool pending) {
+            const Vector2 m = phys(r.pos[U], r.pos[V]);
+            const float f = (float)(sel || pending ? 2 * P : P);
+            DrawCircleV(m, (float)(5 * P) + f, pending ? kPreview : sel ? kSelected : BLACK);
+            DrawCircleV(m, (float)(5 * P), kProbe);
+            DrawCircleV({m.x - (float)(1.5 * P), m.y - (float)(1.5 * P)}, (float)(1.5 * P), kProbeShine);
+        };
+        for (const auto& sr : scene.probes) if (!sr.selected) drawProbe(sr.probe, false, false);
+        for (const auto& sr : scene.probes) if (sr.selected) drawProbe(sr.probe, true, false);
+        if (scene.pendingProbe) drawProbe(*scene.pendingProbe, false, true);
+    }
+
     // ---- vertex tool corners: white, selected red (drawn on top); terrain points
     //      smaller and blue under them
     {
@@ -766,7 +815,12 @@ bool Viewport::project(const Vec3& p, Vector2& out) const {
 void Viewport::render3D(const Grid& grid, const Scene& scene) {
     auto byte = [](double v) { return (unsigned char)std::clamp((int)std::lround(v), 0, 255); };
     const Color fogCol{byte(scene.fogColor.x), byte(scene.fogColor.y), byte(scene.fogColor.z), 255};
-    ClearBackground(scene.fog ? fogCol : kBg3D);
+    if (scene.linearOut) { // a probe's picture: the background in linear light too
+        const Color c = scene.fog ? fogCol : kBg3D;
+        auto lin = [](unsigned char v) { return (unsigned char)std::lround(std::pow(v / 255.0, 2.2) * 255); };
+        ClearBackground({lin(c.r), lin(c.g), lin(c.b), 255});
+    } else
+        ClearBackground(scene.fog ? fogCol : kBg3D);
     // Through a camera object: its own near / far.
     if (lens_) rlSetClipPlanes(lens_->nearDist, lens_->farDist);
     else rlSetClipPlanes(2.0, 200000.0);
@@ -815,7 +869,7 @@ void Viewport::render3D(const Grid& grid, const Scene& scene) {
         // render's exposure too, as everything else lit by the bake.
         static Shader skyExp{};
         static bool skyExpTried = false;
-        const bool exposed = lens_ && scene.baked && scene.exposure != 1.0f;
+        const bool exposed = lens_ && scene.baked && (scene.exposure != 1.0f || scene.linearOut);
         if (exposed && !skyExpTried) {
             skyExpTried = true;
             skyExp = LoadShaderFromMemory(nullptr, R"(#version 330
@@ -824,11 +878,12 @@ in vec4 fragColor;
 uniform sampler2D texture0;
 uniform vec4 colDiffuse;
 uniform float exposure;
+uniform int linearOut;      // a probe's picture: linear light (v0.12.6)
 out vec4 finalColor;
 void main() {
     vec4 c = texture(texture0, fragTexCoord) * colDiffuse * fragColor;
     vec3 lin = pow(c.rgb, vec3(2.2)) * exposure;
-    finalColor = vec4(pow(lin, vec3(1.0 / 2.2)), c.a);
+    finalColor = vec4(linearOut == 1 ? lin : pow(lin, vec3(1.0 / 2.2)), c.a);
 }
 )");
             if (skyExp.id == rlGetShaderIdDefault()) skyExp.id = 0;
@@ -837,6 +892,8 @@ void main() {
         if (useExp) {
             const float e = scene.exposure;
             SetShaderValue(skyExp, GetShaderLocation(skyExp, "exposure"), &e, SHADER_UNIFORM_FLOAT);
+            const int lo = scene.linearOut ? 1 : 0;
+            SetShaderValue(skyExp, GetShaderLocation(skyExp, "linearOut"), &lo, SHADER_UNIFORM_INT);
             BeginShaderMode(skyExp);
         }
         const int texRows = std::max(4, (int)std::lround(NV * cover));
@@ -885,6 +942,8 @@ void main() {
     bctx.skyBelow = scene.skyBelow;
     bctx.skyFlat = {std::pow(scene.ambient.x / 255.0, 2.2), std::pow(scene.ambient.y / 255.0, 2.2), std::pow(scene.ambient.z / 255.0, 2.2)};
     bctx.problems = scene.problems;
+    bctx.probes = scene.reflections;
+    bctx.linearOut = scene.linearOut;
     bctx.textures = scene.textures;
     const bool bakedBrushes = lens_ && scene.baked && scene.textures && drawBakedBrushes(scene.brushes, *scene.baked, *scene.textures, bctx);
     // Fog: everything solid from here on is drawn through the fog shader.
@@ -1096,6 +1155,7 @@ void main() {
         if (lens_ && scene.baked) {
             ctx.baked = scene.baked;
             ctx.exposure = scene.exposure;
+            ctx.linearOut = scene.linearOut;
         }
         std::vector<MathPrim> ps;
         for (const auto& sp : scene.prims) ps.push_back(sp.prim);
@@ -1170,6 +1230,10 @@ void main() {
                     rlEnd();
                 }
         rlDrawRenderBatchActive();
+    }
+    if (!lens_) {
+        drawProbeUsage(scene);
+        drawProbeBalls(scene, {eye.x, eye.y, eye.z});
     }
     if (lens_) { // a picture: none of the editor's boxes, outlines, markers or labels
         rlDrawRenderBatchActive();
@@ -1343,6 +1407,18 @@ void main() {
     };
     for (const auto& sc : scene.cameras) cameraMarker3D(sc.cam, sc.selected ? kSelected : BLACK, sc.selected ? 2 * P : P);
     if (scene.pendingCamera) cameraMarker3D(*scene.pendingCamera, kPreview, 2 * P);
+    // Reflection probes (v0.12.6): a small ball, as Hammer's env_cubemap sphere.
+    auto probeMarker3D = [&](const Probe& r, Color frame, float f) {
+        Vector2 c;
+        if (!worldToLocal3D(r.pos, c)) return;
+        c.x *= P;
+        c.y *= P;
+        DrawCircleV(c, 5 * P + f, frame);
+        DrawCircleV(c, 5 * P, kProbe);
+        DrawCircleV({c.x - 1.5f * P, c.y - 1.5f * P}, 1.5f * P, kProbeShine);
+    };
+    for (const auto& sr : scene.probes) probeMarker3D(sr.probe, sr.selected ? kSelected : BLACK, sr.selected ? 2 * P : P);
+    if (scene.pendingProbe) probeMarker3D(*scene.pendingProbe, kPreview, 2 * P);
     for (const Scene::PrimGizmo& gz : scene.gizmos)
         for (const auto& [pos, ax] : gz.handles) {
             Vector2 c;
@@ -1387,6 +1463,225 @@ void main() {
             DrawRectangleRec({std::floor(c.x - hs), std::floor(c.y - hs), 2 * hs + 1, 2 * hs + 1},
                              h.selected ? kSelected : kTerrainPoint);
         }
+}
+
+// ------------------------------------------------------------------ reflection probes (v0.12.6)
+
+namespace {
+bool shinyMaterial(const TextureLibrary* lib, const std::string& name) {
+    if (!lib) return false;
+    const MaterialIndex::Entry* e = lib->material(name);
+    if (!e) return false;
+    std::string v = e->mat.str("$envmap");
+    for (char& c : v) c = (char)std::tolower((unsigned char)c);
+    return v == "env_cubemap";
+}
+
+struct ProbeUsageShader {
+    Shader sh{};
+    bool tried = false, ok = false;
+};
+
+const char* kUsageVS = R"(#version 330
+in vec3 vertexPosition;
+in vec4 vertexColor;
+uniform mat4 mvp;
+out vec3 wp;
+out vec3 nrm;
+void main() {
+    wp = vertexPosition;
+    nrm = vertexColor.rgb * 2.0 - 1.0;
+    gl_Position = mvp * vec4(vertexPosition, 1.0);
+}
+)";
+
+// The weight of probe `chosen` at this point, as core/probe.hpp's probeWeights.
+const char* kUsageFS = R"(#version 330
+in vec3 wp;
+in vec3 nrm;
+uniform vec3 probes[128];
+uniform int count;
+uniform int chosen;
+out vec4 finalColor;
+void main() {
+    float w[5];
+    int id[5];
+    for (int k = 0; k < 5; ++k) { w[k] = 0.0; id[k] = -1; }
+    vec3 n = normalize(nrm);
+    for (int i = 0; i < count; ++i) {
+        vec3 v = probes[i] - wp;
+        float wi = 1.0 / (dot(v, v) + 256.0);
+        if (dot(v, n) < 0.0) wi *= 0.05;
+        for (int k = 0; k < 5; ++k)
+            if (wi > w[k]) {
+                for (int m = 4; m > k; --m) { w[m] = w[m - 1]; id[m] = id[m - 1]; }
+                w[k] = wi;
+                id[k] = i;
+                break;
+            }
+    }
+    float fifth = id[4] >= 0 ? w[4] : 0.0, sum = 0.0, mine = 0.0;
+    int cnt = 0;
+    for (int k = 0; k < 4; ++k) {
+        if (id[k] < 0) continue;
+        sum += w[k] - fifth;
+        ++cnt;
+        if (id[k] == chosen) mine = w[k] - fifth;
+    }
+    float share = sum > 1e-30 ? mine / sum : 0.0;
+    if (sum <= 1e-30) for (int k = 0; k < 4; ++k) if (id[k] == chosen) share = 1.0 / float(max(cnt, 1));
+    if (share <= 0.001) discard;
+    finalColor = vec4(0.25, 0.7, 1.0, 0.65 * share);
+}
+)";
+
+const char* kBallFS = R"(#version 330
+in vec3 wp;
+in vec3 nrm;
+uniform sampler2D atlas;
+uniform vec2 atlasSize;
+uniform vec4 tile;
+uniform vec3 center;
+uniform vec3 eye;
+out vec4 finalColor;
+%PROBELOOK%
+void main() {
+    vec3 N = normalize(wp - center);
+    vec3 R = reflect(normalize(wp - eye), N);
+    vec3 c = clamp(probeLook(atlas, atlasSize, tile, R, 0.0), 0.0, 1.0);
+    c = mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c));
+    finalColor = vec4(c, 1.0);
+}
+)";
+
+Shader& usageShader(bool ball) {
+    static ProbeUsageShader s[2];
+    ProbeUsageShader& u = s[ball ? 1 : 0];
+    if (!u.tried) {
+        u.tried = true;
+        std::string fs = ball ? kBallFS : kUsageFS;
+        const size_t at = fs.find("%PROBELOOK%");
+        if (at != std::string::npos) fs.replace(at, 11, probeLookGlsl());
+        u.sh = LoadShaderFromMemory(kUsageVS, fs.c_str());
+        u.ok = u.sh.id != 0 && u.sh.id != rlGetShaderIdDefault();
+        if (!u.ok) u.sh = Shader{};
+    }
+    return u.sh;
+}
+} // namespace
+
+void Viewport::drawProbeUsage(const Scene& scene) {
+    if (scene.probeUsage < 0 || scene.probeUsage >= (int)scene.probes.size()) return;
+    Shader& sh = usageShader(false);
+    if (!sh.id) return;
+    // Up to 128 probes reach the shader: the chosen one and the ones nearest to it.
+    std::vector<const Probe*> ps;
+    for (const auto& sp : scene.probes) ps.push_back(&sp.probe);
+    const Probe* chosen = ps[scene.probeUsage];
+    std::stable_sort(ps.begin(), ps.end(), [&](const Probe* a, const Probe* b) {
+        return length(a->pos - chosen->pos) < length(b->pos - chosen->pos);
+    });
+    if (ps.size() > 128) ps.resize(128);
+    float pos[128 * 3] = {};
+    int chosenAt = 0;
+    for (size_t i = 0; i < ps.size(); ++i) {
+        pos[3 * i] = (float)ps[i]->pos.x;
+        pos[3 * i + 1] = (float)ps[i]->pos.y;
+        pos[3 * i + 2] = (float)ps[i]->pos.z;
+        if (ps[i] == chosen) chosenAt = (int)i;
+    }
+    rlDrawRenderBatchActive();
+    BeginShaderMode(sh);
+    SetShaderValueV(sh, GetShaderLocation(sh, "probes"), pos, SHADER_UNIFORM_VEC3, (int)ps.size());
+    const int count = (int)ps.size();
+    SetShaderValue(sh, GetShaderLocation(sh, "count"), &count, SHADER_UNIFORM_INT);
+    SetShaderValue(sh, GetShaderLocation(sh, "chosen"), &chosenAt, SHADER_UNIFORM_INT);
+    rlDisableDepthMask();
+    auto nb = [](double v) { return (unsigned char)std::clamp((int)std::lround((v * 0.5 + 0.5) * 255), 0, 255); };
+    auto vert = [&](const Vec3& p, const Vec3& n) {
+        rlColor4ub(nb(n.x), nb(n.y), nb(n.z), 255);
+        const Vec3 q = p + n * 0.2; // just off the surface
+        rlVertex3f((float)q.x, (float)q.y, (float)q.z);
+    };
+    const TextureLibrary* lib = scene.probeMaterials;
+    for (const SceneBrush& b : scene.brushes) {
+        if (scene.hidden.count(b.id)) continue;
+        const size_t plain = b.terrain ? b.terrainFirst : b.polys.size();
+        for (size_t pi = 0; pi < plain; ++pi) {
+            const Polygon& p = b.polys[pi];
+            if (p.face < 0 || p.face >= (int)b.faces.size() || !shinyMaterial(lib, b.faces[p.face].texture)) continue;
+            for (size_t i = 1; i + 1 < p.verts.size(); ++i) {
+                rlCheckRenderBatchLimit(3);
+                rlBegin(RL_TRIANGLES);
+                vert(p.verts[0], p.normal);
+                vert(p.verts[i], p.normal);
+                vert(p.verts[i + 1], p.normal);
+                rlEnd();
+            }
+        }
+        if (!b.terrain) continue;
+        bool shiny = shinyMaterial(lib, b.faces[b.terrain->face].texture);
+        for (const auto& l : b.layers) shiny = shiny || shinyMaterial(lib, l.texture);
+        if (!shiny) continue;
+        for (size_t c = 0; c + b.terrainFirst < b.polys.size(); ++c) {
+            const Polygon& p = b.polys[b.terrainFirst + c];
+            rlCheckRenderBatchLimit(6);
+            rlBegin(RL_TRIANGLES);
+            for (int k : {0, 1, 2, 0, 2, 3}) vert(p.verts[k], b.cellNormals[4 * c + k]);
+            rlEnd();
+        }
+    }
+    rlDrawRenderBatchActive();
+    rlEnableDepthMask();
+    EndShaderMode();
+}
+
+void Viewport::drawProbeBalls(const Scene& scene, const Vec3& cam) {
+    const ProbeAtlas* a = scene.probeAtlas;
+    if (!a || !a->tex) return;
+    Shader& sh = usageShader(true);
+    if (!sh.id) return;
+    constexpr double R = 16; // cm, about Hammer's env_cubemap sphere
+    constexpr int NU = 24, NV = 12;
+    rlDrawRenderBatchActive();
+    rlDisableBackfaceCulling();
+    BeginShaderMode(sh);
+    const float as[2] = {(float)a->w, (float)a->h};
+    SetShaderValue(sh, GetShaderLocation(sh, "atlasSize"), as, SHADER_UNIFORM_VEC2);
+    const float e[3] = {(float)cam.x, (float)cam.y, (float)cam.z};
+    SetShaderValue(sh, GetShaderLocation(sh, "eye"), e, SHADER_UNIFORM_VEC3);
+    const int unit = 1;
+    SetShaderValue(sh, GetShaderLocation(sh, "atlas"), &unit, SHADER_UNIFORM_INT);
+    for (const ProbeAtlas::Slot& s : a->slots) {
+        const float tile[4] = {(float)s.x, (float)s.y, (float)s.side, (float)s.slot};
+        SetShaderValue(sh, GetShaderLocation(sh, "tile"), tile, SHADER_UNIFORM_VEC4);
+        const float c[3] = {(float)s.pos.x, (float)s.pos.y, (float)s.pos.z};
+        SetShaderValue(sh, GetShaderLocation(sh, "center"), c, SHADER_UNIFORM_VEC3);
+        rlActiveTextureSlot(unit);
+        rlEnableTexture(a->tex);
+        rlActiveTextureSlot(0);
+        for (int j = 0; j < NV; ++j) {
+            rlCheckRenderBatchLimit(NU * 6);
+            rlBegin(RL_TRIANGLES);
+            rlColor4ub(255, 255, 255, 255);
+            for (int i = 0; i < NU; ++i) {
+                auto pt = [&](int ii, int jj) {
+                    const double lon = 2 * 3.14159265358979 * ii / NU, lat = 3.14159265358979 * (0.5 - (double)jj / NV);
+                    const Vec3 p = s.pos + Vec3{std::cos(lat) * std::cos(lon), std::cos(lat) * std::sin(lon), std::sin(lat)} * R;
+                    rlVertex3f((float)p.x, (float)p.y, (float)p.z);
+                };
+                pt(i, j); pt(i, j + 1); pt(i + 1, j + 1);
+                pt(i, j); pt(i + 1, j + 1); pt(i + 1, j);
+            }
+            rlEnd();
+        }
+        rlDrawRenderBatchActive();
+    }
+    rlActiveTextureSlot(unit);
+    rlDisableTexture();
+    rlActiveTextureSlot(0);
+    EndShaderMode();
+    rlEnableBackfaceCulling();
 }
 
 void Viewport::resetToOrigin() {

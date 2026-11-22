@@ -11,7 +11,9 @@
 //   vec3 bakedLight()  linear light from the bake (lightmap, prop vertex light, or a
 //                      Source model's ambient cube + 2 lights)
 //   vec3 worldPos(), worldNormal() (unit, toward the viewer), eyeVector() (unit, to the eye)
-//   vec3 envmap(vec3 dir)  the reflection (linear): the map's sky (cheap chrome)
+//   vec3 envmap(vec3 dir)  the reflection (linear): with `$envmap env_cubemap` and probes in
+//                      the map, its 4 nearest reflection probes blended (v0.12.6); else
+//                      the map's sky (cheap chrome)
 //   vec3 toLinear(vec3), toSrgb(vec3), float luminance(vec3)
 //   and each setting of its header as a uniform: "$detailscale" -> u_detailscale
 //   (texture: sampler2D u_x + int u_x_set; float; int / bool: int; color: vec3;
@@ -26,6 +28,9 @@
 #include <vector>
 
 namespace scal {
+
+// Texture units of the reflection probes (v0.12.6); material textures stay below them.
+constexpr int kProbeTexUnit = 14, kProbeDataUnit = 15;
 
 class TextureLibrary;
 

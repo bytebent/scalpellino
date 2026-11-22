@@ -300,6 +300,30 @@ bool propFromKeys(const KeyValues& kv, Prop& p) {
     return true;
 }
 
+// A reflection probe (v0.12.6) as Hammer's env_cubemap: origin and cubemapsize (0 =
+// default 32 a side, n = 2^(n-1)); other keys (Hammer's "sides"...) kept as they are.
+KeyValues probeKeys(const Probe& p) {
+    KeyValues kv;
+    kv.emplace_back("classname", "env_cubemap");
+    kv.emplace_back("origin", vec(p.pos));
+    kv.emplace_back("cubemapsize", std::to_string(p.size));
+    for (const auto& k : p.otherKeys) kv.push_back(k);
+    return kv;
+}
+
+bool probeFromKeys(const KeyValues& kv, Probe& p) {
+    bool ours = false;
+    for (const auto& [k, v] : kv) if (k == "classname" && v == "env_cubemap") ours = true;
+    if (!ours) return false;
+    for (const auto& [k, v] : kv) {
+        if (k == "classname") continue;
+        if (k == "origin") readVec(v, p.pos);
+        else if (k == "cubemapsize") p.size = std::clamp((int)std::lround(numOr(v, 0)), 0, kProbeMaxSize);
+        else p.otherKeys.emplace_back(k, v);
+    }
+    return true;
+}
+
 bool cameraFromKeys(const KeyValues& kv, Camera& c) {
     bool ours = false;
     for (const auto& [k, v] : kv) if (k == "classname" && v == "scal_camera") ours = true;
@@ -463,6 +487,11 @@ std::string writeMap(const Document& doc) {
     for (const Camera& c : doc.cameras()) {
         o << "// entity " << e++ << "\n{\n";
         writeKeys(o, cameraKeys(c));
+        o << "}\n";
+    }
+    for (const Probe& p : doc.probes()) {
+        o << "// entity " << e++ << "\n{\n";
+        writeKeys(o, probeKeys(p));
         o << "}\n";
     }
     for (const RawEntity& ent : doc.otherEntities) {
@@ -855,6 +884,8 @@ MapReadResult readMap(const std::string& text, Document& doc) {
                 extra.props.push_back(pp);
             } else if (Camera cam; brushes.empty() && cameraFromKeys(keys, cam)) {
                 extra.cameras.push_back(cam);
+            } else if (Probe pr; brushes.empty() && probeFromKeys(keys, pr)) {
+                extra.probes.push_back(pr);
             } else {
                 others.push_back({std::move(keys), std::move(brushes)});
             }

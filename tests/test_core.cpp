@@ -4419,6 +4419,106 @@ static void testDecals() {
     }
 }
 
+static void testProbes() {
+    // Hammer's cubemapsize: 0 = 32, n = 2^(n-1); the render quality scales it
+    CHECK(probeSide(0) == 32 && probeSide(1) == 1 && probeSide(6) == 32 && probeSide(9) == 256 && probeSide(20) == 256);
+    CHECK(probeSizeLabel(0) == "Default (32 x 32)" && probeSizeLabel(8) == "128 x 128");
+    CHECK(probeSideForQuality(0, 0) == 16 && probeSideForQuality(0, 1) == 32 && probeSideForQuality(0, 2) == 64);
+    CHECK(probeSideForQuality(9, 2) == 512 && probeSideForQuality(1, 1) == 4);
+    // placing: 170 cm above a floor, 81 cm out from a wall or a ceiling
+    CHECK(nearV(probePlacement({10, 20, 0}, {0, 0, 1}), {10, 20, 170}));
+    CHECK(nearV(probePlacement({0, 0, 50}, {1, 0, 0}), {81.28, 0, 50}));
+    CHECK(nearV(probePlacement({0, 0, 300}, {0, 0, -1}), {0, 0, 300 - 81.28}));
+    // cube faces: every direction comes back from its face and place
+    for (int f = 0; f < 6; ++f)
+        for (double x : {-0.9, -0.2, 0.0, 0.5, 0.99})
+            for (double y : {-0.7, 0.0, 0.3, 0.95}) {
+                const Vec3 d = cubeDir(f, x, y);
+                double x2 = 0, y2 = 0;
+                CHECK(cubeFace(d, x2, y2) == f && near(x, x2, 1e-9) && near(y, y2, 1e-9));
+            }
+    {
+        double x, y;
+        CHECK(cubeFace({1, 0, 0}, x, y) == 0 && cubeFace({0, -1, 0}, x, y) == 3 && cubeFace({0, 0, -2}, x, y) == 5);
+    }
+    // blending: one probe = all of it; two: the nearer counts more; weights add up to 1
+    std::vector<Vec3> ps{{0, 0, 100}};
+    auto w = probeWeights(ps, {0, 0, 0}, {0, 0, 1});
+    CHECK(w.size() == 1 && near(w[0].weight, 1));
+    ps.push_back({1000, 0, 100});
+    w = probeWeights(ps, {0, 0, 0}, {0, 0, 1});
+    CHECK(w.size() == 2 && w[0].index == 0 && w[0].weight > 0.95 && near(w[0].weight + w[1].weight, 1));
+    // halfway between two probes: an even share
+    w = probeWeights(ps, {500, 0, 0}, {0, 0, 1});
+    CHECK(near(w[0].weight, 0.5, 1e-9) && near(w[1].weight, 0.5, 1e-9));
+    // a probe behind the surface counts much less (Source prefers probes in front of a face)
+    std::vector<Vec3> two{{0, 0, 100}, {0, 0, -100}};
+    w = probeWeights(two, {0, 0, 0}, {0, 0, 1});
+    CHECK(w[0].index == 0 && near(w[0].weight, 1 / 1.05, 1e-9));
+    // at most 4; the 5th's weight is taken off, so the order changes smoothly
+    std::vector<Vec3> six;
+    for (int i = 0; i < 6; ++i) six.push_back({100.0 * (i + 1), 0, 0});
+    w = probeWeights(six, {0, 0, 0}, {1, 0, 0});
+    double sum = 0;
+    for (const auto& x : w) sum += x.weight;
+    CHECK(w.size() == 4 && near(sum, 1) && w[3].index == 3 && w[3].weight > 0);
+    // moving along the line, the 4th probe's weight goes to 0 just as the 5th takes over
+    {
+        std::vector<Vec3> line{{0, 0, 0}, {100, 0, 0}, {200, 0, 0}, {300, 0, 0}, {400, 0, 0}};
+        auto weightOf = [&](const std::vector<ProbeWeight>& ws, size_t i) {
+            for (const auto& x : ws) if (x.index == i) return x.weight;
+            return 0.0;
+        };
+        // at x = 200 probes 0 and 4 are as far: neither counts (each is the 5th)
+        const auto mid = probeWeights(line, {200, 0, 0}, {0, 1, 0});
+        CHECK(near(weightOf(mid, 0), 0, 1e-12) && near(weightOf(mid, 4), 0, 1e-12));
+        const auto a = probeWeights(line, {199.9, 0, 0}, {0, 1, 0}), b = probeWeights(line, {200.1, 0, 0}, {0, 1, 0});
+        CHECK(weightOf(a, 0) < 1e-4 && weightOf(b, 4) < 1e-4 && near(weightOf(a, 2), weightOf(b, 2), 1e-4));
+    }
+
+    // the document: add, select, move, delete, undo
+    Document doc;
+    Probe p;
+    p.pos = {0, 0, 170};
+    doc.apply(doc.makeAddProbes({p}, "Create reflection probe"));
+    CHECK(doc.probes().size() == 1 && doc.probeSelection().size() == 1 && doc.probes()[0].id != 0);
+    Probe q = doc.probes()[0];
+    q.pos = {64, 0, 170};
+    q.size = 8;
+    doc.apply(doc.makeModifyProbes({q}, "Move reflection probe"));
+    CHECK(doc.probes()[0].pos == Vec3(64, 0, 170) && doc.probes()[0].size == 8);
+    doc.undo();
+    CHECK(doc.probes()[0].pos == Vec3(0, 0, 170) && doc.probes()[0].size == 0);
+    doc.redo();
+    Command del = doc.makeDelete({}, "Delete reflection probe");
+    doc.addProbeDeletes(del, doc.probeSelection());
+    doc.apply(std::move(del));
+    CHECK(doc.probes().empty() && doc.probeSelection().empty());
+    doc.undo();
+    CHECK(doc.probes().size() == 1 && doc.probeSelection().size() == 1);
+    // a new light (or primitive, prop, camera, decal) drops the probe selection
+    doc.apply(doc.makeAddLights({Light{}}, "Create light"));
+    CHECK(doc.probeSelection().empty() && doc.lightSelection().size() == 1);
+    CHECK(doc.dirty());
+
+    // the file: Hammer's env_cubemap, unknown keys kept
+    Probe r = doc.probes()[0];
+    r.otherKeys.emplace_back("sides", "12 13");
+    doc.apply(doc.makeModifyProbes({r}, "Key"));
+    const std::string text = writeMap(doc);
+    CHECK(text.find("\"classname\" \"env_cubemap\"") != std::string::npos);
+    CHECK(text.find("\"cubemapsize\" \"8\"") != std::string::npos);
+    Document back;
+    CHECK(readMap(text, back).ok);
+    CHECK(back.probes().size() == 1 && back.probes()[0].pos == Vec3(64, 0, 170) && back.probes()[0].size == 8);
+    CHECK(back.probes()[0].otherKeys.size() == 1 && back.probes()[0].otherKeys[0].second == "12 13");
+    CHECK(back.otherEntities.empty());
+    // a bad size is clamped (Hammer's list ends at 256)
+    Document bad;
+    CHECK(readMap("{\n\"classname\" \"worldspawn\"\n}\n{\n\"classname\" \"env_cubemap\"\n\"origin\" \"1 2 3\"\n\"cubemapsize\" \"40\"\n}\n", bad).ok);
+    CHECK(bad.probes().size() == 1 && bad.probes()[0].size == 9 && bad.probes()[0].pos == Vec3(1, 2, 3));
+}
+
 static void testBumpBake() {
     // A floor with a bump-mapped material, a slanted sun from +x: the 3 bump maps hold the
     // light along Source's 3 directions; the flat map is the same as without the bump map.
@@ -4763,6 +4863,7 @@ int main() {
     testBakeMaterials();
     testBumpBake();
     testDecals();
+    testProbes();
     testTracer();
     testMapQuakeFormat();
     testMapErrors();

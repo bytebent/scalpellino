@@ -78,7 +78,7 @@ void DecalTool::press(ToolEnv& env, const Pointer& p) {
         env.doc.setPropSelection({});
         env.doc.setPrimSelection({});
         env.doc.setLightSelection({});
-        env.doc.setCameraSelection({});
+        env.doc.setCameraSelection({}); env.doc.setProbeSelection({});
         env.doc.setSelection({});
     }
 }

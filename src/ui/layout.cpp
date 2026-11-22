@@ -45,6 +45,7 @@ MenuActions drawMenuBar(const MenuState& st) {
         if (ImGui::MenuItem("Terrain (sculpt, paint)", "Shift+G", st.terrainTool)) a.toolTerrain = true;
         if (ImGui::MenuItem("Light", "Shift+L", st.lightTool)) a.toolLight = true;
         if (ImGui::MenuItem("Camera", "Shift+K", st.cameraTool)) a.toolCamera = true;
+        if (ImGui::MenuItem("Reflection probe", "Shift+E", st.probeTool)) a.toolProbe = true;
         if (ImGui::MenuItem("Math primitive", "Shift+M", st.primTool)) a.toolPrim = true;
         if (ImGui::MenuItem("Props (models)", "Shift+P", st.propTool)) a.toolProp = true;
         if (ImGui::MenuItem("Decal", "Shift+D", st.decalTool)) a.toolDecal = true;
@@ -219,6 +220,12 @@ MenuActions drawMenuBar(const MenuState& st) {
         ImGui::TextDisabled("Camera tool: click to place, Return creates; lens,");
         ImGui::TextDisabled("picture size, aim at a typed point in Properties");
         ImGui::Separator();
+        if (ImGui::MenuItem("Reflection probe tool", "Shift+E", st.probeTool)) a.toolProbe = true;
+        if (ImGui::MenuItem("Create reflection probe", "Return", false, st.probePending)) a.createProbe = true;
+        ImGui::TextDisabled("Probe tool: click a floor (170 cm above it) or a wall in 3D,");
+        ImGui::TextDisabled("or a spot in 2D; Return creates. Renders build cubemaps from");
+        ImGui::TextDisabled("them; $envmap env_cubemap reflects the 4 nearest");
+        ImGui::Separator();
         if (ImGui::MenuItem("Environment (sky, ambient, fog)...")) a.environment = true;
         if (ImGui::MenuItem("Sky Lab...")) a.skyLab = true;
         if (ImGui::MenuItem("Rebake Sky Lab sky", nullptr, false, st.canRebakeSky)) a.rebakeSky = true;
@@ -237,8 +244,9 @@ MenuActions drawMenuBar(const MenuState& st) {
             static const char* q[] = {"Draft", "Normal", "High"};
             for (int i = 0; i < 3; ++i)
                 if (ImGui::MenuItem(q[i], nullptr, st.renderQuality == i)) a.renderQuality = i;
-            ImGui::TextDisabled("sets the anti-aliasing (Draft off, Normal 2x, High 3x);");
-            ImGui::TextDisabled("later also the baked light and reflections");
+            ImGui::TextDisabled("sets the anti-aliasing (Draft off, Normal 2x, High 3x),");
+            ImGui::TextDisabled("the baked light, and the reflection probes: Draft half");
+            ImGui::TextDisabled("their size and one pass, Normal as set, High double");
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("Anti-aliasing")) {
@@ -294,6 +302,14 @@ MenuActions drawMenuBar(const MenuState& st) {
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
             ImGui::SetTooltip("Each sample of the baked light grid as a small cube, coloured by the light from its 6 sides.\n"
                               "Made by a render or a Camera Preview Update.");
+        if (ImGui::MenuItem("3D view: reflection probes as mirror balls", nullptr, st.showProbeBalls, st.haveProbeBalls)) a.toggleProbeBalls = true;
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("Each reflection probe as a small mirror ball showing its last built picture.\n"
+                              "Made by a render or a Camera Preview Update.");
+        if (ImGui::MenuItem("3D view: where the selected probe reflects", nullptr, st.showProbeUsage)) a.toggleProbeUsage = true;
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Select a reflection probe: the shiny surfaces ($envmap env_cubemap) it shows on are tinted blue,\n"
+                              "stronger where it counts more (each point blends its 4 nearest probes).");
         if (ImGui::MenuItem("3D view: fog", nullptr, st.showFog)) a.toggleFog = true;
         if (ImGui::MenuItem("Scale figure (1.75 m)", nullptr, st.showFigure)) a.toggleFigure = true;
         ImGui::Separator();
@@ -362,6 +378,9 @@ void drawControlsWindow(bool* open) {
             {"Aim a spot or sun", "drag the rotation rings of the selected light (3D: X red, Y green, Z blue; 2D: the ring around the view's axis), 15 degree steps (Shift: freely); or type pitch / yaw"},
             {"Camera tool", "Shift+K (World menu): settings in Properties (lens in degrees or mm, presets, near / far, picture size, orthographic), click in a view to place, Return creates, Esc cancels. The first camera is the active one"},
             {"Select / move / turn cameras", "click a camera's marker (a diamond; any tool that selects); drag it in a 2D view; drag the rings (15 degree steps; Shift: freely), the yellow ring rolls it; or type pitch / yaw / roll in Properties; Delete removes, Cmd+D duplicates"},
+            {"Reflection probe tool", "Shift+E (World menu): click a floor in the 3D view (the probe goes 170 cm above it) or a wall (81 cm out from it), or a spot in a 2D view; Return creates, Esc cancels. Size (Hammer's cubemapsize) in Properties"},
+            {"Select / move reflection probes", "click a probe's marker (a small ball; any tool that selects); drag it in a 2D view or type its position in Properties; Delete removes, Cmd+D duplicates"},
+            {"Reflections from probes", "materials with $envmap env_cubemap reflect the 4 nearest probes, blended (renders and the Camera Preview build them: \"building cubemaps\"); other $envmap values, or no probes: the sky. View menu: probes as mirror balls, where the selected probe reflects"},
             {"Active camera", "the one Render and the Camera Preview use (white dot in its marker): tick 'active' in Properties, or World > Make selected camera active; only one at a time"},
             {"Camera Preview", "panel under Properties while the map has a camera: a draft render of the active camera's view (the map as it is, whatever the View menu shows); drawn only when you ask: Cmd+K, its Update button or Render > Update Camera Preview"},
             {"Render", "the Render button (left of the status bar), Render > Render... or Cmd+Shift+K: the active camera's picture at its size, saved in the Bottega's renders folder with its log; a terminal window shows the steps; Esc stops it"},

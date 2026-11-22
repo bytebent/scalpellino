@@ -69,6 +69,9 @@ void SelectTool::applyRect(ToolEnv& env) {
     std::set<CameraId> cs;
     for (const Camera& c : doc.cameras())
         if (inside(c.pos)) cs.insert(c.id);
+    std::set<ProbeId> rs;
+    for (const Probe& r : doc.probes())
+        if (inside(r.pos)) rs.insert(r.id);
     if (rectAdd_) {
         bs.insert(sel0_.begin(), sel0_.end());
         ps.insert(prim0_.begin(), prim0_.end());
@@ -76,6 +79,7 @@ void SelectTool::applyRect(ToolEnv& env) {
         ds.insert(decal0_.begin(), decal0_.end());
         ls.insert(light0_.begin(), light0_.end());
         cs.insert(camera0_.begin(), camera0_.end());
+        rs.insert(probe0_.begin(), probe0_.end());
     }
     doc.setSelection(bs);
     doc.setPrimSelection(ps);
@@ -83,6 +87,7 @@ void SelectTool::applyRect(ToolEnv& env) {
     doc.setDecalSelection(ds);
     doc.setLightSelection(ls);
     doc.setCameraSelection(cs);
+    doc.setProbeSelection(rs);
 }
 
 void SelectTool::press(ToolEnv& env, const Pointer& p) {
@@ -95,12 +100,13 @@ void SelectTool::press(ToolEnv& env, const Pointer& p) {
         decal0_ = doc.decalSelection();
         light0_ = doc.lightSelection();
         camera0_ = doc.cameraSelection();
+        probe0_ = doc.probeSelection();
     }
     if (lights_.press(env, p)) {
         if (!p.view->is2D() && !lights_.active()) beginRect(doc, p, env.cmd); // a click, not a handle or ring
         return;
     }
-    if (!env.cmd) { doc.setLightSelection({}); doc.setPrimSelection({}); doc.setPropSelection({}); doc.setDecalSelection({}); doc.setCameraSelection({}); } // a plain click elsewhere drops objects
+    if (!env.cmd) { doc.setLightSelection({}); doc.setPrimSelection({}); doc.setPropSelection({}); doc.setDecalSelection({}); doc.setCameraSelection({}); doc.setProbeSelection({}); } // a plain click elsewhere drops objects
     if (!p.view->is2D()) {
         const BrushId id = pick3D(doc, *p.view, p.local);
         std::set<BrushId> sel = doc.selection();
@@ -250,17 +256,18 @@ bool SelectTool::key(ToolEnv& env, int key) {
         doc.setDecalSelection(decal0_);
         doc.setLightSelection(light0_);
         doc.setCameraSelection(camera0_);
+        doc.setProbeSelection(probe0_);
         cancel();
         return true;
     }
     if (key == KEY_ESCAPE) {
         if (mode_ != Mode::Idle || lights_.active()) cancel();
-        else { doc.setSelection({}); doc.setLightSelection({}); doc.setPrimSelection({}); doc.setPropSelection({}); doc.setDecalSelection({}); doc.setCameraSelection({}); }
+        else { doc.setSelection({}); doc.setLightSelection({}); doc.setPrimSelection({}); doc.setPropSelection({}); doc.setDecalSelection({}); doc.setCameraSelection({}); doc.setProbeSelection({}); }
         return true;
     }
     if ((key == KEY_DELETE || key == KEY_BACKSPACE) &&
         (!doc.selection().empty() || !doc.lightSelection().empty() || !doc.primSelection().empty() || !doc.propSelection().empty() || !doc.decalSelection().empty() ||
-         !doc.cameraSelection().empty()) &&
+         !doc.cameraSelection().empty() || !doc.probeSelection().empty()) &&
         mode_ == Mode::Idle && !lights_.active()) {
         Command c = doc.makeDelete(doc.selection(), "Delete");
         doc.addLightDeletes(c, doc.lightSelection());
@@ -268,6 +275,7 @@ bool SelectTool::key(ToolEnv& env, int key) {
         doc.addPropDeletes(c, doc.propSelection());
         doc.addDecalDeletes(c, doc.decalSelection());
         doc.addCameraDeletes(c, doc.cameraSelection());
+        doc.addProbeDeletes(c, doc.probeSelection());
         doc.apply(std::move(c));
         return true;
     }

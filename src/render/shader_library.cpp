@@ -1,8 +1,10 @@
 #include "render/shader_library.hpp"
+#include "render/probes.hpp"
 #include "core/bottega.hpp"
 #include "render/texture_library.hpp"
 #include "rlgl.h"
 #include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <optional>
@@ -221,6 +223,12 @@ uniform int skyOn;
 uniform float skyCover;     // the part of the panorama's height it holds
 uniform vec3 skyBelow;      // 0..1, the plain colour below that
 uniform vec3 skyFlat;       // linear, no sky picture
+uniform int linearOut;      // building a reflection probe: linear light, no exposure (v0.12.6)
+uniform sampler2D probeTex; // reflection probes (v0.12.6): the pictures (render/probes.hpp)
+uniform sampler2D probeData; // ... their positions and tiles (2 texels each)
+uniform int probeCount;     // 0: shiny materials reflect the sky
+uniform vec2 probeAtlasSize;
+uniform int envProbes;      // this material's $envmap is env_cubemap (the probes)
 vec3 toLinear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c)); }
 vec3 toSrgb(vec3 l) { l = clamp(l, 0.0, 1.0); return mix(l * 12.92, 1.055 * pow(l, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), l)); }
 float luminance(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
@@ -284,13 +292,57 @@ float fogAmount(vec3 p) {
 }
 // The sky in direction d (the panorama as the 3D view draws it: u from the yaw, v from the
 // height, the middle column facing +X), linear.
-vec3 envmap(vec3 d) {
+vec3 skyEnvmap(vec3 d) {
     if (skyOn == 0) return skyFlat;
     d = normalize(d);
     float u = 0.5 - atan(d.y, d.x) / 6.28318531;
     float v = 0.5 - asin(clamp(d.z, -1.0, 1.0)) / 3.14159265;
     if (v > skyCover) return toLinear(skyBelow);
     return toLinear(texture(skyTex, vec2(u, v / max(skyCover, 0.01))).rgb);
+}
+)";
+
+// Reflection probes (v0.12.6): every pixel blends its 4 nearest probes as core/probe.hpp's
+// probeWeights (1 / (d^2 + 16^2), a probe behind the surface x 0.05, the 5th's weight taken off).
+const char* kProbeEnv = R"(
+vec3 probeEnv(vec3 d) {
+    vec3 dn = normalize(d);
+    float rate = max(length(dFdx(dn)), length(dFdy(dn)));
+    vec3 p = worldPos(), n = worldNormal();
+    float w[5];
+    int id[5];
+    for (int k = 0; k < 5; ++k) { w[k] = 0.0; id[k] = -1; }
+    for (int i = 0; i < probeCount; ++i) {
+        vec3 v = texelFetch(probeData, ivec2(0, i), 0).xyz - p;
+        float wi = 1.0 / (dot(v, v) + 256.0);
+        if (dot(v, n) < 0.0) wi *= 0.05;
+        for (int k = 0; k < 5; ++k)
+            if (wi > w[k]) {
+                for (int m = 4; m > k; --m) { w[m] = w[m - 1]; id[m] = id[m - 1]; }
+                w[k] = wi;
+                id[k] = i;
+                break;
+            }
+    }
+    float fifth = id[4] >= 0 ? w[4] : 0.0;
+    float sum = 0.0;
+    int cnt = 0;
+    vec3 c = vec3(0.0), even = vec3(0.0);
+    for (int k = 0; k < 4; ++k) {
+        if (id[k] < 0) continue;
+        vec3 s = probeLook(probeTex, probeAtlasSize, texelFetch(probeData, ivec2(1, id[k]), 0), dn, rate);
+        float wk = w[k] - fifth;
+        c += s * wk;
+        sum += wk;
+        even += s;
+        ++cnt;
+    }
+    if (sum <= 1e-30) return even / float(max(cnt, 1)); // as far as the 5th: an even share
+    return c / sum;
+}
+vec3 envmap(vec3 d) {
+    if (envProbes == 1 && probeCount > 0) return probeEnv(d);
+    return skyEnvmap(d);
 }
 )";
 
@@ -303,8 +355,14 @@ void main() {
     if (fogOn == 1) rgb = mix(rgb, vec3(0.5), fogAmount(worldPos()));
     finalColor = vec4(rgb, 1.0);
 #else
-    vec3 rgb = toSrgb(c.rgb * exposure);
-    if (fogOn == 1) rgb = mix(rgb, fogColor, fogAmount(worldPos()));
+    vec3 rgb;
+    if (linearOut == 1) { // a reflection probe's picture: linear light (fog mixed in linear)
+        rgb = c.rgb * exposure;
+        if (fogOn == 1) rgb = mix(rgb, toLinear(fogColor), fogAmount(worldPos()));
+    } else {
+        rgb = toSrgb(c.rgb * exposure);
+        if (fogOn == 1) rgb = mix(rgb, fogColor, fogAmount(worldPos()));
+    }
     finalColor = vec4(rgb, clamp(c.a, 0.0, 1.0) * layerAlpha());
 #endif
 }
@@ -417,7 +475,7 @@ ShaderLibrary::Program* ShaderLibrary::program(const std::string& name, ShaderGe
     const bool world = geom == ShaderGeometry::World;
     std::string fs0 = world ? kWorldFS : kModelFS;
     if (f->blend == "modulate") fs0.insert(fs0.find('\n') + 1, "#define BLEND_MODULATE\n");
-    const std::string fs = fs0 + kCommon + settingUniforms(*f) + "#line " +
+    const std::string fs = fs0 + kCommon + probeLookGlsl() + kProbeEnv + settingUniforms(*f) + "#line " +
                            std::to_string(f->bodyLine) + "\n" + f->body + "\n#line 100000\n" + kMain;
     // The compiler's complaint goes to raylib's log; keep it short for ours.
     p.shader = LoadShaderFromMemory(world ? kWorldVS : kModelVS, fs.c_str());
@@ -447,7 +505,7 @@ std::vector<std::string> ShaderLibrary::bind(Program& p, const Material* mat, co
         const std::string v = mat && mat->has(s.key) ? mat->str(s.key) : s.def;
         if (s.type == "texture") {
             int set = 0;
-            if (!v.empty() && unit < 16) {
+            if (!v.empty() && unit < kProbeTexUnit) { // 14 and 15: the reflection probes
                 const unsigned id = texture ? texture(v) : 0u;
                 if (id) {
                     rlActiveTextureSlot(unit);
@@ -478,6 +536,13 @@ std::vector<std::string> ShaderLibrary::bind(Program& p, const Material* mat, co
             const int set = v.empty() ? 0 : 1;
             SetShaderValue(p.shader, p.at(n + "_set"), &set, SHADER_UNIFORM_INT);
         }
+    }
+    // Reflection probes (v0.12.6): only $envmap env_cubemap reflects them (else the sky).
+    {
+        std::string e = mat && mat->has("$envmap") ? mat->str("$envmap") : "";
+        for (char& ch : e) ch = (char)std::tolower((unsigned char)ch);
+        const int on = e == "env_cubemap" ? 1 : 0;
+        SetShaderValue(p.shader, p.at("envProbes"), &on, SHADER_UNIFORM_INT);
     }
     rlActiveTextureSlot(0);
     boundUnits_ = unit - firstUnit;

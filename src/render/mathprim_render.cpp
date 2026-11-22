@@ -55,6 +55,7 @@ uniform float lmCell;
 uniform vec3 lmDims;      // cells per axis
 uniform vec3 lmLayout;    // slices per row, texture width, height
 uniform float exposure;
+uniform int linearOut;
 uniform vec3 ambient;
 uniform int lightCount;
 uniform vec4 lpos[16];    // xyz, w = kind (0 point, 1 spot, 2 sun)
@@ -540,6 +541,15 @@ void main() {
         vec3 lin = mix(base / 12.92, pow((base + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), base));
         vec3 o = clamp(lin * L * exposure, 0.0, 1.0);
         c = mix(o * 12.92, 1.055 * pow(o, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), o));
+        if (linearOut == 1) { // a reflection probe's picture (v0.12.6): linear, fog in linear
+            c = lin * L * exposure;
+            if (fogOn == 1) {
+                vec3 fl = mix(fogColor / 12.92, pow((fogColor + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), fogColor));
+                c = mix(c, fl, fogAmount(p));
+            }
+            finalColor = vec4(c, 1.0);
+            return;
+        }
     } else if (lightMode == 0) {
         float kk = 0.5 + 0.5 * max(0.0, dot(n, normalize(vec3(0.35, 0.55, 0.85))));
         if (n.z < -0.5) kk = 0.42;
@@ -638,6 +648,8 @@ void drawMathPrims3D(const std::vector<MathPrim>& prims, const PrimDrawContext& 
     {
         const float ex = ctx.exposure;
         SetShaderValue(S.sh, S.at("exposure"), &ex, SHADER_UNIFORM_FLOAT);
+        const int lo = ctx.linearOut ? 1 : 0;
+        SetShaderValue(S.sh, S.at("linearOut"), &lo, SHADER_UNIFORM_INT);
         const int unit = 5; // the lightmap's texture unit (texA..texD use 1..4)
         SetShaderValue(S.sh, S.at("lmTex"), &unit, SHADER_UNIFORM_INT);
     }

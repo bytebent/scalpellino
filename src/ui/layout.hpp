@@ -39,6 +39,8 @@ struct MenuState {
     bool decalTool = false, decalPending = false, decalsShown = true; // decals (v0.12.5)
     size_t decalsSelected = 0;
     bool cameraTool = false, cameraPending = false, cameraAiming = false;
+    bool probeTool = false, probePending = false;           // reflection probes (v0.12.6)
+    bool showProbeBalls = false, haveProbeBalls = false, showProbeUsage = false;
     size_t camerasSelected = 0;
     bool selectedCameraActive = false; // the one selected camera is the active one already
     bool hasCameras = false;
@@ -87,6 +89,7 @@ struct MenuActions {
     bool toolDecal = false, createDecal = false, decalDialog = false, decalForward = false, decalBack = false;
     bool decalPictureSize = false, toggleDecals = false;
     bool toolCamera = false, createCamera = false, activateCamera = false, aimCamera = false;
+    bool toolProbe = false, createProbe = false, toggleProbeBalls = false, toggleProbeUsage = false;
     bool updatePreview = false;
     bool render = false;      // Render... (Cmd+Shift+K)
     int renderQuality = -1;   // RenderQuality index

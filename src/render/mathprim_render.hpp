@@ -25,6 +25,7 @@ struct PrimDrawContext {
     double fogBase = 0, fogThickness = 0; // height fog (renders); thickness 0 = everywhere
     const BakedLight* baked = nullptr;    // renders: each object reads its 3D lightmap (v0.12.1)
     float exposure = 1;                   // with baked light: multiplier (2^stops)
+    bool linearOut = false;               // building a reflection probe: linear light (v0.12.6)
 };
 
 void drawMathPrims3D(const std::vector<MathPrim>& prims, const PrimDrawContext& ctx);

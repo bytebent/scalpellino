@@ -76,7 +76,7 @@ void CameraTool::press(ToolEnv& env, const Pointer& p) {
         for (int a = 0; a < 3; ++a) at[a] = env.grid.snapValue(h[a]);
     }
     pending = at;
-    doc.setCameraSelection({});
+    doc.setCameraSelection({}); doc.setProbeSelection({});
     doc.setLightSelection({});
     doc.setPrimSelection({});
     doc.setPropSelection({}); doc.setDecalSelection({});
@@ -115,7 +115,7 @@ bool CameraTool::key(ToolEnv& env, int key) {
         if (objects_.active()) objects_.cancel();
         else if (aiming_) aiming_ = false;
         else if (pending) pending.reset();
-        else env.doc.setCameraSelection({});
+        else { env.doc.setCameraSelection({}); env.doc.setProbeSelection({}); }
         message_.clear();
         return true;
     }

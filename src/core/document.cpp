@@ -195,6 +195,8 @@ Command Document::makeAddDecal(Decal d, BrushId on, const std::string& name) {
     c.propSelectionAfter = std::set<PropId>{};
     c.cameraSelectionBefore = cameraSelection_;
     c.cameraSelectionAfter = std::set<CameraId>{};
+    c.probeSelectionBefore = probeSelection_;
+    c.probeSelectionAfter = std::set<ProbeId>{};
     const Brush* b = find(on);
     if (!b) return c;
     d.id = newDecalId();
@@ -270,12 +272,14 @@ void Document::apply(Command cmd) {
     for (const PrimChange& c : cmd.primChanges) setPrim(c.id, c.after);
     for (const PropChange& c : cmd.propChanges) setProp(c.id, c.after);
     for (const CameraChange& c : cmd.cameraChanges) setCamera(c.id, c.after);
+    for (const ProbeChange& c : cmd.probeChanges) setProbe(c.id, c.after);
     if (cmd.envAfter) { env_ = *cmd.envAfter; touchLighting(); }
     selection_ = cmd.selectionAfter;
     if (cmd.lightSelectionAfter) lightSelection_ = *cmd.lightSelectionAfter;
     if (cmd.primSelectionAfter) primSelection_ = *cmd.primSelectionAfter;
     if (cmd.propSelectionAfter) propSelection_ = *cmd.propSelectionAfter;
     if (cmd.cameraSelectionAfter) cameraSelection_ = *cmd.cameraSelectionAfter;
+    if (cmd.probeSelectionAfter) probeSelection_ = *cmd.probeSelectionAfter;
     if (cmd.decalSelectionAfter) decalSelection_ = *cmd.decalSelectionAfter;
     pruneDecalSelection();
     if (!cmd.fileChanges.empty()) writeFiles(cmd.fileChanges, true);
@@ -320,6 +324,7 @@ std::size_t lightBytes(const Light& l) { return sizeof(Light) + keysBytes(l.othe
 std::size_t primBytes(const MathPrim& p) { return sizeof(MathPrim) + strBytes(p.texture) + keysBytes(p.otherKeys); }
 std::size_t propBytes(const Prop& p) { return sizeof(Prop) + strBytes(p.model) + keysBytes(p.otherKeys); }
 std::size_t cameraBytes(const Camera& c) { return sizeof(Camera) + strBytes(c.name) + keysBytes(c.otherKeys); }
+std::size_t probeBytes(const Probe& p) { return sizeof(Probe) + keysBytes(p.otherKeys); }
 std::size_t groupBytes(const Group& g) { return sizeof(Group) + keysBytes(g.keys); }
 template <class S> std::size_t setBytes(const S& s) { return s.size() * 40; } // a set node, roughly
 template <class S> std::size_t optSetBytes(const std::optional<S>& s) { return s ? setBytes(*s) : 0; }
@@ -333,6 +338,7 @@ std::size_t Document::commandBytes(const Command& c) {
     for (const PrimChange& x : c.primChanges) n += sizeof(x) + optBytes(x.before, primBytes) + optBytes(x.after, primBytes);
     for (const PropChange& x : c.propChanges) n += sizeof(x) + optBytes(x.before, propBytes) + optBytes(x.after, propBytes);
     for (const CameraChange& x : c.cameraChanges) n += sizeof(x) + optBytes(x.before, cameraBytes) + optBytes(x.after, cameraBytes);
+    for (const ProbeChange& x : c.probeChanges) n += sizeof(x) + optBytes(x.before, probeBytes) + optBytes(x.after, probeBytes);
     if (c.envBefore) n += sizeof(Environment);
     if (c.envAfter) n += sizeof(Environment);
     for (const FileChange& f : c.fileChanges) n += sizeof(f) + f.path.size() + (f.before ? f.before->size() : 0) + (f.after ? f.after->size() : 0);
@@ -341,6 +347,7 @@ std::size_t Document::commandBytes(const Command& c) {
     n += optSetBytes(c.primSelectionBefore) + optSetBytes(c.primSelectionAfter);
     n += optSetBytes(c.propSelectionBefore) + optSetBytes(c.propSelectionAfter);
     n += optSetBytes(c.cameraSelectionBefore) + optSetBytes(c.cameraSelectionAfter);
+    n += optSetBytes(c.probeSelectionBefore) + optSetBytes(c.probeSelectionAfter);
     return n;
 }
 
@@ -383,12 +390,14 @@ bool Document::undo() {
     for (auto it = cmd.primChanges.rbegin(); it != cmd.primChanges.rend(); ++it) setPrim(it->id, it->before);
     for (auto it = cmd.propChanges.rbegin(); it != cmd.propChanges.rend(); ++it) setProp(it->id, it->before);
     for (auto it = cmd.cameraChanges.rbegin(); it != cmd.cameraChanges.rend(); ++it) setCamera(it->id, it->before);
+    for (auto it = cmd.probeChanges.rbegin(); it != cmd.probeChanges.rend(); ++it) setProbe(it->id, it->before);
     if (cmd.envBefore) { env_ = *cmd.envBefore; touchLighting(); }
     selection_ = cmd.selectionBefore;
     if (cmd.lightSelectionBefore) lightSelection_ = *cmd.lightSelectionBefore;
     if (cmd.primSelectionBefore) primSelection_ = *cmd.primSelectionBefore;
     if (cmd.propSelectionBefore) propSelection_ = *cmd.propSelectionBefore;
     if (cmd.cameraSelectionBefore) cameraSelection_ = *cmd.cameraSelectionBefore;
+    if (cmd.probeSelectionBefore) probeSelection_ = *cmd.probeSelectionBefore;
     if (cmd.decalSelectionBefore) decalSelection_ = *cmd.decalSelectionBefore;
     pruneDecalSelection();
     if (!cmd.fileChanges.empty()) writeFiles(cmd.fileChanges, false);
@@ -409,12 +418,14 @@ bool Document::redo() {
     for (const PrimChange& c : cmd.primChanges) setPrim(c.id, c.after);
     for (const PropChange& c : cmd.propChanges) setProp(c.id, c.after);
     for (const CameraChange& c : cmd.cameraChanges) setCamera(c.id, c.after);
+    for (const ProbeChange& c : cmd.probeChanges) setProbe(c.id, c.after);
     if (cmd.envAfter) { env_ = *cmd.envAfter; touchLighting(); }
     selection_ = cmd.selectionAfter;
     if (cmd.lightSelectionAfter) lightSelection_ = *cmd.lightSelectionAfter;
     if (cmd.primSelectionAfter) primSelection_ = *cmd.primSelectionAfter;
     if (cmd.propSelectionAfter) propSelection_ = *cmd.propSelectionAfter;
     if (cmd.cameraSelectionAfter) cameraSelection_ = *cmd.cameraSelectionAfter;
+    if (cmd.probeSelectionAfter) probeSelection_ = *cmd.probeSelectionAfter;
     if (cmd.decalSelectionAfter) decalSelection_ = *cmd.decalSelectionAfter;
     pruneDecalSelection();
     if (!cmd.fileChanges.empty()) writeFiles(cmd.fileChanges, true);
@@ -502,6 +513,13 @@ void Document::reset(KeyValues world, std::vector<Brush> brushes, std::vector<Ra
         cameras_.push_back(std::move(c));
     }
     fixActiveCamera(cameras_); // a file with none or several active
+    probes_.clear();
+    probeSelection_.clear();
+    nextProbeId_ = 1;
+    for (Probe& p : extra.probes) {
+        p.id = nextProbeId_++;
+        probes_.push_back(std::move(p));
+    }
     bookmarks_ = std::move(extra.bookmarks);
     figure_ = extra.figure;
     visgroups_ = std::move(visgroups);
@@ -581,6 +599,8 @@ Command Document::makeAddLights(std::vector<Light> lights, const std::string& na
     c.propSelectionAfter = std::set<PropId>{};
     c.cameraSelectionBefore = cameraSelection_;
     c.cameraSelectionAfter = std::set<CameraId>{};
+    c.probeSelectionBefore = probeSelection_;
+    c.probeSelectionAfter = std::set<ProbeId>{};
     c.decalSelectionBefore = decalSelection_;
     c.decalSelectionAfter = std::set<DecalId>{};
     for (Light& l : lights) {
@@ -654,6 +674,8 @@ Command Document::makeAddPrims(std::vector<MathPrim> prims, const std::string& n
     c.propSelectionAfter = std::set<PropId>{};
     c.cameraSelectionBefore = cameraSelection_;
     c.cameraSelectionAfter = std::set<CameraId>{};
+    c.probeSelectionBefore = probeSelection_;
+    c.probeSelectionAfter = std::set<ProbeId>{};
     c.decalSelectionBefore = decalSelection_;
     c.decalSelectionAfter = std::set<DecalId>{};
     for (MathPrim& p : prims) {
@@ -717,6 +739,8 @@ Command Document::makeAddProps(std::vector<Prop> props, const std::string& name)
     c.propSelectionAfter = std::set<PropId>{};
     c.cameraSelectionBefore = cameraSelection_;
     c.cameraSelectionAfter = std::set<CameraId>{};
+    c.probeSelectionBefore = probeSelection_;
+    c.probeSelectionAfter = std::set<ProbeId>{};
     c.decalSelectionBefore = decalSelection_;
     c.decalSelectionAfter = std::set<DecalId>{};
     for (Prop& p : props) {
@@ -839,6 +863,8 @@ Command Document::makeAddCameras(std::vector<Camera> cams, const std::string& na
     c.propSelectionAfter = std::set<PropId>{};
     c.cameraSelectionBefore = cameraSelection_;
     c.cameraSelectionAfter = std::set<CameraId>{};
+    c.probeSelectionBefore = probeSelection_;
+    c.probeSelectionAfter = std::set<ProbeId>{};
     c.decalSelectionBefore = decalSelection_;
     c.decalSelectionAfter = std::set<DecalId>{};
     const bool hadActive = activeCamera() != nullptr;
@@ -894,6 +920,76 @@ void Document::addCameraDeletes(Command& c, const std::set<CameraId>& ids) const
         }
     c.cameraSelectionAfter = after;
     keepOneActive(c);
+}
+
+} // namespace scal
+
+namespace scal {
+
+const Probe* Document::findProbe(ProbeId id) const {
+    for (const Probe& p : probes_)
+        if (p.id == id) return &p;
+    return nullptr;
+}
+
+void Document::setProbe(ProbeId id, const std::optional<Probe>& p) {
+    auto it = std::find_if(probes_.begin(), probes_.end(), [&](const Probe& x) { return x.id == id; });
+    if (p) {
+        if (it != probes_.end()) *it = *p;
+        else {
+            probes_.insert(std::lower_bound(probes_.begin(), probes_.end(), id, [](const Probe& x, ProbeId v) { return x.id < v; }), *p);
+        }
+        if (id >= nextProbeId_) nextProbeId_ = id + 1;
+    } else if (it != probes_.end()) {
+        probes_.erase(it);
+        probeSelection_.erase(id);
+    }
+}
+
+Command Document::makeAddProbes(std::vector<Probe> probes, const std::string& name) {
+    Command c;
+    c.name = name;
+    c.selectionBefore = selection_;
+    c.selectionAfter = {};
+    c.lightSelectionBefore = lightSelection_;
+    c.lightSelectionAfter = std::set<LightId>{};
+    c.primSelectionBefore = primSelection_;
+    c.primSelectionAfter = std::set<MathPrimId>{};
+    c.propSelectionBefore = propSelection_;
+    c.propSelectionAfter = std::set<PropId>{};
+    c.cameraSelectionBefore = cameraSelection_;
+    c.cameraSelectionAfter = std::set<CameraId>{};
+    c.decalSelectionBefore = decalSelection_;
+    c.decalSelectionAfter = std::set<DecalId>{};
+    c.probeSelectionBefore = probeSelection_;
+    c.probeSelectionAfter = std::set<ProbeId>{};
+    for (Probe& p : probes) {
+        if (p.id == 0) p.id = newProbeId();
+        c.probeSelectionAfter->insert(p.id);
+        c.probeChanges.push_back({p.id, std::nullopt, std::move(p)});
+    }
+    return c;
+}
+
+Command Document::makeModifyProbes(const std::vector<Probe>& modified, const std::string& name) {
+    Command c;
+    c.name = name;
+    c.selectionBefore = c.selectionAfter = selection_;
+    for (const Probe& p : modified)
+        if (const Probe* old = findProbe(p.id))
+            if (*old != p) c.probeChanges.push_back({p.id, *old, p});
+    return c;
+}
+
+void Document::addProbeDeletes(Command& c, const std::set<ProbeId>& ids) const {
+    std::set<ProbeId> after = c.probeSelectionAfter ? *c.probeSelectionAfter : probeSelection_;
+    if (!c.probeSelectionBefore) c.probeSelectionBefore = probeSelection_;
+    for (ProbeId id : ids)
+        if (const Probe* p = findProbe(id)) {
+            c.probeChanges.push_back({id, *p, std::nullopt});
+            after.erase(id);
+        }
+    c.probeSelectionAfter = after;
 }
 
 } // namespace scal

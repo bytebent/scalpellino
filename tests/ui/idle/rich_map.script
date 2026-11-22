@@ -121,6 +121,9 @@ figure -300 300 0
 camera -900 -1000 800 48 -30
 bookmark add Overview
 # -- save, then open the saved map: the idle state is with a loaded map
+# -- reflection probes (v0.12.6), saved as env_cubemap
+probe 0 0 200
+probe 600 400 170 7
 save idle-rich.map
 open idle-rich.map
 viewset sky on
@@ -133,9 +136,14 @@ expect prims 5
 expect props 3
 expect lights 3
 expect cameras 2
+expect probes 2
 expect cameraactive 0
-# -- the Camera Preview drawn once (it must not redraw by itself)
+# -- the Camera Preview drawn once (it must not redraw by itself; it builds the probes too),
+#    the probes shown as mirror balls and the reach of the selected one
+viewset probeballs on
+viewset probeuse on
 camerapreview
+expect probeatlas 2
 expect terrains 1
 expect sky Panorama_Sky_04
 expect bookmarks 1

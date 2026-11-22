@@ -79,6 +79,10 @@ struct BakedDrawContext {
     // lit surfaces instead of the brushes; `nearDist` is the camera's near distance.
     const std::vector<Scene::SceneDecal>* decals = nullptr;
     double nearDist = 2;
+    // Reflection probes (v0.12.6): what `$envmap env_cubemap` reflects (null: the sky);
+    // `linearOut`: building a probe's picture (linear light, no exposure).
+    const struct ProbeAtlas* probes = nullptr;
+    bool linearOut = false;
 };
 
 // Draws the brushes (textured, terrain with its painted layers) lit by `baked`. Inside the
