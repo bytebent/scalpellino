@@ -4,6 +4,16 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-22 — v0.12.5b: Shift turns object rings freely
+- The user asked for unsnapped turning with Shift held. `ObjectEdit` rings (lights,
+  cameras and their roll ring, primitives, props) now turn freely (0.1 degree) while Shift
+  is held, 15 degree steps otherwise; the hint says which. Brushes and decals already did.
+  Help > Controls and README updated. The test scripts' `wdrag` takes modifiers (the keys
+  held while dragging).
+- **Tests:** `m9_primitives.script` checks the same ring drag gives 105 degrees (steps) and
+  110 (Shift). Core 5045 checks, 0 failed; all 35 UI scripts pass at 1x and 2x; idle 0
+  ticks at 1x and 2x. No new screenshots (nothing new to see).
+
 ### 2026-11-22 — v0.12.5: decals
 - **Core:** `core/decal.*` (frame, turn, corners, size from the picture, clipping to the
   decal's box, the mesh on brushes and terrain, mapping under brush transforms, ray test).

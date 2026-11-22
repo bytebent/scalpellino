@@ -38,6 +38,18 @@ wdrag -40 -110
 wdrag -128 -75.6
 release
 expect primrot 0 0 90
+# 20 degrees further: 15 degree steps, or freely with Shift held (v0.12.5b)
+wpress 1 -11.6 -192
+wdrag -18.62 -152.19
+release
+expect primrot 0 0 105
+undo
+wpress 1 -11.6 -192 shift
+wdrag -18.62 -152.19 shift
+release
+expect primrot 0 0 110
+undo
+expect primrot 0 0 90
 # size handle on its own +X side (now pointing along +Y): Shift drags one axis, by 32
 wpress 1 -128 -128 shift
 wdrag -128 -96 shift

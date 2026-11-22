@@ -104,7 +104,8 @@ void Editor::registerScriptCommands() {
         warmup_ = 3; // let the docking settle before the next command
     });
     add({"wpress", "wdrag"}, [this](const std::string& cmd, std::istringstream& in) {
-        // World-coordinate input for 2D views: wpress <view> <u> <v> [mods] / wdrag <u> <v>
+        // World-coordinate input for 2D views: wpress <view> <u> <v> [mods] / wdrag <u> <v> [mods]
+        // (a drag's mods are the keys held while dragging)
         static int wview = 1;
         double u = 0, v = 0;
         if (cmd == "wpress") in >> wview;
@@ -116,7 +117,11 @@ void Editor::registerScriptCommands() {
             while (in >> mod) { if (mod == "shift") shift_ = true; if (mod == "cmd") cmd_ = true; if (mod == "alt") alt_ = true; }
             scriptDragView_ = wview;
             onPress(wview, local, false);
-        } else if (scriptDragView_ >= 0) onDrag(scriptDragView_, local);
+        } else if (scriptDragView_ >= 0) {
+            std::string mod;
+            while (in >> mod) { if (mod == "shift") shift_ = true; if (mod == "cmd") cmd_ = true; if (mod == "alt") alt_ = true; }
+            onDrag(scriptDragView_, local);
+        }
     });
     add({"press3d"}, [this](const std::string& cmd, std::istringstream& in) {
         // press3d <dx> <dy> [mods]: click relative to the 3D view's centre

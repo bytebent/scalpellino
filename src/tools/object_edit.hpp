@@ -15,7 +15,7 @@
 //  - rotation rings: around each selected spot/sun light, and one set around the
 //    selected primitives and one around the selected props. Three in 3D (red = X, green = Y,
 //    blue = Z), one per 2D view (the axis you look along). Drag a ring to turn in 15 degree
-//    steps.
+//    steps; hold Shift to turn freely (v0.12.5b).
 //  - size handles on a single selected primitive or prop: one on each face of its own box
 //    (only the ones you can see side-on in 2D). Drag to scale EVENLY about the centre (the
 //    default, v0.10.0); Shift+drag changes one axis with the opposite face staying put.
@@ -81,6 +81,7 @@ private:
     double sign_ = 1;       // ring: +1 if the axis points at the viewer
     int axis_ = -1;
     double turned_ = 0;
+    bool freeTurn_ = false; // ring: Shift held (no 15 degree steps)
     Vec3 moved_;
     Vec3 anchor_;           // move: the clicked object's position
     int handle_ = -1;       // size: axis*2 + side

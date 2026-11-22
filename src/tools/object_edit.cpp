@@ -597,7 +597,10 @@ void ObjectEdit::drag(ToolEnv& env, const Pointer& p) {
         double ang = std::atan2(-(p.local.y - center_.y), p.local.x - center_.x) - angle0_;
         while (ang > kPi) ang -= 2 * kPi;
         while (ang < -kPi) ang += 2 * kPi;
-        const double deg = std::round(ang * 180 / kPi / 15) * 15 * sign_;
+        // 15 degree steps; Shift held: freely (to a tenth of a degree), as brushes and decals
+        freeTurn_ = env.shift;
+        const double raw = ang * 180 / kPi;
+        const double deg = (freeTurn_ ? std::round(raw * 10) / 10 : std::round(raw / 15) * 15) * sign_;
         if (deg == turned_) return;
         turned_ = deg;
         lightNow_ = lightStart_;
@@ -814,11 +817,13 @@ const char* ObjectEdit::hint() const {
             return hintBuf_;
         case Mode::Ring: {
             if (axis_ == 3) {
-                std::snprintf(hintBuf_, sizeof hintBuf_, "rolling the camera by %g degrees (15 degree steps)", turned_);
+                std::snprintf(hintBuf_, sizeof hintBuf_, "rolling the camera by %g degrees (%s)", turned_,
+                              freeTurn_ ? "freely; let go of Shift for 15 degree steps" : "15 degree steps; Shift: freely");
                 return hintBuf_;
             }
             static const char* names[] = {"X", "Y", "Z"};
-            std::snprintf(hintBuf_, sizeof hintBuf_, "turning around %s by %g degrees (15 degree steps)", names[axis_], turned_);
+            std::snprintf(hintBuf_, sizeof hintBuf_, "turning around %s by %g degrees (%s)", names[axis_], turned_,
+                          freeTurn_ ? "freely; let go of Shift for 15 degree steps" : "15 degree steps; Shift: freely");
             return hintBuf_;
         }
         case Mode::Size:

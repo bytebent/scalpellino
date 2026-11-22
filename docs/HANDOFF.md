@@ -74,6 +74,23 @@ texture licenses; `releases/` has the notes for each version.
   renderer at lower settings), ignores the View menu and shows hidden things (the user
   tried v0.11.x and asked for this; the current preview is only the editor's 3D look). The roadmap order is confirmed up to camera
   effects; export is not confirmed.
+- **Since then (2026-11-21/22):** v0.12.4 materials, v0.12.4b bump maps / Phong / rim
+  light (plus much faster bakes: `core/tracer.*`), v0.12.4c (VRAD's own code checked:
+  texlight scale and bump lightmap correction), **v0.12.5 decals** (batch 6) and
+  **v0.12.5b** (Shift turns object rings freely) are released. VRAD's code (Valve's public
+  Source SDK 2013 repository, `src/utils/vrad`, and the shaders in
+  `src/materialsystem/stdshaders`) can be cloned into a scratch folder outside the repo
+  and read when a Source detail is in doubt; never commit any of it. **Next: v0.12.6
+  reflection probes** (batch 7), discussed with the user first.
+- **How the user runs each batch:** numbered questions, each with options, their
+  consequences and your opinion; they answer by number ("yes to the rest" is common);
+  record the answers in PLAN.md ("Batch N decided with the user") the same day; build when
+  they say go; one release per step; then a short plain report with screenshots and the
+  busy-map bake times. Choices made while building go under "vX, decided without asking".
+  Don't render the 1000-rocks map any more (it takes about an hour): `tests/bench/render.script`
+  has no rocks now.
+- **Shift = no snapping** when turning: brushes (Option+drag a corner), object rings
+  (lights, cameras, primitives, props), decal rings. Keep it that way for new handles.
 - Mazzuola (`bytebent/mazzuola`) is the user's companion modeller (design only so far).
   Its models become Scalpellino props.
 

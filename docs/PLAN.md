@@ -10,7 +10,7 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 
 ## Current status
 
-- **Released:** v0.1.0 … v0.12.5 (CI green). Milestones 0–11, Random Replicate and Sky Lab are done (see the
+- **Released:** v0.1.0 … v0.12.5 (CI green); v0.12.5b pushed, see below. Milestones 0–11, Random Replicate and Sky Lab are done (see the
   milestone sections below and the log); the user confirmed the choices of M10, Random
   Replicate and v0.10.2 (2026-11-19). **v0.10.3 is built and pushed** (asked by the user
   before Sky Lab): `editor.cpp` split by topic (step 1: code moved unchanged; step 2:
@@ -104,7 +104,12 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   tool, decals kept in their brush, projected onto the surfaces in their box, editing like
   props (handles, Properties, Decals > Decal...), order, DecalModulate, renders lit by the
   surface's baked light. Choices made while building are under "v0.12.5, decided without
-  asking". Next: report; then v0.12.6 reflection probes, discussed with the user first.
+  asking".
+  **v0.12.5b** (the user, 2026-11-22: "holding shift should be for non-snapped rotation"):
+  the object rings (lights, cameras incl. the roll ring, primitives, props) turn freely,
+  to a tenth of a degree, while Shift is held; without it, 15 degree steps as before.
+  Brushes (Option+drag a corner) and decal rings already worked this way. Next: v0.12.6
+  reflection probes, discussed with the user first.
 - **Review fixes (2026-11-20), merged into `main`** (fast-forward from
   `fix/review-findings` after the user's go-ahead; no new version, so only "Latest build"
   is refreshed): version releases are
