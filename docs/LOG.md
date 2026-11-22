@@ -13,6 +13,7 @@ too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 - **Tests:** `m9_primitives.script` checks the same ring drag gives 105 degrees (steps) and
   110 (Shift). Core 5045 checks, 0 failed; all 35 UI scripts pass at 1x and 2x; idle 0
   ticks at 1x and 2x. No new screenshots (nothing new to see).
+- Pushed; CI green; release `v0.12.5b` published.
 
 ### 2026-11-22 — v0.12.5: decals
 - **Core:** `core/decal.*` (frame, turn, corners, size from the picture, clipping to the
