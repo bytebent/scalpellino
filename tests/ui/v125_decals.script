@@ -140,7 +140,8 @@ renderset quality normal
 render
 expect render saved
 expect renderlog 3 decals
-expect renderlog not warning
+# the puddle reflects env_cubemap and the map has no probes (decals count since the v0.12.6 review)
+expect renderlog warning: 1 surface reflects env_cubemap, but the map has no reflection probes
 rendercopy m12-37-decals-render.png
 closedialogs
 # -- deleted with Delete, undone

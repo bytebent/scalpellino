@@ -1,0 +1,176 @@
+# v0.12.6 review fixes (editing; renders in v126b_review_render.script). Each block
+# checks one finding of the outside review and fails on the old behaviour.
+bottega make studio
+copy assets/materials/brick_a.png studio/textures/t/first.png
+copy assets/decals/poster.png studio/textures/t/second.png
+copy assets/materials/metal.png studio/textures/t/grey.png
+rescan
+layout default
+
+# --- F07: Edit Curve refuses a turned curve, still follows a moved one
+curveshape arch
+wpress 2 0 0
+wdrag 64 64
+wdrag 128 128
+release
+key Return
+expect bounds 0 0 0 64 128 128
+transform rotate z 90 origin
+refused editcurve
+shot m12-47-review-edit-curve-refused.png
+closedialogs
+tool select
+selectall
+transform rotate z -90 origin
+transform move 300 40 0
+editcurve
+key Return
+tool select
+selectall
+expect bounds 300 40 0 364 168 128
+key Delete
+
+# --- F01: decal order stays in -1,000,000 .. 1,000,000; the map reopens
+texture textures/t/grey
+block -240 300 0 0 332 300
+block 0 300 0 240 332 300
+key Esc
+texture textures/t/first
+tool decal
+decalat 40 -500 150 0 1 0
+key Return
+decalselect 0
+decalset order 1000000
+decalorder forward
+expect decal order 1000000
+decalset order 5000000
+expect decal order 1000000
+decalset order 0
+
+# --- F02: equal-order decals on two brushes keep their stacking after reopening
+texture textures/t/second
+tool decal
+decalat -40 -500 150 0 1 0
+key Return
+expect decals 2
+tool select
+key Esc
+decalselect none
+camera 0 -420 150 90 0
+press3d 0 0
+release
+expect decal material textures/t/second
+save review.map
+open review.map
+expect decals 2
+tool select
+key Esc
+decalselect none
+camera 0 -60 150 90 0
+shot m12-48-review-decals-reopened.png
+press3d 0 0
+release
+expect decal material textures/t/second
+
+# --- F03: a 3D click picks a decal only where its picture shows
+tool select
+key Esc
+selectall
+key Delete
+texture textures/t/grey
+block -200 300 0 64 332 300
+key Esc
+texture textures/t/first
+tool decal
+decalat 48 -500 150 0 1 0
+key Return
+decalselect 0
+decalset width 32
+decalset height 32
+decalset pos 60 300 150
+tool select
+key Esc
+decalselect none
+camera 70 180 150 90 0
+press3d 0 0
+release
+expect decalsel 0
+camera 62 180 150 90 0
+press3d 0 0
+release
+expect decalsel 1
+decalselect none
+selectall
+key Delete
+
+# --- F06: a carve that leaves one smaller box
+texture textures/t/grey
+block 0 0 0 100 100 100
+block -20 -10 -10 50 110 110
+carve
+expect volume 1508000
+findoverlaps
+expect overlaps 0
+closedialogs
+tool select
+selectall
+key Delete
+
+# --- F09: opening a map clears Find Overlaps' results
+block 0 0 0 64 64 64
+block 200 0 0 264 64 64
+save review2.map
+transform move -168 0 0
+findoverlaps
+expect overlaps 1
+open review2.map
+expect overlaps 0
+tool select
+key Esc
+nextoverlap
+expect selected 0
+selectall
+key Delete
+
+# --- F08: Snap to Ground by a cut face; a cut-away combination stays
+prim cube 0 0 100 100 100 100
+prim cube 0 0 49 200 200 200
+primselect 0 1
+combine
+primselect 1
+primedit op subtract
+primselect 0 1
+snapground 0
+primselect 0
+expect primpos 0 0 -49
+undo
+primselect 1
+primedit pos 0 0 100
+primedit size 300 300 300
+primselect 0 1
+snapground 0
+primselect 0
+expect primpos 0 0 100
+
+# --- F11: material undo leaves a .vmt changed outside alone
+tool texture
+matselect textures/t/first
+matset $alphatest 1
+expect matfile textures/t/first yes
+copy assets/decals/grime.vmt studio/textures/t/first.vmt
+undo
+expect matfile textures/t/first yes
+
+# --- F12: a parent whose chain leads back is refused
+matselect textures/t/second
+matset $nocull 1
+matselect textures/t/grey
+matset $nocull 1
+matselect textures/t/second
+matparent textures/t/grey
+expect matparent textures/t/second textures/t/grey
+matselect textures/t/grey
+refused matparent textures/t/second
+expect matparent textures/t/grey none
+expect mat textures/t/grey $nocull 1
+quit

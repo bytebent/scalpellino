@@ -120,6 +120,20 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   probes, the two View toggles. Choices made while building are under "v0.12.6, decided
   without asking". Busy maps (now with probes and a shiny floor): see the LOG entry. Next:
   report, then discuss v0.12.7 (mirrors and glass) with the user.
+- **v0.12.6 review fixes (2026-11-23), on branch `fix/v0126-review`, not merged, no
+  release:** the user passed on another AI's review of v0.12.6 (16 findings). Each was
+  checked against the code and reproduced in the app first; 15 were bugs and are fixed,
+  F13 (see-through faces sorted by their centre) is the documented limitation and stays.
+  Saved work: decal order range, equal-order decals stacking the same after reopening
+  (`seq=` in the decal line), material undo leaving files changed outside alone, Snap to
+  Ground on cut combinations, parent loops refused. Geometry: Carve on one-piece cuts, Edit
+  Curve refused on turned curves. Decals: picked only where they show, meshes rebuilt only
+  when their brushes change (2.1 s -> 9 ms for 1000), the render push capped at 1 cm.
+  Caches: a replaced prop model rebakes, fog rebuilds the cubemaps; shiny decals count for
+  the no-probes warning; probe sizes 1 and 2 say "built at 4"; overlap results cleared on
+  open. Choices made: "v0.12.6 review fixes, decided without asking" under Open questions.
+  Next: the user's go-ahead to merge (fast-forward, like the 2026-11-20 fixes); then
+  v0.12.7 as planned. See the LOG entry.
 - **Review fixes (2026-11-20), merged into `main`** (fast-forward from
   `fix/review-findings` after the user's go-ahead; no new version, so only "Latest build"
   is refreshed): version releases are
@@ -157,6 +171,58 @@ Each archive's SHA-256 is in `cmake/Deps.cmake` (checked at configure time).
 
 ## Open questions (parked)
 
+- **v0.12.6 review fixes, decided without asking (confirm with the user, 2026-11-23):**
+  - **Decal order** is kept within -1,000,000 .. 1,000,000 (the file reader's old range):
+    the field, the dialog, Bring forward / Send back and scripts clamp to it. A file past it
+    (only v0.12.5 / v0.12.6 could write one) opens with the order clamped and a note; a
+    non-integer order still refuses the file.
+  - **Equal orders** stay allowed (the user agreed: placement order saved, not equal orders
+    forbidden). Each decal line gets `seq=<n>`: its place among all the map's decals by
+    id. Opening gives out ids in that order; files without it keep brush order.
+  - **Material undo / redo** compare the file on disk with what the history left there
+    (the old text on apply / redo, the new one on undo). If it differs, that file is left
+    as it is and the Material panel says "<name> was changed outside Scalpellino since;
+    left as it is"; the step still moves on (the history stays in order), the other
+    files of the step are written.
+  - **Snap to Ground** leaves a combination with nothing left of it where it is and says
+    so (in the Primitives panel, as Snap to Land's "nothing below"). Plain combinations
+    are sampled on every piece; a subtracted or intersected piece's samples count where
+    they lie on the outside (the faces its cut made). Blended ones are as before. Snap to
+    Land uses the same samples, so it rests on cut faces too.
+  - **Parent loops:** a parent whose own chain of parents leads to one of the selected
+    materials is left out of the Parent list, and refused if asked for anyway (scripts).
+  - **Edit Curve on a changed curve** is refused with a message (undo the change, or Bake
+    curve) when its corners don't match the settings moved into place (0.05 cm). Shapes
+    that turn onto themselves still edit. Keeping turned curves editable (storing the
+    turn with the settings) is parked below.
+  - **Decal picking in 3D:** where the ray hits a surface and the decal's picture is
+    drawn there (in its box, within reach, the surface facing it). A decal can't be picked
+    where it hangs past the edge of its surface any more; 2D picking is unchanged (its
+    outline).
+  - **Decal meshes** are kept with the brushes (id and stamp) they were built on and the
+    brushes' boxes by stamp; after an edit, a decal is rebuilt only if it or one of the
+    brushes in its box changed, or a brush came into or left its box. Measured in the core:
+    1000 decals on 1000 brushes, a full rebuild 2144 ms -> 9 ms.
+  - **Decal push in renders:** about 3 depth steps as before, but at most 1 cm (at least
+    0.05). Checked at 30 m with a 0.1 cm near plane: hidden behind a 2 cm panel 8 cm in
+    front, and drawn in full without the panel.
+  - **Model fingerprint:** a prop model's meshes (positions, texture coordinates,
+    indices), its materials' cutout settings, colours and embedded pictures; worked out
+    when the file is loaded and hashed into the bake key. A texture file next to the
+    model counts by its name only.
+  - **Fog in the cubemaps' key:** on / off, and when on its colour, start, end, base and
+    thickness.
+  - **Probe sizes:** "1 x 1 (built at 4 x 4)" and "2 x 2 (built at 4 x 4)" in the list;
+    the file keeps the size as set (Hammer's).
+  - **Find Overlaps** results are cleared and its window closed when a map is opened or a
+    new one started.
+  - **Scripts:** `refused <command>` (the command must be refused); `editcurve` fails
+    when editing doesn't start; `closedialogs` also closes the Error message.
+- **v0.12.6 review, parked:** keeping turned or mirrored curves editable (store the
+  turn / mirror with the curve's settings and apply it after generating); sorting
+  see-through faces by the distance to their plane instead of their centre (F13, a known
+  limitation; it would fix two parallel panes but no order per face is right every time).
+
 - **v0.12.6 parked (later, agreed):** Hammer's `sides` face list on a probe (kept in the file,
   not used); an optional box (parallax correction) per probe (Source 2 / mods).
 - **v0.12.6, decided without asking (confirm with the user):**
@@ -188,7 +254,8 @@ Each archive's SHA-256 is in `cmake/Deps.cmake` (checked at configure time).
     one considered.
   - **Log:** "reflected by N shiny faces" = shiny brush faces whose centre gives the probe more
     than 1% weight; "inside a brush" = inside every face plane of a brush by 0.5 cm; the
-    no-probes warning counts shiny brush faces and terrains (not props or decals).
+    no-probes warning counts shiny brush faces and terrains (not props). Since the review
+    fixes (2026-11-23) decals count too, and the line says "shiny surfaces".
   - **Tests:** `v124_materials.script` now expects the no-probes warning; the busy-map
     benchmark has probes (3, 16, 36) and a shiny floor (Rock_Face, `$envmaptint` 0.3).
 

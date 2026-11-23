@@ -161,7 +161,7 @@ void Editor::stepScript() {
         it->second(inner, in);
         if (scriptFailures_ > before) {
             scriptFailures_ = before;
-            std::fprintf(stderr, "script: command %d was refused, as expected\n", scriptLine_);
+            std::fprintf(stderr, "script: command %d was refused, as expected (the FAIL line above is expected and not counted)\n", scriptLine_);
         } else {
             std::fprintf(stderr, "script FAIL (command %d): '%s' was expected to be refused\n", scriptLine_, inner.c_str());
             ++scriptFailures_;

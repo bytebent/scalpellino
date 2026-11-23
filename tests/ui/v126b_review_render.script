@@ -1,0 +1,76 @@
+# v0.12.6 review fixes (renders): the caches see a replaced model and fog; decals count
+# for the no-probes warning; small probe sizes are built at 4.
+bottega make studio
+copy assets/models/crate.glb studio/models/Crate.glb
+copy assets/materials/metal.png studio/textures/mat/metal.png
+copy assets/materials/brick_a.png studio/textures/mat/brick_a.png
+copy assets/decals/poster.png studio/textures/decals/poster.png
+rescan
+tool texture
+matselect textures/decals/poster
+matset $envmap env_cubemap
+tool select
+texture textures/mat/brick_a
+block -1024 -1024 -32 1024 1024 0
+block -300 300 0 300 332 300
+key Esc
+tool light
+lightset kind sun
+lightset pitch -30
+lightset yaw 60
+lightset brightness 400
+lightset pos 0 -900 700
+key Return
+tool select
+key Esc
+tool camera
+cameraset size 480 270
+cameraset pos 900 -1300 600
+key Return
+cameraedit angles -23 129 0
+tool select
+key Esc
+renderset quality draft
+
+# --- F16: a shiny decal alone gets the no-probes warning
+texture textures/decals/poster
+tool decal
+decalat 0 -500 150 0 1 0
+key Return
+tool select
+key Esc
+render
+expect render saved
+expect renderlog 1 surface reflects env_cubemap, but the map has no reflection probes
+closedialogs
+
+# --- F10: a model replaced under the same name is baked again
+prop models/Crate 0 -200 0 0 0 20 2
+render
+closedialogs
+copy assets/models/crate_tall.glb studio/models/Crate.glb
+rescan
+render
+expect renderlog not nothing that lights the map has changed
+rendercopy m12-49-review-prop-rebaked.png
+closedialogs
+
+# --- F15: probe sizes 1 and 2 are built at 4 (and say so in the log)
+probe 0 -300 170 1
+probe 200 -300 120 2
+render
+expect renderlog Building cubemaps
+expect renderlog 4 a side
+expect renderlog reflected by 1 shiny surface
+closedialogs
+
+# --- F14: turning fog on builds the cubemaps again
+render
+expect renderlog Cubemaps: nothing they show has changed
+closedialogs
+environment fog on
+environment fogcolor 100 140 220
+environment fogrange 130 1000
+render
+expect renderlog Building cubemaps
+quit

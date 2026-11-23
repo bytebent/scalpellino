@@ -4,6 +4,44 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-23 — v0.12.6 review fixes (branch `fix/v0126-review`, not released)
+- The user passed on a review of v0.12.6 by another AI (16 findings, F01-F16). Each was
+  checked against the code, then reproduced in the app with scripts and small core
+  programs (scratch folder, not kept): all 16 happen. F11 (material undo) and F12 (parent
+  loops) were worse than reported: undo also overwrote an existing file edited outside,
+  and a loop lost settings both files had. F13 (see-through faces sorted by their centre)
+  is the documented limitation: not changed. On a branch, no `main` push, no release.
+- **Saved work:** decal order clamped to -1,000,000 .. 1,000,000 in the editor; files past
+  it open (clamped, with a note). Equal-order decals keep their stacking after reopening:
+  `seq=` in each decal line, `Document::reset` gives out decal ids in that order. Material
+  undo / redo leave a file changed outside alone and say so (`Document::writeFiles`).
+  Snap to Ground: a cut-away combination stays (it went to z = -1e300 and was saved so);
+  plain combinations are sampled on the faces their cuts make (`objectSurfaceSamples`,
+  `objectBottom` returns none when nothing is left). Parent loops left out of the list
+  and refused (`MaterialIndex::parentWouldLoop`).
+- **Geometry:** `carveBrush(..., &cut)` says whether it took anything away; Carve and Carve
+  Arch use it (a cut leaving one smaller box was taken for no cut). Edit Curve is refused
+  when the curve was turned, mirrored, resized or reshaped since it was made.
+- **Decals:** 3D picking only where the picture shows (`decalDrawnAt`). Meshes kept with
+  the brushes and stamps they were built on, brush boxes kept by stamp (`decalMeshOn`):
+  1000 decals on 1000 brushes, full rebuild 2144 ms -> 9 ms (core measurement). Render push
+  capped at 1 cm.
+- **Caches and warnings:** prop models get a fingerprint when loaded (`modelFingerprint`),
+  hashed into the bake key; fog is in the cubemaps' key; shiny decals count for the
+  no-probes warning and the per-probe log line ("shiny surfaces"); probe sizes 1 and 2 say
+  "built at 4 x 4"; opening a map clears Find Overlaps' results. Script command `refused`;
+  `editcurve` fails when editing doesn't start; `closedialogs` closes the Error message.
+- **Tests:** core 5239 checks, 0 failed (new: decal order range and stacking round trip,
+  files changed outside, cut bottoms, parent loops, one-piece carve, where a decal shows,
+  model fingerprint in the bake key, probe size labels). New UI scripts
+  `v126b_review.script` and `v126b_review_render.script` (every fixed finding; both fail
+  on v0.12.6, checked); `v125_decals.script` now expects the no-probes warning for its
+  puddle. All 38 UI scripts pass at 1x and 2x; idle 0 ticks at 1x and 2x. New test asset
+  `models/crate_tall.glb` (the crate 3x taller). Benchmarks not run (no decals or cut
+  combinations in them).
+- Screenshots: `m12-47-review-edit-curve-refused.png`, `m12-48-review-decals-reopened.png`,
+  `m12-49-review-prop-rebaked.png`.
+
 ### 2026-11-23 — v0.12.6: reflection probes
 - **Core:** `core/probe.*` (Hammer's cubemapsize, quality sizes, placing 170 cm above a floor /
   81 cm from a wall, the blending weights, cube faces); `Document` probes with commands,
