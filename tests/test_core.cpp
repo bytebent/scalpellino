@@ -3839,6 +3839,38 @@ static void testBake() {
         BakeInput in2 = in;
         in2.lights[0].brightness = 100;
         CHECK(bakeKey(in2) != bakeKey(in));
+        // v0.12.6 review (F10): a prop's model replaced under the same name bakes again
+        {
+            Model small;
+            small.name = "models/crate";
+            ModelMesh mesh;
+            mesh.pos = {0, 0, 0, 10, 0, 0, 0, 10, 0, 0, 0, 10};
+            mesh.uv = {0, 0, 1, 0, 0, 1, 1, 1};
+            mesh.index = {0, 1, 2, 0, 1, 3};
+            small.meshes = {mesh};
+            small.materials = {ModelMaterial{}};
+            small.fingerprint = modelFingerprint(small);
+            Model tall = small;
+            tall.meshes[0].pos[11] = 30;
+            tall.fingerprint = modelFingerprint(tall);
+            Model same = small;
+            same.fingerprint = modelFingerprint(same);
+            CHECK(tall.fingerprint != small.fingerprint && same.fingerprint == small.fingerprint);
+            BakeInput k = in;
+            Prop pr;
+            pr.id = 1;
+            pr.model = "models/crate";
+            k.props = {pr};
+            const Model* use = &small;
+            k.models = [&](const std::string&) { return use; };
+            const std::uint64_t a = bakeKey(k);
+            use = &same;
+            CHECK(bakeKey(k) == a);
+            use = &tall;
+            CHECK(bakeKey(k) != a);
+            use = nullptr;
+            CHECK(bakeKey(k) != a);
+        }
         // sky light: the ambient colour from every open direction (no sky picture);
         // an open floor gets all of it, the floor under the slab less.
         in.lights.clear();
@@ -4535,6 +4567,8 @@ static void testProbes() {
     // Hammer's cubemapsize: 0 = 32, n = 2^(n-1); the render quality scales it
     CHECK(probeSide(0) == 32 && probeSide(1) == 1 && probeSide(6) == 32 && probeSide(9) == 256 && probeSide(20) == 256);
     CHECK(probeSizeLabel(0) == "Default (32 x 32)" && probeSizeLabel(8) == "128 x 128");
+    CHECK(probeSizeLabel(1) == "1 x 1 (built at 4 x 4)" && probeSizeLabel(2) == "2 x 2 (built at 4 x 4)" && probeSizeLabel(3) == "4 x 4");
+    CHECK(probeSideForQuality(1, 1) == 4 && probeSideForQuality(2, 2) == 4 && probeSideForQuality(9, 2) == 512);
     CHECK(probeSideForQuality(0, 0) == 16 && probeSideForQuality(0, 1) == 32 && probeSideForQuality(0, 2) == 64);
     CHECK(probeSideForQuality(9, 2) == 512 && probeSideForQuality(1, 1) == 4);
     // placing: 170 cm above a floor, 81 cm out from a wall or a ceiling

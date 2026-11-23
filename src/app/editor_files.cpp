@@ -162,6 +162,10 @@ void Editor::newMap() {
     tool_->cancel();
     closeSkyLab();
     skyBake_.reset();
+    // Find Overlaps' results name brushes of the map that was open (v0.12.6 review)
+    overlaps_.clear();
+    overlapIndex_ = -1;
+    overlapsOpen_ = false;
     doc_.reset({{"classname", "worldspawn"}, {"mapversion", "220"}}, {}, {});
     path_.clear();
 }
@@ -176,6 +180,10 @@ void Editor::openMap(const std::string& path) {
     tool_->cancel();
     closeSkyLab();
     skyBake_.reset();
+    // Find Overlaps' results name brushes of the map that was open (v0.12.6 review)
+    overlaps_.clear();
+    overlapIndex_ = -1;
+    overlapsOpen_ = false;
     doc_.reset(loaded.worldKeys, loaded.brushes(), loaded.otherEntities, loaded.groups(), loaded.visgroups(),
                WorldData{loaded.lights(), loaded.environment(), loaded.bookmarks(), loaded.figure(), loaded.prims(), loaded.props(), loaded.cameras(), loaded.probes()});
     path_ = path;

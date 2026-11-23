@@ -30,12 +30,15 @@ struct Probe {
 
 constexpr int kProbeDefaultSide = 32;  // VBSP's DEFAULT_CUBEMAP_SIZE
 constexpr int kProbeMaxSize = 9;       // Hammer's list ends at 256 x 256
+constexpr int kProbeMinSide = 4;       // pixels a side a probe is built at, at least (any quality)
+constexpr int kProbeMaxSide = 512;     // and at most
 constexpr double kProbeFloorHeight = 170;  // cm above a floor clicked in 3D (the user's height)
 constexpr double kProbeWallDistance = 81.28; // cm out from a wall or ceiling (32 Hammer units)
 
 // Pixels a side of a probe's picture for its `size` key.
 int probeSide(int size);
-// Hammer's choice list: "Default (32 x 32)", "1 x 1" ... "256 x 256".
+// Hammer's choice list: "Default (32 x 32)", "1 x 1 (built at 4 x 4)", "2 x 2 (built at
+// 4 x 4)", "4 x 4" ... "256 x 256" (sizes under 4 are drawn at 4; the file keeps them).
 std::string probeSizeLabel(int size);
 // Render quality (0 Draft, 1 Normal, 2 High) scales the side: Draft half, Normal as set,
 // High double (at most 512). At least 4 pixels (a 1 x 1 or 2 x 2 probe is drawn as 4 x 4).

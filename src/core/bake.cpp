@@ -757,7 +757,10 @@ std::uint64_t bakeKey(const BakeInput& in) {
     }
     for (const Prop& p : in.props) {
         h.s(p.model); h.v(p.pos); h.v(p.rot); h.v(p.scale); h.i(p.castShadows); h.i(p.modelLighting); h.i(p.id);
-        h.i(in.models && in.models(p.model) ? 1 : 0);
+        // the model itself (0 = missing): a file replaced under the same name bakes again
+        const Model* m = in.models ? in.models(p.model) : nullptr;
+        const std::uint64_t fp = m ? (m->fingerprint ? m->fingerprint : modelFingerprint(*m)) : 0;
+        h.bytes(&fp, sizeof fp);
     }
     h.v(in.env.ambient); h.d(in.env.skyLight); h.i(in.env.minLight); h.d(in.env.smoothAngle); h.d(in.env.bounceScale);
     h.i(in.maxBounces);

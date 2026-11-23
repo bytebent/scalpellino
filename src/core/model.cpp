@@ -4,6 +4,34 @@
 
 namespace scal {
 
+std::uint64_t modelFingerprint(const Model& m) {
+    std::uint64_t h = 1469598103934665603ull; // FNV-1a
+    auto bytes = [&](const void* p, size_t n) {
+        const unsigned char* c = static_cast<const unsigned char*>(p);
+        for (size_t i = 0; i < n; ++i) h = (h ^ c[i]) * 1099511628211ull;
+    };
+    auto str = [&](const std::string& s) { const size_t n = s.size(); bytes(&n, sizeof n); bytes(s.data(), n); };
+    for (const ModelMesh& mesh : m.meshes) {
+        const size_t n[3] = {mesh.pos.size(), mesh.uv.size(), mesh.index.size()};
+        bytes(n, sizeof n);
+        bytes(mesh.pos.data(), mesh.pos.size() * sizeof(float));
+        bytes(mesh.uv.data(), mesh.uv.size() * sizeof(float));
+        bytes(mesh.index.data(), mesh.index.size() * sizeof(std::uint32_t));
+        bytes(&mesh.material, sizeof mesh.material);
+    }
+    for (const ModelMaterial& mat : m.materials) {
+        const int cut = mat.cutout;
+        bytes(&cut, sizeof cut);
+        bytes(&mat.cutoff, sizeof mat.cutoff);
+        bytes(&mat.color, sizeof mat.color);
+        const size_t n = mat.image.size();
+        bytes(&n, sizeof n);
+        bytes(mat.image.data(), n);
+        str(mat.imageFile);
+    }
+    return h ? h : 1;
+}
+
 AABB placeholderBounds() {
     AABB b;
     b.add({-32, -32, 0});

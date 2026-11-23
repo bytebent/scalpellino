@@ -44,6 +44,10 @@ struct Model {
     std::vector<ModelMaterial> materials;
     std::vector<ModelMesh> meshes;
     AABB bounds;                          // of every vertex, in model space
+    // What the light bake sees of it (shape and cutouts), set when it is loaded: a
+    // replaced file with the same name gives another one (v0.12.6 review: the bake was
+    // reused with the old model's shadows).
+    std::uint64_t fingerprint = 0;
     size_t triangles() const {
         size_t n = 0;
         for (const ModelMesh& m : meshes) n += m.triangles();
@@ -52,6 +56,9 @@ struct Model {
     // Models above this many triangles get a warning (they are drawn once per copy).
     static constexpr size_t kTriangleBudget = 200000;
 };
+
+// Model::fingerprint worked out from its meshes and cutout materials.
+std::uint64_t modelFingerprint(const Model& m);
 
 // The box a prop shows while its model is missing (and its size when nothing else is known):
 // 64 wide and deep, 64 high, standing on its origin.

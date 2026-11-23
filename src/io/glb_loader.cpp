@@ -266,6 +266,7 @@ bool loadGlbFile(const std::string& path, Model& out, std::string& error) {
         error = "the file holds no triangle meshes";
         return false;
     }
+    out.fingerprint = modelFingerprint(out);
     return true;
 }
 

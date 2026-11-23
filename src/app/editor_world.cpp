@@ -358,7 +358,8 @@ void Editor::drawProbePanel() {
         }
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Hammer's cubemapsize: pixels a side of the probe's picture. Smaller = softer reflections.\n"
-                              "Render quality: Draft half of it, Normal as set, High double (at most 512).");
+                              "Render quality: Draft half of it, Normal as set, High double;\n"
+                              "always at least %d x %d and at most %d x %d.", kProbeMinSide, kProbeMinSide, kProbeMaxSide, kProbeMaxSide);
         return changed;
     };
     const std::set<ProbeId>& sel = doc_.probeSelection();

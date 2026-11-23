@@ -138,6 +138,11 @@ std::uint64_t Editor::probeKey(int quality) const {
     h.u(renderSettings_.smooth ? 1 : 0);
     h.u(doc_.filesStamp()); // material edits (the panel writes the .vmt files)
     for (const Probe& r : doc_.probes()) { h.v(r.pos); h.u((std::uint64_t)r.size); }
+    // fog shows in the probes (the bake doesn't see it; v0.12.6 review: turning fog on
+    // kept the cubemaps made without it)
+    const Environment& env = doc_.environment();
+    h.u(env.fogOn ? 1 : 0);
+    if (env.fogOn) { h.v(env.fog.color); h.d(env.fog.start); h.d(env.fog.end); h.d(env.fog.base); h.d(env.fog.thickness); }
     for (const Brush& b : doc_.brushes()) // decals show in the probes but not in the bake
         for (const Decal& d : b.decals) {
             h.s(d.material); h.v(d.pos); h.v(d.normal); h.v(d.up);
@@ -156,6 +161,9 @@ size_t Editor::shinyProbeSurfaces() const {
             for (const auto& l : b.terrain->layers) shiny = shiny || shinyName(textures_, l.texture);
             if (shiny) ++n;
         }
+        // decals reflect probes too (renders draw hidden ones as well)
+        for (const Decal& d : b.decals)
+            if (shinyName(textures_, d.material)) ++n;
     }
     return n;
 }
@@ -419,7 +427,7 @@ void Editor::stepRender() {
                     --j.step; // the next pass
                     break;
                 }
-                // one line per probe (VRAD-style), then how many shiny faces each one reaches
+                // one line per probe (VRAD-style), then how many shiny surfaces (faces, decals) each one reaches
                 std::vector<Vec3> pos;
                 for (const Probe& r : doc_.probes()) pos.push_back(r.pos);
                 std::vector<size_t> uses(pos.size(), 0);
@@ -435,12 +443,16 @@ void Editor::stepRender() {
                         for (const ProbeWeight& w : probeWeights(pos, c, p.normal))
                             if (w.weight > 0.01) ++uses[w.index];
                     }
+                    for (const Decal& d : br.decals)
+                        if (shinyName(textures_, d.material))
+                            for (const ProbeWeight& w : probeWeights(pos, d.pos, normalize(d.normal)))
+                                if (w.weight > 0.01) ++uses[w.index];
                 }
                 for (size_t i = 0; i < j.probes->slots.size(); ++i) {
                     const ProbeAtlas::Slot& sl = j.probes->slots[i];
                     char c[200];
                     std::snprintf(c, sizeof c, "  cubemap %zu of %zu at (%g %g %g), %d a side, %.2f s; reflected by %zu shiny %s", i + 1,
-                                  j.probes->slots.size(), sl.pos.x, sl.pos.y, sl.pos.z, sl.side, sl.seconds, uses[i], uses[i] == 1 ? "face" : "faces");
+                                  j.probes->slots.size(), sl.pos.x, sl.pos.y, sl.pos.z, sl.side, sl.seconds, uses[i], uses[i] == 1 ? "surface" : "surfaces");
                     renderLog(c);
                 }
                 char c[96];

@@ -12,6 +12,10 @@ int probeSide(int size) {
 std::string probeSizeLabel(int size) {
     const std::string s = std::to_string(probeSide(size));
     if (size <= 0) return "Default (" + s + " x " + s + ")";
+    if (probeSide(size) < kProbeMinSide) { // v0.12.6 review: they never were built that small
+        const std::string m = std::to_string(kProbeMinSide);
+        return s + " x " + s + " (built at " + m + " x " + m + ")";
+    }
     return s + " x " + s;
 }
 
@@ -19,7 +23,7 @@ int probeSideForQuality(int size, int quality) {
     int s = probeSide(size);
     if (quality <= 0) s /= 2;
     else if (quality >= 2) s *= 2;
-    return std::clamp(s, 4, 512);
+    return std::clamp(s, kProbeMinSide, kProbeMaxSide);
 }
 
 Vec3 probePlacement(const Vec3& hit, const Vec3& normal) {

@@ -680,8 +680,8 @@ Preview and in renders.
   after the bake: each probe drawn 6 times (OpenGL's cube face order) through the renderer
   itself, into a 16-bit float target, in linear light before exposure (fog mixed in linear
   light), 2x larger and averaged down (Draft: as is), with a 1-pixel margin. Sizes: the
-  probe's own (Hammer's cubemapsize), halved at Draft (at least 4), doubled at High (at most
-  512). **Two passes** at Normal and High (the 2nd sees the 1st's probes on shiny things:
+  probe's own (Hammer's cubemapsize), halved at Draft, doubled at High; at every quality at
+  least 4 (a 1 x 1 or 2 x 2 probe is built at 4 x 4; the list says so) and at most 512. **Two passes** at Normal and High (the 2nd sees the 1st's probes on shiny things:
   reflections in reflections), one at Draft (shiny things in it reflect the sky). All probes
   go into one RGB16F atlas (tiles of 3 x 2 face slots; a slot is the face plus a border of
   side / 4, at least 2, filled from the neighbouring faces, so bilinear filtering never
@@ -693,7 +693,7 @@ Preview and in renders.
   probes works. Texture units 14 and 15 (material textures use 7..13). Kept in memory per
   quality while the bake key, the probes, the decals, material edits and texture filtering
   are the same (`Editor::probeKey`). The Camera Preview builds Draft probes on Update. The
-  log: one line per probe (position, size, time, how many shiny faces it reflects on), the
+  log: one line per probe (position, size, time, how many shiny surfaces (faces, decals) it reflects on), the
   total; warnings for a probe inside a brush and for shiny surfaces in a map without probes.
 - **Materials and shaders** (v0.12.4; formats in §8): a surface's look is its material.
   In renders and the Camera Preview each brush face and terrain layer is drawn by its
