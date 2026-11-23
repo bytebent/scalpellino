@@ -782,6 +782,10 @@ void Editor::registerScriptCommands() {
     });
     add({"editcurve"}, [this](const std::string&, std::istringstream&) {
         editCurve();
+        if (tool_ != &curveTool_ || !curveTool_.editingGroup()) {
+            std::fprintf(stderr, "script FAIL (command %d): editcurve didn't start (%s)\n", scriptLine_, errorText_.c_str());
+            ++scriptFailures_;
+        }
     });
     add({"block"}, [this](const std::string&, std::istringstream& in) {
         // block x0 y0 z0 x1 y1 z1: test helper, creates (and selects) an exact box

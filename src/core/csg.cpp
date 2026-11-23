@@ -79,7 +79,8 @@ SplitResult splitBrush(const Brush& b, const Vec3& a, const Vec3& bp, const Vec3
     return r;
 }
 
-std::vector<Brush> carveBrush(const Brush& b, const Brush& cutter) {
+std::vector<Brush> carveBrush(const Brush& b, const Brush& cutter, bool* cut) {
+    if (cut) *cut = false;
     // Quick reject on bounds.
     const AABB bb = b.bounds(), cb = cutter.bounds();
     for (int a = 0; a < 3; ++a)
@@ -87,22 +88,20 @@ std::vector<Brush> carveBrush(const Brush& b, const Brush& cutter) {
 
     std::vector<Brush> pieces;
     Brush rest = b;
-    bool touched = false;
     for (const Face& cf : cutter.faces) {
         // Outside of this cutter face = in front of its plane: that part survives.
         const SplitResult s = splitBrush(rest, cf.p[0], cf.p[1], cf.p[2], cf.texture);
         if (s.front && s.back) {
             pieces.push_back(*s.front);
             rest = *s.back;
-            touched = true;
         } else if (s.front && !s.back) {
             return {b}; // b lies fully outside this cutter plane: no overlap at all
         } else if (!s.back) {
             return {b};
         }
     }
-    // Whatever is left is inside the cutter and is removed.
-    (void)touched;
+    // Whatever is left (a solid piece) is inside the cutter and is removed.
+    if (cut) *cut = true;
     return pieces;
 }
 

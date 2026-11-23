@@ -30,7 +30,9 @@ SplitResult splitBrush(const Brush& b, const Vec3& a, const Vec3& bpt, const Vec
 
 // Subtracts convex `cutter` from `b`. Returns the remaining pieces (convex, no slivers);
 // returns {b} unchanged if they don't overlap, and {} if `b` is entirely inside.
-std::vector<Brush> carveBrush(const Brush& b, const Brush& cutter);
+// `cut` (optional) tells whether anything was taken away: a cut can leave one smaller
+// brush with as many faces as before, so the pieces alone don't show it.
+std::vector<Brush> carveBrush(const Brush& b, const Brush& cutter, bool* cut = nullptr);
 
 // Volume shared by two brushes (0 if they only touch or are apart). The overlap of
 // two convex brushes is the brush bounded by both sets of planes.

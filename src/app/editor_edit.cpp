@@ -5,6 +5,7 @@
 #include "core/texture.hpp"
 #include "core/csg.hpp"
 #include "core/curves.hpp"
+#include <algorithm>
 #include "app/settings.hpp"
 #include "platform/file_dialog.hpp"
 #include "ui/layout.hpp"
@@ -410,8 +411,9 @@ void Editor::carveWithSelection() {
             const Brush* cutter = doc_.find(cid);
             std::vector<Brush> next;
             for (const Brush& p : pieces) {
-                std::vector<Brush> r = carveBrush(p, *cutter);
-                if (r.size() != 1 || r[0].faces.size() != p.faces.size()) changed = true;
+                bool cut = false;
+                std::vector<Brush> r = carveBrush(p, *cutter, &cut);
+                if (cut) changed = true;
                 for (Brush& q : r) next.push_back(std::move(q));
             }
             pieces = std::move(next);
@@ -532,8 +534,9 @@ void Editor::commitCurve() {
             for (const Brush& cut : r.brushes) {
                 std::vector<Brush> next;
                 for (const Brush& q : pieces) {
-                    std::vector<Brush> c = carveBrush(q, cut);
-                    if (c.size() != 1 || c[0].faces.size() != q.faces.size()) changed = true;
+                    bool did = false;
+                    std::vector<Brush> c = carveBrush(q, cut, &did);
+                    if (did) changed = true;
                     for (Brush& x : c) next.push_back(std::move(x));
                 }
                 pieces = std::move(next);
@@ -582,12 +585,37 @@ void Editor::editCurve() {
     if (!g) return;
     CurveParams p;
     if (!curveFromKeys(doc_.group(g)->keys, p)) { errorText_ = "This group's curve settings can't be read."; return; }
-    // If the group was moved since it was made, follow it.
+    // If the group was moved since it was made, follow it. Anything else done to it since
+    // (turned, mirrored, resized, reshaped) the settings can't describe: editing would put
+    // it back as it was made, so refuse (v0.12.6 review: a turned arch came back unturned).
     const CurveResult fresh = generateCurve(p);
     AABB now, then;
     for (BrushId id : doc_.groupMembers(g)) now.add(doc_.find(id)->bounds());
     for (const Brush& b : fresh.brushes) then.add(b.bounds());
-    if (now.valid() && then.valid() && length(now.size() - then.size()) < 1e-6) shiftCurve(p, now.min - then.min);
+    const Vec3 shift = now.valid() && then.valid() ? now.min - then.min : Vec3{};
+    auto corners = [](const std::vector<const Brush*>& bs, const Vec3& d) {
+        std::vector<Vec3> out;
+        for (const Brush* b : bs)
+            for (const Polygon& poly : b->polygons())
+                for (const Vec3& v : poly.verts) out.push_back(v + d);
+        return out;
+    };
+    // Every corner of one has a corner of the other within 0.05 cm, both ways.
+    auto covers = [](const std::vector<Vec3>& a, const std::vector<Vec3>& b) {
+        for (const Vec3& v : a)
+            if (std::none_of(b.begin(), b.end(), [&](const Vec3& w) { return length(v - w) < 0.05; })) return false;
+        return true;
+    };
+    std::vector<const Brush*> members, made;
+    for (BrushId id : doc_.groupMembers(g)) members.push_back(doc_.find(id));
+    for (const Brush& b : fresh.brushes) made.push_back(&b);
+    const std::vector<Vec3> have = corners(members, {}), want = corners(made, shift);
+    if (members.size() != made.size() || !covers(have, want) || !covers(want, have)) {
+        errorText_ = "Edit Curve: this curve was turned, mirrored, resized or reshaped since it was made, and editing it "
+                     "would put it back as it was made. Undo those changes first, or keep it as it is with Bake curve.";
+        return;
+    }
+    shiftCurve(p, shift);
     setTool(&curveTool_);
     curveTool_.startEditing(p, g);
 }

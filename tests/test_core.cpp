@@ -488,8 +488,18 @@ static void testCsg() {
         CHECK(!insideTunnel);
     }
     // No overlap -> unchanged; fully inside -> nothing left.
-    CHECK(carveBrush(block, makeBox(box({500, 0, 0}, {564, 64, 64}), "b")).size() == 1);
-    CHECK(carveBrush(makeBox(box({40, 40, 0}, {80, 80, 64}), "a"), tunnel).empty());
+    {
+        bool cut = true;
+        CHECK(carveBrush(block, makeBox(box({500, 0, 0}, {564, 64, 64}), "b"), &cut).size() == 1 && !cut);
+        CHECK(carveBrush(makeBox(box({40, 40, 0}, {80, 80, 64}), "a"), tunnel, &cut).empty() && cut);
+        // v0.12.6 review (F06): a cut that leaves one smaller box (same face count) is a cut
+        const Brush target = makeBox(box({0, 0, 0}, {100, 100, 100}), "a");
+        const std::vector<Brush> left = carveBrush(target, makeBox(box({-20, -10, -10}, {50, 110, 110}), "b"), &cut);
+        CHECK(cut && left.size() == 1 && left[0].faces.size() == 6);
+        CHECK(left.size() == 1 && near(left[0].bounds().min.x, 50) && near(left[0].bounds().max.x, 100));
+        // only touching: no cut
+        CHECK(carveBrush(target, makeBox(box({100, 0, 0}, {164, 100, 100}), "b"), &cut).size() == 1 && !cut);
+    }
 
     // Overlaps: cutting into each other counts, touching doesn't.
     {
