@@ -120,6 +120,9 @@ public:
     std::vector<const Entry*> vmtEntries() const;
     // The entry of a .vmt file by its path (null if not scanned).
     const Entry* byVmt(const std::string& path) const;
+    // Whether giving `targets` the parent `parentName` would make a loop: one of them is the
+    // parent itself, or a parent further up its chain (v0.12.6 review).
+    bool parentWouldLoop(const std::string& parentName, const std::vector<std::string>& targets) const;
 
     // Where `name`'s .vmt is, or would be written; "" if it can't be (built-in textures).
     std::string vmtPathFor(const std::string& name) const;

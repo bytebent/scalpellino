@@ -1,6 +1,7 @@
 #include "core/material.hpp"
 #include "core/bottega.hpp"
 #include <algorithm>
+#include <set>
 #include <cctype>
 #include <cstdlib>
 #include <filesystem>
@@ -518,6 +519,19 @@ std::vector<const MaterialIndex::Entry*> MaterialIndex::vmtEntries() const {
 const MaterialIndex::Entry* MaterialIndex::byVmt(const std::string& path) const {
     auto it = byVmt_.find(path);
     return it == byVmt_.end() ? nullptr : find(it->second);
+}
+
+bool MaterialIndex::parentWouldLoop(const std::string& parentName, const std::vector<std::string>& targets) const {
+    std::set<std::string> seen;
+    for (const Entry* e = find(parentName); e;) {
+        if (std::find(targets.begin(), targets.end(), e->name) != targets.end()) return true;
+        if (!seen.insert(e->name).second) return false; // a loop further up, not through these
+        if (!e->file.isPatch()) return false;
+        const std::string next = resolveInclude(*e, e->file.include);
+        if (next.empty()) return false;
+        e = byVmt(next);
+    }
+    return false;
 }
 
 std::string MaterialIndex::vmtPathFor(const std::string& name) const {

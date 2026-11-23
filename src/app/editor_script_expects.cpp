@@ -43,7 +43,10 @@ void Editor::registerScriptExpects() {
         // expect bottoms <z>: every selected primitive object and prop has its lowest point at z
         std::string w; double z = 0; in >> w >> z;
         int bad = 0;
-        for (const auto& obj : selectedObjects(doc_)) bad += std::fabs(objectBottom(obj) - z) > 0.05;
+        for (const auto& obj : selectedObjects(doc_)) {
+            const std::optional<double> b = objectBottom(obj);
+            bad += !b || std::fabs(*b - z) > 0.05;
+        }
         for (PropId id : doc_.propSelection())
             if (const Prop* q = doc_.findProp(id)) bad += std::fabs(propBottom(*q, models_.find(q->model)) - z) > 0.05;
         if (bad) { std::fprintf(stderr, "script FAIL (command %d): %d selected object(s) not resting at z %g\n", scriptLine_, bad, z); ++scriptFailures_; }

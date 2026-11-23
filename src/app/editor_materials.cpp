@@ -225,6 +225,10 @@ bool Editor::setMaterialParent(const std::string& parentName) {
     const Material parentMat = p->mat;
     for (const std::string& t : materialTargets())
         if (t == parentName) { errorText_ = "Parent: a material can't be its own parent."; return false; }
+    if (ix.parentWouldLoop(parentName, materialTargets())) {
+        errorText_ = "Parent: " + parentName + " already gets its settings from the selected material(s); that would make a loop.";
+        return false;
+    }
     return editMaterials("Material parent", [&](const MaterialIndex::Entry& e, MaterialFile& f) {
         MaterialFile child;
         child.shader = "patch";
@@ -421,6 +425,7 @@ void Editor::drawMaterialPanel() {
             if (ImGui::Selectable("(none)", cur == "(none)")) setMaterialParent("");
             for (const MaterialIndex::Entry* p : ix.vmtEntries()) {
                 if (std::find(targets.begin(), targets.end(), p->name) != targets.end()) continue;
+                if (ix.parentWouldLoop(p->name, targets)) continue; // its own parent chain has one of these
                 if (ImGui::Selectable(p->name.c_str(), p->name == cur)) setMaterialParent(p->name);
             }
             ImGui::EndCombo();

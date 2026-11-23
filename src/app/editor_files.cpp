@@ -182,8 +182,12 @@ void Editor::openMap(const std::string& path) {
     // A Sky Lab sky whose PNG is gone (another machine, a moved Bottega) is made again
     // from the settings in the map.
     if (skyFileMissing() && bottega::usable(bottegaCheck_)) rebakeSky();
-    if (r.skippedBrushes > 0)
-        errorText_ = "Opened, but skipped " + std::to_string(r.skippedBrushes) + " invalid brush(es).";
+    std::string notes;
+    if (r.skippedBrushes > 0) notes += "skipped " + std::to_string(r.skippedBrushes) + " invalid brush(es)";
+    if (r.clampedDecalOrders > 0)
+        notes += std::string(notes.empty() ? "" : "; ") + std::to_string(r.clampedDecalOrders) + " decal order(s) were past " +
+                 std::to_string(kDecalOrderMin) + " .. " + std::to_string(kDecalOrderMax) + " and were brought back into it";
+    if (!notes.empty()) errorText_ = "Opened, but " + notes + ".";
 }
 
 bool Editor::saveMap(const std::string& path) {

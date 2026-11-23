@@ -1877,7 +1877,21 @@ void testLandingReplicate() {
     MathPrim s = sphere({0, 0, 300}, 50);
     auto m = landingMove({&s}, bs, {});
     CHECK(m && near(*m, -250, 1e-6));
-    CHECK(near(objectBottom({&s}), 250, 1e-6));
+    CHECK(objectBottom({&s}) && near(*objectBottom({&s}), 250, 1e-6));
+    // v0.12.6 review (F08): a cube from z 50 to 150 minus a big cube whose top is z 149
+    // leaves a 1 cm slab: its bottom is the cut face. Cut away entirely: no bottom.
+    {
+        MathPrim keep; keep.id = 11; keep.kind = PrimKind::Cube; keep.pos = {0, 0, 100}; keep.size = {100, 100, 100}; keep.combo = 5;
+        MathPrim cut; cut.id = 12; cut.kind = PrimKind::Cube; cut.pos = {0, 0, 49}; cut.size = {200, 200, 200}; cut.combo = 5;
+        cut.op = PrimOp::Subtract;
+        const std::optional<double> b = objectBottom({&keep, &cut});
+        CHECK(b && near(*b, 149, 1e-3));
+        auto mv = landingMove({&keep, &cut}, bs, {});
+        CHECK(mv && near(*mv, -149, 1e-3)); // Snap to Land: rests by the cut face too
+        cut.pos = {0, 0, 100};
+        cut.size = {300, 300, 300};
+        CHECK(!objectBottom({&keep, &cut}));
+    }
     MathPrim sunk = sphere({0, 0, 20}, 50);
     auto up = landingMove({&sunk}, bs, {});
     CHECK(up && near(*up, 30, 1e-6)); // comes up to rest on top
@@ -4419,6 +4433,81 @@ static void testDecals() {
     }
 }
 
+// v0.12.6 review: decal order range (F01) and equal-order stacking after reopening (F02).
+static void testDecalOrderFile() {
+    // two coplanar brushes; the first decal goes on the second brush, the second on the first
+    Document doc;
+    doc.apply(doc.makeAdd({makeBox(box({-240, 300, 0}, {0, 332, 300}), "grey")}, "add"));
+    const BrushId left = *doc.selection().begin();
+    doc.apply(doc.makeAdd({makeBox(box({0, 300, 0}, {240, 332, 300}), "grey")}, "add"));
+    const BrushId right = *doc.selection().begin();
+    Decal a;
+    a.material = "t/red";
+    a.pos = {40, 300, 150};
+    a.normal = {0, -1, 0};
+    a.up = {0, 0, 1};
+    a.width = a.height = 160;
+    Decal b = a;
+    b.material = "t/blue";
+    b.pos = {-40, 300, 150};
+    doc.apply(doc.makeAddDecal(a, right, "Place decal"));
+    doc.apply(doc.makeAddDecal(b, left, "Place decal"));
+    auto idOf = [](const Document& d, const std::string& mat) {
+        for (const Brush& x : d.brushes())
+            for (const Decal& y : x.decals)
+                if (y.material == mat) return y.id;
+        return DecalId(0);
+    };
+    CHECK(idOf(doc, "t/red") < idOf(doc, "t/blue")); // red placed first
+    const std::string text = writeMap(doc);
+    CHECK(text.find(" seq=0") != std::string::npos && text.find(" seq=1") != std::string::npos);
+    Document e;
+    CHECK(readMap(text, e).ok);
+    CHECK(e.decalCount() == 2 && idOf(e, "t/red") < idOf(e, "t/blue")); // still placed first after reopening
+    // saved again: the same order (a second round trip)
+    Document f;
+    CHECK(readMap(writeMap(e), f).ok && idOf(f, "t/red") < idOf(f, "t/blue"));
+    // a file without seq (v0.12.5 / v0.12.6): brush order, as before
+    {
+        std::string old = text;
+        for (size_t at; (at = old.find(" seq=")) != std::string::npos;) old.erase(at, 6);
+        CHECK(old.find("seq") == std::string::npos);
+        Document g;
+        CHECK(readMap(old, g).ok && g.decalCount() == 2 && idOf(g, "t/blue") < idOf(g, "t/red"));
+    }
+    // new decals after reopening still go on top of the loaded ones
+    {
+        Decal c = a;
+        c.material = "t/new";
+        e.apply(e.makeAddDecal(c, e.brushes()[0].id, "Place decal"));
+        CHECK(idOf(e, "t/new") > idOf(e, "t/blue"));
+    }
+
+    // order range: a file past it still opens (clamped, counted); a bad number doesn't
+    {
+        std::string past = text;
+        const size_t at = past.find("order=0");
+        CHECK(at != std::string::npos);
+        past.replace(at, 7, "order=1000001");
+        Document g;
+        const MapReadResult r = readMap(past, g);
+        CHECK(r.ok && r.clampedDecalOrders == 1);
+        int top = 0;
+        for (const Brush& x : g.brushes())
+            for (const Decal& y : x.decals) top = std::max(top, y.order);
+        CHECK(top == kDecalOrderMax);
+        std::string bad = text;
+        bad.replace(bad.find("order=0"), 7, "order=1.5");
+        Document h;
+        CHECK(!readMap(bad, h).ok);
+        Document k;
+        CHECK(readMap(text, k).ok && readMap(text, k).clampedDecalOrders == 0);
+    }
+    CHECK(decalOrderFrom(1e12) == kDecalOrderMax && decalOrderFrom(-1e12) == kDecalOrderMin && decalOrderFrom(2.6) == 3 &&
+          decalOrderFrom(-2.6) == -3 && decalOrderFrom(std::nan("")) == 0);
+    (void)right;
+}
+
 static void testProbes() {
     // Hammer's cubemapsize: 0 = 32, n = 2^(n-1); the render quality scales it
     CHECK(probeSide(0) == 32 && probeSide(1) == 1 && probeSide(6) == 32 && probeSide(9) == 256 && probeSide(20) == 256);
@@ -4745,6 +4834,12 @@ static void testMaterials() {
         CHECK(std::find(all.begin(), all.end(), "textures/walls/Brick_mask") != all.end());
         const MaterialIndex::Entry* brick = ix.find("textures/walls/Brick");
         CHECK(brick && brick->kind == MaterialIndex::Kind::Texture && brick->base == "textures/walls/Brick");
+        // v0.12.6 review (F12): a parent whose chain reaches the material would loop
+        CHECK(ix.find("textures/walls/brick_base"));
+        CHECK(ix.parentWouldLoop("textures/walls/Brick_wet", {"textures/walls/brick_base"}));  // Brick_wet -> brick_base
+        CHECK(ix.parentWouldLoop("textures/walls/brick_base", {"textures/walls/brick_base"})); // itself
+        CHECK(!ix.parentWouldLoop("textures/walls/Brick", {"textures/walls/brick_base"}));     // no chain
+        CHECK(!ix.parentWouldLoop("textures/walls/brick_base", {"textures/walls/Brick_wet"})); // the other way is fine
         CHECK(brick && brick->mat.str("$envmap") == "env_cubemap");
         CHECK(brick && brick->mat.str("$envmapmask") == "textures/walls/Brick_mask"); // hooked by name
         CHECK(brick && brick->mat.str("$bumpmap") == "textures/walls/Brick_normal");
@@ -4812,6 +4907,54 @@ static void testMaterials() {
         CHECK(doc.dirty());
         fs::remove_all(dir);
     }
+    // ---- v0.12.6 review (F11): undo / redo leave a file alone that was changed outside since
+    {
+        const fs::path dir = fs::temp_directory_path() / "scal_material_outside";
+        fs::remove_all(dir);
+        fs::create_directories(dir);
+        auto read = [](const std::string& p) { std::ifstream i(p); std::stringstream s; s << i.rdbuf(); return s.str(); };
+        const std::string a = (dir / "a.vmt").string(), b = (dir / "b.vmt").string();
+        const std::string outside = "LightmappedGeneric { $alphatest 1 $alphatestreference 0.75 }";
+        // a new file, edited outside, then undo: kept (not deleted)
+        {
+            Document doc;
+            doc.apply(doc.makeFileEdit({{a, std::string("LightmappedGeneric { $alphatest 1 }")}}, "Alpha test"));
+            CHECK(fs::exists(a) && doc.fileError().empty());
+            writeText(a, outside);
+            doc.undo();
+            CHECK(fs::exists(a) && read(a) == outside);
+            CHECK(doc.fileError().find("a.vmt was changed outside") != std::string::npos);
+            // redo: the file is still not what undo left (it left it alone), so still kept
+            doc.redo();
+            CHECK(read(a) == outside && !doc.fileError().empty());
+        }
+        // an existing file, two edits, edited outside, undo: kept (not overwritten)
+        {
+            Document doc;
+            writeText(b, "LightmappedGeneric { }");
+            doc.apply(doc.makeFileEdit({{b, std::string("LightmappedGeneric { $alphatest 1 }")}}, "Alpha test"));
+            doc.apply(doc.makeFileEdit({{b, std::string("LightmappedGeneric { $alphatest 1 $nocull 1 }")}}, "No cull"));
+            writeText(b, outside);
+            doc.undo();
+            CHECK(read(b) == outside && !doc.fileError().empty());
+            // the other step still works once the file is as the history left it
+            writeText(b, "LightmappedGeneric { $alphatest 1 }");
+            doc.undo();
+            CHECK(read(b) == "LightmappedGeneric { }" && doc.fileError().empty());
+            doc.redo();
+            CHECK(read(b) == "LightmappedGeneric { $alphatest 1 }" && doc.fileError().empty());
+        }
+        // an outside change that happens to match what undo wants: nothing to do, no error
+        {
+            Document doc;
+            const std::string c = (dir / "c.vmt").string();
+            doc.apply(doc.makeFileEdit({{c, std::string("UnlitGeneric { }")}}, "New"));
+            fs::remove(c);
+            doc.undo();
+            CHECK(!fs::exists(c) && doc.fileError().empty());
+        }
+        fs::remove_all(dir);
+    }
 }
 
 int main() {
@@ -4863,6 +5006,7 @@ int main() {
     testBakeMaterials();
     testBumpBake();
     testDecals();
+    testDecalOrderFile();
     testProbes();
     testTracer();
     testMapQuakeFormat();

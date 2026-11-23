@@ -57,7 +57,11 @@ std::vector<Vec3> objectSurfaceSamples(const std::vector<const MathPrim*>& objec
     const AABB box = boundsOf(object);
     const double tol = 1e-4 * std::max(1.0, length(box.size()));
     for (const MathPrim* m : object) {
-        if (object.size() > 1 && m->op != PrimOp::Add) continue;
+        // Blended combinations: the added pieces, projected onto the blended surface below.
+        // Plain ones: every piece; a subtracted piece's samples that are on the outside are
+        // the faces its cut made (v0.12.6 review: before, only added pieces were sampled, so
+        // an object whose bottom was cut flat landed by its old bottom).
+        if (object.size() > 1 && m->op != PrimOp::Add && blended) continue;
         const Vec3 c = m->pos;
         for (int j = 0; j <= up; ++j) {
             const double lat = -kPi / 2 + kPi * j / up;
@@ -95,9 +99,9 @@ std::vector<Vec3> objectSurfaceSamples(const std::vector<const MathPrim*>& objec
     return out;
 }
 
-double objectBottom(const std::vector<const MathPrim*>& object) {
-    double z = 1e300;
-    for (const Vec3& q : objectSurfaceSamples(object)) z = std::min(z, q.z);
+std::optional<double> objectBottom(const std::vector<const MathPrim*>& object) {
+    std::optional<double> z;
+    for (const Vec3& q : objectSurfaceSamples(object)) z = std::min(z.value_or(q.z), q.z);
     return z;
 }
 
@@ -300,7 +304,7 @@ LandingResult landSelection(const Document& doc, const ModelFinder& models) {
             b.add(pb.min);
             b.add(pb.max);
         }
-        it.bottom = objectBottom(obj);
+        it.bottom = objectBottom(obj).value_or(b.min.z); // nothing left: its box, for the order
         it.top = b.max.z;
         items.push_back(std::move(it));
     }

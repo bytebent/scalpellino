@@ -12,6 +12,7 @@ struct MapReadResult {
     bool ok = false;
     std::string error;   // with line number when !ok
     int skippedBrushes = 0; // invalid brushes dropped while loading
+    int clampedDecalOrders = 0; // decal orders past the allowed range, clamped (older files)
 };
 
 MapReadResult readMap(const std::string& text, Document& doc);

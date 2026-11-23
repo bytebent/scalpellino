@@ -525,7 +525,7 @@ void Editor::registerScriptCommands() {
             else if (k == "height") editDecals("Size decal", [x](Decal& d) { d.height = x; });
             else if (k == "turn") editDecals("Turn decal", [x](Decal& d) { setDecalRotation(d, x); });
             else if (k == "reach") editDecals("Decal reach", [x](Decal& d) { d.reach = x; });
-            else if (k == "order") editDecals("Decal order", [x](Decal& d) { d.order = (int)std::lround(x); });
+            else if (k == "order") editDecals("Decal order", [x](Decal& d) { d.order = decalOrderFrom(x); });
         }
     });
     add({"decalorder"}, [this](const std::string&, std::istringstream& in) {

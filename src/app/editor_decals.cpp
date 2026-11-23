@@ -15,7 +15,10 @@ namespace scal {
 void Editor::editDecals(const char* name, const std::function<void(Decal&)>& fn) {
     if (doc_.decalSelection().empty()) {
         if (tool_ == &decalTool_)
-            if (Decal* d = decalTool_.pending()) fn(*d);
+            if (Decal* d = decalTool_.pending()) {
+                fn(*d);
+                d->order = std::clamp(d->order, kDecalOrderMin, kDecalOrderMax);
+            }
         return;
     }
     std::vector<Decal> out;
@@ -23,13 +26,14 @@ void Editor::editDecals(const char* name, const std::function<void(Decal&)>& fn)
         if (const Document::DecalRef r = doc_.findDecal(id)) {
             Decal d = *r.decal;
             fn(d);
+            d.order = std::clamp(d.order, kDecalOrderMin, kDecalOrderMax); // the file reader's range
             if (d != *r.decal) out.push_back(d);
         }
     if (!out.empty()) doc_.apply(doc_.makeModifyDecals(out, name));
 }
 
 void Editor::decalOrder(int step) {
-    editDecals(step > 0 ? "Bring decal forward" : "Send decal back", [step](Decal& d) { d.order += step; });
+    editDecals(step > 0 ? "Bring decal forward" : "Send decal back", [step](Decal& d) { d.order = decalOrderFrom((double)d.order + step); });
 }
 
 void Editor::decalSizeFromPicture() {
@@ -136,7 +140,7 @@ void Editor::drawDecalPanel() {
         ImGui::InputInt("order", &b.order);
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Higher is drawn on top; equal ones in the order they were placed.\n"
-                              "Bring forward / Send back change it by 1.");
+                              "Bring forward / Send back change it by 1. From %d to %d.", kDecalOrderMin, kDecalOrderMax);
         if (ImGui::IsItemDeactivatedAfterEdit()) {
             const int v = b.order;
             editDecals("Decal order", [v](Decal& d) { d.order = v; });
@@ -193,7 +197,7 @@ void Editor::drawDecalDialog() {
                 d.height = v[4];
                 setDecalRotation(d, v[5]);
                 d.reach = v[6];
-                d.order = (int)std::lround(v[7]);
+                d.order = decalOrderFrom(v[7]);
             });
             ImGui::CloseCurrentPopup();
         } else if (cancel)

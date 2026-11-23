@@ -204,8 +204,14 @@ void Editor::snapToLand() {
 
 void Editor::snapToGround(double height) {
     std::vector<MathPrim> out;
+    int empty = 0;
     for (const auto& obj : selectedObjects(doc_)) {
-        const double dz = height - objectBottom(obj);
+        const std::optional<double> bottom = objectBottom(obj);
+        if (!bottom) { // cut away entirely: nothing to rest on the ground (left where it is)
+            ++empty;
+            continue;
+        }
+        const double dz = height - *bottom;
         for (const MathPrim* p : obj) {
             MathPrim c = *p;
             c.pos.z = cleanNumber(c.pos.z + dz, 1e-6);
@@ -219,6 +225,7 @@ void Editor::snapToGround(double height) {
             c.pos.z = cleanNumber(c.pos.z + height - propBottom(*q, models_.find(q->model)), 1e-6);
             propsOut.push_back(c);
         }
+    landMessage_ = empty ? std::to_string(empty) + " object(s) have nothing left of them (cut away) and stayed where they were" : "";
     if (out.empty() && propsOut.empty()) return;
     tool_->cancel();
     Command c = out.empty() ? doc_.makeModifyProps(propsOut, "Snap to ground") : doc_.makeModifyPrims(out, "Snap to ground");

@@ -150,6 +150,24 @@ void Editor::stepScript() {
         it->second(cmd, in);
         return;
     }
+    if (cmd == "refused") {
+        // refused <command ...>: the command must report a failure (it was refused); that
+        // failure doesn't count against the script.
+        std::string inner;
+        in >> inner;
+        auto it = scriptCommands_.find(inner);
+        if (it == scriptCommands_.end()) { std::fprintf(stderr, "script: unknown command '%s'\n", inner.c_str()); return; }
+        const int before = scriptFailures_;
+        it->second(inner, in);
+        if (scriptFailures_ > before) {
+            scriptFailures_ = before;
+            std::fprintf(stderr, "script: command %d was refused, as expected\n", scriptLine_);
+        } else {
+            std::fprintf(stderr, "script FAIL (command %d): '%s' was expected to be refused\n", scriptLine_, inner.c_str());
+            ++scriptFailures_;
+        }
+        return;
+    }
     auto it = scriptCommands_.find(cmd);
     if (it != scriptCommands_.end()) { it->second(cmd, in); return; }
     std::fprintf(stderr, "script: unknown command '%s'\n", cmd.c_str());

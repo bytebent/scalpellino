@@ -438,19 +438,45 @@ void Document::writeFiles(const std::vector<FileChange>& files, bool after) {
     namespace fs = std::filesystem;
     lastFiles_.clear();
     fileError_.clear();
+    std::vector<std::string> kept; // changed outside Scalpellino since: left as they are
+    auto addError = [this](const std::string& e) { fileError_ += (fileError_.empty() ? "" : "; ") + e; };
     for (const FileChange& f : files) {
         const std::optional<std::string>& text = after ? f.after : f.before;
+        // What this command last left on disk (or found there): anything else was written by
+        // someone else since, and an undo / redo must not overwrite or delete it.
+        const std::optional<std::string>& expected = after ? f.before : f.after;
+        std::optional<std::string> now;
+        {
+            std::error_code ec;
+            if (fs::exists(f.path, ec)) {
+                std::ifstream in(f.path, std::ios::binary);
+                std::ostringstream ss;
+                ss << in.rdbuf();
+                now = ss.str();
+            }
+        }
+        if (now != expected && now != text) {
+            kept.push_back(fs::path(f.path).filename().string());
+            continue;
+        }
         std::error_code ec;
         lastFiles_.push_back(f.path);
+        if (now == text) continue; // already as wanted
         if (!text) {
             fs::remove(f.path, ec);
-            if (ec) fileError_ = "can't remove " + fs::path(f.path).filename().string();
+            if (ec) addError("can't remove " + fs::path(f.path).filename().string());
             continue;
         }
         if (fs::path(f.path).has_parent_path()) fs::create_directories(fs::path(f.path).parent_path(), ec);
         std::ofstream o(f.path, std::ios::binary | std::ios::trunc);
         o << *text;
-        if (!o) fileError_ = "can't write " + fs::path(f.path).filename().string();
+        if (!o) addError("can't write " + fs::path(f.path).filename().string());
+    }
+    if (!kept.empty()) {
+        std::string names;
+        for (const std::string& n : kept) names += (names.empty() ? "" : ", ") + n;
+        addError(names + (kept.size() == 1 ? " was" : " were") + " changed outside Scalpellino since; left as " +
+                 (kept.size() == 1 ? "it is" : "they are"));
     }
     ++filesStamp_;
 }
@@ -531,10 +557,22 @@ void Document::reset(KeyValues world, std::vector<Brush> brushes, std::vector<Ra
     brushStamps_.clear();
     nextId_ = 1;
     decalSelection_.clear();
+    // Decal ids follow the order the decals were placed in (equal orders are stacked by id).
+    // Decals that come with an id (a file's seq, or another document's ids) keep their
+    // relative order; those without one follow, in brush order.
     nextDecalId_ = 1;
+    {
+        std::vector<Decal*> all;
+        for (Brush& b : brushes)
+            for (Decal& d : b.decals) all.push_back(&d);
+        std::stable_sort(all.begin(), all.end(), [](const Decal* a, const Decal* b) {
+            const std::uint64_t ka = a->id ? a->id : ~std::uint64_t(0), kb = b->id ? b->id : ~std::uint64_t(0);
+            return ka < kb;
+        });
+        for (Decal* d : all) d->id = nextDecalId_++;
+    }
     for (Brush& b : brushes) {
         b.id = nextId_++;
-        for (Decal& d : b.decals) d.id = nextDecalId_++;
         stampBrush(b.id);
         brushes_.push_back(std::move(b));
     }

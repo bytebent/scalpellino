@@ -33,7 +33,9 @@ std::string quoted(const std::string& s) {
     return out + "\"";
 }
 
-void writeBrush(std::ostringstream& o, const Brush& b) {
+// `seq`: each world decal's place in the order the decals were placed (their ids, lowest
+// first), written so a reopened map stacks equal-order decals the same way.
+void writeBrush(std::ostringstream& o, const Brush& b, const std::map<DecalId, int>* seq = nullptr) {
     o << "{\n";
     // Our extra per-brush data, as a comment line other tools skip.
     if (b.visgroup || b.hidden) {
@@ -86,6 +88,10 @@ void writeBrush(std::ostringstream& o, const Brush& b) {
     for (const Decal& d : b.decals) {
         o << "//@ decal pos=" << v3(d.pos) << " n=" << v3(d.normal) << " up=" << v3(d.up) << " size=" << num(d.width) << ','
           << num(d.height) << " reach=" << num(d.reach) << " order=" << d.order;
+        if (seq) {
+            const auto it = seq->find(d.id);
+            if (it != seq->end()) o << " seq=" << it->second;
+        }
         if (d.visgroup) o << " vg=" << d.visgroup;
         o << " mat=" << d.material << '\n';
     }
@@ -410,6 +416,13 @@ bool lightFromKeys(const KeyValues& kv, Light& l) {
 
 std::string writeMap(const Document& doc) {
     std::ostringstream o;
+    std::map<DecalId, int> seq;
+    for (const Brush& b : doc.brushes())
+        for (const Decal& d : b.decals) seq[d.id] = 0;
+    {
+        int n = 0;
+        for (auto& [id, k] : seq) k = n++;
+    }
     o << "// Game: Generic\n// Format: Valve\n// Written by Scalpellino\n";
     o << "// entity 0\n{\n";
     KeyValues world;
@@ -450,7 +463,7 @@ std::string writeMap(const Document& doc) {
     for (const Brush& b : doc.brushes()) {
         if (b.group) continue; // written with its group below
         o << "// brush " << i++ << '\n';
-        writeBrush(o, b);
+        writeBrush(o, b, &seq);
     }
     o << "}\n";
     int e = 1;
@@ -465,7 +478,7 @@ std::string writeMap(const Document& doc) {
         for (const Brush& b : doc.brushes()) {
             if (b.group != gid) continue;
             o << "// brush " << j++ << '\n';
-            writeBrush(o, b);
+            writeBrush(o, b, &seq);
         }
         o << "}\n";
     }
@@ -587,6 +600,8 @@ struct ParseError {
 class Parser {
 public:
     explicit Parser(const std::string& s) : lex_(s) {}
+
+    int clampedDecalOrders = 0; // decal orders outside kDecalOrderMin..Max, clamped
 
     void expect(const char* p) {
         Token t = lex_.next();
@@ -728,9 +743,17 @@ public:
                     if (!parseNumber(v, r) || !(r >= 0)) fail(tok, "bad decal reach '" + v + "'");
                     d.reach = r;
                 } else if (k == "order") {
+                    // Older versions let the order go past the range; such files still open.
+                    double x = 0;
+                    if (!parseNumber(v, x) || x != std::floor(x)) fail(tok, "bad decal order '" + v + "'");
+                    d.order = decalOrderFrom(x);
+                    if (d.order != x) ++clampedDecalOrders;
+                } else if (k == "seq") {
+                    // Placement order among all the map's decals (v0.12.6 review fix): carried in
+                    // the id until Document::reset gives out the real ids in this order.
                     long x = 0;
-                    if (!parseInt(v, -1000000, 1000000, x)) fail(tok, "bad decal order '" + v + "'");
-                    d.order = (int)x;
+                    if (!parseInt(v, 0, 1L << 30, x)) fail(tok, "bad decal seq '" + v + "'");
+                    d.id = (DecalId)x + 1;
                 } else if (k == "vg") {
                     long x = 0;
                     if (!parseInt(v, 0, 1L << 30, x)) fail(tok, "bad decal visgroup '" + v + "'");
@@ -853,7 +876,9 @@ MapReadResult readMap(const std::string& text, Document& doc) {
         while (true) {
             KeyValues keys;
             std::vector<Brush> brushes;
-            if (!p.entity(keys, brushes)) break;
+            const bool more = p.entity(keys, brushes);
+            r.clampedDecalOrders = p.clampedDecalOrders;
+            if (!more) break;
             if (!haveWorld && classnameOf(keys) == "worldspawn") {
                 haveWorld = true;
                 world = std::move(keys);

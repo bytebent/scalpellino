@@ -51,6 +51,7 @@ design in [`ARCHITECTURE.md`](ARCHITECTURE.md), status in [`PLAN.md`](PLAN.md), 
 ```
 One command per frame. Views: 0=3d 1=top 2=front 3=side. Coordinates are pixels
 inside the view. Lines starting with # are comments.
+  refused <command ...>   (the command must be refused: its failure is expected, not counted)
   tool select|block       press <view> <x> <y> [shift] [cmd] [alt]
   drag <x> <y>            release
   key Return|Esc|Delete   undo | redo | selectall

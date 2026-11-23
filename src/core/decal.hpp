@@ -33,6 +33,16 @@ constexpr double kDecalUnitsPerTexel = 2.54;
 constexpr double kDefaultDecalReach = 10.16;
 // Faces turned further than this from the decal (cos of 75 degrees) don't take it.
 constexpr double kDecalMinFacing = 0.26;
+// A decal's order is kept within these (the editor clamps; the file reader clamps too).
+constexpr int kDecalOrderMin = -1000000;
+constexpr int kDecalOrderMax = 1000000;
+// A typed order (any number) as a valid one: rounded and clamped.
+inline int decalOrderFrom(double x) {
+    if (!(x == x)) return 0; // NaN
+    if (x < kDecalOrderMin) return kDecalOrderMin;
+    if (x > kDecalOrderMax) return kDecalOrderMax;
+    return (int)(x < 0 ? x - 0.5 : x + 0.5);
+}
 
 struct Decal {
     DecalId id = 0;

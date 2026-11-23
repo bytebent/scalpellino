@@ -33,8 +33,9 @@ std::optional<double> propLandingMove(const PropRef& prop, const std::vector<con
                                       const std::vector<const MathPrim*>& otherPrims,
                                       const std::vector<PropRef>& otherProps);
 
-// The object's lowest point (Z) on its surface.
-double objectBottom(const std::vector<const MathPrim*>& object);
+// The object's lowest point (Z) on its surface; none when nothing of it is left (a
+// combination cut away entirely).
+std::optional<double> objectBottom(const std::vector<const MathPrim*>& object);
 
 // Snap to Land for the document's selected primitives and props (moved here from the
 // editor in v0.10.3): each lands on the visible brushes, shown primitives and props below
