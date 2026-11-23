@@ -10,6 +10,7 @@
 // scripts). Shared helpers: editor_util.hpp; member templates: editor_templates.hpp.
 #include <functional>
 #include <map>
+#include <unordered_map>
 #include <sstream>
 #include "core/bottega.hpp"
 #include "imgui.h"
@@ -249,7 +250,17 @@ private:
     void editDecals(const char* name, const std::function<void(Decal&)>& fn);
     void addDecals(Scene& s);  // the shown decals, their meshes cached per map revision
     std::function<bool(const std::string&, int&, int&, double&)> decalPicture_;
-    std::map<DecalId, std::pair<Decal, std::shared_ptr<const std::vector<DecalTri>>>> decalMeshes_;
+    // Decal meshes as drawn, each with the decal and the brushes (id, stamp) it was built
+    // on; rebuilt only when one of those changes (v0.12.6 review: all were rebuilt after
+    // any edit, and every decal worked out every brush's box). The brushes' boxes are kept
+    // by stamp too.
+    struct DecalMeshEntry {
+        Decal decal;
+        std::vector<std::pair<BrushId, std::uint64_t>> on;
+        std::shared_ptr<const std::vector<DecalTri>> tris;
+    };
+    std::map<DecalId, DecalMeshEntry> decalMeshes_;
+    std::unordered_map<BrushId, std::pair<std::uint64_t, AABB>> decalBrushBoxes_;
     unsigned long long decalMeshRev_ = ~0ull;
     bool askDecal_ = false;
     Decal decalPanel_;        // Properties fields (refreshed when not being typed in)

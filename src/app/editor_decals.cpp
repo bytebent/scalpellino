@@ -46,10 +46,26 @@ void Editor::decalSizeFromPicture() {
 
 void Editor::addDecals(Scene& s) {
     if (!doc_.decalsShown()) return;
-    if (decalMeshRev_ != doc_.revision()) {
-        decalMeshes_.clear();
+    // After a change: brush boxes brought up to date (only the changed brushes), and every
+    // decal's mesh checked against the brushes it lands on now.
+    const bool recheck = decalMeshRev_ != doc_.revision();
+    if (recheck) {
         decalMeshRev_ = doc_.revision();
+        std::unordered_map<BrushId, std::pair<std::uint64_t, AABB>> boxes;
+        boxes.reserve(doc_.brushes().size());
+        for (const Brush& b : doc_.brushes()) {
+            const std::uint64_t st = doc_.brushStamp(b.id);
+            auto it = decalBrushBoxes_.find(b.id);
+            boxes[b.id] = it != decalBrushBoxes_.end() && it->second.first == st ? it->second : std::make_pair(st, b.bounds());
+        }
+        decalBrushBoxes_ = std::move(boxes);
     }
+    auto overlaps = [](const AABB& a, const AABB& b) {
+        for (int k = 0; k < 3; ++k)
+            if (a.max[k] < b.min[k] || b.max[k] < a.min[k]) return false;
+        return true;
+    };
+    std::map<DecalId, DecalMeshEntry> keep;
     for (const Brush& b : doc_.brushes())
         for (const Decal& d : b.decals) {
             if (!doc_.visible(b, d)) continue;
@@ -57,14 +73,28 @@ void Editor::addDecals(Scene& s) {
             sd.decal = d;
             sd.selected = doc_.decalSelection().count(d.id) > 0;
             auto it = decalMeshes_.find(d.id);
-            if (it == decalMeshes_.end() || it->second.first != d) {
-                auto tris = std::make_shared<const std::vector<DecalTri>>(
-                    decalMesh(d, doc_.brushes(), [this](const Brush& x) { return doc_.visible(x); }));
-                it = decalMeshes_.insert_or_assign(d.id, std::make_pair(d, tris)).first;
+            const bool same = it != decalMeshes_.end() && it->second.decal == d;
+            if (!same || recheck) {
+                const AABB box = decalBounds(d);
+                std::vector<std::pair<BrushId, std::uint64_t>> on;
+                std::vector<const Brush*> near;
+                for (const Brush& x : doc_.brushes()) {
+                    if (!doc_.visible(x)) continue;
+                    const auto& [st, bb] = decalBrushBoxes_[x.id];
+                    if (!overlaps(box, bb)) continue;
+                    on.emplace_back(x.id, st);
+                    near.push_back(&x);
+                }
+                if (!same || it->second.on != on) {
+                    DecalMeshEntry e{d, std::move(on), std::make_shared<const std::vector<DecalTri>>(decalMeshOn(d, near))};
+                    it = decalMeshes_.insert_or_assign(d.id, std::move(e)).first;
+                }
             }
-            sd.tris = it->second.second;
+            sd.tris = it->second.tris;
+            keep.emplace(d.id, it->second);
             s.decals.push_back(std::move(sd));
         }
+    decalMeshes_ = std::move(keep); // decals gone or hidden drop out
     std::stable_sort(s.decals.begin(), s.decals.end(), [](const Scene::SceneDecal& a, const Scene::SceneDecal& b) {
         return a.decal.order != b.decal.order ? a.decal.order < b.decal.order : a.decal.id < b.decal.id;
     });

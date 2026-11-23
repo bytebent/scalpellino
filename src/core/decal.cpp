@@ -108,6 +108,15 @@ void decalUV(const Decal& d, const Vec3& p, double& u, double& v) {
 
 bool decalTakes(const Decal& d, const Vec3& n) { return dot(normalize(n), normalize(d.normal)) >= kDecalMinFacing; }
 
+bool decalDrawnAt(const Decal& d, const Vec3& p, const Vec3& n) {
+    if (!decalTakes(d, n)) return false;
+    if (std::fabs(dot(p - d.pos, normalize(d.normal))) > d.reach + 1e-3) return false;
+    double u = 0, v = 0;
+    decalUV(d, p, u, v);
+    constexpr double e = 1e-6;
+    return u >= -e && u <= 1 + e && v >= -e && v <= 1 + e;
+}
+
 namespace {
 bool overlap(const AABB& a, const AABB& b) {
     for (int k = 0; k < 3; ++k)
@@ -133,11 +142,20 @@ void addPiece(const Decal& d, const std::vector<Vec3>& poly, const Vec3& n, std:
 } // namespace
 
 std::vector<DecalTri> decalMesh(const Decal& d, const std::vector<Brush>& brushes, const std::function<bool(const Brush&)>& visible) {
-    std::vector<DecalTri> out;
     const AABB box = decalBounds(d);
+    std::vector<const Brush*> near;
     for (const Brush& b : brushes) {
         if (visible && !visible(b)) continue;
-        if (!overlap(box, b.bounds())) continue;
+        if (overlap(box, b.bounds())) near.push_back(&b);
+    }
+    return decalMeshOn(d, near);
+}
+
+std::vector<DecalTri> decalMeshOn(const Decal& d, const std::vector<const Brush*>& brushes) {
+    std::vector<DecalTri> out;
+    const AABB box = decalBounds(d);
+    for (const Brush* bp : brushes) {
+        const Brush& b = *bp;
         std::optional<TerrainGrid> g;
         if (b.terrain) g = terrainGrid(b);
         for (const Polygon& p : b.polygons()) {

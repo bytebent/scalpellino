@@ -85,6 +85,9 @@ std::vector<DecalVert> clipToDecal(const Decal& d, const std::vector<DecalVert>&
 void decalUV(const Decal& d, const Vec3& p, double& u, double& v);
 // Does a surface facing `n` take the decal?
 bool decalTakes(const Decal& d, const Vec3& n);
+// Is the decal's picture drawn at point `p` of a surface facing `n`? (In its box, within
+// reach of its plane, on a surface that takes it.) For picking where it shows.
+bool decalDrawnAt(const Decal& d, const Vec3& p, const Vec3& n);
 
 // The decal as drawn on the brushes (the editor's flat view, picking): triangles with the
 // picture's coordinates and the surface's normal.
@@ -95,6 +98,9 @@ struct DecalTri {
 };
 std::vector<DecalTri> decalMesh(const Decal& d, const std::vector<Brush>& brushes,
                                 const std::function<bool(const Brush&)>& visible = {});
+// The same on brushes already picked out (visible, their box overlapping decalBounds):
+// for callers that keep the brushes' boxes, since working out a box clips the brush.
+std::vector<DecalTri> decalMeshOn(const Decal& d, const std::vector<const Brush*>& brushes);
 
 // Moves the decal with an affine change of the world (a brush moved, turned, sized or
 // mirrored): its centre and size follow; a mirror doesn't mirror the picture.

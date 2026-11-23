@@ -309,9 +309,12 @@ void drawDecalsPass(const SceneBrushes& brushes, const BakedLight& baked, Textur
                     Use& use, Release& release, BindPage& bindPage) {
     const std::vector<BakedLight::Page>& pages = baked.pages();
     const BakedLight::FaceRef full{0, -1, -1, nullptr};
+    // About 3 depth steps at that distance, but never more than 1 cm: with a tiny near
+    // plane far away, 3 steps are many centimetres and pushed the decal past a thin object
+    // in front of it (v0.12.6 review).
     auto lift = [&](const Vec3& p) {
         const double d = length(p - ctx.camPos);
-        return std::max(0.05, 3.0 * d * d / (std::max(ctx.nearDist, 0.01) * 16777216.0));
+        return std::clamp(3.0 * d * d / (std::max(ctx.nearDist, 0.01) * 16777216.0), 0.05, 1.0);
     };
     // DecalVert::a: 0, 1 lightmap u, v; 2 bump offset; 3..5 normal
     auto vert = [](const Vec3& p, float lu, float lv, float bz, const Vec3& n) {

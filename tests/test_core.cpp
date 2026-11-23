@@ -4445,6 +4445,19 @@ static void testDecals() {
 
 // v0.12.6 review: decal order range (F01) and equal-order stacking after reopening (F02).
 static void testDecalOrderFile() {
+    // F03: where a decal's picture shows (for picking): in its box, within reach, facing it
+    {
+        Decal w;
+        w.pos = {60, 300, 150};
+        w.normal = {0, -1, 0};
+        w.up = {0, 0, 1};
+        w.width = w.height = 32;
+        CHECK(decalDrawnAt(w, {62, 300, 150}, {0, -1, 0}));
+        CHECK(decalDrawnAt(w, {70, 300 + 5, 160}, {0, -1, 0}));     // in the box, 5 cm behind its plane
+        CHECK(!decalDrawnAt(w, {80, 300, 150}, {0, -1, 0}));        // past its right edge
+        CHECK(!decalDrawnAt(w, {62, 300 - 20, 150}, {0, -1, 0}));   // out of reach (10.16)
+        CHECK(!decalDrawnAt(w, {62, 300, 150}, {1, 0, 0}));         // a side face doesn't take it
+    }
     // two coplanar brushes; the first decal goes on the second brush, the second on the first
     Document doc;
     doc.apply(doc.makeAdd({makeBox(box({-240, 300, 0}, {0, 332, 300}), "grey")}, "add"));

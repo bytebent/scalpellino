@@ -134,28 +134,22 @@ DecalId pickDecal(const Document& doc, const Viewport& vp, Vector2 local, double
     }
     Vec3 o, dir;
     vp.pickRay(local, o, dir);
+    // Only where a picture shows: on the surface the ray hits (v0.12.6 review: the whole
+    // rectangle used to count, also where it hangs past the edge of its surface).
     const auto surf = hitSurface(doc, o, dir);
-    const double limit = surf ? surf->t + 1.0 : 1e300;
-    // the decal drawn on top among those at the surface hit
+    if (!surf) return 0;
+    // the decal drawn on top there
     DecalId best = 0;
-    double bestT = 1e300;
     int bestOrder = 0;
-    DecalId bestId = 0;
     for (const Brush& b : doc.brushes())
         for (const Decal& d : b.decals) {
-            if (!doc.visible(b, d)) continue;
-            const double t = rayHitDecal(d, o, dir);
-            if (t < 0 || t > limit) continue;
-            const bool nearer = t < bestT - 1.0;
-            const bool same = std::fabs(t - bestT) <= 1.0;
-            if (!best || nearer || (same && (d.order > bestOrder || (d.order == bestOrder && d.id > bestId)))) {
+            if (!doc.visible(b, d) || !decalDrawnAt(d, surf->p, surf->n)) continue;
+            if (!best || d.order > bestOrder || (d.order == bestOrder && d.id > best)) {
                 best = d.id;
-                bestT = std::min(t, bestT);
                 bestOrder = d.order;
-                bestId = d.id;
             }
         }
-    if (dist) *dist = bestT;
+    if (dist && best) *dist = surf->t;
     return best;
 }
 
