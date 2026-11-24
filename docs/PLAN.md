@@ -120,8 +120,8 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   probes, the two View toggles. Choices made while building are under "v0.12.6, decided
   without asking". Busy maps (now with probes and a shiny floor): see the LOG entry. Next:
   report, then discuss v0.12.7 (mirrors and glass) with the user.
-- **v0.12.6 review fixes (2026-11-23), on branch `fix/v0126-review`, not merged, no
-  release:** the user passed on another AI's review of v0.12.6 (16 findings). Each was
+- **v0.12.6 review fixes (2026-11-23), merged into `main` 2026-11-24 (fast-forward; the
+  user chose no release of their own: they ship in v0.12.7, whose notes list them):** the user passed on another AI's review of v0.12.6 (16 findings). Each was
   checked against the code and reproduced in the app first; 15 were bugs and are fixed,
   F13 (see-through faces sorted by their centre) is the documented limitation and stays.
   Saved work: decal order range, equal-order decals stacking the same after reopening
@@ -132,8 +132,7 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   Caches: a replaced prop model rebakes, fog rebuilds the cubemaps; shiny decals count for
   the no-probes warning; probe sizes 1 and 2 say "built at 4"; overlap results cleared on
   open. Choices made: "v0.12.6 review fixes, decided without asking" under Open questions.
-  Next: the user's go-ahead to merge (fast-forward, like the 2026-11-20 fixes); then
-  v0.12.7 as planned. See the LOG entry.
+  See the LOG entry.
 - **Batch 8 (v0.12.7 mirrors and glass) discussed (2026-11-24):** the user said yes to all
   11 recommendations ("Batch 8 decided with the user" under Roadmap item 5). Built on top of
   the review fixes when the user says go.

@@ -13,7 +13,9 @@ too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
   mirror (probes instead), the render's own size (half at Draft), everything shown, flat
   brush faces only, both kinds of bending glass, light passes in the bake, shown in the
   Camera Preview, three starter materials (may be removed eventually), two releases. No
-  code changes. Recorded on the review branch (`fix/v0126-review`), the newest code.
+  code changes.
+- The v0.12.6 review fixes (`fix/v0126-review`) merged into `main` (fast-forward), as the
+  user chose: no release of their own; v0.12.7's notes will list them.
 
 ### 2026-11-23 — v0.12.6 review fixes (branch `fix/v0126-review`, not released)
 - The user passed on a review of v0.12.6 by another AI (16 findings, F01-F16). Each was
