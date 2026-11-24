@@ -482,6 +482,11 @@ void Editor::drawFacePanel() {
         ImGui::End();
         return;
     }
+    if (tool_ != &textureTool_ && tool_ != &probeTool_ && doc_.selection().empty() && !doc_.planeSelection().empty()) {
+        if (ImGui::Begin("Properties###face", nullptr, ImGuiWindowFlags_NoCollapse)) drawPlanePanel();
+        ImGui::End();
+        return;
+    }
     if (tool_ == &probeTool_ || (tool_ != &textureTool_ && doc_.selection().empty() && !doc_.probeSelection().empty())) {
         if (ImGui::Begin("Properties###face", nullptr, ImGuiWindowFlags_NoCollapse)) drawProbePanel();
         ImGui::End();

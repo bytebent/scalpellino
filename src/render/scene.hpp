@@ -147,6 +147,13 @@ struct Scene {
     Vec3 clipN;
     double clipD = 0;
 
+    // Endless planes (v0.13.0): 3D, a large square of the material's picture around the map,
+    // fading out (the editor), or the plane drawn to the horizon (renders); side views, a line
+    // across the view at its height; the top view, nothing.
+    struct ScenePlane { EndlessPlane plane; bool selected = false; };
+    std::vector<ScenePlane> planes;
+    AABB mapBounds; // the editor's plane squares are centred on it
+
     // Math primitives (milestone 9): exact shapes in 3D, outlines in 2D.
     struct ScenePrim { MathPrim prim; bool selected = false; };
     std::vector<ScenePrim> prims;

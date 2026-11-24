@@ -197,6 +197,8 @@ Command Document::makeAddDecal(Decal d, BrushId on, const std::string& name) {
     c.cameraSelectionAfter = std::set<CameraId>{};
     c.probeSelectionBefore = probeSelection_;
     c.probeSelectionAfter = std::set<ProbeId>{};
+    c.planeSelectionBefore = planeSelection_;
+    c.planeSelectionAfter = std::set<PlaneId>{};
     const Brush* b = find(on);
     if (!b) return c;
     d.id = newDecalId();
@@ -273,6 +275,7 @@ void Document::apply(Command cmd) {
     for (const PropChange& c : cmd.propChanges) setProp(c.id, c.after);
     for (const CameraChange& c : cmd.cameraChanges) setCamera(c.id, c.after);
     for (const ProbeChange& c : cmd.probeChanges) setProbe(c.id, c.after);
+    for (const PlaneChange& c : cmd.planeChanges) setPlane(c.id, c.after);
     if (cmd.envAfter) { env_ = *cmd.envAfter; touchLighting(); }
     selection_ = cmd.selectionAfter;
     if (cmd.lightSelectionAfter) lightSelection_ = *cmd.lightSelectionAfter;
@@ -280,6 +283,7 @@ void Document::apply(Command cmd) {
     if (cmd.propSelectionAfter) propSelection_ = *cmd.propSelectionAfter;
     if (cmd.cameraSelectionAfter) cameraSelection_ = *cmd.cameraSelectionAfter;
     if (cmd.probeSelectionAfter) probeSelection_ = *cmd.probeSelectionAfter;
+    if (cmd.planeSelectionAfter) planeSelection_ = *cmd.planeSelectionAfter;
     if (cmd.decalSelectionAfter) decalSelection_ = *cmd.decalSelectionAfter;
     pruneDecalSelection();
     if (!cmd.fileChanges.empty()) writeFiles(cmd.fileChanges, true);
@@ -325,6 +329,7 @@ std::size_t primBytes(const MathPrim& p) { return sizeof(MathPrim) + strBytes(p.
 std::size_t propBytes(const Prop& p) { return sizeof(Prop) + strBytes(p.model) + keysBytes(p.otherKeys); }
 std::size_t cameraBytes(const Camera& c) { return sizeof(Camera) + strBytes(c.name) + keysBytes(c.otherKeys); }
 std::size_t probeBytes(const Probe& p) { return sizeof(Probe) + keysBytes(p.otherKeys); }
+std::size_t planeBytes(const EndlessPlane& p) { return sizeof(EndlessPlane) + strBytes(p.face.texture) + keysBytes(p.otherKeys); }
 std::size_t groupBytes(const Group& g) { return sizeof(Group) + keysBytes(g.keys); }
 template <class S> std::size_t setBytes(const S& s) { return s.size() * 40; } // a set node, roughly
 template <class S> std::size_t optSetBytes(const std::optional<S>& s) { return s ? setBytes(*s) : 0; }
@@ -339,6 +344,7 @@ std::size_t Document::commandBytes(const Command& c) {
     for (const PropChange& x : c.propChanges) n += sizeof(x) + optBytes(x.before, propBytes) + optBytes(x.after, propBytes);
     for (const CameraChange& x : c.cameraChanges) n += sizeof(x) + optBytes(x.before, cameraBytes) + optBytes(x.after, cameraBytes);
     for (const ProbeChange& x : c.probeChanges) n += sizeof(x) + optBytes(x.before, probeBytes) + optBytes(x.after, probeBytes);
+    for (const PlaneChange& x : c.planeChanges) n += sizeof(x) + optBytes(x.before, planeBytes) + optBytes(x.after, planeBytes);
     if (c.envBefore) n += sizeof(Environment);
     if (c.envAfter) n += sizeof(Environment);
     for (const FileChange& f : c.fileChanges) n += sizeof(f) + f.path.size() + (f.before ? f.before->size() : 0) + (f.after ? f.after->size() : 0);
@@ -348,6 +354,7 @@ std::size_t Document::commandBytes(const Command& c) {
     n += optSetBytes(c.propSelectionBefore) + optSetBytes(c.propSelectionAfter);
     n += optSetBytes(c.cameraSelectionBefore) + optSetBytes(c.cameraSelectionAfter);
     n += optSetBytes(c.probeSelectionBefore) + optSetBytes(c.probeSelectionAfter);
+    n += optSetBytes(c.planeSelectionBefore) + optSetBytes(c.planeSelectionAfter);
     return n;
 }
 
@@ -391,6 +398,7 @@ bool Document::undo() {
     for (auto it = cmd.propChanges.rbegin(); it != cmd.propChanges.rend(); ++it) setProp(it->id, it->before);
     for (auto it = cmd.cameraChanges.rbegin(); it != cmd.cameraChanges.rend(); ++it) setCamera(it->id, it->before);
     for (auto it = cmd.probeChanges.rbegin(); it != cmd.probeChanges.rend(); ++it) setProbe(it->id, it->before);
+    for (auto it = cmd.planeChanges.rbegin(); it != cmd.planeChanges.rend(); ++it) setPlane(it->id, it->before);
     if (cmd.envBefore) { env_ = *cmd.envBefore; touchLighting(); }
     selection_ = cmd.selectionBefore;
     if (cmd.lightSelectionBefore) lightSelection_ = *cmd.lightSelectionBefore;
@@ -398,6 +406,7 @@ bool Document::undo() {
     if (cmd.propSelectionBefore) propSelection_ = *cmd.propSelectionBefore;
     if (cmd.cameraSelectionBefore) cameraSelection_ = *cmd.cameraSelectionBefore;
     if (cmd.probeSelectionBefore) probeSelection_ = *cmd.probeSelectionBefore;
+    if (cmd.planeSelectionBefore) planeSelection_ = *cmd.planeSelectionBefore;
     if (cmd.decalSelectionBefore) decalSelection_ = *cmd.decalSelectionBefore;
     pruneDecalSelection();
     if (!cmd.fileChanges.empty()) writeFiles(cmd.fileChanges, false);
@@ -419,6 +428,7 @@ bool Document::redo() {
     for (const PropChange& c : cmd.propChanges) setProp(c.id, c.after);
     for (const CameraChange& c : cmd.cameraChanges) setCamera(c.id, c.after);
     for (const ProbeChange& c : cmd.probeChanges) setProbe(c.id, c.after);
+    for (const PlaneChange& c : cmd.planeChanges) setPlane(c.id, c.after);
     if (cmd.envAfter) { env_ = *cmd.envAfter; touchLighting(); }
     selection_ = cmd.selectionAfter;
     if (cmd.lightSelectionAfter) lightSelection_ = *cmd.lightSelectionAfter;
@@ -426,6 +436,7 @@ bool Document::redo() {
     if (cmd.propSelectionAfter) propSelection_ = *cmd.propSelectionAfter;
     if (cmd.cameraSelectionAfter) cameraSelection_ = *cmd.cameraSelectionAfter;
     if (cmd.probeSelectionAfter) probeSelection_ = *cmd.probeSelectionAfter;
+    if (cmd.planeSelectionAfter) planeSelection_ = *cmd.planeSelectionAfter;
     if (cmd.decalSelectionAfter) decalSelection_ = *cmd.decalSelectionAfter;
     pruneDecalSelection();
     if (!cmd.fileChanges.empty()) writeFiles(cmd.fileChanges, true);
@@ -546,6 +557,13 @@ void Document::reset(KeyValues world, std::vector<Brush> brushes, std::vector<Ra
         p.id = nextProbeId_++;
         probes_.push_back(std::move(p));
     }
+    planes_.clear();
+    planeSelection_.clear();
+    nextPlaneId_ = 1;
+    for (EndlessPlane& p : extra.planes) {
+        p.id = nextPlaneId_++;
+        planes_.push_back(std::move(p));
+    }
     bookmarks_ = std::move(extra.bookmarks);
     figure_ = extra.figure;
     visgroups_ = std::move(visgroups);
@@ -639,6 +657,8 @@ Command Document::makeAddLights(std::vector<Light> lights, const std::string& na
     c.cameraSelectionAfter = std::set<CameraId>{};
     c.probeSelectionBefore = probeSelection_;
     c.probeSelectionAfter = std::set<ProbeId>{};
+    c.planeSelectionBefore = planeSelection_;
+    c.planeSelectionAfter = std::set<PlaneId>{};
     c.decalSelectionBefore = decalSelection_;
     c.decalSelectionAfter = std::set<DecalId>{};
     for (Light& l : lights) {
@@ -714,6 +734,8 @@ Command Document::makeAddPrims(std::vector<MathPrim> prims, const std::string& n
     c.cameraSelectionAfter = std::set<CameraId>{};
     c.probeSelectionBefore = probeSelection_;
     c.probeSelectionAfter = std::set<ProbeId>{};
+    c.planeSelectionBefore = planeSelection_;
+    c.planeSelectionAfter = std::set<PlaneId>{};
     c.decalSelectionBefore = decalSelection_;
     c.decalSelectionAfter = std::set<DecalId>{};
     for (MathPrim& p : prims) {
@@ -779,6 +801,8 @@ Command Document::makeAddProps(std::vector<Prop> props, const std::string& name)
     c.cameraSelectionAfter = std::set<CameraId>{};
     c.probeSelectionBefore = probeSelection_;
     c.probeSelectionAfter = std::set<ProbeId>{};
+    c.planeSelectionBefore = planeSelection_;
+    c.planeSelectionAfter = std::set<PlaneId>{};
     c.decalSelectionBefore = decalSelection_;
     c.decalSelectionAfter = std::set<DecalId>{};
     for (Prop& p : props) {
@@ -903,6 +927,8 @@ Command Document::makeAddCameras(std::vector<Camera> cams, const std::string& na
     c.cameraSelectionAfter = std::set<CameraId>{};
     c.probeSelectionBefore = probeSelection_;
     c.probeSelectionAfter = std::set<ProbeId>{};
+    c.planeSelectionBefore = planeSelection_;
+    c.planeSelectionAfter = std::set<PlaneId>{};
     c.decalSelectionBefore = decalSelection_;
     c.decalSelectionAfter = std::set<DecalId>{};
     const bool hadActive = activeCamera() != nullptr;
@@ -1001,6 +1027,8 @@ Command Document::makeAddProbes(std::vector<Probe> probes, const std::string& na
     c.decalSelectionAfter = std::set<DecalId>{};
     c.probeSelectionBefore = probeSelection_;
     c.probeSelectionAfter = std::set<ProbeId>{};
+    c.planeSelectionBefore = planeSelection_;
+    c.planeSelectionAfter = std::set<PlaneId>{};
     for (Probe& p : probes) {
         if (p.id == 0) p.id = newProbeId();
         c.probeSelectionAfter->insert(p.id);
@@ -1028,6 +1056,77 @@ void Document::addProbeDeletes(Command& c, const std::set<ProbeId>& ids) const {
             after.erase(id);
         }
     c.probeSelectionAfter = after;
+}
+
+} // namespace scal
+
+namespace scal {
+
+const EndlessPlane* Document::findPlane(PlaneId id) const {
+    for (const EndlessPlane& p : planes_)
+        if (p.id == id) return &p;
+    return nullptr;
+}
+
+void Document::setPlane(PlaneId id, const std::optional<EndlessPlane>& p) {
+    auto it = std::find_if(planes_.begin(), planes_.end(), [&](const EndlessPlane& x) { return x.id == id; });
+    if (p) {
+        if (it != planes_.end()) *it = *p;
+        else
+            planes_.insert(std::lower_bound(planes_.begin(), planes_.end(), id, [](const EndlessPlane& x, PlaneId v) { return x.id < v; }), *p);
+        if (id >= nextPlaneId_) nextPlaneId_ = id + 1;
+    } else if (it != planes_.end()) {
+        planes_.erase(it);
+        planeSelection_.erase(id);
+    }
+}
+
+Command Document::makeAddPlanes(std::vector<EndlessPlane> planes, const std::string& name) {
+    Command c;
+    c.name = name;
+    c.selectionBefore = selection_;
+    c.selectionAfter = {};
+    c.lightSelectionBefore = lightSelection_;
+    c.lightSelectionAfter = std::set<LightId>{};
+    c.primSelectionBefore = primSelection_;
+    c.primSelectionAfter = std::set<MathPrimId>{};
+    c.propSelectionBefore = propSelection_;
+    c.propSelectionAfter = std::set<PropId>{};
+    c.cameraSelectionBefore = cameraSelection_;
+    c.cameraSelectionAfter = std::set<CameraId>{};
+    c.probeSelectionBefore = probeSelection_;
+    c.probeSelectionAfter = std::set<ProbeId>{};
+    c.decalSelectionBefore = decalSelection_;
+    c.decalSelectionAfter = std::set<DecalId>{};
+    c.planeSelectionBefore = planeSelection_;
+    c.planeSelectionAfter = std::set<PlaneId>{};
+    for (EndlessPlane& p : planes) {
+        if (p.id == 0) p.id = newPlaneId();
+        c.planeSelectionAfter->insert(p.id);
+        c.planeChanges.push_back({p.id, std::nullopt, std::move(p)});
+    }
+    return c;
+}
+
+Command Document::makeModifyPlanes(const std::vector<EndlessPlane>& modified, const std::string& name) {
+    Command c;
+    c.name = name;
+    c.selectionBefore = c.selectionAfter = selection_;
+    for (const EndlessPlane& p : modified)
+        if (const EndlessPlane* old = findPlane(p.id))
+            if (*old != p) c.planeChanges.push_back({p.id, *old, p});
+    return c;
+}
+
+void Document::addPlaneDeletes(Command& c, const std::set<PlaneId>& ids) const {
+    std::set<PlaneId> after = c.planeSelectionAfter ? *c.planeSelectionAfter : planeSelection_;
+    if (!c.planeSelectionBefore) c.planeSelectionBefore = planeSelection_;
+    for (PlaneId id : ids)
+        if (const EndlessPlane* p = findPlane(id)) {
+            c.planeChanges.push_back({id, *p, std::nullopt});
+            after.erase(id);
+        }
+    c.planeSelectionAfter = after;
 }
 
 } // namespace scal

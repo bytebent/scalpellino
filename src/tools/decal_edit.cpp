@@ -65,7 +65,7 @@ void clearOthers(Document& doc) {
     doc.setLightSelection({});
     doc.setPrimSelection({});
     doc.setPropSelection({});
-    doc.setCameraSelection({}); doc.setProbeSelection({});
+    doc.setCameraSelection({}); doc.setProbeSelection({}); doc.setPlaneSelection({});
 }
 } // namespace
 

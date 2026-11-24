@@ -24,8 +24,28 @@ constexpr double kMirrorMinCover = 0.0005; // planes covering less of the pictur
 // defaults _rt_WaterReflection / _rt_WaterRefraction: on; set to anything not starting with
 // "_rt_" (or empty): off). Refraction is also off when $minreflectivity >= 1 (the Fresnel
 // mix then never shows it).
-enum MirrorParts { kMirrorReflect = 1, kMirrorRefract = 2, kMirrorBase = 4 };
+enum MirrorParts { kMirrorReflect = 1, kMirrorRefract = 2, kMirrorBase = 4, kMirrorEntities = 8, kMirrorWater = 16 };
 bool isReflectiveMaterial(const Material& m);
+// v0.13.0 — Source's Water shader (milestone 13, agreed with the user): drawn like a mirror (a
+// reflection from the mirrored camera and what is under the surface, mixed by Fresnel); its
+// parts: kMirrorWater always, kMirrorReflect / kMirrorRefract as LightmappedReflective's
+// ($reflecttexture / $refracttexture), kMirrorEntities with $reflectentities (props and
+// primitives show in the reflection; Source: only the map's brushes and the sky without it).
+// $forcecheap: no pictures at all (cheap water: the probes, mixed with $fogcolor by Fresnel).
+bool isWaterMaterial(const Material& m);
+// The murk of water seen through its surface (Source's $fogcolor, $fogstart, $fogend in
+// Hammer units, converted to cm): what is under it fades into the colour by how far the view
+// travels under the water. Off without $fogend > $fogstart.
+struct WaterFog {
+    bool on = false;
+    Vec3 color;            // 0..255 (sRGB)
+    double start = 0, end = 0; // cm
+    bool operator==(const WaterFog& o) const { return on == o.on && color == o.color && start == o.start && end == o.end; }
+};
+WaterFog waterFog(const Material& m);
+// Water surfaces must face up (Source's water is always level): faces tilted more than this
+// (cos of the angle to straight up) are cheap water.
+constexpr double kWaterLevelCos = 0.999;
 // Source's Refract (v0.12.7b): glass that bends a copy of the picture drawn so far.
 bool isRefractMaterial(const Material& m);
 int mirrorParts(const Material& m); // 0 when not LightmappedReflective
@@ -40,12 +60,14 @@ struct MirrorFace {
     Vec3 n;
     double d = 0;
     int parts = 0;
+    WaterFog fog;     // water (v0.13.0): its murk
 };
 struct MirrorPlane {
     Vec3 n;
     double d = 0;
     int parts = 0;
     double cover = 0; // how much of the picture its faces cover (0..1)
+    WaterFog fog;     // water: the murk of the first water face on it
 };
 // The planes worth drawing for camera `c`: faces in view, with the camera in front of them,
 // covering at least kMirrorMinCover of the picture together,

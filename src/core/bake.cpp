@@ -99,6 +99,9 @@ struct Gather {
     double skyScale = 1;
     Vec3 minLight;     // flat light everywhere (option)
     bool skyOn = true;
+    const std::vector<BakePlane>* planes = nullptr; // cloud planes dim the sun (v0.13.0)
+    bool clouds = false;
+    double sunThrough(const Vec3& p, const Vec3& d) const { return clouds ? cloudSunThrough(*planes, p, d) : 1.0; }
 
     Vec3 skyColor(const Vec3& d) const { return sky && sky->valid() ? sky->at(d) * skyScale : skyFlat * skyScale; }
 
@@ -133,7 +136,7 @@ struct Gather {
                 for (size_t q = 0; q < nsamp; ++q) {
                     Vec3 d = -L.dir;
                     if (q > 0) d = normalize(d + jit[q - 1] * L.spreadSin);
-                    if (!blocked(o, d, kFar)) vis += 1;
+                    if (!blocked(o, d, kFar)) vis += sunThrough(o, d);
                 }
                 for (int i = 0; i < k; ++i)
                     if (dts[i] > 0) out[i] += L.intensity * (dts[i] * vis / (double)nsamp);
@@ -724,6 +727,13 @@ std::uint64_t bakeKey(const BakeInput& in) {
     // the bake's own version: changes when the same input gives other light (v0.12.4c:
     // texlights' DIRECT_SCALE, bumped lightmaps' correction)
     h.s("bake 0.12.4c");
+    for (const BakePlane& p : in.planes) { // endless planes (v0.13.0)
+        h.s("plane"); h.i(p.plane.id); h.d(p.plane.z); h.i((long long)p.kind); h.i(p.bumped);
+        h.v(p.plane.face.u.axis); h.v(p.plane.face.v.axis);
+        if (p.kind == PlaneKind::Clouds) {
+            h.d(p.clouds.cover); h.d(p.clouds.size); h.d(p.clouds.softness); h.d(p.clouds.opacity); h.i(p.clouds.complexity); h.i(p.clouds.seed);
+        }
+    }
     h.i((long long)in.quality);
     for (const Brush& b : in.brushes) {
         h.i(b.id);
@@ -911,6 +921,13 @@ BakeResult bakeLight(const BakeInput& in, BakeProgress* progress, int threads) {
         const Vec3 cols[3] = {propToWorld(p, {1, 0, 0}) - o, propToWorld(p, {0, 1, 0}) - o, propToWorld(p, {0, 0, 1}) - o};
         tracer.addInstance(mt.mesh, cols, o, tagBase);
     }
+    // Endless ground planes (v0.13.0) block light: two triangles far past where rays end.
+    for (const BakePlane& bp : in.planes) {
+        if (bp.kind != PlaneKind::Ground) continue;
+        const std::vector<Vec3> q = planeSquare(bp.plane.z, 0, 0, 4 * kFar);
+        tracer.addTri(q[0], q[1], q[2], -1);
+        tracer.addTri(q[0], q[2], q[3], -1);
+    }
     tracer.build();
     res.triangles = tracer.triangles();
 
@@ -942,6 +959,60 @@ BakeResult bakeLight(const BakeInput& in, BakeProgress* progress, int threads) {
     G.skyScale = std::max(0.0, in.env.skyLight) / 100.0;
     G.skyOn = G.skyScale > 0;
     if (in.env.minLight) G.minLight = linColor(in.env.ambient);
+    G.planes = &in.planes;
+    for (const BakePlane& bp : in.planes) G.clouds = G.clouds || bp.kind == PlaneKind::Clouds;
+    // Endless planes' own light (v0.13.0): the sun and the open sky above them (the plane
+    // hides what is below its horizon), nothing else; bump directions scaled as bumped
+    // lightmaps are (their average is the flat light).
+    {
+        double best = -1;
+        for (const BakeLight& L : G.lights)
+            if (L.kind == LightKind::Sun && maxc(L.intensity) > best) {
+                best = maxc(L.intensity);
+                res.sunToward = -L.dir;
+                res.hasSun = true;
+            }
+        for (const BakePlane& bp : in.planes) {
+            PlaneLight pl;
+            pl.id = bp.plane.id;
+            pl.bumped = bp.bumped;
+            Vec3 ns[4] = {{0, 0, 1}};
+            const Face f = planeFace(bp.plane);
+            bumpNormals({0, 0, 1}, f.u.axis, f.v.axis, ns + 1);
+            const int k = bp.bumped ? 4 : 1;
+            for (const BakeLight& L : G.lights) {
+                if (L.kind != LightKind::Sun) continue;
+                for (int i = 0; i < k; ++i) pl.sun[i] += L.intensity * std::max(0.0, dot(ns[i], -L.dir));
+            }
+            if (G.skyOn) {
+                double sumdot[4] = {0, 0, 0, 0};
+                for (const Vec3& a : G.skyDirs) {
+                    const Vec3 d = -a;
+                    for (int i = 0; i < k; ++i) {
+                        const double dt = dot(ns[i], d);
+                        if (dt <= 1e-6) continue;
+                        sumdot[i] += dt;
+                        if (d.z > 0) pl.sky[i] += G.skyColor(d) * dt;
+                    }
+                }
+                for (int i = 0; i < k; ++i)
+                    if (sumdot[i] > 0) pl.sky[i] = pl.sky[i] / sumdot[i];
+            }
+            for (int i = 0; i < k; ++i) pl.sky[i] += G.minLight;
+            if (bp.bumped)
+                for (Vec3* part : {pl.sky, pl.sun}) {
+                    float flat[3] = {(float)part[0].x, (float)part[0].y, (float)part[0].z}, bump[9];
+                    for (int q = 0; q < 3; ++q) {
+                        bump[q * 3] = (float)part[q + 1].x;
+                        bump[q * 3 + 1] = (float)part[q + 1].y;
+                        bump[q * 3 + 2] = (float)part[q + 1].z;
+                    }
+                    correctBumped(flat, bump, 1, 1);
+                    for (int q = 0; q < 3; ++q) part[q + 1] = {bump[q * 3], bump[q * 3 + 1], bump[q * 3 + 2]};
+                }
+            res.planes.push_back(pl);
+        }
+    }
 
     // ---- smooth normals (VRAD smooths faces less than 45 degrees apart by default)
     SmoothNormals smooth;
@@ -2163,7 +2234,7 @@ BakeResult bakeLight(const BakeInput& in, BakeProgress* progress, int threads) {
                         if (L.kind == LightKind::Sun) {
                             to = -L.dir;
                             if (occludedBut(o, to, kFar, self)) continue;
-                            c = L.intensity;
+                            c = L.intensity * G.sunThrough(o, to); // under cloud planes (v0.13.0)
                         } else {
                             const Vec3 d = L.pos - o;
                             const double dist = length(d);
@@ -2381,6 +2452,16 @@ static const Vec3 kBumpBasis[3] = {{0.816496580927726, 0, 0.577350269189626},
                             {-0.408248290463863, -0.707106781186548, 0.577350269189626}};
 // The three in the world for shading normal `n` and the texture's s / t directions (VRAD's
 // GetBumpNormals): B0 along s, B1 along t (flipped for a mirrored texture), B2 = n.
+double cloudSunThrough(const std::vector<BakePlane>& planes, const Vec3& p, const Vec3& toSun) {
+    double t = 1;
+    for (const BakePlane& bp : planes) {
+        if (bp.kind != PlaneKind::Clouds || bp.plane.z <= p.z || toSun.z <= 1e-6) continue;
+        const double s = (bp.plane.z - p.z) / toSun.z;
+        t *= cloudTransmit(bp.clouds, p.x + toSun.x * s, p.y + toSun.y * s);
+    }
+    return t;
+}
+
 void bumpNormals(const Vec3& n, const Vec3& s, const Vec3& t, Vec3 out[3]) {
     Vec3 b1 = cross(n, s);
     if (length(b1) < 1e-12) { // s along the normal: any frame

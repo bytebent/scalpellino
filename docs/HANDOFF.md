@@ -87,8 +87,11 @@ texture licenses; `releases/` has the notes for each version.
   into `main` on 2026-11-24 (no release of its own; listed in v0.12.7's notes). **v0.12.7
   mirrors** (batch 8, PLAN.md "Batch 8 decided with the user") is built (`core/mirror.*`,
   `render/mirrors.*`, `LightmappedReflective.glsl`, starter materials in a new Bottega,
-  `%tooltexture`). **v0.12.7b `Refract`** (bending glass) followed. Milestone 12's planned batches are done:
-  next: water, clouds and endless planes (discussed with the user first).
+  `%tooltexture`). **v0.12.7b `Refract`** (bending glass) followed. Milestone 12's planned batches are done.
+  **Milestone 13 (water, clouds and endless planes)** was discussed (PLAN.md "Milestone 13
+  decided with the user", Roadmap item 6) and built as **v0.13.0** (`core/plane.*`,
+  `Water.glsl`, `Clouds.glsl`; water goes through the mirror pictures; the bake knows planes and
+  cloud shadows). Next on the roadmap: camera effects (lowest priority), discussed first.
 - **How the user runs each batch:** numbered questions, each with options, their
   consequences and your opinion; they answer by number ("yes to the rest" is common);
   record the answers in PLAN.md ("Batch N decided with the user") the same day; build when

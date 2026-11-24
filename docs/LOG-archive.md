@@ -3,6 +3,71 @@
 Older log entries, moved out of [`LOG.md`](LOG.md), newest first. Nothing here is
 needed to continue the work; it is the history of how each milestone was built.
 
+### 2026-11-20 — Docs check against the chat; batch 2 proposal recorded (docs only)
+- The user asked whether anything decided in the chat was missing from the docs (the repo
+  had changed: the review fixes were merged). Checked after updating to `main`: the batch
+  split, batch 1's decisions and the way of working were in. Missing / fixed: the batch 2
+  proposal and its 5 open questions (now in PLAN.md "Batch 2 under discussion"), the
+  status line (report done, batch 2 being discussed), and two older PLAN lines that still
+  put the picture size in the render window (now point to the decision: the camera's).
+
+### 2026-11-20 — The user tried v0.12.0 (docs only)
+- "Seems to work! so far!" The v0.12.0 choices are not explicitly confirmed yet (still
+  listed in PLAN.md). Next: discuss batch 2 (baked direct light and shadows).
+
+### 2026-11-20 — Render, step 1: the pipeline (v0.12.0)
+- The user said go for batch 1 (decided earlier today, entry below).
+- **Core** (`core/render_job`): render options (quality, anti-aliasing, filtering) and their
+  settings text, `fitAA` (the drawn picture at most 16384 a side and 50 M pixels),
+  `downscaleRGB` (averaging in linear light), render file names.
+- **Renderer** (`render/renderer`): the picture's scene from the map as it is (every
+  brush, hidden ones too, nodraw faces dropped; primitives, props, the map's sky and fog,
+  lights; the View menu ignored), the rough lighting always on, drawn through a lens
+  `Viewport` at any size with its own texture filtering, read back top row first.
+- **Height fog** in the brush, primitive and prop shaders (`fogAmount`: the stretch of the
+  line of sight inside the layer, as in the baked sky); renders pass the map's base and
+  thickness, the editor passes 0 (distance only, unchanged).
+- **Render job** (`app/editor_render.cpp`): Render button at the left of the status bar,
+  new Render menu (Render..., Update Camera Preview moved from World, Quality,
+  Anti-aliasing, Texture filtering; options in the user's `render.txt`), Cmd+Shift+K. A
+  modal terminal window, one step per frame, Esc stops between steps; PNG plus `.log` in
+  the Bottega's `renders/`; no Bottega: the Bottega dialog with a message.
+- **Camera Preview** = the renderer at Draft settings (replaces the editor-look preview).
+- **Tests:** core 4682 checks, 0 failed (new `testRenderJob`). UI 29 of 29 at 1x and 2x (new
+  `v120_render`: no camera, no Bottega, a saved render with its log and size, the View
+  menu and hiding don't change the picture, nodraw left out, Draft / 4x / crisp, Esc
+  stops and saves nothing, the preview). Idle 0 ticks at 1x and 2x, control 887.
+- **Screenshots:** `m12-01-render.png` (a render, 640 x 360, Normal), `m12-02-render-log.png`
+  (the terminal window), `m12-03-preview-draft-render.png` (the preview with the 3D view's
+  sky off).
+- Seen: drawing 1280 x 720 with a primitive takes about 4 s here (software OpenGL); a real
+  graphics card is far faster.
+- **Next:** report; then discuss batch 2 (baked direct light and shadows).
+
+### 2026-11-20 — M12 split into batches; batch 1 decided (docs only)
+- New chat. Agreed with the user: M12 in 7 batches (v0.12.0 pipeline, v0.12.1 direct
+  light and shadows, v0.12.2 bounces, v0.12.3 light grid, v0.12.4 materials, v0.12.5
+  probes, v0.12.6 mirrors), each discussed first, built on the user's go, then reported.
+- Batch 1 decided: the editor waits during a render; Render button at the left of the
+  status bar plus a Render menu, Cmd+Shift+K; picture size always the camera's (no size
+  field in the window); presets Draft / Normal / High, anti-aliasing, texture filtering
+  as render options; saved to the Bottega's `renders/` (asks for a Bottega if none); the
+  window is only the terminal, Esc stops. Recorded in PLAN.md (Roadmap item 5),
+  ARCHITECTURE §9 / §15, HANDOFF.md. No code changed.
+
+### 2026-11-20 — The user tried the cameras; Camera Preview decisions (docs only)
+- The user noticed the preview is the 3D view seen through the camera, not a render
+  (as agreed for M11 until the renderer exists), and that it follows some View menu
+  options. Checked: sky and fog already ignore the View menu (a script with the sky
+  toggled off and on draws the same preview); the rough light preview, Show primitives /
+  Show props and hidden things are followed. The preview also isn't marked out of date
+  when only View options change, which can look like it follows them.
+- Decided with the user: the preview is a **draft render** (M12's renderer at lower
+  settings); preview and render **ignore the View menu** and **include hidden things**;
+  fix the current preview in M12, not now. Recorded in PLAN.md (Roadmap item 5),
+  ARCHITECTURE §9, HANDOFF.md. No code changed.
+- The user will start a new chat for the next milestones.
+
 ### 2026-11-20 — Built-in Sky Lab skies, plain sky bottoms out of memory (v0.11.2)
 - Asked by the user as an aside before M12 (they also said the v0.11.1 choices seem good;
   they haven't tried the cameras yet). They asked for the skies Sky Lab was tested with

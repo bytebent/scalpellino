@@ -86,7 +86,7 @@ void PropTool::press(ToolEnv& env, const Pointer& p) {
         env.doc.setPropSelection({}); env.doc.setDecalSelection({});
         env.doc.setPrimSelection({});
         env.doc.setLightSelection({});
-        env.doc.setCameraSelection({}); env.doc.setProbeSelection({});
+        env.doc.setCameraSelection({}); env.doc.setProbeSelection({}); env.doc.setPlaneSelection({});
         env.doc.setSelection({});
     }
 }

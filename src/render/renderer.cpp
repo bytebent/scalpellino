@@ -54,6 +54,8 @@ Scene Renderer::scene(const Document& doc, TextureLibrary& textures, ModelLibrar
     std::stable_sort(s.decals.begin(), s.decals.end(), [](const Scene::SceneDecal& a, const Scene::SceneDecal& b) {
         return a.decal.order != b.decal.order ? a.decal.order < b.decal.order : a.decal.id < b.decal.id;
     });
+    for (const EndlessPlane& p : doc.planes()) s.planes.push_back({p, false}); // v0.13.0
+    st.planes = s.planes.size();
     st.lights = s.lights.size();
     st.prims = s.prims.size();
     st.props = s.props.size();
@@ -70,6 +72,7 @@ Scene Renderer::scene(const Document& doc, TextureLibrary& textures, ModelLibrar
     for (const MathPrim& p : doc.prims())
         want(p.texture);
     for (const Scene::SceneDecal& sd : s.decals) want(sd.decal.material);
+    for (const Scene::ScenePlane& sp : s.planes) want(sp.plane.face.texture);
     st.missingTextures.assign(missing.begin(), missing.end());
     // Materials with settings (v0.12.4)
     {
@@ -86,6 +89,7 @@ Scene Renderer::scene(const Document& doc, TextureLibrary& textures, ModelLibrar
                 if (p.face >= 0 && p.face < (int)b.faces.size()) note(b.faces[p.face].texture);
             for (const auto& l : b.layers) note(l.texture);
         }
+        for (const Scene::ScenePlane& sp : s.planes) note(sp.plane.face.texture);
         st.materials = used.size();
         st.shaders.assign(shaders.begin(), shaders.end());
         st.materialProblems.assign(probs.begin(), probs.end());
@@ -174,7 +178,8 @@ BakeInput bakeInput(const Document& doc, ModelLibrary& models, SkyLibrary& skies
             // reflective glass that sees through (v0.12.7) lets light through, as VRAD lets light
             // through glass brush entities and see-through materials; a mirror that only
             // reflects (a polished floor, a bathroom mirror) is solid to light
-            bm.translucent = m.flag("$translucent") || m.num("$alpha", 1) < 1 || (mirrorParts(m) & kMirrorRefract) || isRefractMaterial(m);
+            bm.translucent = m.flag("$translucent") || m.num("$alpha", 1) < 1 || (mirrorParts(m) & kMirrorRefract) || isRefractMaterial(m) ||
+                             isWaterMaterial(m); // water lets light through (v0.13.0, as VRAD)
             bm.alphaTest = m.flag("$alphatest") && !bm.translucent;
             bm.alphaRef = m.num("$alphatestreference", 0.5);
             const bool glows = bm.emit.x > 0 || bm.emit.y > 0 || bm.emit.z > 0;
@@ -194,6 +199,18 @@ BakeInput bakeInput(const Document& doc, ModelLibrary& models, SkyLibrary& skies
             if (!glows && !bm.translucent && !bm.alphaTest && !bm.bumped) continue;
             in.materials[n] = std::move(bm);
         }
+    }
+    // Endless planes (v0.13.0): what each one is follows from its material
+    for (const EndlessPlane& p : doc.planes()) {
+        BakePlane bp;
+        bp.plane = p;
+        const MaterialIndex::Entry* e = textures ? textures->material(p.face.texture) : nullptr;
+        bp.kind = planeKind(e ? &e->mat : nullptr);
+        if (e && bp.kind == PlaneKind::Clouds) bp.clouds = cloudParams(e->mat);
+        if (e) bp.bumped = (e->mat.has("$bumpmap") && !e->mat.str("$bumpmap").empty());
+        // a see-through ground ($translucent / $alpha < 1) lets light through too
+        if (e && bp.kind == PlaneKind::Ground && (e->mat.flag("$translucent") || e->mat.num("$alpha", 1) < 1)) bp.kind = PlaneKind::Water;
+        in.planes.push_back(std::move(bp));
     }
     for (const auto& [name, m] : *found) {
         if (!m || in.modelReflectivity.count(name)) continue;

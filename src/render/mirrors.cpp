@@ -23,15 +23,31 @@ std::vector<MirrorFace> mirrorFaces(const Scene& scene) {
             const Polygon& p = b.polys[i];
             if (p.face < 0 || p.face >= (int)b.faces.size() || p.verts.size() < 3) continue;
             const MaterialIndex::Entry* e = scene.textures->material(b.faces[p.face].texture);
-            const int parts = e ? mirrorParts(e->mat) : 0;
+            int parts = e ? mirrorParts(e->mat) : 0;
             if (!parts) continue;
             MirrorFace f;
             f.verts = p.verts;
             f.n = normalize(p.normal);
             f.d = dot(f.n, p.verts[0]);
+            // water (v0.13.0) must be level, as Source's: a tilted water face is cheap water
+            if ((parts & kMirrorWater) && f.n.z < kWaterLevelCos) parts &= ~(kMirrorReflect | kMirrorRefract);
             f.parts = parts;
+            if (parts & kMirrorWater) f.fog = waterFog(e->mat);
             out.push_back(std::move(f));
         }
+    }
+    // endless water planes (v0.13.0): a square far past the horizon
+    for (const Scene::ScenePlane& sp : scene.planes) {
+        const MaterialIndex::Entry* e = scene.textures->material(sp.plane.face.texture);
+        const int parts = e ? mirrorParts(e->mat) : 0;
+        if (!(parts & (kMirrorReflect | kMirrorRefract))) continue;
+        MirrorFace f;
+        f.verts = planeSquare(sp.plane.z, 0, 0, kPlaneReach);
+        f.n = {0, 0, 1};
+        f.d = sp.plane.z;
+        f.parts = parts;
+        if (parts & kMirrorWater) f.fog = waterFog(e->mat);
+        out.push_back(std::move(f));
     }
     return out;
 }
@@ -58,6 +74,14 @@ std::shared_ptr<MirrorSet> MirrorBuilder::build(const Camera& cam, const Scene& 
     Grid g;
     g.visible = false;
     view_->setFloatTarget(true);
+    // What a water plane's pictures leave out or add (v0.13.0, as Source): the reflection shows
+    // only the map (brushes, terrain, decals, planes) and the sky unless $reflectentities; what
+    // is under the surface is seen through the water's murk ($fogcolor from $fogstart to
+    // $fogend, by how far the view travels under the water: the map's height fog from far
+    // below up to the surface), with the murk instead of the sky.
+    const std::vector<Scene::ScenePrim> allPrims = scene.prims;
+    const std::vector<Scene::SceneProp> allProps = scene.props;
+    const Scene plain = scene;
     auto draw = [&](const Camera& c, const Vec3& n, double d) -> RenderTexture2D {
         scene.clipN = n;
         scene.clipD = d;
@@ -77,9 +101,36 @@ std::shared_ptr<MirrorSet> MirrorBuilder::build(const Camera& cam, const Scene& 
         const double t0 = GetTime();
         MirrorSet::Plane mp;
         mp.p = p;
+        const bool water = (p.parts & kMirrorWater) != 0;
         // Source's clip planes sit 0.1 units off the glass
-        if (p.parts & kMirrorReflect) mp.refl = draw(mirrorCamera(cam, p.n, p.d), p.n, p.d + 0.1);
-        if (p.parts & kMirrorRefract) mp.refr = draw(cam, p.n * -1.0, -p.d + 0.1);
+        if (p.parts & kMirrorReflect) {
+            if (water && !(p.parts & kMirrorEntities)) {
+                scene.prims.clear();
+                scene.props.clear();
+            }
+            mp.refl = draw(mirrorCamera(cam, p.n, p.d), p.n, p.d + 0.1);
+            scene.prims = allPrims;
+            scene.props = allProps;
+        }
+        if (p.parts & kMirrorRefract) {
+            if (water && p.fog.on) {
+                scene.fog = true;
+                scene.fogColor = p.fog.color;
+                scene.fogStart = p.fog.start;
+                scene.fogEnd = p.fog.end;
+                scene.fogBase = p.d - 1e6;
+                scene.fogThickness = 1e6;
+                scene.skyTexture = 0; // the murk all the way down
+            }
+            mp.refr = draw(cam, p.n * -1.0, -p.d + 0.1);
+            scene.fog = plain.fog;
+            scene.fogColor = plain.fogColor;
+            scene.fogStart = plain.fogStart;
+            scene.fogEnd = plain.fogEnd;
+            scene.fogBase = plain.fogBase;
+            scene.fogThickness = plain.fogThickness;
+            scene.skyTexture = plain.skyTexture;
+        }
         mp.seconds = GetTime() - t0;
         set->planes.push_back(mp);
     }

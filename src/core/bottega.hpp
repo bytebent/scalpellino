@@ -43,6 +43,11 @@ inline bool usable(const Check& c) { return c.state == State::Ready; }
 // a newer version or one whose marker is damaged. On failure returns false and fills `error`.
 bool make(const std::string& root, std::string& error);
 
+// Writes one starter material (`name` without ".vmt", e.g. "water") into `root`'s
+// textures/starter/ if it isn't there (v0.13.0: the endless-plane menu items use them in a
+// Bottega made before they existed). False if `name` isn't a starter or it can't be written.
+bool writeStarterMaterial(const std::string& root, const std::string& name);
+
 // One plain-language line about a check, for the settings dialog.
 std::string describe(const Check& c);
 

@@ -1,0 +1,190 @@
+# v0.13.0: water, clouds and endless planes (milestone 13). Water is Source's Water shader on
+# the top face of a brush (drawn like the mirrors: a reflection and what is under the surface,
+# mixed by Fresnel, murky with depth; cheap water from the probes far away or when forced);
+# endless planes are a new object (from Bryce): a flat layer at a height carrying any material
+# (water, ground, clouds), lit by the sun and the sky only. Cloud planes shade the map below.
+bottega make studio
+rescan
+# -- the starter materials of a new Bottega
+expect hastexture textures/starter/water
+expect hastexture textures/starter/murky_water
+expect hastexture textures/starter/ground
+expect hastexture textures/starter/clouds
+expect matshader textures/starter/water Water
+expect matshader textures/starter/clouds Clouds
+expect mat textures/starter/water $reflectentities 1
+# -- a pool: floor around it, walls, a pillar standing in the water
+tool select
+texture Tile_19
+block -800 -800 -64 800 100 0
+block -800 700 -64 800 800 0
+block -800 100 -64 -600 700 0
+block 600 100 -64 800 700 0
+texture Bricks_24
+block -600 100 -300 600 700 -260
+block -600 100 -260 600 120 -64
+block -600 680 -260 600 700 -64
+block -600 120 -260 -580 680 -64
+block 580 120 -260 600 680 -64
+block -400 -400 0 -100 -100 200
+block 200 400 -260 300 500 60
+# the water brush: its top face is the water (its other faces aren't level: cheap water,
+# hidden in the pool anyway; in Hammer they would be nodraw)
+texture textures/starter/water
+block -580 120 -260 580 680 -40
+key Esc
+tool light
+lightset kind sun
+lightset brightness 300
+lightset pitch -40
+lightset yaw 210
+lightset pos 0 0 500
+key Return
+tool select
+key Esc
+probe 0 0 170
+probe 0 400 100
+tool camera
+cameraset lens 28
+cameraset size 480 270
+cameraset pos 0 -100 250
+key Return
+cameraedit angles -45 90 0
+tool select
+key Esc
+environment sky Panorama_Sky_04
+renderset quality normal
+render
+expect render saved
+expect renderlog shaders: LightmappedGeneric, Water
+expect renderlog Drawing mirrors: 1 plane in view, 480 x 270
+expect renderlog mirror 1 of 1: water at height -40, reflecting everything, and under the surface (murky from 0 to 1524 cm)
+expect renderlog not warning
+rendercopy m13-01-pool.png
+closedialogs
+# -- murky water: the same pool with the brown starter's settings
+copy studio/textures/starter/water.vmt studio/water_clear.vmt
+copy studio/textures/starter/murky_water.vmt studio/textures/starter/water.vmt
+rescan
+render
+expect renderlog reflecting the map only, and under the surface (murky from 0 to 152.4 cm)
+expect rendersame no
+rendercopy m13-02-pool-murky.png
+closedialogs
+# -- cheap water ($forcecheap): no pictures, the probes mixed with the murk's colour
+tool texture
+matselect textures/starter/water
+matset $forcecheap 1
+tool select
+key Esc
+render
+expect renderlog not Drawing mirrors
+rendercopy m13-03-pool-cheap.png
+closedialogs
+undo
+expect mat textures/starter/water $forcecheap none
+copy studio/water_clear.vmt studio/textures/starter/water.vmt
+rescan
+# -- endless planes: World > Endless water / ground / cloud plane
+plane water -40
+expect planes 1
+expect planesel 1
+expect plane kind water
+expect plane z -40
+expect plane material textures/starter/water
+plane clouds 4000
+expect plane kind clouds
+expect planes 2
+plane ground -400
+expect plane kind ground
+expect planes 3
+# heights in Properties (one undo step)
+planeedit z -420
+expect plane z -420
+undo
+expect plane z -400
+# Delete removes the selected plane, Cmd+D duplicates (one grid step up)
+key Delete
+expect planes 2
+undo
+expect planes 3
+duplicate
+expect planes 4
+expect plane z -384
+key Delete
+expect planes 3
+# -- selecting: a side view's line (a click, then a drag moves it up or down) ...
+planeselect none
+view 2 3000 0 0.5
+wpress 2 3000 -40
+expect planesel 1
+expect plane kind water
+wdrag 3000 32
+release
+expect plane z 32
+undo
+expect plane z -40
+# ... the top view shows none ...
+planeselect none
+view 1 3000 3000 0.5
+wpress 1 3000 3000
+release
+expect planesel 0
+# ... the surface in the 3D view (nothing in front of it)
+camera 3000 3000 500 0 -60
+press3d 0 0
+release
+expect planesel 1
+expect plane kind water
+planeselect none
+# -- saved and opened again
+save planes.map
+open planes.map
+expect planes 3
+planeselect 1
+expect plane z 4000
+expect plane material textures/starter/clouds
+planeselect none
+# -- a render with the endless planes: the lake to the horizon, the cloud layer, cloud shadows
+tool camera
+cameraset lens 24
+cameraset pos -1500 -1300 250
+key Return
+cameraedit angles -6 45 0
+cameraedit active 1
+tool select
+key Esc
+render
+expect render saved
+expect renderlog endless plane 1 of 3: water at height -40 (textures/starter/water), lit by the sun and the sky
+expect renderlog endless plane 2 of 3: clouds at height 4000
+expect renderlog endless plane 3 of 3: ground at height -400
+expect renderlog shaders: Clouds, LightmappedGeneric, Water
+expect renderlog water at height -40, reflecting everything
+rendercopy m13-04-lake-clouds.png
+shot m13-05-render-log.png
+closedialogs
+# cloud shadows: the same map without the cloud plane is clearly lighter
+cameraselect 1
+cameraedit pos -1100 -1100 700
+cameraedit angles -30 45 0
+render
+rendercopy m13-06-cloud-shadows.png
+closedialogs
+planeselect 1
+key Delete
+expect planes 2
+render
+expect rendersame no
+rendercopy m13-07-no-clouds.png
+closedialogs
+undo
+expect planes 3
+# -- the Camera Preview draws water and planes too
+camerapreview
+expect previewmirrors 1
+# -- the editor: squares of the planes' pictures around the map (3D), dashed lines (side views)
+planeselect 0
+camera -1600 -1600 900 45 -20
+shot m13-08-editor.png
+quit

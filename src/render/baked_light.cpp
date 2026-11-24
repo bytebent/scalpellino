@@ -290,7 +290,43 @@ void setMaterialCommon(Shader& sh, const std::function<int(const char*)>& loc, c
     SetShaderValue(sh, loc("clipPlane"), cp, SHADER_UNIFORM_VEC4);
     const float vs[2] = {(float)ctx.viewW, (float)ctx.viewH};
     SetShaderValue(sh, loc("viewSize"), vs, SHADER_UNIFORM_VEC2);
+    // Endless planes (v0.13.0): off until a plane is drawn; cloud planes for their shadows
+    i1("planeLightOn", 0);
+    const int nc = (int)std::min<size_t>(ctx.clouds.size(), 4);
+    i1("cloudCount", nc);
+    if (nc > 0) {
+        float z[4] = {0, 0, 0, 0}, pp[16] = {0};
+        int q[8] = {0};
+        for (int i = 0; i < nc; ++i) {
+            const auto& c = ctx.clouds[i];
+            z[i] = (float)c.z;
+            pp[4 * i] = (float)c.p.size;
+            pp[4 * i + 1] = (float)c.p.cover;
+            pp[4 * i + 2] = (float)c.p.softness;
+            pp[4 * i + 3] = (float)c.p.opacity;
+            q[2 * i] = c.p.complexity;
+            q[2 * i + 1] = c.p.seed;
+        }
+        SetShaderValueV(sh, loc("cloudZ"), z, SHADER_UNIFORM_FLOAT, nc);
+        SetShaderValueV(sh, loc("cloudP"), pp, SHADER_UNIFORM_VEC4, nc);
+        SetShaderValueV(sh, loc("cloudQ"), q, SHADER_UNIFORM_IVEC2, nc);
+    }
+    const BakeResult* br = ctx.bake;
+    const Vec3 st = br && br->hasSun ? br->sunToward : Vec3{0, 0, 1};
+    f3("sunToward", st);
     rlActiveTextureSlot(0);
+}
+
+std::vector<BakedDrawContext::CloudLayer> cloudLayers(const std::vector<Scene::ScenePlane>& planes, TextureLibrary& textures) {
+    std::vector<BakedDrawContext::CloudLayer> out;
+    for (const Scene::ScenePlane& sp : planes) {
+        const MaterialIndex::Entry* e = textures.material(sp.plane.face.texture);
+        if (!e || planeKind(&e->mat) != PlaneKind::Clouds) continue;
+        out.push_back({sp.plane.z, cloudParams(e->mat)});
+    }
+    std::stable_sort(out.begin(), out.end(), [](const auto& a, const auto& b) { return a.z < b.z; });
+    if (out.size() > 4) out.resize(4);
+    return out;
 }
 
 // Mirrors (v0.12.7): point the material shader at mirror plane `index`'s pictures (-1: none).
@@ -323,9 +359,11 @@ struct Item {
     double dist = 0;        // see-through faces: from the camera (far first)
     int mirror = -1;        // a mirror face (v0.12.7): its plane in ctx.mirrors
     bool refract = false;   // Refract (v0.12.7b): bends a copy of the picture drawn so far
+    int plane = -1;         // an endless plane (v0.13.0): its index in ctx.planes
 };
 bool isSeeThrough(const Material* m) {
-    if (!m || isReflectiveMaterial(*m)) return false;
+    if (!m || isReflectiveMaterial(*m) || isWaterMaterial(*m)) return false;
+    if (planeKind(m) == PlaneKind::Clouds) return true; // cloud planes (v0.13.0)
     return isRefractMaterial(*m) || m->flag("$translucent") || m->num("$alpha", 1) < 1; // Refract (v0.12.7b): with the see-through faces
 }
 
@@ -488,13 +526,14 @@ bool drawBakedBrushes(const SceneBrushes& brushes, const BakedLight& baked, Text
             const std::string& mat = b.faces[p.face].texture;
             if (isSeeThrough(ctx.shaders ? materialOf(mat) : nullptr) != ctx.translucent) continue;
             const BakedLight::FaceRef* ref = baked.face(b.id, p.face, false);
+            const bool level = p.normal.z >= kWaterLevelCos; // water must be level (Source)
             Item it;
             it.b = &b;
             it.poly = (int)pi;
             it.material = &mat;
             it.page = ref ? ref->page : 0;
             if (ctx.mirrors && !ctx.mirrors->planes.empty()) // a mirror face: its plane's pictures
-                if (const Material* m = materialOf(mat); m && mirrorParts(*m))
+                if (const Material* m = materialOf(mat); m && mirrorParts(*m) && (level || !isWaterMaterial(*m)))
                     for (size_t k = 0; k < ctx.mirrors->planes.size(); ++k)
                         if (onMirrorPlane(ctx.mirrors->planes[k].p, p.normal, dot(p.normal, p.verts[0]))) { it.mirror = (int)k; break; }
             if (ctx.translucent) {
@@ -520,6 +559,23 @@ bool drawBakedBrushes(const SceneBrushes& brushes, const BakedLight& baked, Text
             items.push_back(it);
         }
     }
+    // Endless planes (v0.13.0): ground and water with the solid faces, clouds with the
+    // see-through ones (far first: a cloud layer is behind the map's glass)
+    if (!ctx.decals && ctx.planes)
+        for (size_t i = 0; i < ctx.planes->size(); ++i) {
+            const EndlessPlane& pl = (*ctx.planes)[i].plane;
+            const std::string& mat = pl.face.texture;
+            const Material* m = ctx.shaders ? materialOf(mat) : nullptr;
+            if (isSeeThrough(m) != ctx.translucent) continue;
+            Item it;
+            it.plane = (int)i;
+            it.material = &mat;
+            it.dist = 1e30 - std::fabs(ctx.camPos.z - pl.z); // before every face; the farther plane first
+            if (ctx.mirrors && m && mirrorParts(*m))
+                for (size_t k = 0; k < ctx.mirrors->planes.size(); ++k)
+                    if (onMirrorPlane(ctx.mirrors->planes[k].p, {0, 0, 1}, pl.z)) { it.mirror = (int)k; break; }
+            items.push_back(it);
+        }
     if (items.empty() && !ctx.decals) return true;
     if (ctx.translucent)
         std::stable_sort(items.begin(), items.end(), [](const Item& a, const Item& b) { return a.dist > b.dist; });
@@ -606,6 +662,69 @@ bool drawBakedBrushes(const SceneBrushes& brushes, const BakedLight& baked, Text
         auto c = [](double v) { return (unsigned char)std::clamp((int)std::lround((v * 0.5 + 0.5) * 255), 0, 255); };
         rlColor4ub(c(n.x), c(n.y), c(n.z), a);
     };
+    ShaderLibrary::Program* bdProg = nullptr; // the program planes are being drawn with
+    auto emitPlane = [&](const Item& it) {
+        const EndlessPlane& pl = (*ctx.planes)[it.plane].plane;
+        const Face f = planeFace(pl);
+        const Texture2D& tex = textures.get(f.texture);
+        const TexSize ts{std::max(1, tex.width), std::max(1, tex.height)};
+        auto quad = [&](double x0, double y0, double x1, double y1) {
+            const Vec3 q[4] = {{x0, y0, pl.z}, {x1, y0, pl.z}, {x1, y1, pl.z}, {x0, y1, pl.z}};
+            rlCheckRenderBatchLimit(6);
+            rlBegin(RL_TRIANGLES);
+            for (int k : {0, 1, 2, 0, 2, 3}) {
+                const UV uv = texCoord(f, q[k], ts);
+                normalColor({0, 0, 1}, 255);
+                rlTexCoord2f((float)uv.u, (float)uv.v);
+                rlNormal3f(0, 0, 0);
+                rlVertex3f((float)q[k].x, (float)q[k].y, (float)q[k].z);
+            }
+            rlEnd();
+        };
+        // a grid of squares around the camera, within the far clip ...
+        const int n = 8;
+        const double half = ctx.planeReach, cell = 2 * half / n, cx = ctx.camPos.x, cy = ctx.camPos.y;
+        rlSetTexture(tex.id);
+        for (int j = 0; j < n; ++j)
+            for (int i = 0; i < n; ++i) quad(cx - half + i * cell, cy - half + j * cell, cx - half + (i + 1) * cell, cy - half + (j + 1) * cell);
+        // ... and a ring out to kPlaneReach (10 km) beyond it, kept just inside the far clip by
+        // the vertex stage, so the plane runs to the horizon whatever the camera's far distance
+        if (half < kPlaneReach && bdProg) {
+            rlDrawRenderBatchActive();
+            const int on = 1, off = 0;
+            SetShaderValue(bdProg->shader, bdProg->at("planeFar"), &on, SHADER_UNIFORM_INT);
+            const double R = kPlaneReach;
+            quad(cx - R, cy - R, cx + R, cy - half);
+            quad(cx - R, cy + half, cx + R, cy + R);
+            quad(cx - R, cy - half, cx - half, cy + half);
+            quad(cx + half, cy - half, cx + R, cy + half);
+            rlDrawRenderBatchActive();
+            SetShaderValue(bdProg->shader, bdProg->at("planeFar"), &off, SHADER_UNIFORM_INT);
+        }
+        rlSetTexture(0);
+    };
+    auto planeUniforms = [&](Bound& bd, int plane) {
+        if (!bd.prog) return;
+        rlDrawRenderBatchActive();
+        ShaderLibrary::Program* p = bd.prog;
+        const int on = plane >= 0 ? 1 : 0;
+        SetShaderValue(bd.sh, p->at("planeLightOn"), &on, SHADER_UNIFORM_INT);
+        if (plane < 0) return;
+        const BakeResult* br = baked.result();
+        const PlaneLight* L = nullptr;
+        if (br)
+            for (const PlaneLight& x : br->planes)
+                if (x.id == (*ctx.planes)[plane].plane.id) L = &x;
+        float sky[12] = {0}, sun[12] = {0};
+        for (int k = 0; k < 4 && L; ++k) {
+            sky[3 * k] = (float)L->sky[k].x; sky[3 * k + 1] = (float)L->sky[k].y; sky[3 * k + 2] = (float)L->sky[k].z;
+            sun[3 * k] = (float)L->sun[k].x; sun[3 * k + 1] = (float)L->sun[k].y; sun[3 * k + 2] = (float)L->sun[k].z;
+        }
+        SetShaderValueV(bd.sh, p->at("planeSky"), sky, SHADER_UNIFORM_VEC3, 4);
+        SetShaderValueV(bd.sh, p->at("planeSun"), sun, SHADER_UNIFORM_VEC3, 4);
+        const int bumped = L && L->bumped ? 1 : 0;
+        SetShaderValue(bd.sh, p->at("planeBumped"), &bumped, SHADER_UNIFORM_INT);
+    };
     auto emit = [&](const Item& it) {
         const SceneBrush& b = *it.b;
         const BakedLight::Page& pg = pages[it.page];
@@ -680,7 +799,7 @@ bool drawBakedBrushes(const SceneBrushes& brushes, const BakedLight& baked, Text
     }
     Bound bd;
     const std::string* curMat = nullptr;
-    int curPage = -1, curMirror = -1;
+    int curPage = -1, curMirror = -1, curPlane = -1;
     for (const Item& it : items) {
         if (!curMat || *curMat != *it.material) {
             release(bd);
@@ -688,9 +807,14 @@ bool drawBakedBrushes(const SceneBrushes& brushes, const BakedLight& baked, Text
             curMat = it.material;
             curPage = -1;
             curMirror = -1; // use() left no mirror picture bound
+            curPlane = -1;  // ... and no plane light
             if (!bd.sh.id) continue;
         }
         if (!bd.sh.id) continue;
+        if (it.plane != curPlane) {
+            planeUniforms(bd, it.plane);
+            curPlane = it.plane;
+        }
         if (it.refract && bd.prog && ctx.copyFrame) {
             // Refract (v0.12.7b, as Source's frame buffer copy before each renderable): the
             // picture drawn so far, far see-through faces included
@@ -708,6 +832,15 @@ bool drawBakedBrushes(const SceneBrushes& brushes, const BakedLight& baked, Text
             ShaderLibrary::Program* p = bd.prog;
             setMirrorPictures(bd.sh, [&](const char* n) { return p->at(n); }, ctx, it.mirror);
             curMirror = it.mirror;
+        }
+        if (it.plane >= 0) { // endless planes are seen from both sides (water from below, clouds)
+            rlDrawRenderBatchActive();
+            rlDisableBackfaceCulling();
+            bdProg = bd.prog;
+            emitPlane(it);
+            rlDrawRenderBatchActive();
+            if (!bd.nocull) rlEnableBackfaceCulling();
+            continue;
         }
         if (it.page != curPage) {
             bindPage(it.page);

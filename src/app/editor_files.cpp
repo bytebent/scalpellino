@@ -185,7 +185,7 @@ void Editor::openMap(const std::string& path) {
     overlapIndex_ = -1;
     overlapsOpen_ = false;
     doc_.reset(loaded.worldKeys, loaded.brushes(), loaded.otherEntities, loaded.groups(), loaded.visgroups(),
-               WorldData{loaded.lights(), loaded.environment(), loaded.bookmarks(), loaded.figure(), loaded.prims(), loaded.props(), loaded.cameras(), loaded.probes()});
+               WorldData{loaded.lights(), loaded.environment(), loaded.bookmarks(), loaded.figure(), loaded.prims(), loaded.props(), loaded.cameras(), loaded.probes(), loaded.planes()});
     path_ = path;
     // A Sky Lab sky whose PNG is gone (another machine, a moved Bottega) is made again
     // from the settings in the map.

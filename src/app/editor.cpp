@@ -180,7 +180,14 @@ bool Editor::frame(float dt) {
     st.hasSelection = !doc_.selection().empty();
     st.hasAnything = st.hasSelection || !doc_.lightSelection().empty() || !doc_.primSelection().empty() || !doc_.propSelection().empty() ||
                      !doc_.decalSelection().empty() ||
-                     !doc_.cameraSelection().empty() || !doc_.probeSelection().empty();
+                     !doc_.cameraSelection().empty() || !doc_.probeSelection().empty() || !doc_.planeSelection().empty();
+    for (const EndlessPlane& p : doc_.planes()) { // World > Endless planes
+        const MaterialIndex::Entry* e = textures_.material(p.face.texture);
+        char b[300];
+        std::snprintf(b, sizeof b, "%zu: %s at %g (%s)%s", st.planes.size() + 1, planeKindName(planeKind(e ? &e->mat : nullptr)), p.z,
+                      p.face.texture.c_str(), doc_.planeSelection().count(p.id) ? "  - selected" : "");
+        st.planes.push_back(b);
+    }
     st.cameraTool = tool_ == &cameraTool_;
     st.probeTool = tool_ == &probeTool_;
     st.probePending = st.probeTool && probeTool_.pending.has_value();
@@ -326,6 +333,13 @@ bool Editor::frame(float dt) {
     if (m.decalPictureSize) decalSizeFromPicture();
     if (m.toggleDecals) { tool_->cancel(); doc_.setDecalsShown(!doc_.decalsShown()); }
     if (m.toolCamera) setTool(&cameraTool_);
+    if (m.newPlane >= -1) addPlane(m.newPlane);
+    if (m.selectPlane >= 0 && m.selectPlane < (int)doc_.planes().size()) {
+        tool_->cancel();
+        doc_.setSelection({}); doc_.setLightSelection({}); doc_.setPrimSelection({}); doc_.setPropSelection({});
+        doc_.setDecalSelection({}); doc_.setCameraSelection({}); doc_.setProbeSelection({});
+        doc_.setPlaneSelection({doc_.planes()[m.selectPlane].id});
+    }
     if (m.toolProbe) setTool(&probeTool_);
     if (m.createProbe) probeTool_.create(doc_);
     if (m.toggleProbeBalls) showProbeBalls_ = !showProbeBalls_;
@@ -524,6 +538,13 @@ Scene Editor::buildScene() {
         s.probes.push_back({r, sel});
     }
     if (s.probeUsage >= 0) s.probeMaterials = &textures_;
+    // Endless planes (v0.13.0); the 3D view centres their squares on the map
+    for (const EndlessPlane& p : doc_.planes()) s.planes.push_back({p, doc_.planeSelection().count(p.id) > 0});
+    if (!s.planes.empty())
+        for (const SceneBrush& b : s.brushes) {
+            s.mapBounds.add(b.bounds.min);
+            s.mapBounds.add(b.bounds.max);
+        }
     if (showProbeBalls_ && lastProbes_) s.probeAtlas = lastProbes_.get();
     if (doc_.primsShown())
         for (const MathPrim& p : doc_.prims()) s.prims.push_back({p, doc_.primSelection().count(p.id) > 0});

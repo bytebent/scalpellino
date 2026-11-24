@@ -2,6 +2,7 @@
 #include "app/editor.hpp"
 #include "io/map_format.hpp"
 #include "core/hull.hpp"
+#include "core/bottega.hpp"
 #include "core/texture.hpp"
 #include "core/csg.hpp"
 #include "core/curves.hpp"
@@ -422,6 +423,88 @@ void Editor::drawProbePanel() {
     ImGui::TextWrapped("Renders build a small picture from each probe (\"building cubemaps\"). Materials with $envmap env_cubemap reflect the "
                        "4 nearest probes, blended; without probes they reflect the sky.");
     ImGui::PopID();
+    ImGui::PopID();
+}
+
+// ---- endless planes (v0.13.0)
+
+void Editor::addPlane(int kind, std::optional<double> z) {
+    tool_->cancel();
+    std::string mat = currentTexture_;
+    if (kind >= 0) {
+        mat = starterPlaneMaterial((PlaneKind)kind);
+        // a Bottega made before the starters existed: write this one (and read the library again)
+        if (!textures_.exists(mat) && !bottegaRoot_.empty() && bottega::usable(bottegaCheck_)) {
+            const std::string name = mat.substr(mat.find_last_of('/') + 1);
+            if (bottega::writeStarterMaterial(bottegaRoot_, name)) rescanBottega();
+        }
+    }
+    double h = 0;
+    if (z) h = *z;
+    else if (kind == (int)PlaneKind::Clouds) {
+        // clouds: 50 m above the top of the map
+        double top = 0;
+        for (const Brush& b : doc_.brushes()) top = std::max(top, b.bounds().max.z);
+        h = std::round((top + 5000) / 100) * 100;
+    }
+    EndlessPlane p = makePlane(h, mat);
+    const char* names[] = {"New endless ground plane", "New endless water plane", "New endless cloud plane"};
+    doc_.apply(doc_.makeAddPlanes({p}, kind >= 0 && kind < 3 ? names[kind] : "New endless plane"));
+}
+
+void Editor::drawPlanePanel() {
+    const std::set<PlaneId>& sel = doc_.planeSelection();
+    ImGui::PushID("planes");
+    if (sel.size() > 1) {
+        ImGui::Text("%zu endless planes selected", sel.size());
+        ImGui::TextDisabled("drag a line in a side view to move them up or down;");
+        ImGui::TextDisabled("Delete removes, Cmd+D duplicates");
+        ImGui::PopID();
+        return;
+    }
+    if (sel.empty()) { ImGui::PopID(); return; }
+    const PlaneId id = *sel.begin();
+    const EndlessPlane* p = doc_.findPlane(id);
+    if (!p) { ImGui::PopID(); return; }
+    if ((id != planeBufFor_ || doc_.revision() != planeBufRev_) && !ImGui::IsAnyItemActive()) {
+        planeBufZ_ = p->z;
+        planeBufFor_ = id;
+        planeBufRev_ = doc_.revision();
+    }
+    const MaterialIndex::Entry* e = textures_.material(p->face.texture);
+    const PlaneKind kind = planeKind(e ? &e->mat : nullptr);
+    ImGui::Text("Endless plane: %s", planeKindName(kind));
+    ImGui::SetNextItemWidth(140);
+    ImGui::InputDouble("height", &planeBufZ_, 0, 0, "%g");
+    if (ImGui::IsItemDeactivatedAfterEdit() && planeBufZ_ != p->z && std::isfinite(planeBufZ_)) {
+        EndlessPlane v = *p;
+        v.z = planeBufZ_;
+        v.face = planeFace(v);
+        doc_.apply(doc_.makeModifyPlanes({v}, "Move endless plane"));
+    }
+    ImGui::TextWrapped("material: %s%s", p->face.texture.c_str(), e ? "" : " (not found)");
+    if (ImGui::Button("Use the current texture")) {
+        EndlessPlane v = *p;
+        v.face.texture = currentTexture_;
+        doc_.apply(doc_.makeModifyPlanes({v}, "Endless plane material"));
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("The texture or material picked in the Textures panel (now: %s)", currentTexture_.c_str());
+    double sc[2] = {p->face.scaleU, p->face.scaleV};
+    ImGui::SetNextItemWidth(160);
+    if (ImGui::InputScalarN("texture scale", ImGuiDataType_Double, sc, 2, nullptr, nullptr, "%g") && sc[0] != 0 && sc[1] != 0) {
+        EndlessPlane v = *p;
+        v.face.scaleU = sc[0];
+        v.face.scaleV = sc[1];
+        doc_.apply(doc_.makeModifyPlanes({v}, "Endless plane texture scale"));
+    }
+    if (kind == PlaneKind::Water)
+        ImGui::TextWrapped("Water: renders show its reflection and what is under it through the murk, as water on brushes.");
+    else if (kind == PlaneKind::Clouds)
+        ImGui::TextWrapped("Clouds: see-through shapes; in the bake they dim the sun on what is below.");
+    else
+        ImGui::TextWrapped("Ground: lit by the sun and the sky (no shadows fall on it); it blocks light in the bake.");
+    ImGui::TextDisabled("drag its line in a side view to move it;");
+    ImGui::TextDisabled("Delete removes, Cmd+D duplicates");
     ImGui::PopID();
 }
 

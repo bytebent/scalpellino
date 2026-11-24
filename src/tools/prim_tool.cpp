@@ -74,7 +74,7 @@ void PrimTool::press(ToolEnv& env, const Pointer& p) {
     env.doc.setPrimSelection({});
     env.doc.setPropSelection({}); env.doc.setDecalSelection({});
     env.doc.setLightSelection({});
-    env.doc.setCameraSelection({}); env.doc.setProbeSelection({});
+    env.doc.setCameraSelection({}); env.doc.setProbeSelection({}); env.doc.setPlaneSelection({});
 }
 
 void PrimTool::drag(ToolEnv& env, const Pointer& p) {

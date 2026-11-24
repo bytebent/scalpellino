@@ -48,6 +48,7 @@ add_library(scal_core STATIC
   src/core/prop.cpp
   src/core/mirror.cpp
   src/core/probe.cpp
+  src/core/plane.cpp
   src/core/landing.cpp
   src/core/replicate.cpp
   src/core/bottega.cpp

@@ -94,7 +94,17 @@ struct BakedDrawContext {
     // Refract (v0.12.7b): copies the picture drawn so far into a texture and returns it (0:
     // can't); unset in the editor's views.
     std::function<unsigned()> copyFrame;
+    // Endless planes (v0.13.0): drawn with the faces (ground and water with the solid ones,
+    // clouds with the see-through ones), `planeReach` cm around the camera; their light is the
+    // bake's PlaneLight; cloud planes dim the sun on them per pixel (up to 4 layers).
+    const std::vector<Scene::ScenePlane>* planes = nullptr;
+    const BakeResult* bake = nullptr;      // the planes' light, the sun's direction
+    double planeReach = 1e5;
+    struct CloudLayer { double z = 0; CloudParams p; };
+    std::vector<CloudLayer> clouds;
 };
+// The cloud planes among `planes` (their materials from `textures`), at most 4, lowest first.
+std::vector<BakedDrawContext::CloudLayer> cloudLayers(const std::vector<Scene::ScenePlane>& planes, TextureLibrary& textures);
 
 // Draws the brushes (textured, terrain with its painted layers) lit by `baked`. Inside the
 // 3D camera mode. False if the shader can't run (then nothing was drawn).

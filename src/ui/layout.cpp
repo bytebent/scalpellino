@@ -226,6 +226,19 @@ MenuActions drawMenuBar(const MenuState& st) {
         ImGui::TextDisabled("or a spot in 2D; Return creates. Renders build cubemaps from");
         ImGui::TextDisabled("them; $envmap env_cubemap reflects the 4 nearest");
         ImGui::Separator();
+        if (ImGui::MenuItem("Endless water plane")) a.newPlane = 1;
+        if (ImGui::MenuItem("Endless ground plane")) a.newPlane = 0;
+        if (ImGui::MenuItem("Endless cloud plane")) a.newPlane = 2;
+        if (ImGui::MenuItem("Endless plane with the current texture")) a.newPlane = -1;
+        if (ImGui::BeginMenu("Endless planes", !st.planes.empty())) {
+            for (size_t i = 0; i < st.planes.size(); ++i)
+                if (ImGui::MenuItem(st.planes[i].c_str())) a.selectPlane = (int)i;
+            ImGui::EndMenu();
+        }
+        ImGui::TextDisabled("A flat layer at a height, to the horizon; its material");
+        ImGui::TextDisabled("makes it water, clouds or ground. Height in Properties,");
+        ImGui::TextDisabled("or drag its line in a side view");
+        ImGui::Separator();
         if (ImGui::MenuItem("Environment (sky, ambient, fog)...")) a.environment = true;
         if (ImGui::MenuItem("Sky Lab...")) a.skyLab = true;
         if (ImGui::MenuItem("Rebake Sky Lab sky", nullptr, false, st.canRebakeSky)) a.rebakeSky = true;
@@ -381,6 +394,8 @@ void drawControlsWindow(bool* open) {
             {"Reflection probe tool", "Shift+E (World menu): click a floor in the 3D view (the probe goes 170 cm above it) or a wall (81 cm out from it), or a spot in a 2D view; Return creates, Esc cancels. Size (Hammer's cubemapsize) in Properties"},
             {"Select / move reflection probes", "click a probe's marker (a small ball; any tool that selects); drag it in a 2D view or type its position in Properties; Delete removes, Cmd+D duplicates"},
             {"Mirrors and reflective glass", "a material with the LightmappedReflective shader (Source's mirror shader) on a flat brush face: renders and the Camera Preview draw the scene again as seen in it (up to 8 mirror planes in view, the largest first; the rest, terrain and props reflect the probes), and what is behind it when it sees through ($refracttexture). A new Bottega has textures/starter/mirror and polished_stone"},
+            {"Water", "a material with the Water shader (Source's) on the top face of a brush (paint the other faces nodraw) or on an endless water plane: renders and the Camera Preview show what it reflects and what is under it, through the murk ($fogcolor, $fogstart, $fogend), mixed by Fresnel and rippled; far away it fades into cheap water (the probes). Water and mirrors share 8 pictures per render. A new Bottega has textures/starter/water and murky_water"},
+            {"Endless planes", "World > Endless water / ground / cloud plane (or with the current texture): a flat layer at a height running to the horizon, lit by the sun and the sky (no shadows fall on it). Select it by clicking its line in a side view or its surface in 3D, or from World > Endless planes; drag the line up or down in a side view, or type the height in Properties; Delete removes, Cmd+D duplicates (one grid step up). Cloud planes (the Clouds shader) shade the ground below in the bake; ground planes block light, water lets it through"},
             {"Bending glass", "a material with the Refract shader (Source's): renders and the Camera Preview bend what is behind it by its normal map, from a copy of the picture drawn so far (so it can't bend what's off the picture); tint, blur, reflection. A new Bottega has textures/starter/glass_pane"},
             {"Reflections from probes", "materials with $envmap env_cubemap reflect the 4 nearest probes, blended (renders and the Camera Preview build them: \"building cubemaps\"); other $envmap values, or no probes: the sky. View menu: probes as mirror balls, where the selected probe reflects"},
             {"Active camera", "the one Render and the Camera Preview use (white dot in its marker): tick 'active' in Properties, or World > Make selected camera active; only one at a time"},

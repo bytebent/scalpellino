@@ -448,6 +448,66 @@ Source's `LightmappedReflective` (agreed with the user 2026-11-24, "Batch 8 deci
   probes straight through. Lets light through in the bake. A built-in ripple normal map
   (`glass_ripple_normal`, made for Scalpellino) serves the starter pane.
 
+### Water and endless planes (v0.13.0, done)
+Milestone 13, agreed with the user 2026-11-24 ("Milestone 13 decided with the user" in PLAN.md).
+`core/plane.*` (planes, their kind, clouds' noise), `core/mirror.*` (water materials and their
+murk), `assets/shaders/Water.glsl` and `Clouds.glsl`.
+- **Water (Source's `Water` shader):** on the top face of a brush (Source's way; the other faces
+  would be nodraw in Hammer) or on an endless water plane. Drawn through the mirror machinery
+  (§6 "Mirrors"): the reflection from the mirrored camera and what is under the surface from
+  the camera itself, mixed by Fresnel (Source's fixed power 5), rippled by `$normalmap` read
+  through `$bumptransform` (built-in `water_ripple_normal` when none is named). The reflection
+  shows the map (brushes, terrain, decals, planes) and the sky; props and primitives only with
+  `$reflectentities 1`. **Murk:** the under-the-surface picture is drawn with the water's
+  `$fogcolor` from `$fogstart` to `$fogend` (Hammer units, x 2.54) as height fog from far below
+  up to the surface (the view's stretch under the water), and the murk in place of the sky; no
+  `$fogend` > `$fogstart`: clear water. **Cheap water** (Source's): the probes (or the sky:
+  `$envmap` other than env_cubemap) mixed with `$fogcolor` by Fresnel; always with
+  `$forcecheap`, for water past the 8-picture budget, tilted water, water seen from below, and
+  faded in with distance from `$cheapwaterstartdistance` to `$cheapwaterenddistance` (500 and
+  1000 Hammer units). Water must be level (normal within ~2.6 degrees of up). Water and mirrors
+  share the 8 pictures per render. Lets light through in the bake.
+- **Endless planes** (`EndlessPlane {id, z, face, otherKeys}`; `face` holds the material and the
+  texture axes as a brush face's): a flat layer at height z running to the horizon. **The kind
+  follows from the material** (`planeKind`): Water shader = water, Clouds shader = clouds,
+  anything else = ground. Renders draw it 10 km around the camera (`kPlaneReach`): a grid inside
+  90% of the camera's far distance and a ring beyond it kept just inside the far clip by the
+  vertex stage (`planeFar`), so it reaches the horizon whatever the far distance; both sides are
+  drawn. Ground and water with the solid faces, clouds with the see-through ones (first).
+- **Light on planes: sun and sky only, everywhere** (the user's choice, as Bryce: nothing
+  shadows a plane). The bake gives each plane a `PlaneLight`: the suns x N.L and the open sky
+  above its horizon (VRAD's sky gather without rays, the plane hiding the lower half), for the
+  flat normal and Source's 3 bump directions (scaled like bumped lightmaps); the shader
+  (`planeLightOn`, `planeSky`, `planeSun`) adds them, the sun dimmed per pixel by the cloud
+  planes above (`cloudSun`). No point or spot lights; planes don't bounce light.
+- **Planes in the bake:** a ground plane blocks light (two huge triangles in the tracer; it
+  reflects nothing back), water lets it through, **clouds dim the sun**: a sun sample ray from
+  a point below a cloud plane is weighed by `1 - $opacity x thickness` where it crosses the
+  plane (`cloudSunThrough`; Source models' sun light too, at the prop).
+- **Clouds** (`Clouds.glsl`; separate from Sky Lab's clouds, only alike): value noise (an integer
+  hash, smooth interpolation, `$complexity` octaves 2.03 apart) over the plane, `$cloudsize` cm
+  a formation; the edge sits where `$cover` % of the plane is covered (the noise is about
+  normal: its measured mean and spread), `$softness` widens the edge, the thickness grows
+  inside. `core/plane.cpp` (`cloudThickness`) and the GLSL twin compute the same numbers, so
+  the bake's cloud shadows lie under the clouds a render shows. Lit by the plane light; seen
+  from below the thick parts turn `$shadowcolor`; far away a pixel takes the average thickness
+  (no flicker).
+- **Editor:** side views draw a line across the view at the plane's height (dashed; red when
+  selected); the top view draws nothing; the 3D view a square of the material's picture around
+  the map, fading out, see-through, unlit. Select: click the line (unless a brush is under the
+  cursor), the surface in 3D (unless something is in front), or World > Endless planes. Drag the
+  line in a side view (snapped) or type the height in Properties (also the material: "Use the
+  current texture", and the texture scale); Delete, Cmd+D (one grid step up). World > Endless
+  water / ground / cloud plane make one with a starter material (water and ground at 0, clouds
+  50 m above the map's top); "with the current texture" uses the Textures panel's pick.
+- **File:** a `scal_plane` point entity: `origin` "0 0 z", `material`, `uaxis` / `vaxis`
+  ("[x y z offset] scale"), `rotation`, other keys kept.
+- **Starter materials** (a new Bottega; the menu items write theirs into an older one):
+  `textures/starter/water` (clear blue-green, reflects everything), `murky_water` (brown, murky
+  within 60 units), `ground` (Grass_20), `clouds`. Built-in pictures made for Scalpellino:
+  `water_ripple_normal`, `tool_water`, `tool_clouds`.
+- **Later (parked):** a camera under water (Source's underwater fog and `$bottommaterial`).
+
 ### Snap to Land / Ground and Multi-Replicate (v0.9.2, from Bryce)
 - **Snap to Land** (Cmd+J, Transform menu; `core/landing`): selected primitives drop
   straight down onto visible brushes (terrain surfaces, not their flat faces), terrain
@@ -551,6 +611,8 @@ it appears below the top view's centre). Editor-only, never exported.
   one object); kept in the brush they were put on. Details in §6 "Decals".
 - **Reflection probes** (v0.12.6) — Hammer's `env_cubemap`, placed by hand; Render builds a
   picture of their surroundings ("building cubemaps") for shiny materials to reflect. §6.
+- **Endless planes** (v0.13.0) — a flat layer at a height to the horizon carrying any material
+  (water, ground, clouds; from Bryce). §6 "Water and endless planes".
 - **Environment** — sky color/texture, fog, ambient light.
 - **Camera bookmarks** — saved viewpoints of the editor's 3D view, for moving around.
   Editor-only, and not the same thing as the camera objects.
@@ -580,6 +642,8 @@ That's all. No gameplay entities (doors, triggers, physics, scripting).
 - **Decals** (v0.12.5): `//@ decal ...` lines inside their brush's block (see §6 "Decals").
 - **Reflection probes** (v0.12.6): Hammer's `env_cubemap` point entities (`origin`,
   `cubemapsize`; see §6 "Reflection probes").
+- **Endless planes** (v0.13.0): `scal_plane` point entities (`origin` "0 0 height", `material`,
+  `uaxis` / `vaxis`, `rotation`; see §6 "Water and endless planes").
 - **Props** (v0.10.0): `scal_prop` point entities with `model` ("models/tree"), `origin`,
   `rotation` (degrees X Y Z), `scale` (3 numbers) and any other keys, kept as they are.
 - **nodraw:** faces textured `nodraw` (also recognised: `tools/toolsnodraw`, `common/nodraw`)
@@ -724,7 +788,8 @@ Preview and in renders.
   `env_cubemap`: cheap chrome); the reflection probes (`$envmap env_cubemap`, v0.12.6; the sky
   if the map has none, as Source's default cubemap is the skybox); live mirror reflection on
   flat surfaces (`LightmappedReflective`: mirrors, polished floors, reflective glass;
-  v0.12.7, §6 "Mirrors and reflective glass"; water reuses it in milestone 6).
+  v0.12.7, §6 "Mirrors and reflective glass"); water (v0.13.0, Source's `Water` shader) reuses
+  the mirror pictures (§6 "Water and endless planes").
 - **Mirror pictures** (v0.12.7, `render/mirrors.*`): after the cubemaps, before the picture:
   each mirror plane in view (up to 8) drawn again from the mirrored camera and, for glass
   that sees through, from the camera behind the glass; texture units 12 and 13 (material
@@ -772,8 +837,9 @@ Preview and in renders.
   instead. The bake takes from materials: `$reflectivity`, `%texlight` (VRAD's surface
   lights: one per patch, intensity = baselight x the texture's repeats on the patch x
   DIRECT_SCALE 10000, cos x cos / d^2; checked in VRAD's code), `$alphatest` (cut-out shadows: rays pass where the picture's alpha is
-  under the reference) and `$translucent` (blocks no light). Water, clouds and endless planes
-  will be materials too. Optional camera effects (dither, palette, bloom) are separate from
+  under the reference) and `$translucent` (blocks no light). Water and clouds are materials too
+  (v0.13.0, §6 "Water and endless planes"): water lets light through, endless ground planes
+  block it, cloud planes dim the sun. Optional camera effects (dither, palette, bloom) are separate from
   the look and matter least.
 - **Maybe later:** a ray-tracing renderer (Bryce look: real reflections on any shape,
   bending glass). Not pressing; the Source renderer may be enough.
@@ -849,7 +915,7 @@ docs/         this file, roadmap
 | 10c | Sky Lab (Bryce, all of it): generated skies (sun, moon, stars, clouds, atmosphere) with live preview in the 3D view, baked to panoramas in Bottega's `skies/`; settings kept in the map; tick box to lock the sun to the map's sun light; eclipses. Steps: v0.10.4 window / bake / sky modes / sun / haze / lock, v0.10.5 clouds, v0.10.6 night sky and effects | done (v0.10.6) |
 | 11 | Cameras and Camera Preview: camera objects (many, one active), options and presets, the on-request preview in a docked panel (editor look until M12 replaces it). Steps: v0.11.0 camera objects and options, v0.11.1 presets and the preview | done (v0.11.0, v0.11.1) |
 | 12 | Render, the Source look, with materials: render window, terminal log, light baking, reflection probes, mirrors, the material system (GLSL shaders from Bottega's `shaders/`, reflection kind per material), PNG to `renders/`. Steps: v0.12.0 pipeline, v0.12.1 direct light and shadows, v0.12.2 bounces, v0.12.3 props and the light grid, v0.12.4 materials, v0.12.4b bump maps, v0.12.5 decals, v0.12.6 probes, v0.12.7 mirrors, v0.12.7b bending glass | done (v0.12.7b) |
-| 13 | Water, cloud and endless planes: materials made with the system above | |
+| 13 | Water, cloud and endless planes: materials made with the system above: Source's Water shader on brushes and endless planes (reflection, murk, cheap water), endless planes (water, ground, clouds; sun and sky light), cloud shadows in the bake | done (v0.13.0) |
 | 14 | Camera effects (lowest priority): dithering, palette, bloom | |
 | 15 | Export: `.glb`, optional and last (not confirmed by the user) | |
 | later / maybe | ray-tracing renderer (Bryce look), `.wad` textures, Lua generators, texture tags | |

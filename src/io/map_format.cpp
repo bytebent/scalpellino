@@ -330,6 +330,51 @@ bool probeFromKeys(const KeyValues& kv, Probe& p) {
     return true;
 }
 
+// An endless plane (v0.13.0) as our own entity: its height in `origin` (x and y are 0), its
+// material and texture axes as a brush face's ("[x y z offset] scale"), rotation.
+KeyValues planeKeys(const EndlessPlane& p) {
+    KeyValues kv;
+    kv.emplace_back("classname", "scal_plane");
+    kv.emplace_back("origin", vec({0, 0, p.z}));
+    kv.emplace_back("material", p.face.texture);
+    const Face& f = p.face;
+    kv.emplace_back("uaxis", "[" + vec(f.u.axis) + " " + num(f.u.offset) + "] " + num(f.scaleU));
+    kv.emplace_back("vaxis", "[" + vec(f.v.axis) + " " + num(f.v.offset) + "] " + num(f.scaleV));
+    kv.emplace_back("rotation", num(f.rotation));
+    for (const auto& k : p.otherKeys) kv.push_back(k);
+    return kv;
+}
+
+bool readAxis(const std::string& s, TexAxis& a, double& scale) {
+    std::string t = s;
+    for (char& c : t) if (c == '[' || c == ']') c = ' ';
+    std::istringstream in(t);
+    double x, y, z, off, sc;
+    if (!(in >> x >> y >> z >> off >> sc) || !std::isfinite(x + y + z + off + sc) || sc == 0) return false;
+    a.axis = {x, y, z};
+    a.offset = off;
+    scale = sc;
+    return true;
+}
+
+bool planeFromKeys(const KeyValues& kv, EndlessPlane& p) {
+    bool ours = false;
+    for (const auto& [k, v] : kv) if (k == "classname" && v == "scal_plane") ours = true;
+    if (!ours) return false;
+    p = makePlane(0, "");
+    for (const auto& [k, v] : kv) {
+        if (k == "classname") continue;
+        if (k == "origin") { Vec3 o; if (readVec(v, o)) p.z = o.z; }
+        else if (k == "material") p.face.texture = v;
+        else if (k == "uaxis") { if (!readAxis(v, p.face.u, p.face.scaleU)) p.otherKeys.emplace_back(k, v); }
+        else if (k == "vaxis") { if (!readAxis(v, p.face.v, p.face.scaleV)) p.otherKeys.emplace_back(k, v); }
+        else if (k == "rotation") p.face.rotation = numOr(v, 0);
+        else p.otherKeys.emplace_back(k, v);
+    }
+    p.face = planeFace(p);
+    return true;
+}
+
 bool cameraFromKeys(const KeyValues& kv, Camera& c) {
     bool ours = false;
     for (const auto& [k, v] : kv) if (k == "classname" && v == "scal_camera") ours = true;
@@ -505,6 +550,11 @@ std::string writeMap(const Document& doc) {
     for (const Probe& p : doc.probes()) {
         o << "// entity " << e++ << "\n{\n";
         writeKeys(o, probeKeys(p));
+        o << "}\n";
+    }
+    for (const EndlessPlane& p : doc.planes()) {
+        o << "// entity " << e++ << "\n{\n";
+        writeKeys(o, planeKeys(p));
         o << "}\n";
     }
     for (const RawEntity& ent : doc.otherEntities) {
@@ -911,6 +961,8 @@ MapReadResult readMap(const std::string& text, Document& doc) {
                 extra.cameras.push_back(cam);
             } else if (Probe pr; brushes.empty() && probeFromKeys(keys, pr)) {
                 extra.probes.push_back(pr);
+            } else if (EndlessPlane pl; brushes.empty() && planeFromKeys(keys, pl)) {
+                extra.planes.push_back(pl);
             } else {
                 others.push_back({std::move(keys), std::move(brushes)});
             }

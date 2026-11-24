@@ -7,6 +7,7 @@
 #include "core/prop.hpp"
 #include "core/camera.hpp"
 #include "core/probe.hpp"
+#include "core/plane.hpp"
 #include <map>
 #include <optional>
 #include <set>
@@ -89,6 +90,13 @@ struct ProbeChange {
     std::optional<Probe> after;
 };
 
+// One endless plane before/after an edit (v0.13.0).
+struct PlaneChange {
+    PlaneId id = 0;
+    std::optional<EndlessPlane> before;
+    std::optional<EndlessPlane> after;
+};
+
 // A file the command writes (materials, v0.12.4): its text before and after (nullopt = no
 // file). Material files aren't part of the map: commands holding only file changes don't
 // mark the map as changed.
@@ -115,6 +123,8 @@ struct Command {
     std::optional<std::set<CameraId>> cameraSelectionBefore, cameraSelectionAfter;
     std::vector<ProbeChange> probeChanges;
     std::optional<std::set<ProbeId>> probeSelectionBefore, probeSelectionAfter;
+    std::vector<PlaneChange> planeChanges;
+    std::optional<std::set<PlaneId>> planeSelectionBefore, planeSelectionAfter;
     // Decals live in brushes (their edits are brush changes); their selection (v0.12.5).
     std::optional<std::set<DecalId>> decalSelectionBefore, decalSelectionAfter;
     std::vector<FileChange> fileChanges;
@@ -122,7 +132,8 @@ struct Command {
     // Only files change (nothing of the map itself).
     bool filesOnly() const {
         return !fileChanges.empty() && changes.empty() && groupChanges.empty() && lightChanges.empty() && !envAfter &&
-               primChanges.empty() && propChanges.empty() && cameraChanges.empty() && probeChanges.empty();
+               primChanges.empty() && propChanges.empty() && cameraChanges.empty() && probeChanges.empty() &&
+               planeChanges.empty();
     }
 };
 
@@ -136,6 +147,7 @@ struct WorldData {
     std::vector<Prop> props;
     std::vector<Camera> cameras;
     std::vector<Probe> probes;
+    std::vector<EndlessPlane> planes;
 };
 
 class Document {
@@ -204,6 +216,13 @@ public:
     ProbeId newProbeId() { return nextProbeId_++; }
     const std::set<ProbeId>& probeSelection() const { return probeSelection_; }
     void setProbeSelection(std::set<ProbeId> s) { probeSelection_ = std::move(s); }
+
+    // Endless planes (v0.13.0): selected on their own like probes.
+    const std::vector<EndlessPlane>& planes() const { return planes_; }
+    const EndlessPlane* findPlane(PlaneId id) const;
+    PlaneId newPlaneId() { return nextPlaneId_++; }
+    const std::set<PlaneId>& planeSelection() const { return planeSelection_; }
+    void setPlaneSelection(std::set<PlaneId> s) { planeSelection_ = std::move(s); }
 
     // Decals (v0.12.5): kept in the brush they were put on (Brush::decals), selected on their
     // own like props. Edits are brush changes, so undo, copies and deletes follow the brush.
@@ -327,6 +346,11 @@ public:
     Command makeAddProbes(std::vector<Probe> probes, const std::string& name);
     Command makeModifyProbes(const std::vector<Probe>& modified, const std::string& name);
     void addProbeDeletes(Command& c, const std::set<ProbeId>& ids) const;
+    // Endless planes: new ones get ids and become the plane selection (everything else
+    // deselected).
+    Command makeAddPlanes(std::vector<EndlessPlane> planes, const std::string& name);
+    Command makeModifyPlanes(const std::vector<EndlessPlane>& modified, const std::string& name);
+    void addPlaneDeletes(Command& c, const std::set<PlaneId>& ids) const;
     // Mixed edit as one undo step (clip, carve, hollow). New brushes get ids. The
     // selection afterwards is `selectAfter` if given, else the old selection minus
     // deleted brushes plus the added ones.
@@ -342,6 +366,7 @@ private:
     void setProp(PropId id, const std::optional<Prop>& p);
     void setCamera(CameraId id, const std::optional<Camera>& c);
     void setProbe(ProbeId id, const std::optional<Probe>& p);
+    void setPlane(PlaneId id, const std::optional<EndlessPlane>& p);
     // Adds the changes that leave exactly one active camera after `c` (`prefer`: the one
     // to keep active when several would be).
     void keepOneActive(Command& c, CameraId prefer = 0) const;
@@ -385,6 +410,9 @@ private:
     std::vector<Probe> probes_;
     std::set<ProbeId> probeSelection_;
     ProbeId nextProbeId_ = 1;
+    std::vector<EndlessPlane> planes_;
+    std::set<PlaneId> planeSelection_;
+    PlaneId nextPlaneId_ = 1;
     std::vector<Light> lights_;
     std::set<LightId> lightSelection_;
     LightId nextLightId_ = 1;

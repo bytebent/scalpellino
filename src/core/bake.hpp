@@ -25,6 +25,7 @@
 //  - Light is linear: 1 = the texture as it is (VRAD's 255).
 #include "core/brush.hpp"
 #include "core/mathprim.hpp"
+#include "core/plane.hpp"
 #include "core/prop.hpp"
 #include "core/world.hpp"
 #include <atomic>
@@ -72,6 +73,16 @@ struct BakeMaterial {
     bool bumped = false;
 };
 
+// An endless plane as the bake sees it (v0.13.0, agreed with the user): a ground blocks light
+// (an endless floor), water lets it through, clouds dim the sun by their thickness above each
+// point. Planes themselves are lit by the sun and the sky only (no shadows on them).
+struct BakePlane {
+    EndlessPlane plane;
+    PlaneKind kind = PlaneKind::Ground;
+    CloudParams clouds;          // kind Clouds
+    bool bumped = false;         // its material has a bump map: light along the 3 bump directions too
+};
+
 struct BakeInput {
     std::vector<Brush> brushes;  // all of them (hidden ones too: hiding is an editing aid)
     std::vector<Light> lights;
@@ -91,6 +102,7 @@ struct BakeInput {
     bool propsQuick = false;     // props baked per vertex with a quarter of the rays (Render menu)
     // Prop models with bump maps (v0.12.4b): baked per vertex they get 4 values a vertex.
     std::set<std::string> bumpedModels;
+    std::vector<BakePlane> planes; // endless planes (v0.13.0)
 };
 
 constexpr double kDefaultReflectivity = 0.2;
@@ -159,6 +171,16 @@ struct LightGrid {
 // Source's ambient cube read along normal n: n.x^2 A[x+/-] + n.y^2 A[y+/-] + n.z^2 A[z+/-].
 Vec3 ambientCubeAt(const Vec3* cube, const Vec3& n);
 
+// An endless plane's light (v0.13.0): sky and sun apart, for the flat normal [0] and the 3 bump
+// directions [1..3] (scaled as bumped lightmaps are), so the shader can dim the sun under cloud
+// planes per pixel. The sun part is summed over the map's suns; `sunToward` is the strongest's
+// direction (where cloud shadows are looked up).
+struct PlaneLight {
+    PlaneId id = 0;
+    Vec3 sky[4], sun[4];
+    bool bumped = false;
+};
+
 struct BakeResult {
     std::vector<FaceLightmap> faces;
     std::vector<PrimLightmap> prims;
@@ -169,6 +191,9 @@ struct BakeResult {
     size_t patches = 0, transfers = 0;
     std::vector<PropLighting> props; // every prop with a model, in input order
     LightGrid grid;
+    std::vector<PlaneLight> planes;  // endless planes, in input order (v0.13.0)
+    Vec3 sunToward{0, 0, 1};         // toward the strongest sun (cloud shadows); none: up
+    bool hasSun = false;
     size_t propVertices = 0;
     double secondsProps = 0, secondsGrid = 0;
     double secondsDirect = 0, secondsTransfers = 0, secondsBounce = 0; // where the time went
@@ -181,6 +206,9 @@ struct BakeProgress {
     std::atomic<long long> done{0}, total{1};
     std::atomic<bool> cancel{false};
 };
+
+// The share of the sun reaching p along `toSun` through the cloud planes above it (1: none).
+double cloudSunThrough(const std::vector<BakePlane>& planes, const Vec3& p, const Vec3& toSun);
 
 // Bakes on all of the machine's threads (`threads` 0) or as many as asked.
 BakeResult bakeLight(const BakeInput& in, BakeProgress* progress = nullptr, int threads = 0);

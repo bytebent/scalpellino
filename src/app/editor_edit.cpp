@@ -45,7 +45,7 @@ void Editor::selectNone() {
     tool_->cancel();
     doc_.setSelection({});
     doc_.setPropSelection({}); doc_.setDecalSelection({});
-    doc_.setCameraSelection({}); doc_.setProbeSelection({});
+    doc_.setCameraSelection({}); doc_.setProbeSelection({}); doc_.setPlaneSelection({});
 }
 
 void Editor::duplicate() {
@@ -111,6 +111,20 @@ void Editor::duplicate() {
         doc_.apply(doc_.makeAddProbes(std::move(copies), "Duplicate reflection probe"));
         return;
     }
+    if (doc_.selection().empty() && !doc_.planeSelection().empty()) { // endless planes (v0.13.0): one grid step up
+        tool_->cancel();
+        std::vector<EndlessPlane> copies;
+        for (PlaneId id : doc_.planeSelection())
+            if (const EndlessPlane* p = doc_.findPlane(id)) {
+                EndlessPlane k = *p;
+                k.id = 0;
+                k.z += grid_.size;
+                k.face = planeFace(k);
+                copies.push_back(std::move(k));
+            }
+        doc_.apply(doc_.makeAddPlanes(std::move(copies), "Duplicate endless plane"));
+        return;
+    }
     if (doc_.selection().empty() && !doc_.lightSelection().empty()) {
         tool_->cancel();
         std::vector<Light> copies;
@@ -140,7 +154,7 @@ void Editor::duplicate() {
 
 void Editor::deleteSelection() {
     if (doc_.selection().empty() && doc_.lightSelection().empty() && doc_.primSelection().empty() && doc_.propSelection().empty() && doc_.decalSelection().empty() &&
-        doc_.cameraSelection().empty() && doc_.probeSelection().empty())
+        doc_.cameraSelection().empty() && doc_.probeSelection().empty() && doc_.planeSelection().empty())
         return;
     tool_->cancel();
     Command c = doc_.makeDelete(doc_.selection(), "Delete");
@@ -150,6 +164,7 @@ void Editor::deleteSelection() {
         doc_.addDecalDeletes(c, doc_.decalSelection());
     doc_.addCameraDeletes(c, doc_.cameraSelection());
     doc_.addProbeDeletes(c, doc_.probeSelection());
+    doc_.addPlaneDeletes(c, doc_.planeSelection());
     doc_.apply(std::move(c));
 }
 

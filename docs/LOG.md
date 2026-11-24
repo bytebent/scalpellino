@@ -4,6 +4,51 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-24 — v0.13.0: water, clouds and endless planes (milestone 13)
+- **Water** (Source's `Water` shader, new built-in `Water.glsl`): water materials go through the
+  mirror pictures (`core/mirror.*`: `isWaterMaterial`, `kMirrorWater`, `kMirrorEntities`,
+  `waterFog`; `render/mirrors.*`): the reflection leaves out props and primitives without
+  `$reflectentities`; the under-the-surface picture is drawn with the water's murk as height
+  fog up to the surface, the murk in place of the sky. Cheap water (`$forcecheap`, over budget,
+  tilted, seen from below) and Source's distance fade; Fresnel power 5; `$bumptransform`
+  (`parseTexTransform`, `bumpUV()` in the prelude). Level water only. Lets light through.
+- **Endless planes** (`core/plane.*`, `scal_plane` in the map file, `Document` planes with
+  their own selection and commands): the kind follows from the material; renders draw them 10 km
+  around the camera, beyond the far distance (`planeFar` in the world vertex stage); lit by the
+  bake's `PlaneLight` (sun x N.L, the open sky, 3 bump directions). The bake: ground planes block
+  light, water lets it through, cloud planes dim the sun (`cloudSunThrough`).
+- **Clouds** (`Clouds.glsl`): value noise with the same hash in C++ and GLSL; cover calibrated by
+  measuring the noise; far away the average (no flicker); cloud shadows on ground planes per
+  pixel (`cloudSun`), on the map in the bake (both dim by the same amount, checked on a render).
+- **Editor:** World > Endless water / ground / cloud plane, ... with the current texture, Endless
+  planes (a list to select); side-view lines (drag to move), fading squares in 3D, Properties
+  (height, material, texture scale), Delete, Cmd+D; Help > Controls and README rows.
+- **Starter materials:** `water`, `murky_water`, `ground`, `clouds` (written on demand into an
+  older Bottega). Built-in pictures made for Scalpellino: `water_ripple_normal`, `tool_water`,
+  `tool_clouds`.
+- **Checked in Valve's SDK 2013** (scratch folder, not kept): `water.cpp` (defaults: cheap water
+  500 / 1000, `$reflectamount` 0.8, `$fogcolor` required), `water_ps2x_helper.h` (Fresnel
+  `(1 - N.V)^5`, the murk from the depth in the picture's alpha, the shoreline fade),
+  `WaterCheap_ps2x.fxc` (cheap water: `lerp(fogcolor, envmap x tint, fresnel)`, blended with
+  `fresnel + distance` over the refraction).
+- **Tests:** core 5329 checks, 0 failed (`testPlanes`: kinds, the document, the map file, cloud
+  cover, water parts and murk, `$bumptransform`, the bake with ground / water / cloud planes,
+  plane light, starter materials). New UI script `v130_water.script` (pool, murky, cheap,
+  endless planes, selecting by line and surface, dragging, save / open, cloud shadows, the Camera
+  Preview). All 41 UI scripts pass at 1x and 2x; idle 0 ticks at 1x and 2x (the idle map now has
+  a water and a cloud plane); control 876 ticks.
+- **Busy maps** (Normal; the rich map now also has endless water and a cloud layer): rich 20.2 s
+  (bake 0.6 s, cubemaps 4.4 s, 3 mirror planes; the drawing took about 15 s here: the water,
+  cloud and plane shaders cover most of the picture and this workspace's OpenGL is software),
+  1000 boxes 14.8 s (bake 10.1 s, cubemaps 3.8 s), 4000 boxes 90.6 s (bake 68.7 s, cubemaps
+  20.7 s). The two box maps have no planes: the same as v0.12.7b within the usual noise.
+- Screenshots: `m13-01-pool.png` (clear water: the bottom and the pillar through the surface),
+  `m13-02-pool-murky.png`, `m13-03-pool-cheap.png`, `m13-04-lake-clouds.png` (the island in an
+  endless lake, a cloud layer), `m13-05-render-log.png`, `m13-06-cloud-shadows.png` and
+  `m13-07-no-clouds.png` (the same view with and without the cloud plane), `m13-08-editor.png`
+  (the selected plane red in the side views, the squares in 3D), `m13-09-bench-rich.png`,
+  `m13-10-bench-1000-boxes.png`, `m13-11-bench-4000-boxes.png`.
+
 ### 2026-11-24 — Milestone 13 discussed and decided
 - Valve's SDK 2013 water shader and water view code checked (scratch folder, not kept);
   15 numbered questions put to the user. Answers recorded in PLAN.md ("Milestone 13 decided
@@ -575,68 +620,3 @@ too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 - **Merged** into `main` (fast-forward) after the user's go-ahead. No new notes file, so
   no version release; "Latest build" is refreshed.
 - **Next:** watch the first version release made with the new release logic.
-
-### 2026-11-20 — Docs check against the chat; batch 2 proposal recorded (docs only)
-- The user asked whether anything decided in the chat was missing from the docs (the repo
-  had changed: the review fixes were merged). Checked after updating to `main`: the batch
-  split, batch 1's decisions and the way of working were in. Missing / fixed: the batch 2
-  proposal and its 5 open questions (now in PLAN.md "Batch 2 under discussion"), the
-  status line (report done, batch 2 being discussed), and two older PLAN lines that still
-  put the picture size in the render window (now point to the decision: the camera's).
-
-### 2026-11-20 — The user tried v0.12.0 (docs only)
-- "Seems to work! so far!" The v0.12.0 choices are not explicitly confirmed yet (still
-  listed in PLAN.md). Next: discuss batch 2 (baked direct light and shadows).
-
-### 2026-11-20 — Render, step 1: the pipeline (v0.12.0)
-- The user said go for batch 1 (decided earlier today, entry below).
-- **Core** (`core/render_job`): render options (quality, anti-aliasing, filtering) and their
-  settings text, `fitAA` (the drawn picture at most 16384 a side and 50 M pixels),
-  `downscaleRGB` (averaging in linear light), render file names.
-- **Renderer** (`render/renderer`): the picture's scene from the map as it is (every
-  brush, hidden ones too, nodraw faces dropped; primitives, props, the map's sky and fog,
-  lights; the View menu ignored), the rough lighting always on, drawn through a lens
-  `Viewport` at any size with its own texture filtering, read back top row first.
-- **Height fog** in the brush, primitive and prop shaders (`fogAmount`: the stretch of the
-  line of sight inside the layer, as in the baked sky); renders pass the map's base and
-  thickness, the editor passes 0 (distance only, unchanged).
-- **Render job** (`app/editor_render.cpp`): Render button at the left of the status bar,
-  new Render menu (Render..., Update Camera Preview moved from World, Quality,
-  Anti-aliasing, Texture filtering; options in the user's `render.txt`), Cmd+Shift+K. A
-  modal terminal window, one step per frame, Esc stops between steps; PNG plus `.log` in
-  the Bottega's `renders/`; no Bottega: the Bottega dialog with a message.
-- **Camera Preview** = the renderer at Draft settings (replaces the editor-look preview).
-- **Tests:** core 4682 checks, 0 failed (new `testRenderJob`). UI 29 of 29 at 1x and 2x (new
-  `v120_render`: no camera, no Bottega, a saved render with its log and size, the View
-  menu and hiding don't change the picture, nodraw left out, Draft / 4x / crisp, Esc
-  stops and saves nothing, the preview). Idle 0 ticks at 1x and 2x, control 887.
-- **Screenshots:** `m12-01-render.png` (a render, 640 x 360, Normal), `m12-02-render-log.png`
-  (the terminal window), `m12-03-preview-draft-render.png` (the preview with the 3D view's
-  sky off).
-- Seen: drawing 1280 x 720 with a primitive takes about 4 s here (software OpenGL); a real
-  graphics card is far faster.
-- **Next:** report; then discuss batch 2 (baked direct light and shadows).
-
-### 2026-11-20 — M12 split into batches; batch 1 decided (docs only)
-- New chat. Agreed with the user: M12 in 7 batches (v0.12.0 pipeline, v0.12.1 direct
-  light and shadows, v0.12.2 bounces, v0.12.3 light grid, v0.12.4 materials, v0.12.5
-  probes, v0.12.6 mirrors), each discussed first, built on the user's go, then reported.
-- Batch 1 decided: the editor waits during a render; Render button at the left of the
-  status bar plus a Render menu, Cmd+Shift+K; picture size always the camera's (no size
-  field in the window); presets Draft / Normal / High, anti-aliasing, texture filtering
-  as render options; saved to the Bottega's `renders/` (asks for a Bottega if none); the
-  window is only the terminal, Esc stops. Recorded in PLAN.md (Roadmap item 5),
-  ARCHITECTURE §9 / §15, HANDOFF.md. No code changed.
-
-### 2026-11-20 — The user tried the cameras; Camera Preview decisions (docs only)
-- The user noticed the preview is the 3D view seen through the camera, not a render
-  (as agreed for M11 until the renderer exists), and that it follows some View menu
-  options. Checked: sky and fog already ignore the View menu (a script with the sky
-  toggled off and on draws the same preview); the rough light preview, Show primitives /
-  Show props and hidden things are followed. The preview also isn't marked out of date
-  when only View options change, which can look like it follows them.
-- Decided with the user: the preview is a **draft render** (M12's renderer at lower
-  settings); preview and render **ignore the View menu** and **include hidden things**;
-  fix the current preview in M12, not now. Recorded in PLAN.md (Roadmap item 5),
-  ARCHITECTURE §9, HANDOFF.md. No code changed.
-- The user will start a new chat for the next milestones.

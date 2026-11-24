@@ -198,6 +198,13 @@ private:
     // World (milestone 8)
     void drawLightPanel();
     void drawProbePanel(); // reflection probes (v0.12.6): the Probe tool / selected probes
+    // Endless planes (v0.13.0): World > Endless water / ground / cloud plane (kind: PlaneKind;
+    // -1: the current texture's material), and the Properties of the selected ones.
+    void addPlane(int kind, std::optional<double> z = std::nullopt);
+    void drawPlanePanel();
+    double planeBufZ_ = 0;
+    PlaneId planeBufFor_ = 0;
+    unsigned long long planeBufRev_ = ~0ull;
     Vec3 probeBufPos_;
     ProbeId probeBufFor_ = 0;
     unsigned long long probeBufRev_ = ~0ull;

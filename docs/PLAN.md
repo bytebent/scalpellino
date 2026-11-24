@@ -10,7 +10,7 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 
 ## Current status
 
-- **Released:** v0.1.0 … v0.12.7b (CI green). Milestones 0–11, Random Replicate and Sky Lab are done (see the
+- **Released:** v0.1.0 … v0.12.7b (CI green); **v0.13.0** (milestone 13) built. Milestones 0–11, Random Replicate and Sky Lab are done (see the
   milestone sections below and the log); the user confirmed the choices of M10, Random
   Replicate and v0.10.2 (2026-11-19). **v0.10.3 is built and pushed** (asked by the user
   before Sky Lab): `editor.cpp` split by topic (step 1: code moved unchanged; step 2:
@@ -147,7 +147,13 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   the user chose sun and sky only on endless planes (3), the camera under water later (6),
   cloud planes separate from Sky Lab's clouds (10) and **one release** (15); my
   recommendation for the rest ("Milestone 13 decided with the user" under Roadmap item 6).
-  The user said go the same day: **v0.13.0 is being built.**
+  The user said go the same day. **v0.13.0 is built** (one release): water on brushes and on
+  endless planes (Source's `Water` shader through the mirror pictures: reflection, murk, cheap
+  water, `$reflectentities`, `$bumptransform`, built-in ripples), endless planes (`core/plane.*`,
+  `scal_plane`; ground, water, clouds; sun and sky light; to the horizon), the `Clouds` shader,
+  cloud shadows in the bake, four starter materials. Choices made while building: "v0.13.0,
+  decided without asking" under Open questions. Milestone 13 is done; next on the roadmap:
+  camera effects (lowest priority), discussed with the user first.
 - **Review fixes (2026-11-20), merged into `main`** (fast-forward from
   `fix/review-findings` after the user's go-ahead; no new version, so only "Latest build"
   is refreshed): version releases are
@@ -185,6 +191,60 @@ Each archive's SHA-256 is in `cmake/Deps.cmake` (checked at configure time).
 
 ## Open questions (parked)
 
+- **v0.13.0, decided without asking (confirm with the user):**
+  - **Water must be level** (its normal within about 2.6 degrees of straight up, as Source's
+    water is always level); a tilted water face, water seen from below and water past the
+    8-picture budget are cheap water. A water brush's side and bottom faces are therefore cheap
+    water (hidden in the pool anyway; Hammer users paint them nodraw).
+  - **The murk is drawn into the under-the-surface picture** as height fog from far below up to
+    the surface (the view's stretch under the water), with the murk's colour where the sky would
+    be; Source stores the depth in the picture's alpha instead. So there is **no shoreline fade**
+    (Source fades the reflection where the water is very shallow). The map's own fog is not in
+    that picture (as Source); the water surface itself gets the map's fog.
+  - **No `$fogcolor`: clear water** (Source warns and uses red). Cheap water then uses the
+    shader's default colour (dark blue-green). Distances in `.vmt` are Hammer units x 2.54 (as
+    decals' `$decalscale`).
+  - **Fresnel: Source's fixed power 5.** The distance fade (Source's defaults 500 to 1000 Hammer
+    units, 12.7 to 25.4 m) mixes towards Source's blended cheap pass: the probes over what is
+    under the surface by Fresnel + distance.
+  - **Ripples** shift the pictures by `$reflectamount` / `$refractamount` picture widths, as our
+    LightmappedReflective (Source's default 0.8 would throw them far with our normal maps); the
+    starters use 0.04 / 0.03. The built-in `water_ripple_normal` is the default normal map
+    (Source's `dev/water_normal` isn't ours). `$bumptransform` (center, scale, rotate,
+    translate) is read for the Water shader's normal map.
+  - **`$reflectentities`** adds props and primitives; brushes, terrain, decals and endless planes
+    are always in the reflection (they are the map). `$envmap` other than env_cubemap: cheap
+    water reflects the sky.
+  - **A `$basetexture` on water** is drawn lit under the reflection only when the water doesn't
+    see under the surface (Source).
+  - **Water lets light through in the bake**, `$forcecheap` too.
+  - **Endless planes:** `scal_plane` entity (`origin` "0 0 z", `material`, `uaxis` / `vaxis` as
+    Valve 220, `rotation`). The kind follows from the material (Water / Clouds shader, else
+    ground; a see-through ground lets light through). Drawn 10 km around the camera, beyond
+    the camera's far distance (kept just inside the far clip), so it reaches the horizon; seen
+    from both sides; no hiding, visgroups or Replicate.
+  - **Plane light:** the suns x N.L plus the open sky above the plane's horizon (the sky
+    picture, or the ambient colour without one, as VRAD's sky light) and the minimum light;
+    3 bump directions too (so bump-mapped grounds work). No point or spot lights; **a ground
+    plane doesn't bounce light** (bounce rays that hit it get nothing back).
+  - **Clouds:** value noise, octaves 2.03 apart; `$cover` calibrated so that share is covered;
+    thicker inside; far away a pixel takes the average thickness (no flicker). Settings:
+    `$cover` 50, `$cloudsize` 4000 cm, `$softness` 40, `$complexity` 5, `$opacity` 0.9, `$seed`,
+    `$color`, `$shadowcolor` (the thick undersides seen from below). The sun through them:
+    `1 - $opacity x thickness`, along the strongest sun for the planes' own light; up to 4 cloud
+    planes shade the planes (the bake: any number). Props lit like a Source model get their sun
+    dimmed at the prop.
+  - **Editor:** new planes: water and ground at height 0, clouds 50 m above the top of the map;
+    "Endless plane with the current texture" too. A side view's line picks within 5 pixels
+    unless a brush is under the cursor; the 3D surface unless a brush is in front; World >
+    Endless planes lists them. Dragging snaps to the grid; Cmd+D copies one grid step up. The 3D
+    view's square is 0.75 x the map's size + 20 m each way, unlit, see-through, fading out, the
+    farthest from the eye first.
+  - **An older Bottega:** the three menu items write their starter material into
+    `textures/starter/` if it isn't there and read the libraries again (as Rescan).
+  - **Render log:** one line per plane ("endless plane 1 of 3: water at height -40 (...)");
+    water's mirror line says "water at height ..., reflecting everything / the map only, and
+    under the surface (murky from ... to ... cm)".
 - **Milestone 13 parked (later, agreed 2026-11-24, question 6):** a camera under water.
   Source then draws everything through the water's underwater fog and shows the surface from
   below with its own material (`$bottommaterial`, also `$underwateroverlay`). Until then a

@@ -33,6 +33,10 @@ LightId pickLight(const Document& doc, const Viewport& vp, Vector2 local);
 CameraId pickCamera(const Document& doc, const Viewport& vp, Vector2 local);
 // Reflection probe whose marker is under `local` (nearest to the camera in 3D), or 0.
 ProbeId pickProbe(const Document& doc, const Viewport& vp, Vector2 local);
+// Endless plane under `local` (v0.13.0), or 0: in a side view its line within a few pixels
+// (unless a brush is under the cursor); in 3D its surface where nothing else is in front
+// (`dist`: along the view ray); the top view never picks one.
+PlaneId pickPlane(const Document& doc, const Viewport& vp, Vector2 local, const std::vector<SceneBrush>* brushes = nullptr, double* dist = nullptr);
 // Primitive under `local`: what a click selects (first member of a combination), or 0.
 // `dist` gets the distance along the view ray in 3D; `piece` the piece itself that was
 // hit. With `outlinesFirst`, an outline near the cursor wins (so a piece hidden inside
@@ -96,6 +100,7 @@ private:
     std::vector<Prop> propStart_, propNow_;
     std::vector<Camera> cameraStart_, cameraNow_;
     std::vector<Probe> probeStart_, probeNow_; // reflection probes (v0.12.6): moved only
+    std::vector<EndlessPlane> planeStart_, planeNow_; // endless planes (v0.13.0): up and down only
     mutable char hintBuf_[140] = "";
 };
 

@@ -38,7 +38,32 @@ std::vector<std::array<double, 2>> clip2(const std::vector<std::array<double, 2>
 bool isReflectiveMaterial(const Material& m) { return lower(m.shader) == "lightmappedreflective"; }
 bool isRefractMaterial(const Material& m) { return lower(m.shader) == "refract"; }
 
+bool isWaterMaterial(const Material& m) {
+    const std::string s = lower(m.shader);
+    return s == "water" || s.rfind("water_dx", 0) == 0; // Source's Water, Water_DX9_HDR...
+}
+
+WaterFog waterFog(const Material& m) {
+    WaterFog f;
+    if (!m.has("$fogcolor")) return f;
+    const Vec3 c = m.vec("$fogcolor", {0, 0, 0});
+    f.color = {std::clamp(c.x, 0.0, 1.0) * 255, std::clamp(c.y, 0.0, 1.0) * 255, std::clamp(c.z, 0.0, 1.0) * 255};
+    f.start = m.num("$fogstart", 0) * 2.54; // Hammer units -> cm
+    f.end = m.num("$fogend", 0) * 2.54;
+    f.on = f.end > f.start;
+    return f;
+}
+
 int mirrorParts(const Material& m) {
+    if (isWaterMaterial(m)) {
+        int parts = kMirrorWater;
+        if (m.flag("$reflectentities")) parts |= kMirrorEntities;
+        if (m.has("$basetexture") && !m.str("$basetexture").empty()) parts |= kMirrorBase;
+        if (m.flag("$forcecheap")) return parts; // cheap water: no pictures
+        if (partOn(m, "$reflecttexture")) parts |= kMirrorReflect;
+        if (partOn(m, "$refracttexture")) parts |= kMirrorRefract;
+        return parts;
+    }
     if (!isReflectiveMaterial(m)) return 0;
     int parts = 0;
     if (partOn(m, "$reflecttexture")) parts |= kMirrorReflect;
@@ -126,10 +151,11 @@ std::vector<MirrorPlane> mirrorPlanes(const std::vector<MirrorFace>& faces, cons
         for (MirrorPlane& p : planes)
             if (onMirrorPlane(p, n, f.d)) { into = &p; break; }
         if (!into) {
-            planes.push_back({n, f.d, 0, 0});
+            planes.push_back({n, f.d, 0, 0, f.fog});
             into = &planes.back();
         }
-        into->parts |= f.parts & (kMirrorReflect | kMirrorRefract);
+        if (!into->fog.on && f.fog.on) into->fog = f.fog;
+        into->parts |= f.parts & (kMirrorReflect | kMirrorRefract | kMirrorEntities | kMirrorWater);
         into->cover += cover;
     }
     // planes too small to see (a glass pane's edges) reflect the probes instead

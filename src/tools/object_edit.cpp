@@ -301,6 +301,38 @@ ObjectGizmo objectGizmo(const Document& doc, const Viewport& vp, const ModelFind
     return g;
 }
 
+PlaneId pickPlane(const Document& doc, const Viewport& vp, Vector2 local, const std::vector<SceneBrush>*, double* dist) {
+    if (doc.planes().empty()) return 0;
+    if (vp.is2D()) {
+        if (vp.axV() != 2) return 0; // the top view shows no planes
+        PlaneId best = 0;
+        double bestD = 5;
+        for (const EndlessPlane& pl : doc.planes()) {
+            Vector2 s;
+            Vec3 at;
+            double u = 0, v = 0;
+            vp.screenToWorld2D(local, u, v);
+            at[vp.axU()] = u;
+            at[vp.axV()] = pl.z;
+            if (!vp.project(at, s)) continue;
+            const double d = std::fabs(s.y - local.y);
+            if (d < bestD) { bestD = d; best = pl.id; }
+        }
+        return best;
+    }
+    Vec3 o, d;
+    vp.pickRay(local, o, d);
+    if (std::fabs(d.z) < 1e-9) return 0;
+    PlaneId best = 0;
+    double bestT = 1e300;
+    for (const EndlessPlane& pl : doc.planes()) {
+        const double t = (pl.z - o.z) / d.z;
+        if (t > 0 && t < bestT && t < kPlaneReach) { bestT = t; best = pl.id; }
+    }
+    if (best && dist) *dist = bestT;
+    return best;
+}
+
 bool ObjectEdit::press(ToolEnv& env, const Pointer& p) {
     Document& doc = env.doc;
     const Viewport& vp = *p.view;
@@ -320,6 +352,7 @@ bool ObjectEdit::press(ToolEnv& env, const Pointer& p) {
         propNow_ = propStart_;
         cameraNow_ = cameraStart_;
         probeNow_ = probeStart_;
+        planeNow_ = planeStart_;
     };
     if (decals_.pressHandles(env, p)) return true; // the selected decal's corners and ring
     lightStart_.clear();
@@ -327,6 +360,7 @@ bool ObjectEdit::press(ToolEnv& env, const Pointer& p) {
     propStart_.clear();
     cameraStart_.clear();
     probeStart_.clear();
+    planeStart_.clear();
     propsMode_ = false;
     camerasMode_ = false;
     sizeProp_ = false;
@@ -413,7 +447,7 @@ bool ObjectEdit::press(ToolEnv& env, const Pointer& p) {
         }
         if (!sel.count(id)) {
             doc.setCameraSelection({id});
-            doc.setProbeSelection({});
+            doc.setProbeSelection({}); doc.setPlaneSelection({});
             doc.setDecalSelection({});
             doc.setSelection({});
             doc.setLightSelection({});
@@ -443,7 +477,7 @@ bool ObjectEdit::press(ToolEnv& env, const Pointer& p) {
             doc.setPrimSelection({});
             doc.setPropSelection({});
             doc.setDecalSelection({});
-            doc.setCameraSelection({});
+            doc.setCameraSelection({}); doc.setPlaneSelection({});
         }
         if (!vp.is2D()) return true;
         lightsMode_ = false;
@@ -462,12 +496,12 @@ bool ObjectEdit::press(ToolEnv& env, const Pointer& p) {
         }
         if (!sel.count(id)) {
             doc.setLightSelection({id});
-            doc.setProbeSelection({});
+            doc.setProbeSelection({}); doc.setPlaneSelection({});
             doc.setDecalSelection({});
             doc.setSelection({});
             doc.setPrimSelection({});
             doc.setPropSelection({}); doc.setDecalSelection({});
-            doc.setCameraSelection({}); doc.setProbeSelection({});
+            doc.setCameraSelection({}); doc.setProbeSelection({}); doc.setPlaneSelection({});
         }
         if (!vp.is2D()) return true;
         lightsMode_ = true;
@@ -523,7 +557,7 @@ bool ObjectEdit::press(ToolEnv& env, const Pointer& p) {
             doc.setSelection({});
             doc.setLightSelection({});
             doc.setPrimSelection({});
-            doc.setCameraSelection({}); doc.setProbeSelection({});
+            doc.setCameraSelection({}); doc.setProbeSelection({}); doc.setPlaneSelection({});
             doc.setDecalSelection({});
         }
         if (!vp.is2D()) return true;
@@ -547,7 +581,46 @@ bool ObjectEdit::press(ToolEnv& env, const Pointer& p) {
             return true;
         }
     }
-    if (!pid && !prid) return false;
+    if (!pid && !prid) {
+        // 5. An endless plane (v0.13.0): its line in a side view, its surface in 3D.
+        const PlaneId plid = pickPlane(doc, vp, p.local, nullptr);
+        if (!plid) return false;
+        if (vp.is2D() && pick2D(env.sceneBrushes, vp, p.local)) return false; // a brush under the line wins
+        if (!vp.is2D()) {
+            Vec3 o, d;
+            vp.pickRay(p.local, o, d);
+            if (std::fabs(d.z) < 1e-9) return false;
+            const double tPl = (doc.findPlane(plid)->z - o.z) / d.z;
+            for (const Brush& b : doc.brushes()) {
+                if (!doc.visible(b)) continue;
+                const double t = rayHit(b, o, d);
+                if (t >= 0 && t < tPl) return false; // a brush is in front
+            }
+        }
+        std::set<PlaneId> sel = doc.planeSelection();
+        if (env.cmd) {
+            if (!sel.erase(plid)) sel.insert(plid);
+            doc.setPlaneSelection(sel);
+            return true;
+        }
+        if (!sel.count(plid)) {
+            doc.setPlaneSelection({plid});
+            doc.setSelection({});
+            doc.setLightSelection({});
+            doc.setPrimSelection({});
+            doc.setPropSelection({});
+            doc.setDecalSelection({});
+            doc.setCameraSelection({});
+            doc.setProbeSelection({});
+        }
+        if (!vp.is2D() || vp.axV() != 2) return true;
+        lightsMode_ = false;
+        for (PlaneId r : doc.planeSelection())
+            if (const EndlessPlane* x = doc.findPlane(r)) planeStart_.push_back(*x);
+        anchor_ = {0, 0, doc.findPlane(plid)->z};
+        begin(Mode::Move);
+        return true;
+    }
     if (prid && pid) {
         // Both under the cursor: the nearer one in 3D, the smaller one in a 2D view.
         bool propWins;
@@ -604,7 +677,7 @@ bool ObjectEdit::press(ToolEnv& env, const Pointer& p) {
         doc.setSelection({});
         doc.setLightSelection({});
         doc.setPropSelection({}); doc.setDecalSelection({});
-        doc.setCameraSelection({}); doc.setProbeSelection({});
+        doc.setCameraSelection({}); doc.setProbeSelection({}); doc.setPlaneSelection({});
     }
     if (!vp.is2D()) return true;
     lightsMode_ = false;
@@ -635,6 +708,11 @@ void ObjectEdit::drag(ToolEnv& env, const Pointer& p) {
         for (Camera& c : cameraNow_) c.pos += d;
         probeNow_ = probeStart_;
         for (Probe& r : probeNow_) r.pos += d;
+        planeNow_ = planeStart_; // endless planes: their height only
+        for (EndlessPlane& r : planeNow_) {
+            r.z += d.z;
+            r.face = planeFace(r);
+        }
         return;
     }
     if (mode_ == Mode::Ring) {
@@ -766,6 +844,11 @@ void ObjectEdit::release(ToolEnv& env) {
     if (rc) env.doc.apply(env.doc.makeModifyProbes(probeNow_, "Move reflection probe"));
     probeStart_.clear();
     probeNow_.clear();
+    bool plc = false;
+    for (size_t i = 0; i < planeNow_.size(); ++i) plc = plc || planeNow_[i] != planeStart_[i];
+    if (plc) env.doc.apply(env.doc.makeModifyPlanes(planeNow_, "Move endless plane"));
+    planeStart_.clear();
+    planeNow_.clear();
     for (size_t i = 0; i < lightNow_.size(); ++i) lc = lc || lightNow_[i] != lightStart_[i];
     for (size_t i = 0; i < primNow_.size(); ++i) pc = pc || primNow_[i] != primStart_[i];
     for (size_t i = 0; i < propNow_.size(); ++i) qc = qc || propNow_[i] != propStart_[i];
@@ -795,6 +878,8 @@ void ObjectEdit::cancel() {
     cameraNow_.clear();
     probeStart_.clear();
     probeNow_.clear();
+    planeStart_.clear();
+    planeNow_.clear();
     view_ = nullptr;
 }
 
@@ -816,6 +901,9 @@ void ObjectEdit::decorate(const Document& doc, Scene& scene) const {
     for (const Probe& r : probeNow_)
         for (Scene::SceneProbe& s : scene.probes)
             if (s.probe.id == r.id) s.probe = r;
+    for (const EndlessPlane& r : planeNow_)
+        for (Scene::ScenePlane& s : scene.planes)
+            if (s.plane.id == r.id) s.plane = r;
     // The primitives' rings and handles follow what is being dragged.
     std::vector<MathPrim> sel;
     for (const Scene::ScenePrim& s : scene.prims)

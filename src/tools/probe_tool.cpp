@@ -27,8 +27,8 @@ void ProbeTool::press(ToolEnv& env, const Pointer& p) {
     }
     pending = at;
     doc.setSelection({});
-    doc.setCameraSelection({});
-    doc.setProbeSelection({});
+    doc.setCameraSelection({}); doc.setPlaneSelection({});
+    doc.setProbeSelection({}); doc.setPlaneSelection({});
     doc.setLightSelection({});
     doc.setPrimSelection({});
     doc.setPropSelection({});
@@ -63,7 +63,7 @@ bool ProbeTool::key(ToolEnv& env, int key) {
     if (key == KEY_ESCAPE) {
         if (objects_.active()) objects_.cancel();
         else if (pending) pending.reset();
-        else env.doc.setProbeSelection({});
+        else env.doc.setProbeSelection({}); env.doc.setPlaneSelection({});
         message_.clear();
         return true;
     }

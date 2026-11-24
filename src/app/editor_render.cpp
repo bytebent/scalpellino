@@ -143,6 +143,10 @@ std::uint64_t Editor::probeKey(int quality) const {
     const Environment& env = doc_.environment();
     h.u(env.fogOn ? 1 : 0);
     if (env.fogOn) { h.v(env.fog.color); h.d(env.fog.start); h.d(env.fog.end); h.d(env.fog.base); h.d(env.fog.thickness); }
+    for (const EndlessPlane& p : doc_.planes()) { // endless planes (v0.13.0): their pictures show in the probes
+        h.s(p.face.texture); h.d(p.z); h.d(p.face.scaleU); h.d(p.face.scaleV); h.v(p.face.u.axis); h.v(p.face.v.axis);
+        h.d(p.face.u.offset); h.d(p.face.v.offset); h.d(p.face.rotation);
+    }
     for (const Brush& b : doc_.brushes()) // decals show in the probes but not in the bake
         for (const Decal& d : b.decals) {
             h.s(d.material); h.v(d.pos); h.v(d.normal); h.v(d.up);
@@ -193,19 +197,29 @@ std::shared_ptr<MirrorSet> Editor::mirrorsNow(const Camera& cam, const Scene& li
     std::shared_ptr<MirrorSet> m = mirrorBuilder_.build(cam, lit, w, h, smooth);
     mirrorBuilder_.release();
     if (!m || !log) return m;
-    char c[200];
+    char c[400];
     std::snprintf(c, sizeof c, "Drawing mirrors: %zu %s in view, %d x %d...", m->planes.size(), m->planes.size() == 1 ? "plane" : "planes", m->w, m->h);
     log(c);
     for (size_t i = 0; i < m->planes.size(); ++i) {
         const MirrorSet::Plane& p = m->planes[i];
         const bool r = p.refl.id != 0, t = p.refr.id != 0;
+        std::string what = r && t ? "reflection and see-through" : r ? "reflection" : "see-through";
+        if (p.p.parts & kMirrorWater) { // water (v0.13.0)
+            char w[160];
+            std::snprintf(w, sizeof w, "water at height %g, reflecting %s", p.p.d, (p.p.parts & kMirrorEntities) ? "everything" : "the map only");
+            what = std::string(w) + (r && t ? ", and under the surface" : t ? ", only under the surface" : "");
+            if (t && p.p.fog.on) {
+                std::snprintf(w, sizeof w, " (murky from %g to %g cm)", p.p.fog.start, p.p.fog.end);
+                what += w;
+            }
+        }
         std::snprintf(c, sizeof c, "  mirror %zu of %zu: %s, facing (%.2f %.2f %.2f), %.1f%% of the picture", i + 1, m->planes.size(),
-                      r && t ? "reflection and see-through" : r ? "reflection" : "see-through", std::round(p.p.n.x * 100) / 100 + 0.0, std::round(p.p.n.y * 100) / 100 + 0.0, std::round(p.p.n.z * 100) / 100 + 0.0, p.p.cover * 100);
+                      what.c_str(), std::round(p.p.n.x * 100) / 100 + 0.0, std::round(p.p.n.y * 100) / 100 + 0.0, std::round(p.p.n.z * 100) / 100 + 0.0, p.p.cover * 100);
         log(c);
     }
     if (m->dropped)
         log("  warning: " + std::to_string(m->dropped) + (m->dropped == 1 ? " more mirror plane" : " more mirror planes") +
-            " in view (only the 8 covering most of the picture are drawn): they reflect the reflection probes");
+            " in view (only the 8 covering most of the picture are drawn): they reflect the reflection probes (water: cheap water)");
     // (no time per mirror: the graphics card does the work later, with the picture)
     return m;
 }
@@ -287,6 +301,15 @@ void Editor::stepRender() {
         if (!doc_.probes().empty())
             renderLog("  " + std::to_string(doc_.probes().size()) + (doc_.probes().size() == 1 ? " reflection probe" : " reflection probes"));
         if (st.decals) renderLog("  " + std::to_string(st.decals) + (st.decals == 1 ? " decal" : " decals") + " (lit by the surface under them)");
+        // endless planes (v0.13.0): one line each
+        for (size_t i = 0; i < doc_.planes().size(); ++i) {
+            const EndlessPlane& p = doc_.planes()[i];
+            const MaterialIndex::Entry* e = textures_.material(p.face.texture);
+            char c[300];
+            std::snprintf(c, sizeof c, "  endless plane %zu of %zu: %s at height %g (%s), lit by the sun and the sky", i + 1, doc_.planes().size(),
+                          planeKindName(planeKind(e ? &e->mat : nullptr)), p.z, p.face.texture.c_str());
+            renderLog(c);
+        }
         if (st.terrains) renderLog("  " + std::to_string(st.terrains) + " terrain patches");
         if (st.nodrawFaces) renderLog("  " + std::to_string(st.nodrawFaces) + " nodraw faces left out");
         if (st.missingProps) renderLog("  warning: " + std::to_string(st.missingProps) + " props have no model file (left out; Rescan the Bottega?)");

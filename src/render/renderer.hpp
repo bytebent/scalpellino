@@ -47,7 +47,7 @@ public:
     // What went into the picture (for the render log).
     struct Stats {
         size_t brushes = 0, hiddenBrushes = 0, nodrawFaces = 0, terrains = 0;
-        size_t prims = 0, props = 0, missingProps = 0, lights = 0, decals = 0;
+        size_t prims = 0, props = 0, missingProps = 0, lights = 0, decals = 0, planes = 0;
         std::vector<std::string> missingTextures; // names the library doesn't have (drawn as the checker)
         std::string sky, skyProblem;              // the map's sky ("" none) and why it can't be shown
         bool fog = false;

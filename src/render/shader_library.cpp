@@ -26,6 +26,7 @@ in vec2 vertexTexCoord;
 in vec3 vertexNormal;   // xy: where the luxel is in the lightmap page; z: bump maps' step
 in vec4 vertexColor;    // rgb: the surface normal (0..1), a: terrain layer blend
 uniform mat4 mvp;
+uniform int planeFar;   // an endless plane's outer ring (v0.13.0): kept just inside the far clip
 out vec2 fragTexCoord;
 out vec2 fragLm;
 out vec4 fragColor;
@@ -38,6 +39,7 @@ void main() {
     fragColor = vertexColor;
     fragPos = vertexPosition;
     gl_Position = mvp * vec4(vertexPosition, 1.0);
+    if (planeFar == 1 && gl_Position.w > 0.0) gl_Position.z = min(gl_Position.z, gl_Position.w * 0.99999);
 })";
 
 const char* kWorldFS = R"(#version 330
@@ -57,10 +59,70 @@ vec3 worldNormal() {
     vec3 n = normalize(fragColor.rgb * 2.0 - 1.0);
     return gl_FrontFacing ? n : -n;
 }
-vec3 bakedLight() { return texture(lightmap, fragLm).rgb; }
+// Clouds (v0.13.0): the same noise as core/plane.cpp's cloudThickness (integer hash, smooth
+// value noise, octaves 2.03 apart). p: size (cm), cover 0..100, softness 0..100, opacity;
+// q: complexity (octaves), seed.
+float cloudHash(int ix, int iy, int seed) {
+    uint h = uint(ix) * 374761393u + uint(iy) * 668265263u + uint(seed) * 2246822519u;
+    h = (h ^ (h >> 13u)) * 1274126177u;
+    h ^= h >> 16u;
+    return float(h & 0xffffffu) / 16777215.0;
+}
+float cloudNoise(vec2 p, int seed) {
+    vec2 f = floor(p);
+    ivec2 i = ivec2(f);
+    vec2 t = p - f;
+    t = t * t * (3.0 - 2.0 * t);
+    float a = cloudHash(i.x, i.y, seed), b = cloudHash(i.x + 1, i.y, seed);
+    float c = cloudHash(i.x, i.y + 1, seed), d = cloudHash(i.x + 1, i.y + 1, seed);
+    return mix(mix(a, b, t.x), mix(c, d, t.x), t.y);
+}
+float cloudThickness(vec2 xy, vec4 p, ivec2 q) {
+    vec2 pp = xy / max(p.x, 10.0);
+    float sum = 0.0, amp = 1.0, norm = 0.0;
+    for (int o = 0; o < 8; ++o) {
+        if (o >= q.x) break;
+        sum += amp * cloudNoise(pp + vec2(17.31 * float(o), -9.73 * float(o)), q.y + o);
+        norm += amp;
+        amp *= 0.5;
+        pp *= 2.03;
+    }
+    float f = sum / max(norm, 1e-6);
+    if (p.y <= 0.0) return 0.0;
+    float qq = clamp(1.0 - p.y / 100.0, 0.003, 0.997);
+    float m = 0.496 + 0.134 * log(qq / (1.0 - qq)) / 1.702;
+    float w = 0.01 + 0.10 * p.z / 100.0;
+    float t = clamp((f - m + w) / (2.0 * w), 0.0, 1.0);
+    t = t * t * (3.0 - 2.0 * t);
+    return t * (0.55 + 0.45 * clamp((f - m) / 0.15, 0.0, 1.0));
+}
+// Endless planes (v0.13.0): lit by the sun and the sky only (the bake's PlaneLight: [0] flat,
+// [1..3] the bump directions), the sun dimmed by the cloud planes above (as the bake does).
+uniform int planeLightOn;
+uniform int planeBumped;
+uniform vec3 planeSky[4];
+uniform vec3 planeSun[4];
+uniform int cloudCount;
+uniform float cloudZ[4];
+uniform vec4 cloudP[4];
+uniform ivec2 cloudQ[4];
+uniform vec3 sunToward;
+float cloudSun(vec3 p) {
+    float tr = 1.0;
+    for (int i = 0; i < 4; ++i) {
+        if (i >= cloudCount) break;
+        if (cloudZ[i] <= p.z + 0.5 || sunToward.z <= 1e-6) continue;
+        float s = (cloudZ[i] - p.z) / sunToward.z;
+        tr *= 1.0 - cloudP[i].w * cloudThickness(p.xy + sunToward.xy * s, cloudP[i], cloudQ[i]);
+    }
+    return tr;
+}
+vec3 planeLight(int k) { return planeSky[k] + planeSun[k] * cloudSun(fragPos); }
+vec3 bakedLight() { return planeLightOn == 1 ? planeLight(0) : texture(lightmap, fragLm).rgb; }
 // bumped faces (v0.12.4b): the 3 bump-direction lightmaps next to the flat one
-bool hasBumpLight() { return fragBump != 0.0; }
+bool hasBumpLight() { return planeLightOn == 1 ? planeBumped == 1 : fragBump != 0.0; }
 vec3 bumpLight(int k) {
+    if (planeLightOn == 1) return planeLight(k + 1);
     vec2 off = fragBump > 0.0 ? vec2(fragBump * float(k + 1), 0.0) : vec2(0.0, -fragBump * float(k + 1));
     return texture(lightmap, fragLm + off).rgb;
 }
@@ -239,6 +301,9 @@ uniform vec2 viewSize;      // the picture being drawn, in pixels
 uniform int frameCopyOn;    // Refract (v0.12.7b): refractTex holds the picture drawn so far
 uniform int clipOn;         // drawing a mirror's picture: only what is on one side of it
 uniform vec4 clipPlane;     // keep dot(p, xyz) >= w
+uniform vec3 bumpT0;        // the material's $bumptransform (v0.13.0), rows of a 2 x 3 matrix
+uniform vec3 bumpT1;
+vec2 bumpUV(vec2 uv) { return vec2(dot(bumpT0, vec3(uv, 1.0)), dot(bumpT1, vec3(uv, 1.0))); }
 vec3 toLinear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c)); }
 vec3 toSrgb(vec3 l) { l = clamp(l, 0.0, 1.0); return mix(l * 12.92, 1.055 * pow(l, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), l)); }
 float luminance(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
@@ -578,8 +643,14 @@ std::vector<std::string> ShaderLibrary::bind(Program& p, const Material* mat, co
         for (char& ch : e) ch = (char)std::tolower((unsigned char)ch);
         const int on = e == "env_cubemap" ? 1 : 0;
         SetShaderValue(p.shader, p.at("envProbes"), &on, SHADER_UNIFORM_INT);
-        const int parts = mat ? mirrorParts(*mat) : 0; // mirrors (v0.12.7)
+        const int parts = mat ? mirrorParts(*mat) : 0; // mirrors (v0.12.7), water (v0.13.0)
         SetShaderValue(p.shader, p.at("mirrorWants"), &parts, SHADER_UNIFORM_INT);
+        // Source's $bumptransform (v0.13.0): where the normal map is read
+        double t[6] = {1, 0, 0, 0, 1, 0};
+        if (mat && mat->has("$bumptransform")) parseTexTransform(mat->str("$bumptransform"), t);
+        const float r0[3] = {(float)t[0], (float)t[1], (float)t[2]}, r1[3] = {(float)t[3], (float)t[4], (float)t[5]};
+        SetShaderValue(p.shader, p.at("bumpT0"), r0, SHADER_UNIFORM_VEC3);
+        SetShaderValue(p.shader, p.at("bumpT1"), r1, SHADER_UNIFORM_VEC3);
     }
     rlActiveTextureSlot(0);
     boundUnits_ = unit - firstUnit;

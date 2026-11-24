@@ -24,7 +24,9 @@ All are fetched at build time at pinned versions (see `cmake/Deps.cmake`).
 | `tests/ui/assets/skies/Cubemap_Sky_21.png` (test only, scaled down) | Screaming Brain Studios (provided by the project owner) | CC0 1.0 / public domain |
 | `assets/moon/moon_lroc_color.jpg` (colour map of the Moon, scaled to 1024x512) | NASA's Scientific Visualization Studio (provided by the project owner) | NASA material, not copyrighted in the United States. Credit: **NASA's Scientific Visualization Studio** — see `assets/moon/CREDIT.txt` |
 
-`assets/textures/nodraw.png` is our own (CC0), text set in Roboto. The moon map is Sky
+`assets/textures/nodraw.png` is our own (CC0), text set in Roboto. `glass_ripple_normal.png`
+(v0.12.7b), `water_ripple_normal.png`, `tool_water.png` and `tool_clouds.png` (v0.13.0) were
+made for Scalpellino from sums of sines and value noise (our own, CC0). The moon map is Sky
 Lab's built-in moon (v0.10.6); Sky Lab shows its credit next to it.
 
 ## Data

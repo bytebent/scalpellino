@@ -83,6 +83,9 @@ primselect none
 probe 0 0 170
 probe 650 -300 170
 probe -600 300 170
+# endless water around the map and a cloud layer over it (v0.13.0)
+plane water -80
+plane clouds 3000
 prop models/Crate -200 250 0 0 0 30 1.5
 prop models/fence 200 -250 0 0 0 0 1
 tool light

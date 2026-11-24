@@ -2,6 +2,8 @@
 // Main window chrome: menu bar, status bar, and the docked layout.
 // Rule: every keyboard shortcut also exists as a menu item (mouse-only use must work).
 #include "imgui.h"
+#include <string>
+#include <vector>
 
 namespace scal {
 
@@ -41,6 +43,7 @@ struct MenuState {
     bool cameraTool = false, cameraPending = false, cameraAiming = false;
     bool probeTool = false, probePending = false;           // reflection probes (v0.12.6)
     bool showProbeBalls = false, haveProbeBalls = false, showProbeUsage = false;
+    std::vector<std::string> planes;                         // endless planes (v0.13.0), as listed
     size_t camerasSelected = 0;
     bool selectedCameraActive = false; // the one selected camera is the active one already
     bool hasCameras = false;
@@ -90,6 +93,8 @@ struct MenuActions {
     bool decalPictureSize = false, toggleDecals = false;
     bool toolCamera = false, createCamera = false, activateCamera = false, aimCamera = false;
     bool toolProbe = false, createProbe = false, toggleProbeBalls = false, toggleProbeUsage = false;
+    int newPlane = -2;        // endless planes (v0.13.0): PlaneKind, -1 = the current texture
+    int selectPlane = -1;     // World > Endless planes: the plane's index
     bool updatePreview = false;
     bool render = false;      // Render... (Cmd+Shift+K)
     int renderQuality = -1;   // RenderQuality index

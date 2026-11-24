@@ -77,6 +77,11 @@ struct Material {
 // Parses a Source vector value (see Material::vec). False if it isn't one.
 bool parseVmtVector(const std::string& v, Vec3& out);
 std::string formatVmtVector(const Vec3& v); // "[r g b]"
+// Source's texture transform ("center .5 .5 scale 1 1 rotate 0 translate 0 0", e.g.
+// $bumptransform; v0.13.0): uv' = R S (uv - center) + center + translate, as the rows of a
+// 2 x 3 matrix (m[0..2] for u', m[3..5] for v'). Missing parts keep their defaults; false
+// if nothing could be read.
+bool parseTexTransform(const std::string& v, double m[6]);
 // A texlight value, lights.rad style: "r g b brightness" (colour 0..255). False if not.
 bool parseTexLight(const std::string& v, Vec3& color255, double& brightness);
 

@@ -39,6 +39,8 @@ const Color kProbeShine{ 240, 248, 255, 255};
 const Color kPropMissing {255, 170,  60, 255};
 
 const Color kBg3D      { 22,  22,  26, 255};
+const Color kPlaneLine     {110, 190, 200, 255}; // endless planes (v0.13.0), 2D
+const Color kPlaneSelected {255,  90,  90, 255};
 const Color kGround    { 48,  48,  56, 255};
 const Color kGround1024{ 80,  70,  50, 255};
 
@@ -462,6 +464,18 @@ void Viewport::render2D(const Grid& grid, const Scene& scene) {
         hline(a.y, a.x, b.x, thin, kBorder); hline(b.y, a.x, b.x, thin, kBorder);
         vline(a.x, a.y, b.y, thin, kBorder); vline(b.x, a.y, b.y, thin, kBorder);
     }
+
+    // ---- endless planes (v0.13.0): in the side views a line across the view at their height
+    // (dashed when not selected); the top view shows nothing, so they don't cover the map.
+    if (axV() == 2 && uMin < uMax)
+        for (const Scene::ScenePlane& sp : scene.planes) {
+            const double y = sy(sp.plane.z);
+            if (sp.plane.z < vMin || sp.plane.z > vMax) continue;
+            const double left = sx(uMin), right = sx(uMax);
+            if (sp.selected) hline(y, left, right, thick * 2, kPlaneSelected);
+            else
+                for (double x = left; x < right; x += 18 * P) hline(y, x, std::min(right, x + 12 * P), thick, kPlaneLine);
+        }
 
     // ---- brushes: edges of every face polygon, projected.
     const int U = axU(), V = axV();
@@ -971,6 +985,14 @@ void main() {
     bctx.viewH = std::max(1, rt_.texture.height);
     if (lens_) bctx.copyFrame = [this] { return copyFrame(); }; // Refract (v0.12.7b): pictures only
     bctx.textures = scene.textures;
+    // Endless planes (v0.13.0): to the horizon (within the far clip), lit by their PlaneLight
+    if (lens_ && scene.baked && scene.textures) {
+        bctx.planes = &scene.planes;
+        bctx.bake = scene.baked->result();
+        bctx.planeReach = std::clamp(lens_->farDist * 0.9, 1000.0, kPlaneReach);
+        if (lens_->ortho) bctx.planeReach = std::clamp(std::max(lens_->orthoSize * 4, lens_->farDist * 0.9), 1000.0, kPlaneReach);
+        bctx.clouds = cloudLayers(scene.planes, *scene.textures);
+    }
     const bool bakedBrushes = lens_ && scene.baked && scene.textures && drawBakedBrushes(scene.brushes, *scene.baked, *scene.textures, bctx);
     // Fog: everything solid from here on is drawn through the fog shader.
     bool fogging = false;
@@ -1218,6 +1240,61 @@ void main() {
         drawBakedBrushes(scene.brushes, *scene.baked, *scene.textures, d);
     } else if (!bakedBrushes && !scene.decals.empty())
         drawEditorDecals(scene, {eye.x, eye.y, eye.z});
+    // Endless planes in the editor (v0.13.0): a large square of the material's picture around
+    // the map, fading out towards its edges, seen from both sides; not lit (as the editor's
+    // other surfaces are, roughly).
+    if (!bakedBrushes && !scene.planes.empty()) {
+        AABB mb = scene.mapBounds;
+        if (!mb.valid()) { mb.add({-512, -512, 0}); mb.add({512, 512, 0}); }
+        const Vec3 c = mb.center();
+        const double half = std::max(mb.size().x, mb.size().y) * 0.75 + 2048;
+        const int n = 16;
+        rlDrawRenderBatchActive();
+        rlDisableDepthMask();
+        rlDisableBackfaceCulling();
+        // see-through and without depth: the farthest from the eye's height first
+        std::vector<const Scene::ScenePlane*> order;
+        for (const Scene::ScenePlane& sp : scene.planes) order.push_back(&sp);
+        std::stable_sort(order.begin(), order.end(), [&](const Scene::ScenePlane* a, const Scene::ScenePlane* b) {
+            return std::fabs(a->plane.z - eye.z) > std::fabs(b->plane.z - eye.z);
+        });
+        for (const Scene::ScenePlane* spp : order) {
+            const Scene::ScenePlane& sp = *spp;
+            unsigned texId = 0;
+            TexSize ts{64, 64};
+            const Face f = planeFace(sp.plane);
+            if (scene.textures) {
+                const Texture2D& tex = scene.textures->get(f.texture);
+                texId = tex.id;
+                ts = {std::max(1, tex.width), std::max(1, tex.height)};
+            }
+            const Color tint = sp.selected ? Color{255, 150, 150, 255} : (texId ? WHITE : kPlaneLine);
+            const double cell = 2 * half / n;
+            for (int j = 0; j < n; ++j)
+                for (int i = 0; i < n; ++i) {
+                    const double x0 = c.x - half + i * cell, y0 = c.y - half + j * cell;
+                    const Vec3 q[4] = {{x0, y0, sp.plane.z}, {x0 + cell, y0, sp.plane.z}, {x0 + cell, y0 + cell, sp.plane.z}, {x0, y0 + cell, sp.plane.z}};
+                    rlCheckRenderBatchLimit(6);
+                    if (texId) rlSetTexture(texId);
+                    rlBegin(RL_TRIANGLES);
+                    for (int k : {0, 1, 2, 0, 2, 3}) {
+                        const double r = std::max(std::fabs(q[k].x - c.x), std::fabs(q[k].y - c.y)) / half;
+                        const double a = std::clamp((1.0 - r) / 0.5, 0.0, 1.0) * 0.85;
+                        rlColor4ub(tint.r, tint.g, tint.b, (unsigned char)std::lround(a * 255));
+                        if (texId) {
+                            const UV uv = texCoord(f, q[k], ts);
+                            rlTexCoord2f((float)uv.u, (float)uv.v);
+                        }
+                        rlVertex3f((float)q[k].x, (float)q[k].y, (float)q[k].z);
+                    }
+                    rlEnd();
+                    if (texId) rlSetTexture(0);
+                }
+        }
+        rlDrawRenderBatchActive();
+        rlEnableBackfaceCulling();
+        rlEnableDepthMask();
+    }
     // See-through faces (materials with $translucent or $alpha < 1) last, far to near.
     if (bakedBrushes) {
         BakedDrawContext t = bctx;

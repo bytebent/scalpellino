@@ -18,6 +18,7 @@
 #include "core/replicate.hpp"
 #include "core/bottega.hpp"
 #include "core/mirror.hpp"
+#include "core/plane.hpp"
 #include "core/prop.hpp"
 #include "core/bake.hpp"
 #include "core/decal.hpp"
@@ -5128,6 +5129,230 @@ static void testMirrors() {
     }
 }
 
+// v0.13.0 — water, clouds and endless planes (milestone 13).
+static void testPlanes() {
+    namespace fs = std::filesystem;
+    // what a plane is follows from its material
+    Material water, clouds, ground;
+    water.shader = "Water";
+    clouds.shader = "Clouds";
+    CHECK(planeKind(&water) == PlaneKind::Water && planeKind(&clouds) == PlaneKind::Clouds && planeKind(&ground) == PlaneKind::Ground &&
+          planeKind(nullptr) == PlaneKind::Ground);
+    Material hdr;
+    hdr.shader = "Water_DX9_HDR";
+    CHECK(planeKind(&hdr) == PlaneKind::Water && isWaterMaterial(hdr));
+    CHECK(std::string(planeKindName(PlaneKind::Clouds)) == "clouds" && std::string(starterPlaneMaterial(PlaneKind::Water)) == "textures/starter/water");
+    // a new plane: world-aligned like a floor, Source's scale; its face points up
+    const EndlessPlane pl = makePlane(-40, "textures/starter/water");
+    CHECK(pl.z == -40 && pl.face.scaleU == 0.25 && pl.face.u.axis == Vec3(1, 0, 0) && pl.face.v.axis == Vec3(0, -1, 0));
+    CHECK(planeFace(pl).plane().n.z > 0.999 && near(planeFace(pl).plane().d, -40, 1e-9));
+    const std::vector<Vec3> sq = planeSquare(5, 10, 20, 100);
+    CHECK(sq.size() == 4 && sq[0] == Vec3(-90, -80, 5) && sq[2] == Vec3(110, 120, 5) && cross(sq[1] - sq[0], sq[2] - sq[0]).z > 0);
+
+    // the document: add, select, move, delete, undo; another object drops the plane selection
+    Document doc;
+    doc.apply(doc.makeAddPlanes({makePlane(0, "w")}, "New endless water plane"));
+    CHECK(doc.planes().size() == 1 && doc.planeSelection().size() == 1 && doc.planes()[0].id != 0);
+    EndlessPlane q = doc.planes()[0];
+    q.z = 64;
+    doc.apply(doc.makeModifyPlanes({q}, "Move endless plane"));
+    CHECK(doc.planes()[0].z == 64);
+    doc.undo();
+    CHECK(doc.planes()[0].z == 0);
+    doc.redo();
+    Command del = doc.makeDelete({}, "Delete");
+    doc.addPlaneDeletes(del, doc.planeSelection());
+    doc.apply(std::move(del));
+    CHECK(doc.planes().empty() && doc.planeSelection().empty());
+    doc.undo();
+    CHECK(doc.planes().size() == 1 && doc.planeSelection().size() == 1);
+    Probe pr;
+    doc.apply(doc.makeAddProbes({pr}, "Create reflection probe"));
+    CHECK(doc.planeSelection().empty());
+    doc.undo();
+    CHECK(doc.planeSelection().size() == 1);
+
+    // the map file: our own entity, everything kept (other keys too)
+    {
+        Document d;
+        EndlessPlane a = makePlane(-40.5, "textures/starter/water");
+        a.face.scaleU = 0.5;
+        a.face.u.offset = 12;
+        a.face.rotation = 15;
+        a.otherKeys.push_back({"_note", "lake"});
+        d.apply(d.makeAddPlanes({a, makePlane(4000, "textures/starter/clouds")}, "New endless plane"));
+        const std::string text = writeMap(d);
+        CHECK(text.find("\"classname\" \"scal_plane\"") != std::string::npos && text.find("\"origin\" \"0 0 -40.5\"") != std::string::npos);
+        Document d2;
+        const MapReadResult r = readMap(text, d2);
+        CHECK(r.error.empty() && d2.planes().size() == 2);
+        if (d2.planes().size() == 2) {
+            const EndlessPlane& b = d2.planes()[0];
+            CHECK(b.z == -40.5 && b.face.texture == "textures/starter/water" && b.face.scaleU == 0.5 && b.face.scaleV == 0.25 && b.face.u.offset == 12 &&
+                  b.face.rotation == 15 && b.otherKeys.size() == 1 && b.otherKeys[0].second == "lake");
+            CHECK(d2.planes()[1].z == 4000);
+        }
+        CHECK(writeMap(d2) == text);
+    }
+
+    // clouds: the same pattern every time, about `cover` % covered, none at 0, thicker inside
+    {
+        CloudParams c;
+        c.size = 100;
+        CHECK(cloudThickness(c, 123.4, -56.7) == cloudThickness(c, 123.4, -56.7));
+        CHECK(cloudNoise(0.0, 0.0, 1) >= 0 && cloudNoise(0.0, 0.0, 1) <= 1);
+        CHECK(near(cloudNoise(3.0, 4.0, 2), cloudNoise(3.0, 4.0, 2)) && cloudNoise(3.0, 4.0, 2) != cloudNoise(3.0, 4.0, 3));
+        for (double cover : {20.0, 50.0, 80.0}) {
+            c.cover = cover;
+            int n = 0, covered = 0;
+            double mx = 0;
+            for (int i = 0; i < 200; ++i)
+                for (int j = 0; j < 200; ++j) {
+                    const double t = cloudThickness(c, i * 7.3, j * 7.3);
+                    covered += t > 0.27 ? 1 : 0; // the middle of the edge (t 0.5 x 0.55)
+                    mx = std::max(mx, t);
+                    ++n;
+                }
+            CHECK(std::fabs(100.0 * covered / n - cover) < 8);
+            CHECK(mx > 0.8 && mx <= 1);
+        }
+        c.cover = 0;
+        CHECK(cloudThickness(c, 5, 5) == 0 && cloudTransmit(c, 5, 5) == 1);
+        c.cover = 100;
+        c.opacity = 0.9;
+        CHECK(cloudTransmit(c, 5, 5) < 0.6 && cloudTransmit(c, 5, 5) >= 0.1 - 1e-9);
+        Material m;
+        m.shader = "Clouds";
+        m.params["$cover"] = "130";
+        m.params["$complexity"] = "12";
+        m.params["$cloudsize"] = "2500";
+        const CloudParams k = cloudParams(m);
+        CHECK(k.cover == 100 && k.complexity == 8 && k.size == 2500 && k.opacity == 0.9);
+    }
+
+    // water: Source's parts; cheap water has no pictures; the murk in cm
+    {
+        Material w;
+        w.shader = "Water";
+        CHECK(mirrorParts(w) == (kMirrorWater | kMirrorReflect | kMirrorRefract));
+        w.params["$reflectentities"] = "1";
+        CHECK(mirrorParts(w) & kMirrorEntities);
+        w.params["$forcecheap"] = "1";
+        CHECK(!(mirrorParts(w) & (kMirrorReflect | kMirrorRefract)) && (mirrorParts(w) & kMirrorWater));
+        w.params.erase("$forcecheap");
+        w.params["$refracttexture"] = "none";
+        CHECK((mirrorParts(w) & (kMirrorReflect | kMirrorRefract)) == kMirrorReflect);
+        CHECK(!waterFog(w).on);
+        w.params["$fogcolor"] = "{51 102 255}";
+        w.params["$fogstart"] = "10";
+        w.params["$fogend"] = "110";
+        const WaterFog f = waterFog(w);
+        CHECK(f.on && near(f.start, 25.4) && near(f.end, 279.4) && near(f.color.x, 51, 1e-9) && near(f.color.z, 255, 1e-9));
+        CHECK(!isReflectiveMaterial(w) && !isRefractMaterial(w));
+        // water faces on one plane share it (the mirror budget: water and mirrors together)
+        MirrorFace a, b;
+        a.verts = {{-100, -100, 0}, {100, -100, 0}, {100, 100, 0}, {-100, 100, 0}};
+        a.n = {0, 0, 1};
+        a.parts = mirrorParts(w);
+        a.fog = f;
+        b = a;
+        for (Vec3& v : b.verts) v.x += 300;
+        Camera c;
+        c.pos = {0, -400, 200};
+        aimCamera(c, {100, 0, 0});
+        const auto planes = mirrorPlanes({a, b}, c, kMaxMirrors);
+        CHECK(planes.size() == 1 && planes[0].fog.on && (planes[0].parts & kMirrorWater));
+    }
+    // Source's texture transform ($bumptransform)
+    {
+        double m[6];
+        CHECK(parseTexTransform("center .5 .5 scale 1 1 rotate 0 translate 0 0", m));
+        CHECK(near(m[0], 1) && near(m[1], 0) && near(m[2], 0) && near(m[4], 1) && near(m[5], 0));
+        CHECK(parseTexTransform("center .5 .5 scale 2 4 rotate 0 translate 0.25 0", m));
+        // u' = 2 (u - .5) + .5 + .25
+        CHECK(near(m[0] * 1 + m[1] * 0 + m[2], 2 * 0.5 + 0.75) && near(m[3] * 0 + m[4] * 1 + m[5], 4 * 0.5 + 0.5));
+        CHECK(parseTexTransform("rotate 90", m) && near(m[0], 0, 1e-12) && near(m[3], 1));
+        CHECK(!parseTexTransform("nonsense", m));
+    }
+
+    // the bake: a ground plane blocks light, water lets it through, clouds dim the sun; the
+    // planes' own light is the sun and the open sky
+    {
+        BakeInput in;
+        Brush shelf = makeBox(box({0, 0, 100}, {256, 256, 116}), "shelf"); // lit from below?
+        shelf.id = 1;
+        in.brushes = {shelf};
+        Light sun;
+        sun.kind = LightKind::Sun;
+        sun.pitch = 90; // pointing up: a sun below the map (only to test the ground plane)
+        sun.brightness = 255;
+        in.lights = {sun};
+        in.env.skyLight = 0;
+        in.quality = BakeQuality::Draft;
+        in.maxBounces = 0;
+        const BakeResult open = bakeLight(in, nullptr, 2);
+        CHECK(luxelAt(open, shelf, {0, 0, -1}, {128, 128, 100}).x > 0.9);
+        BakePlane g;
+        g.plane = makePlane(0, "ground");
+        g.plane.id = 3;
+        in.planes = {g};
+        const BakeResult blocked = bakeLight(in, nullptr, 2);
+        CHECK(luxelAt(blocked, shelf, {0, 0, -1}, {128, 128, 100}).x < 0.01);
+        CHECK(bakeKey(in) != bakeKey(BakeInput{}));
+        in.planes[0].kind = PlaneKind::Water;
+        const BakeResult through = bakeLight(in, nullptr, 2);
+        CHECK(luxelAt(through, shelf, {0, 0, -1}, {128, 128, 100}).x > 0.9);
+        // a sun from above, a cloud plane over the shelf
+        in.lights[0].pitch = -90;
+        BakePlane cl;
+        cl.plane = makePlane(2000, "clouds");
+        cl.plane.id = 4;
+        cl.kind = PlaneKind::Clouds;
+        cl.clouds.cover = 100;
+        cl.clouds.opacity = 1;
+        in.planes = {cl};
+        const BakeResult shaded = bakeLight(in, nullptr, 2);
+        const double lit = luxelAt(shaded, shelf, {0, 0, 1}, {128, 128, 116}).x;
+        const double expect = cloudTransmit(cl.clouds, 128, 128);
+        CHECK(lit < 0.6 && near(lit, expect, 0.03));
+        CHECK(near(cloudSunThrough(in.planes, {128, 128, 116}, {0, 0, 1}), expect, 1e-9));
+        CHECK(cloudSunThrough(in.planes, {128, 128, 3000}, {0, 0, 1}) == 1); // above the clouds
+        // the planes' own light: sun x N.L, the open sky above them
+        CHECK(shaded.hasSun && near(shaded.sunToward.z, 1, 1e-9));
+        CHECK(shaded.planes.size() == 1 && shaded.planes[0].id == 4 && near(shaded.planes[0].sun[0].x, 1.0, 1e-9));
+        in.lights[0].pitch = -30;
+        in.env.skyLight = 100;
+        in.env.ambient = {255, 255, 255};
+        g.bumped = true;
+        in.planes = {g};
+        const BakeResult pl2 = bakeLight(in, nullptr, 2);
+        CHECK(pl2.planes.size() == 1 && near(pl2.planes[0].sun[0].x, 0.5, 1e-6)); // sin 30
+        // the open sky: the full ambient for the flat normal
+        CHECK(near(pl2.planes[0].sky[0].x, 1.0, 1e-6));
+        // bump directions: their average is the flat light (as bumped lightmaps)
+        const double avg = (pl2.planes[0].sun[1].x + pl2.planes[0].sun[2].x + pl2.planes[0].sun[3].x) / 3;
+        CHECK(pl2.planes[0].bumped && near(avg, 0.5, 1e-5));
+    }
+    // starter materials: water, murky water, ground, clouds in a new Bottega; one written on demand
+    {
+        const fs::path dir = fs::temp_directory_path() / "scal_planes_bottega";
+        std::error_code ec;
+        fs::remove_all(dir, ec);
+        std::string err;
+        CHECK(bottega::make(dir.string(), err));
+        for (const char* n : {"water", "murky_water", "ground", "clouds"}) CHECK(fs::exists(dir / "textures" / "starter" / (std::string(n) + ".vmt")));
+        fs::remove(dir / "textures" / "starter" / "water.vmt", ec);
+        CHECK(bottega::writeStarterMaterial(dir.string(), "water") && fs::exists(dir / "textures" / "starter" / "water.vmt"));
+        CHECK(!bottega::writeStarterMaterial(dir.string(), "nonsense"));
+        std::ifstream f(dir / "textures" / "starter" / "murky_water.vmt");
+        std::stringstream ss;
+        ss << f.rdbuf();
+        MaterialFile mf;
+        CHECK(MaterialFile::parse(ss.str(), mf) && mf.shader == "Water");
+        fs::remove_all(dir, ec);
+    }
+}
+
 int main() {
     testRenderJob();
     testGrid();
@@ -5180,6 +5405,7 @@ int main() {
     testDecalOrderFile();
     testProbes();
     testMirrors();
+    testPlanes();
     testTracer();
     testMapQuakeFormat();
     testMapErrors();

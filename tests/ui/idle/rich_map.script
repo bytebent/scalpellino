@@ -124,6 +124,9 @@ bookmark add Overview
 # -- reflection probes (v0.12.6), saved as env_cubemap
 probe 0 0 200
 probe 600 400 170 7
+# -- endless planes (v0.13.0): water around the map, a cloud layer (the editor's squares)
+plane water -80
+plane clouds 3000
 save idle-rich.map
 open idle-rich.map
 viewset sky on
@@ -137,6 +140,7 @@ expect props 3
 expect lights 3
 expect cameras 2
 expect probes 2
+expect planes 2
 expect cameraactive 0
 # -- the Camera Preview drawn once (it must not redraw by itself; it builds the probes too),
 #    the probes shown as mirror balls and the reach of the selected one

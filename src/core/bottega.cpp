@@ -49,9 +49,48 @@ bool isEmptyDir(const fs::path& dir) {
 
 // Starter materials for a new Bottega (v0.12.7, agreed with the user; they may be removed
 // in a later version): textures/starter/. Only written where no file of that name is.
-static void writeStarterMaterials(const fs::path& dir) {
-    struct Starter { const char* name; const char* text; };
-    static const Starter kStarters[] = {
+// v0.13.0: water, murky_water, ground and clouds for the endless planes (milestone 13).
+namespace {
+struct Starter { const char* name; const char* text; };
+const Starter kStarters[] = {
+        {"water.vmt",
+         "\"Water\"\n{\n"
+         "\t\"%tooltexture\" \"tool_water\"\n"
+         "\t\"$normalmap\" \"water_ripple_normal\"\n"
+         "\t\"$bumptransform\" \"center .5 .5 scale 0.25 0.25 rotate 0 translate 0 0\"\n"
+         "\t\"$reflecttint\" \"[0.85 0.95 0.95]\"\n"
+         "\t\"$reflectamount\" \"0.04\"\n"
+         "\t\"$refracttint\" \"[0.7 0.9 0.85]\"\n"
+         "\t\"$refractamount\" \"0.03\"\n"
+         "\t\"$reflectentities\" \"1\"\n"
+         "\t\"$fogcolor\" \"{30 82 88}\"\n"
+         "\t\"$fogstart\" \"0\"\n"
+         "\t\"$fogend\" \"600\"\n"
+         "}\n"},
+        {"murky_water.vmt",
+         "\"Water\"\n{\n"
+         "\t\"%tooltexture\" \"tool_water\"\n"
+         "\t\"$normalmap\" \"water_ripple_normal\"\n"
+         "\t\"$bumptransform\" \"center .5 .5 scale 0.25 0.25 rotate 0 translate 0 0\"\n"
+         "\t\"$reflecttint\" \"[0.6 0.6 0.55]\"\n"
+         "\t\"$reflectamount\" \"0.03\"\n"
+         "\t\"$refractamount\" \"0.02\"\n"
+         "\t\"$fogcolor\" \"{70 56 34}\"\n"
+         "\t\"$fogstart\" \"0\"\n"
+         "\t\"$fogend\" \"60\"\n"
+         "}\n"},
+        {"ground.vmt",
+         "\"LightmappedGeneric\"\n{\n"
+         "\t\"$basetexture\" \"Grass_20\"\n"
+         "}\n"},
+        {"clouds.vmt",
+         "\"Clouds\"\n{\n"
+         "\t\"%tooltexture\" \"tool_clouds\"\n"
+         "\t\"$cover\" \"45\"\n"
+         "\t\"$cloudsize\" \"6000\"\n"
+         "\t\"$softness\" \"45\"\n"
+         "\t\"$opacity\" \"0.9\"\n"
+         "}\n"},
         {"mirror.vmt",
          "\"LightmappedReflective\"\n{\n"
          "\t\"%tooltexture\" \"Tile_13\"\n"
@@ -75,7 +114,9 @@ static void writeStarterMaterials(const fs::path& dir) {
          "\t\"$reflecttint\" \"[0.3 0.3 0.3]\"\n"
          "\t\"$refracttexture\" \"none\"\n"
          "}\n"},
-    };
+};
+} // namespace
+static void writeStarterMaterials(const fs::path& dir) {
     std::error_code ec;
     const fs::path folder = dir / "textures" / "starter";
     fs::create_directories(folder, ec);
@@ -86,6 +127,22 @@ static void writeStarterMaterials(const fs::path& dir) {
         std::ofstream o(f);
         o << s.text;
     }
+}
+
+bool writeStarterMaterial(const std::string& root, const std::string& name) {
+    std::error_code ec;
+    if (root.empty() || !fs::is_directory(root, ec)) return false;
+    for (const Starter& s : kStarters) {
+        if (name + ".vmt" != s.name) continue;
+        const fs::path folder = fs::path(root) / "textures" / "starter";
+        fs::create_directories(folder, ec);
+        const fs::path f = folder / s.name;
+        if (fs::exists(f, ec)) return true;
+        std::ofstream o(f);
+        o << s.text;
+        return (bool)o;
+    }
+    return false;
 }
 
 

@@ -1,4 +1,5 @@
 #include "core/material.hpp"
+#include <cmath>
 #include "core/bottega.hpp"
 #include <algorithm>
 #include <set>
@@ -253,6 +254,31 @@ bool parseVmtVector(const std::string& v, Vec3& out) {
     if (n != 3) return false;
     out = Vec3{x[0], x[1], x[2]} * scale;
     return true;
+}
+
+bool parseTexTransform(const std::string& v, double m[6]) {
+    double cx = 0.5, cy = 0.5, sx = 1, sy = 1, rot = 0, tx = 0, ty = 0;
+    std::istringstream in(v);
+    std::string w;
+    bool any = false;
+    while (in >> w) {
+        for (char& c : w) c = (char)std::tolower((unsigned char)c);
+        auto two = [&](double& a, double& b) {
+            if (!(in >> a)) return false;
+            if (!(in >> b)) { in.clear(); b = a; }
+            return true;
+        };
+        if (w == "center") any |= two(cx, cy);
+        else if (w == "scale") any |= two(sx, sy);
+        else if (w == "translate") any |= two(tx, ty);
+        else if (w == "rotate") any |= (bool)(in >> rot);
+        else return any;
+    }
+    const double r = rot * 3.14159265358979323846 / 180, c = std::cos(r), s = std::sin(r);
+    // R S (uv - center) + center + t
+    m[0] = c * sx; m[1] = -s * sy; m[2] = cx + tx - (m[0] * cx + m[1] * cy);
+    m[3] = s * sx; m[4] = c * sy; m[5] = cy + ty - (m[3] * cx + m[4] * cy);
+    return any;
 }
 
 std::string formatVmtVector(const Vec3& v) {

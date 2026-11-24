@@ -85,6 +85,29 @@ void Editor::registerScriptExpects() {
                          : lastProbes_ ? lastProbes_->slots.size() : 0;
         if (got != n) { std::fprintf(stderr, "script FAIL (command %d): expected %zu %s, got %zu\n", scriptLine_, n, w.c_str(), got); ++scriptFailures_; }
     });
+    add({"planes", "planesel"}, [this](const std::string&, std::istringstream& in) {
+        // expect planes <n> | planesel <n>   (endless planes, v0.13.0)
+        std::string w; size_t n = 0; in >> w >> n;
+        const size_t got = w == "planes" ? doc_.planes().size() : doc_.planeSelection().size();
+        if (got != n) { std::fprintf(stderr, "script FAIL (command %d): expected %zu %s, got %zu\n", scriptLine_, n, w.c_str(), got); ++scriptFailures_; }
+    });
+    add({"plane"}, [this](const std::string&, std::istringstream& in) {
+        // expect plane z <h> | material <name> | kind water|ground|clouds   (the first selected plane)
+        std::string w, k; in >> w >> k;
+        const EndlessPlane* r = doc_.planeSelection().empty() ? nullptr : doc_.findPlane(*doc_.planeSelection().begin());
+        if (!r) { std::fprintf(stderr, "script FAIL (command %d): no endless plane selected\n", scriptLine_); ++scriptFailures_; return; }
+        bool ok = true;
+        std::string got;
+        if (k == "z") { double z = 0; in >> z; ok = std::fabs(z - r->z) <= 0.01; got = std::to_string(r->z); }
+        else if (k == "material") { std::string m; in >> m; ok = m == r->face.texture; got = r->face.texture; }
+        else if (k == "kind") {
+            std::string m; in >> m;
+            const MaterialIndex::Entry* e = textures_.material(r->face.texture);
+            got = planeKindName(planeKind(e ? &e->mat : nullptr));
+            ok = got == m;
+        }
+        if (!ok) { std::fprintf(stderr, "script FAIL (command %d): plane %s is %s\n", scriptLine_, k.c_str(), got.c_str()); ++scriptFailures_; }
+    });
     add({"previewmirrors"}, [this](const std::string&, std::istringstream& in) {
         // expect previewmirrors <n>: mirror planes drawn for the last Camera Preview (v0.12.7)
         std::string w; size_t n = 0; in >> w >> n;

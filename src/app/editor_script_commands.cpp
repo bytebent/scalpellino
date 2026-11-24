@@ -317,7 +317,7 @@ void Editor::registerScriptCommands() {
             else if (w != "none") { const size_t i = (size_t)std::atoi(w.c_str()); if (i < doc_.probes().size()) sel.insert(doc_.probes()[i].id); }
         }
         doc_.setProbeSelection(sel); doc_.setSelection({}); doc_.setLightSelection({}); doc_.setPrimSelection({}); doc_.setPropSelection({});
-        doc_.setDecalSelection({}); doc_.setCameraSelection({});
+        doc_.setDecalSelection({}); doc_.setCameraSelection({}); doc_.setPlaneSelection({});
     });
     add({"probeedit"}, [this](const std::string&, std::istringstream& in) {
         // probeedit pos x y z | size <n>   (the selected probes, one undo step)
@@ -332,6 +332,49 @@ void Editor::registerScriptCommands() {
                 out.push_back(v);
             }
         if (!out.empty()) doc_.apply(doc_.makeModifyProbes(out, "Edit reflection probe"));
+    });
+    add({"plane"}, [this](const std::string&, std::istringstream& in) {
+        // plane water|ground|clouds [z] (World > Endless ... plane) | plane material <name> <z>
+        // | plane current [z] (with the current texture)
+        std::string w; in >> w;
+        double z = 0;
+        if (w == "material") {
+            std::string m; in >> m >> z;
+            doc_.apply(doc_.makeAddPlanes({makePlane(z, m)}, "New endless plane"));
+            return;
+        }
+        const int kind = w == "water" ? 1 : w == "ground" ? 0 : w == "clouds" ? 2 : -1;
+        if (in >> z) addPlane(kind, z);
+        else addPlane(kind);
+    });
+    add({"planeselect"}, [this](const std::string&, std::istringstream& in) {
+        // planeselect all | none | <index>...  (order in the map, 0-based)
+        std::set<PlaneId> sel;
+        std::string w;
+        while (in >> w) {
+            if (w == "all") for (const EndlessPlane& r : doc_.planes()) sel.insert(r.id);
+            else if (w != "none") { const size_t i = (size_t)std::atoi(w.c_str()); if (i < doc_.planes().size()) sel.insert(doc_.planes()[i].id); }
+        }
+        doc_.setPlaneSelection(sel); doc_.setSelection({}); doc_.setLightSelection({}); doc_.setPrimSelection({}); doc_.setPropSelection({});
+        doc_.setDecalSelection({}); doc_.setCameraSelection({}); doc_.setProbeSelection({});
+    });
+    add({"planeedit"}, [this](const std::string&, std::istringstream& in) {
+        // planeedit z <h> | material <name> | scale <u> <v>   (the selected planes, one undo step)
+        std::string k; in >> k;
+        double z = 0, u = 0.25, v = 0.25;
+        std::string m;
+        if (k == "z") in >> z; else if (k == "material") in >> m; else in >> u >> v;
+        std::vector<EndlessPlane> out;
+        for (PlaneId id : doc_.planeSelection())
+            if (const EndlessPlane* r = doc_.findPlane(id)) {
+                EndlessPlane e = *r;
+                if (k == "z") e.z = z;
+                else if (k == "material") e.face.texture = m;
+                else { e.face.scaleU = u; e.face.scaleV = v; }
+                e.face = planeFace(e);
+                out.push_back(e);
+            }
+        if (!out.empty()) doc_.apply(doc_.makeModifyPlanes(out, "Edit endless plane"));
     });
     add({"camerapreview"}, [this](const std::string&, std::istringstream&) {
         // camerapreview: draw the Camera Preview now (as Cmd+K; drawn with the next frame)
@@ -510,7 +553,7 @@ void Editor::registerScriptCommands() {
             if (w == "all") sel.insert(all.begin(), all.end());
             else if (w != "none") { const size_t i = (size_t)std::atoi(w.c_str()); if (i < all.size()) sel.insert(all[i]); }
         }
-        doc_.setDecalSelection(sel); doc_.setSelection({}); doc_.setLightSelection({}); doc_.setPrimSelection({}); doc_.setPropSelection({}); doc_.setCameraSelection({}); doc_.setProbeSelection({});
+        doc_.setDecalSelection(sel); doc_.setSelection({}); doc_.setLightSelection({}); doc_.setPrimSelection({}); doc_.setPropSelection({}); doc_.setCameraSelection({}); doc_.setProbeSelection({}); doc_.setPlaneSelection({});
     });
     add({"decalset"}, [this](const std::string&, std::istringstream& in) {
         // decalset pos x y z | width w | height h | turn deg | reach r | order n | material <name>

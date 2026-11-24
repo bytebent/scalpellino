@@ -127,6 +127,9 @@ inside the view. Lines starting with # are comments.
   expect probes|probesel <n>   expect probepos x y z | probesize <n>   (the first selected probe)
   expect probeatlas <n>   (probes in the last built cubemaps)   viewset probeballs|probeuse on|off
   expect previewmirrors <n>   (mirror planes drawn for the last Camera Preview, v0.12.7)
+  plane water|ground|clouds [z] | plane current [z] | plane material <name> <z>   (World > Endless ... plane, v0.13.0)
+  planeselect all|none|<index...>   planeedit z <h> | material <name> | scale <u> <v>   (the selected planes, one undo step)
+  expect planes|planesel <n>   expect plane z <h> | material <name> | kind water|ground|clouds   (the first selected plane)
   render   (Cmd+Shift+K; the next command waits until it has finished)   renderstart (doesn't wait)
   renderset quality draft|normal|high | aa <1..4> | filter smooth|crisp | props full|quick   (Render menu)
   matselect <name> [cmd|shift] | shown | faces | none   (Textures panel clicks: the materials the panel edits)
@@ -177,7 +180,7 @@ policy), and it must hold **with a map open**, not only with an empty app.
 
 - `tests/ui/idle.sh <absolute path to Scalpellino> [seconds]` (Linux, needs Xvfb):
   starts the app on its own virtual screen with `tests/ui/idle/rich_map.script`, which
-  builds a map with a Bottega (one texture in it, found by Rescan, used on the tower), terrain (raised and painted), brushes, a dome, a blended primitive
+  builds a map with a Bottega (one texture in it, found by Rescan, used on the tower), terrain (raised and painted), brushes, endless water and cloud planes (v0.13.0), a dome, a blended primitive
   combination, a torus and a cube, three lights, sky, ambient, fog, a bookmark and the
   scale figure, saves it, **re-opens the saved map**, switches on the sky, light preview,
   fog and figure, selects the primitives and props, and leaves the Random Replicate window
@@ -204,7 +207,8 @@ A development tool, not a test: `tests/bench/run.sh <absolute path to Scalpellin
 
 **Render** (`tests/bench/render.script`, several minutes): busy maps rendered at Normal
 quality with the baked light and (v0.12.6) reflection probes on a shiny floor (3, 16 and 36
-probes; the log's "cubemaps built in" line; v0.12.7: a mirror on the rich map's wall): the rich map (as the idle test's), 1000 boxes + 8 terrains,
+probes; the log's "cubemaps built in" line; v0.12.7: a mirror on the rich map's wall; v0.13.0: an
+endless water plane and a cloud layer around the rich map): the rich map (as the idle test's), 1000 boxes + 8 terrains,
 4000 boxes + 16 terrains. (The 1000 rocks were dropped on 2026-11-21: 56 minutes even with
 quick prop light.) Prints each render log's bake lines; with
 `SCAL_BENCH_OUT=<folder>` it also copies the pictures and render windows there. The user
