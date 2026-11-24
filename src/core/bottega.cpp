@@ -47,6 +47,38 @@ bool isEmptyDir(const fs::path& dir) {
 
 } // namespace
 
+// Starter materials for a new Bottega (v0.12.7, agreed with the user; they may be removed
+// in a later version): textures/starter/. Only written where no file of that name is.
+static void writeStarterMaterials(const fs::path& dir) {
+    struct Starter { const char* name; const char* text; };
+    static const Starter kStarters[] = {
+        {"mirror.vmt",
+         "\"LightmappedReflective\"\n{\n"
+         "\t\"%tooltexture\" \"Tile_13\"\n"
+         "\t\"$reflecttint\" \"[0.85 0.87 0.9]\"\n"
+         "\t\"$minreflectivity\" \"1\"\n"
+         "\t\"$refracttexture\" \"none\"\n"
+         "}\n"},
+        {"polished_stone.vmt",
+         "\"LightmappedReflective\"\n{\n"
+         "\t\"$basetexture\" \"Tile_19\"\n"
+         "\t\"$reflecttint\" \"[0.3 0.3 0.3]\"\n"
+         "\t\"$refracttexture\" \"none\"\n"
+         "}\n"},
+    };
+    std::error_code ec;
+    const fs::path folder = dir / "textures" / "starter";
+    fs::create_directories(folder, ec);
+    if (ec) return;
+    for (const Starter& s : kStarters) {
+        const fs::path f = folder / s.name;
+        if (fs::exists(f, ec)) continue;
+        std::ofstream o(f);
+        o << s.text;
+    }
+}
+
+
 Check inspect(const std::string& root) {
     Check c;
     if (root.empty()) return c;
@@ -84,6 +116,7 @@ bool make(const std::string& root, std::string& error) {
         if (ec) { error = "Can't create " + s + ": " + ec.message(); return false; }
     }
     const fs::path marker = dir / kMarkerFile;
+    if (!fs::exists(marker, ec)) writeStarterMaterials(dir); // a new Bottega only
     if (!fs::exists(marker, ec)) {
         std::ofstream f(marker);
         if (!f) { error = "Can't write " + std::string(kMarkerFile) + "."; return false; }

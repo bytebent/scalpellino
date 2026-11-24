@@ -46,6 +46,7 @@ add_library(scal_core STATIC
   src/core/mathprim.cpp
   src/core/model.cpp
   src/core/prop.cpp
+  src/core/mirror.cpp
   src/core/probe.cpp
   src/core/landing.cpp
   src/core/replicate.cpp
@@ -109,6 +110,7 @@ if(SCAL_BUILD_APP)
     src/render/mathprim_render.cpp
     src/render/model_library.cpp
     src/render/probes.cpp
+    src/render/mirrors.cpp
     src/render/viewport.cpp
     src/render/renderer.cpp
     src/render/baked_light.cpp

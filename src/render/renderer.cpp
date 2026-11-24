@@ -1,4 +1,5 @@
 #include "render/renderer.hpp"
+#include "core/mirror.hpp"
 #include "io/model_store.hpp"
 #include "core/texture.hpp"
 #include "render/model_library.hpp"
@@ -170,7 +171,10 @@ BakeInput bakeInput(const Document& doc, ModelLibrary& models, SkyLibrary& skies
                 auto lin = [](double v) { return std::pow(std::clamp(v, 0.0, 255.0) / 255.0, 2.2); };
                 bm.emit = Vec3{lin(c.x), lin(c.y), lin(c.z)} * (br / 255.0);
             }
-            bm.translucent = m.flag("$translucent") || m.num("$alpha", 1) < 1;
+            // reflective glass that sees through (v0.12.7) lets light through, as VRAD lets light
+            // through glass brush entities and see-through materials; a mirror that only
+            // reflects (a polished floor, a bathroom mirror) is solid to light
+            bm.translucent = m.flag("$translucent") || m.num("$alpha", 1) < 1 || (mirrorParts(m) & kMirrorRefract);
             bm.alphaTest = m.flag("$alphatest") && !bm.translucent;
             bm.alphaRef = m.num("$alphatestreference", 0.5);
             const bool glows = bm.emit.x > 0 || bm.emit.y > 0 || bm.emit.z > 0;

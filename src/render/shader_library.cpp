@@ -1,5 +1,6 @@
 #include "render/shader_library.hpp"
 #include "render/probes.hpp"
+#include "core/mirror.hpp"
 #include "core/bottega.hpp"
 #include "render/texture_library.hpp"
 #include "rlgl.h"
@@ -229,6 +230,14 @@ uniform sampler2D probeData; // ... their positions and tiles (2 texels each)
 uniform int probeCount;     // 0: shiny materials reflect the sky
 uniform vec2 probeAtlasSize;
 uniform int envProbes;      // this material's $envmap is env_cubemap (the probes)
+uniform sampler2D reflectTex; // mirrors (v0.12.7, render/mirrors.hpp): this face's reflection
+uniform sampler2D refractTex; // ... and what is behind it (both linear, the render's shape)
+uniform int mirrorReflect;  // 1: reflectTex holds this face's plane's reflection
+uniform int mirrorRefract;  // 1: refractTex holds what is behind it
+uniform int mirrorWants;    // the material's parts: 1 reflect, 2 see through, 4 base texture
+uniform vec2 viewSize;      // the picture being drawn, in pixels
+uniform int clipOn;         // drawing a mirror's picture: only what is on one side of it
+uniform vec4 clipPlane;     // keep dot(p, xyz) >= w
 vec3 toLinear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c)); }
 vec3 toSrgb(vec3 l) { l = clamp(l, 0.0, 1.0); return mix(l * 12.92, 1.055 * pow(l, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), l)); }
 float luminance(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
@@ -344,10 +353,28 @@ vec3 envmap(vec3 d) {
     if (envProbes == 1 && probeCount > 0) return probeEnv(d);
     return skyEnvmap(d);
 }
+// Mirrors (v0.12.7): the probes (or the sky) whatever the material's $envmap says.
+vec3 probesOrSky(vec3 d) { return probeCount > 0 ? probeEnv(d) : skyEnvmap(d); }
+vec2 screenUV() { return gl_FragCoord.xy / max(viewSize, vec2(1.0)); }
+// The reflection on this mirror face, `offset` in picture units (ripples). Without a picture
+// (too many mirrors, not flat, a mirror inside a mirror): the probes along the reflection.
+vec3 mirrorReflection(vec2 offset) {
+    if (mirrorReflect == 1) {
+        vec2 uv = screenUV() + offset;
+        return texture(reflectTex, vec2(1.0 - uv.x, uv.y)).rgb; // the mirrored camera's picture is flipped
+    }
+    return probesOrSky(reflect(-eyeVector(), worldNormal()));
+}
+// What is behind this glass face; without a picture: the probes straight through.
+vec3 mirrorRefraction(vec2 offset) {
+    if (mirrorRefract == 1) return texture(refractTex, screenUV() + offset).rgb;
+    return probesOrSky(-eyeVector());
+}
 )";
 
 const char* kMain = R"(
 void main() {
+    if (clipOn == 1 && dot(worldPos(), clipPlane.xyz) < clipPlane.w) discard; // a mirror's picture (v0.12.7)
     vec4 c = shade();
 #ifdef BLEND_MODULATE
     // DecalModulate (v0.12.5): the colour multiplies what is there, twice (0.5 = no change)
@@ -505,7 +532,7 @@ std::vector<std::string> ShaderLibrary::bind(Program& p, const Material* mat, co
         const std::string v = mat && mat->has(s.key) ? mat->str(s.key) : s.def;
         if (s.type == "texture") {
             int set = 0;
-            if (!v.empty() && unit < kProbeTexUnit) { // 14 and 15: the reflection probes
+            if (!v.empty() && unit < kMirrorReflectUnit) { // 12..15: mirrors and reflection probes
                 const unsigned id = texture ? texture(v) : 0u;
                 if (id) {
                     rlActiveTextureSlot(unit);
@@ -543,6 +570,8 @@ std::vector<std::string> ShaderLibrary::bind(Program& p, const Material* mat, co
         for (char& ch : e) ch = (char)std::tolower((unsigned char)ch);
         const int on = e == "env_cubemap" ? 1 : 0;
         SetShaderValue(p.shader, p.at("envProbes"), &on, SHADER_UNIFORM_INT);
+        const int parts = mat ? mirrorParts(*mat) : 0; // mirrors (v0.12.7)
+        SetShaderValue(p.shader, p.at("mirrorWants"), &parts, SHADER_UNIFORM_INT);
     }
     rlActiveTextureSlot(0);
     boundUnits_ = unit - firstUnit;

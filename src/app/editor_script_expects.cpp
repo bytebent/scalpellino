@@ -85,6 +85,12 @@ void Editor::registerScriptExpects() {
                          : lastProbes_ ? lastProbes_->slots.size() : 0;
         if (got != n) { std::fprintf(stderr, "script FAIL (command %d): expected %zu %s, got %zu\n", scriptLine_, n, w.c_str(), got); ++scriptFailures_; }
     });
+    add({"previewmirrors"}, [this](const std::string&, std::istringstream& in) {
+        // expect previewmirrors <n>: mirror planes drawn for the last Camera Preview (v0.12.7)
+        std::string w; size_t n = 0; in >> w >> n;
+        const size_t got = previewMirrors_ ? previewMirrors_->planes.size() : 0;
+        if (got != n) { std::fprintf(stderr, "script FAIL (command %d): expected %zu preview mirrors, got %zu\n", scriptLine_, n, got); ++scriptFailures_; }
+    });
     add({"probepos", "probesize"}, [this](const std::string&, std::istringstream& in) {
         // expect probepos x y z | probesize <n>: the first selected probe (+-0.01)
         std::string w; in >> w;

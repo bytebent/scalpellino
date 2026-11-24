@@ -126,6 +126,7 @@ inside the view. Lines starting with # are comments.
   probe x y z [size]   probeselect all|none|<index...>   probeedit pos x y z | size <n>
   expect probes|probesel <n>   expect probepos x y z | probesize <n>   (the first selected probe)
   expect probeatlas <n>   (probes in the last built cubemaps)   viewset probeballs|probeuse on|off
+  expect previewmirrors <n>   (mirror planes drawn for the last Camera Preview, v0.12.7)
   render   (Cmd+Shift+K; the next command waits until it has finished)   renderstart (doesn't wait)
   renderset quality draft|normal|high | aa <1..4> | filter smooth|crisp | props full|quick   (Render menu)
   matselect <name> [cmd|shift] | shown | faces | none   (Textures panel clicks: the materials the panel edits)
@@ -203,7 +204,7 @@ A development tool, not a test: `tests/bench/run.sh <absolute path to Scalpellin
 
 **Render** (`tests/bench/render.script`, several minutes): busy maps rendered at Normal
 quality with the baked light and (v0.12.6) reflection probes on a shiny floor (3, 16 and 36
-probes; the log's "cubemaps built in" line): the rich map (as the idle test's), 1000 boxes + 8 terrains,
+probes; the log's "cubemaps built in" line; v0.12.7: a mirror on the rich map's wall): the rich map (as the idle test's), 1000 boxes + 8 terrains,
 4000 boxes + 16 terrains. (The 1000 rocks were dropped on 2026-11-21: 56 minutes even with
 quick prop light.) Prints each render log's bake lines; with
 `SCAL_BENCH_OUT=<folder>` it also copies the pictures and render windows there. The user

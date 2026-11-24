@@ -56,6 +56,8 @@ uniform vec3 lmDims;      // cells per axis
 uniform vec3 lmLayout;    // slices per row, texture width, height
 uniform float exposure;
 uniform int linearOut;
+uniform int clipOn;
+uniform vec4 clipPlane; // a mirror's picture (v0.12.7): keep dot(p, xyz) >= w
 uniform vec3 ambient;
 uniform int lightCount;
 uniform vec4 lpos[16];    // xyz, w = kind (0 point, 1 spot, 2 sun)
@@ -527,6 +529,7 @@ void main() {
     base = pieceBase(who, o + d * best, n);
     }
     vec3 p = o + d * best;
+    if (clipOn == 1 && dot(p, clipPlane.xyz) < clipPlane.w) discard;
     vec4 clip = mvp * vec4(p, 1.0);
     gl_FragDepth = clamp(clip.z / clip.w * 0.5 + 0.5, 0.0, 1.0);
 
@@ -650,6 +653,10 @@ void drawMathPrims3D(const std::vector<MathPrim>& prims, const PrimDrawContext& 
         SetShaderValue(S.sh, S.at("exposure"), &ex, SHADER_UNIFORM_FLOAT);
         const int lo = ctx.linearOut ? 1 : 0;
         SetShaderValue(S.sh, S.at("linearOut"), &lo, SHADER_UNIFORM_INT);
+        const int co = ctx.clipOn ? 1 : 0;
+        SetShaderValue(S.sh, S.at("clipOn"), &co, SHADER_UNIFORM_INT);
+        const float cp[4] = {(float)ctx.clipN.x, (float)ctx.clipN.y, (float)ctx.clipN.z, (float)ctx.clipD};
+        SetShaderValue(S.sh, S.at("clipPlane"), cp, SHADER_UNIFORM_VEC4);
         const int unit = 5; // the lightmap's texture unit (texA..texD use 1..4)
         SetShaderValue(S.sh, S.at("lmTex"), &unit, SHADER_UNIFORM_INT);
     }

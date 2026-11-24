@@ -26,6 +26,9 @@ struct PrimDrawContext {
     const BakedLight* baked = nullptr;    // renders: each object reads its 3D lightmap (v0.12.1)
     float exposure = 1;                   // with baked light: multiplier (2^stops)
     bool linearOut = false;               // building a reflection probe: linear light (v0.12.6)
+    bool clipOn = false;                  // drawing a mirror's picture: keep dot(p, clipN) >= clipD (v0.12.7)
+    Vec3 clipN;
+    double clipD = 0;
 };
 
 void drawMathPrims3D(const std::vector<MathPrim>& prims, const PrimDrawContext& ctx);

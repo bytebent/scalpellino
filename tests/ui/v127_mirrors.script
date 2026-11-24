@@ -1,0 +1,100 @@
+# v0.12.7: mirrors (M12 batch 8). A LightmappedReflective material makes a brush face a mirror.
+# Renders draw the scene again from the mirrored camera for each flat mirror plane in view (up
+# to 8, the ones covering most of the picture first), and what is behind the glass when it
+# sees through; the rest reflect the probes. A new Bottega comes with starter materials.
+bottega make studio
+copy assets/materials/brick_a.png studio/textures/mat/brick_a.png
+copy assets/materials/brick_b.png studio/textures/mat/brick_b.png
+copy assets/materials/lamp.png studio/textures/mat/lamp.png
+rescan
+# -- the starter materials of a new Bottega
+expect hastexture textures/starter/mirror
+expect hastexture textures/starter/polished_stone
+expect mat textures/starter/mirror %tooltexture Tile_13
+tool select
+texture textures/starter/polished_stone
+block -600 -600 -32 600 600 0
+texture textures/mat/brick_a
+block -600 -632 0 600 -600 400
+block -632 -600 0 -600 600 400
+block 600 -600 0 632 600 400
+texture Tile_19
+block -600 -600 400 600 600 432
+# the mirror wall at y = 600 (its face at y = 600 looks into the room)
+texture textures/starter/mirror
+block -600 600 0 600 632 400
+texture textures/mat/lamp
+block -200 -200 0 0 0 200
+texture textures/mat/brick_b
+block 200 100 0 300 400 120
+key Esc
+tool light
+lightset kind point
+lightset brightness 400
+lightset pos 200 -200 300
+key Return
+tool select
+key Esc
+probe 0 0 170
+tool camera
+cameraset lens 24
+cameraset size 480 270
+cameraset pos -450 -550 220
+key Return
+cameraedit angles -8 60 0
+tool select
+key Esc
+renderset quality normal
+# the mirror wall and the polished floor: 2 planes, reflection only (no see-through)
+render
+expect render saved
+expect renderlog Drawing mirrors: 2 planes in view, 480 x 270
+expect renderlog mirror 1 of 2: reflection, facing (0.00 0.00 1.00)
+expect renderlog mirror 2 of 2: reflection, facing (0.00 -1.00 0.00)
+expect renderlog not warning
+rendercopy m12-50-mirror-render.png
+shot m12-51-mirror-log.png
+closedialogs
+# -- reflective glass that sees through (a thin pane: its big face and its narrow end are in view)
+copy assets/materials/reflective_glass.vmt studio/textures/mat/reflective_glass.vmt
+rescan
+tool select
+texture textures/mat/reflective_glass
+block -300 -300 0 -296 0 200
+key Esc
+render
+expect renderlog Drawing mirrors: 4 planes in view
+expect renderlog reflection and see-through, facing (-1.00 0.00 0.00)
+rendercopy m12-52-glass-render.png
+closedialogs
+# -- Draft: half size; the Camera Preview draws them too
+renderset quality draft
+render
+expect renderlog Drawing mirrors: 4 planes in view, 240 x 135
+closedialogs
+renderset quality normal
+camerapreview
+expect previewmirrors 4
+# -- more than 8 planes in view: the rest reflect the probes, and the log says so
+tool select
+texture textures/starter/mirror
+block 100 200 0 140 240 40
+block 200 200 0 240 240 40
+block 300 200 0 340 240 40
+block 400 200 0 440 240 40
+block 500 200 0 540 240 40
+key Esc
+render
+expect renderlog Drawing mirrors: 8 planes in view
+expect renderlog more mirror planes in view (only the 8 covering most of the picture are drawn)
+closedialogs
+undo
+undo
+undo
+undo
+undo
+# -- a mirror only reflects: it blocks light; see-through glass lets it through (the bake's note)
+render
+expect renderlog 6 see-through faces block no light
+closedialogs
+quit

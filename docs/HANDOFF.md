@@ -83,9 +83,11 @@ texture licenses; `releases/` has the notes for each version.
   and read when a Source detail is in doubt; never commit any of it. **v0.12.6 reflection
   probes** (batch 7, discussed first: PLAN.md "Batch 7 decided with the user") is built and
   released (`core/probe.*`, `tools/probe_tool.*`, `render/probes.*`). Another AI's review of
-  it (16 findings) was checked, reproduced and fixed on branch `fix/v0126-review` (not
-  merged yet; PLAN.md status and LOG). **Next: v0.12.7 mirrors and glass**, discussed with
-  the user first.
+  it (16 findings) was checked, reproduced and fixed on branch `fix/v0126-review`, merged
+  into `main` on 2026-11-24 (no release of its own; listed in v0.12.7's notes). **v0.12.7
+  mirrors** (batch 8, PLAN.md "Batch 8 decided with the user") is built (`core/mirror.*`,
+  `render/mirrors.*`, `LightmappedReflective.glsl`, starter materials in a new Bottega,
+  `%tooltexture`). **Next: v0.12.7b `Refract`** (bending glass), as agreed in batch 8.
 - **How the user runs each batch:** numbered questions, each with options, their
   consequences and your opinion; they answer by number ("yes to the rest" is common);
   record the answers in PLAN.md ("Batch N decided with the user") the same day; build when

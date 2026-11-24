@@ -188,6 +188,28 @@ std::shared_ptr<ProbeAtlas> Editor::probesNow(int quality, const Scene& lit, boo
     return a;
 }
 
+std::shared_ptr<MirrorSet> Editor::mirrorsNow(const Camera& cam, const Scene& lit, int w, int h, bool smooth,
+                                              const std::function<void(const std::string&)>& log) {
+    std::shared_ptr<MirrorSet> m = mirrorBuilder_.build(cam, lit, w, h, smooth);
+    mirrorBuilder_.release();
+    if (!m || !log) return m;
+    char c[200];
+    std::snprintf(c, sizeof c, "Drawing mirrors: %zu %s in view, %d x %d...", m->planes.size(), m->planes.size() == 1 ? "plane" : "planes", m->w, m->h);
+    log(c);
+    for (size_t i = 0; i < m->planes.size(); ++i) {
+        const MirrorSet::Plane& p = m->planes[i];
+        const bool r = p.refl.id != 0, t = p.refr.id != 0;
+        std::snprintf(c, sizeof c, "  mirror %zu of %zu: %s, facing (%.2f %.2f %.2f), %.1f%% of the picture", i + 1, m->planes.size(),
+                      r && t ? "reflection and see-through" : r ? "reflection" : "see-through", std::round(p.p.n.x * 100) / 100 + 0.0, std::round(p.p.n.y * 100) / 100 + 0.0, std::round(p.p.n.z * 100) / 100 + 0.0, p.p.cover * 100);
+        log(c);
+    }
+    if (m->dropped)
+        log("  warning: " + std::to_string(m->dropped) + (m->dropped == 1 ? " more mirror plane" : " more mirror planes") +
+            " in view (only the 8 covering most of the picture are drawn): they reflect the reflection probes");
+    // (no time per mirror: the graphics card does the work later, with the picture)
+    return m;
+}
+
 void Editor::stopRender() {
     if (!renderJob_ || !renderJob_->running) return;
     renderJob_->stopWanted = true;
@@ -464,6 +486,14 @@ void Editor::stepRender() {
             probeBuilder_.release();
         }
         j.scene.reflections = j.probes.get();
+        // Mirrors (v0.12.7): the pictures of the mirror planes in view, the render's own size
+        // (halved at Draft).
+        {
+            const int div = (int)j.settings.quality == 0 ? 2 : 1;
+            j.mirrors = mirrorsNow(j.cam, j.scene, std::max(1, j.cam.width / div), std::max(1, j.cam.height / div), j.settings.smooth,
+                                   [&](const std::string& l) { renderLog(l); });
+            j.scene.mirrors = j.mirrors.get();
+        }
         renderLog("Drawing...");
         break;
     }

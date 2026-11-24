@@ -11,6 +11,9 @@
 //   vec3 bakedLight()  linear light from the bake (lightmap, prop vertex light, or a
 //                      Source model's ambient cube + 2 lights)
 //   vec3 worldPos(), worldNormal() (unit, toward the viewer), eyeVector() (unit, to the eye)
+//   vec3 mirrorReflection(vec2 offset), mirrorRefraction(vec2 offset)  (v0.12.7) a mirror
+//                      face's reflection / what is behind it (linear), or the probes when
+//                      it has no picture; int mirrorWants: the material's parts (1, 2, 4)
 //   vec3 envmap(vec3 dir)  the reflection (linear): with `$envmap env_cubemap` and probes in
 //                      the map, its 4 nearest reflection probes blended (v0.12.6); else
 //                      the map's sky (cheap chrome)
@@ -31,6 +34,8 @@ namespace scal {
 
 // Texture units of the reflection probes (v0.12.6); material textures stay below them.
 constexpr int kProbeTexUnit = 14, kProbeDataUnit = 15;
+// ... and of the mirror pictures (v0.12.7).
+constexpr int kMirrorReflectUnit = 12, kMirrorRefractUnit = 13;
 
 class TextureLibrary;
 

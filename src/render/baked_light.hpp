@@ -83,6 +83,14 @@ struct BakedDrawContext {
     // `linearOut`: building a probe's picture (linear light, no exposure).
     const struct ProbeAtlas* probes = nullptr;
     bool linearOut = false;
+    // Mirrors (v0.12.7): the pictures of the mirror planes in view (null: none; mirror
+    // faces reflect the probes). `clip`: drawing a mirror's picture, only what has
+    // dot(p, clip.n) >= clip.d. `viewW/H`: the target's pixels (where a mirror reads its picture).
+    const struct MirrorSet* mirrors = nullptr;
+    bool clipOn = false;
+    Vec3 clipN;
+    double clipD = 0;
+    int viewW = 1, viewH = 1;
 };
 
 // Draws the brushes (textured, terrain with its painted layers) lit by `baked`. Inside the

@@ -139,6 +139,13 @@ struct Scene {
     // light without exposure (building the probes' own pictures).
     const struct ProbeAtlas* reflections = nullptr;
     bool linearOut = false;
+    // Mirrors (v0.12.7, render/mirrors.hpp): the pictures of the mirror planes in view (null:
+    // mirror faces reflect the probes); `clipOn`: drawing one of those pictures, only what has
+    // dot(p, clipN) >= clipD is drawn (the sky always).
+    const struct MirrorSet* mirrors = nullptr;
+    bool clipOn = false;
+    Vec3 clipN;
+    double clipD = 0;
 
     // Math primitives (milestone 9): exact shapes in 3D, outlines in 2D.
     struct ScenePrim { MathPrim prim; bool selected = false; };

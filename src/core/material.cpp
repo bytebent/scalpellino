@@ -446,7 +446,9 @@ void MaterialIndex::finish() {
         const std::string problem = e.mat.problem;
         e.mat = resolveEntry(e);
         if (!problem.empty()) e.mat.problem = problem;
-        const std::string bt = e.mat.str("$basetexture");
+        // no $basetexture: Hammer's %tooltexture is the picture the editor shows (v0.12.7:
+        // mirrors and other materials drawn only by their shader)
+        const std::string bt = !e.mat.str("$basetexture").empty() ? e.mat.str("$basetexture") : e.mat.str("%tooltexture");
         std::string base = bt.empty() ? "" : resolveTexture(e, bt);
         if (e.kind == Kind::Texture || e.kind == Kind::Helper) {
             e.base = !base.empty() && base != n ? base : n;

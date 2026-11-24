@@ -10,7 +10,7 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 
 ## Current status
 
-- **Released:** v0.1.0 … v0.12.6 (CI green). Milestones 0–11, Random Replicate and Sky Lab are done (see the
+- **Released:** v0.1.0 … v0.12.7 (CI green). Milestones 0–11, Random Replicate and Sky Lab are done (see the
   milestone sections below and the log); the user confirmed the choices of M10, Random
   Replicate and v0.10.2 (2026-11-19). **v0.10.3 is built and pushed** (asked by the user
   before Sky Lab): `editor.cpp` split by topic (step 1: code moved unchanged; step 2:
@@ -134,8 +134,12 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   open. Choices made: "v0.12.6 review fixes, decided without asking" under Open questions.
   See the LOG entry.
 - **Batch 8 (v0.12.7 mirrors and glass) discussed (2026-11-24):** the user said yes to all
-  11 recommendations ("Batch 8 decided with the user" under Roadmap item 5). Built on top of
-  the review fixes when the user says go.
+  11 recommendations ("Batch 8 decided with the user" under Roadmap item 5).
+  **v0.12.7 is built** (the user said go, 2026-11-24): mirrors and reflective glass
+  (`core/mirror.*`, `render/mirrors.*`, `LightmappedReflective.glsl`), starter materials,
+  `%tooltexture`; its notes also list the v0.12.6 review fixes. Choices made while building:
+  "v0.12.7, decided without asking". Next: v0.12.7b, `Refract` (bending glass) and the glass
+  pane starter material.
 - **Review fixes (2026-11-20), merged into `main`** (fast-forward from
   `fix/review-findings` after the user's go-ahead; no new version, so only "Latest build"
   is refreshed): version releases are
@@ -172,6 +176,33 @@ are in [`DEV.md`](DEV.md). One-step-per-release: add `docs/releases/vX.Y.Z.md` a
 Each archive's SHA-256 is in `cmake/Deps.cmake` (checked at configure time).
 
 ## Open questions (parked)
+
+- **v0.12.7, decided without asking (confirm with the user):**
+  - **A mirror that only reflects is solid to light** (a polished floor or a wall mirror
+    letting the light through looked wrong); glass that sees through lets light through, as
+    agreed (answer 8 talked of glass; this narrows it to see-through glass).
+  - **Which planes:** merged when the normals are within about 0.8 degrees and the
+    distances within 0.5 cm; ranked by how much of the picture they cover ("nearest and
+    biggest first" in one number); planes covering under 0.05% (a glass pane's edges) reflect
+    the probes; 8 at most.
+  - **Turning parts off:** `$reflecttexture` / `$refracttexture` set to anything not
+    starting with `_rt_` (e.g. `none`; an empty value removes the key, so it means the
+    default: on). The see-through is skipped when `$minreflectivity` >= 1 (never shown).
+  - **The shader:** tints read as gamma (as Source's GammaToLinear); the base texture is lit
+    by the flat baked light (Source bump-lights it when a normal map is set); alpha ignored
+    (drawn with the solid faces); without a picture, the reflection is the probes along the
+    reflected view and the see-through is the probes straight through.
+  - **The pictures:** bilinear, clamped at the edges; linear light, fog in linear light
+    inside them (the mirror face's own fog is added on top, as Source); the Camera
+    Preview's at half its pixels. The log gives no time per mirror (the graphics card does
+    the work later); the work shows in "Drawing...".
+  - **Texture units:** 12 and 13 are the mirrors'; material textures now 7..11 (the
+    largest shader file uses 5).
+  - **Starter materials:** written by `bottega::make` only when the marker file is new (a
+    new Bottega, or a folder made into one); `mirror` (tool picture Tile_13, tint
+    0.85/0.87/0.9, see-through off) and `polished_stone` (Tile_19 lit, reflection tint 0.3,
+    see-through off). The UI test Bottegas get them too.
+  - **Tests:** the busy-map benchmark's rich map has a mirror on its wall.
 
 - **v0.12.6 review fixes, decided without asking (confirm with the user, 2026-11-23):**
   - **Decal order** is kept within -1,000,000 .. 1,000,000 (the file reader's old range):

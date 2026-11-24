@@ -400,6 +400,41 @@ Hammer's `env_cubemap` (agreed with the user 2026-11-22, "Batch 7 decided"). `co
   terrain tinted blue by its share).
 - **File:** an `env_cubemap` point entity: `origin`, `cubemapsize`, other keys kept.
 
+### Mirrors and reflective glass (v0.12.7, done)
+Source's `LightmappedReflective` (agreed with the user 2026-11-24, "Batch 8 decided").
+`core/mirror.hpp` (which materials, the mirrored camera, which planes), `render/mirrors.*`.
+- **The material makes the mirror:** a `.vmt` with the `LightmappedReflective` shader on a
+  flat brush face (no brush entity, unlike Hammer's `func_reflective_glass`). Its parts:
+  reflection (`$reflecttexture`, Source's default `_rt_WaterReflection`: on) and see-through
+  (`$refracttexture`, default `_rt_WaterRefraction`: on); any value not starting with
+  `_rt_` (e.g. `none`) turns that part off; the see-through also when `$minreflectivity` >= 1.
+- **Which planes get pictures:** brush faces (not terrain, not hidden) with such a material,
+  the camera in front of them, merged by plane (normals within about 0.8 degrees, distances
+  within 0.5 cm), ranked by how much of the picture they cover (clipped to the picture);
+  planes under 0.05% are left out; at most 8 (Source: only the first in view). The others,
+  mirror materials on terrain and props, and mirrors inside a mirror's picture reflect the
+  reflection probes (or the sky); the log warns when planes were left out.
+- **The pictures** (render's own size, half at Draft and in the Camera Preview; Source:
+  1024 x 1024 stretched): drawn through the renderer into 16-bit float targets, linear light
+  before exposure. Reflection: from the mirrored camera (Source's `CReflectiveGlassView`:
+  position, forward and up reflected), keeping only what is in front of the glass (0.1 cm
+  off, as Source); its picture is the reflection flipped left to right, read at (1 - x, y)
+  of the face's place on the screen. See-through: from the camera itself, keeping only
+  what is behind the glass. "Keeping" is a clip plane in the material, primitive and decal
+  shaders (`clipOn`, `clipPlane`: a discard); the sky is never clipped.
+- **The shader** (`LightmappedReflective.glsl`, Source's maths): reflection x $reflecttint and
+  see-through x $refracttint (both gamma, as Source), mixed by Fresnel
+  ((max - min) x (1 - N.V)^power + min, Source's $fresnelpower 5, $min/$maxreflectivity),
+  times $envmapmask; a normal map shifts both pictures by its x, y times its alpha times
+  $reflectamount / $refractamount (picture widths); an optional $basetexture lit by the
+  baked light is added. Drawn with the solid faces.
+- **The bake:** see-through reflective glass lets light through (as VRAD with glass brush
+  entities and see-through materials); a mirror that only reflects is solid.
+- **`%tooltexture`** (Hammer's): the picture the editor shows for a material without
+  `$basetexture`.
+- **Starter materials:** a new Bottega gets `textures/starter/mirror.vmt` and
+  `polished_stone.vmt` (agreed; they may be removed in a later version).
+
 ### Snap to Land / Ground and Multi-Replicate (v0.9.2, from Bryce)
 - **Snap to Land** (Cmd+J, Transform menu; `core/landing`): selected primitives drop
   straight down onto visible brushes (terrain surfaces, not their flat faces), terrain
@@ -675,7 +710,13 @@ Preview and in renders.
 - **Reflections:** a material chooses: sky only (`$envmap` with any value but
   `env_cubemap`: cheap chrome); the reflection probes (`$envmap env_cubemap`, v0.12.6; the sky
   if the map has none, as Source's default cubemap is the skybox); live mirror reflection on
-  flat surfaces (water, floors; v0.12.7).
+  flat surfaces (`LightmappedReflective`: mirrors, polished floors, reflective glass;
+  v0.12.7, §6 "Mirrors and reflective glass"; water reuses it in milestone 6).
+- **Mirror pictures** (v0.12.7, `render/mirrors.*`): after the cubemaps, before the picture:
+  each mirror plane in view (up to 8) drawn again from the mirrored camera and, for glass
+  that sees through, from the camera behind the glass; texture units 12 and 13 (material
+  textures now use 7..11); `Scene::mirrors` / `BakedDrawContext::mirrors`, a face's plane
+  found when the brushes are drawn (`onMirrorPlane`).
 - **Reflection probes** (v0.12.6, `render/probes.*`): a render's "building cubemaps" step,
   after the bake: each probe drawn 6 times (OpenGL's cube face order) through the renderer
   itself, into a 16-bit float target, in linear light before exposure (fog mixed in linear
@@ -690,7 +731,7 @@ Preview and in renders.
   picks the level from how fast the reflection turns per pixel (soft on far or bumpy
   surfaces, as Source's mipmapped cubemaps), at most as many levels as the border allows. A
   2-texel-per-probe float texture holds positions and tiles (texelFetch), so any number of
-  probes works. Texture units 14 and 15 (material textures use 7..13). Kept in memory per
+  probes works. Texture units 14 and 15 (material textures 7..11; 12 and 13 are the mirrors'). Kept in memory per
   quality while the bake key, the probes, the decals, material edits and texture filtering
   are the same (`Editor::probeKey`). The Camera Preview builds Draft probes on Update. The
   log: one line per probe (position, size, time, how many shiny surfaces (faces, decals) it reflects on), the
@@ -794,7 +835,7 @@ docs/         this file, roadmap
 | 10b | Random Replicate (Bryce): random offset / turn / size ranges for props and primitives | done (v0.10.1) |
 | 10c | Sky Lab (Bryce, all of it): generated skies (sun, moon, stars, clouds, atmosphere) with live preview in the 3D view, baked to panoramas in Bottega's `skies/`; settings kept in the map; tick box to lock the sun to the map's sun light; eclipses. Steps: v0.10.4 window / bake / sky modes / sun / haze / lock, v0.10.5 clouds, v0.10.6 night sky and effects | done (v0.10.6) |
 | 11 | Cameras and Camera Preview: camera objects (many, one active), options and presets, the on-request preview in a docked panel (editor look until M12 replaces it). Steps: v0.11.0 camera objects and options, v0.11.1 presets and the preview | done (v0.11.0, v0.11.1) |
-| 12 | Render, the Source look, with materials: render window, terminal log, light baking, reflection probes, mirrors, the material system (GLSL shaders from Bottega's `shaders/`, reflection kind per material), PNG to `renders/`. Steps: v0.12.0 pipeline, v0.12.1 direct light and shadows, v0.12.2 bounces, v0.12.3 props and the light grid, v0.12.4 materials, v0.12.4b bump maps, v0.12.5 decals, v0.12.6 probes, v0.12.7 mirrors and glass | in progress (v0.12.6) |
+| 12 | Render, the Source look, with materials: render window, terminal log, light baking, reflection probes, mirrors, the material system (GLSL shaders from Bottega's `shaders/`, reflection kind per material), PNG to `renders/`. Steps: v0.12.0 pipeline, v0.12.1 direct light and shadows, v0.12.2 bounces, v0.12.3 props and the light grid, v0.12.4 materials, v0.12.4b bump maps, v0.12.5 decals, v0.12.6 probes, v0.12.7 mirrors and glass | in progress (v0.12.7) |
 | 13 | Water, cloud and endless planes: materials made with the system above | |
 | 14 | Camera effects (lowest priority): dithering, palette, bloom | |
 | 15 | Export: `.glb`, optional and last (not confirmed by the user) | |

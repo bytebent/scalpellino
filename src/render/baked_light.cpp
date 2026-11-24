@@ -2,6 +2,8 @@
 #include "core/texture.hpp"
 #include "render/shader_library.hpp"
 #include "render/probes.hpp"
+#include "render/mirrors.hpp"
+#include "core/mirror.hpp"
 #include "render/texture_library.hpp"
 #include "raylib.h"
 #include "rlgl.h"
@@ -273,6 +275,33 @@ void setMaterialCommon(Shader& sh, const std::function<int(const char*)>& loc, c
     rlEnableTexture(pa ? pa->tex : rlGetTextureIdDefault());
     rlActiveTextureSlot(kProbeDataUnit);
     rlEnableTexture(pa ? pa->data : rlGetTextureIdDefault());
+    // Mirrors (v0.12.7): no picture until a mirror face says which (drawBakedBrushes).
+    i1("reflectTex", kMirrorReflectUnit);
+    i1("refractTex", kMirrorRefractUnit);
+    i1("mirrorReflect", 0);
+    i1("mirrorRefract", 0);
+    rlActiveTextureSlot(kMirrorReflectUnit);
+    rlEnableTexture(rlGetTextureIdDefault());
+    rlActiveTextureSlot(kMirrorRefractUnit);
+    rlEnableTexture(rlGetTextureIdDefault());
+    i1("clipOn", ctx.clipOn ? 1 : 0);
+    const float cp[4] = {(float)ctx.clipN.x, (float)ctx.clipN.y, (float)ctx.clipN.z, (float)ctx.clipD};
+    SetShaderValue(sh, loc("clipPlane"), cp, SHADER_UNIFORM_VEC4);
+    const float vs[2] = {(float)ctx.viewW, (float)ctx.viewH};
+    SetShaderValue(sh, loc("viewSize"), vs, SHADER_UNIFORM_VEC2);
+    rlActiveTextureSlot(0);
+}
+
+// Mirrors (v0.12.7): point the material shader at mirror plane `index`'s pictures (-1: none).
+void setMirrorPictures(Shader& sh, const std::function<int(const char*)>& loc, const BakedDrawContext& ctx, int index) {
+    const MirrorSet::Plane* p = ctx.mirrors && index >= 0 && index < (int)ctx.mirrors->planes.size() ? &ctx.mirrors->planes[index] : nullptr;
+    const int r = p && p->refl.id ? 1 : 0, t = p && p->refr.id ? 1 : 0;
+    SetShaderValue(sh, loc("mirrorReflect"), &r, SHADER_UNIFORM_INT);
+    SetShaderValue(sh, loc("mirrorRefract"), &t, SHADER_UNIFORM_INT);
+    rlActiveTextureSlot(kMirrorReflectUnit);
+    rlEnableTexture(r ? p->refl.texture.id : rlGetTextureIdDefault());
+    rlActiveTextureSlot(kMirrorRefractUnit);
+    rlEnableTexture(t ? p->refr.texture.id : rlGetTextureIdDefault());
     rlActiveTextureSlot(0);
 }
 
@@ -291,8 +320,9 @@ struct Item {
     const std::string* material = nullptr;
     int page = 0;
     double dist = 0;        // see-through faces: from the camera (far first)
+    int mirror = -1;        // a mirror face (v0.12.7): its plane in ctx.mirrors
 };
-bool isSeeThrough(const Material* m) { return m && (m->flag("$translucent") || m->num("$alpha", 1) < 1); }
+bool isSeeThrough(const Material* m) { return m && !isReflectiveMaterial(*m) && (m->flag("$translucent") || m->num("$alpha", 1) < 1); }
 
 bool boxesMeet(const AABB& a, const AABB& b) {
     for (int k = 0; k < 3; ++k)
@@ -458,6 +488,10 @@ bool drawBakedBrushes(const SceneBrushes& brushes, const BakedLight& baked, Text
             it.poly = (int)pi;
             it.material = &mat;
             it.page = ref ? ref->page : 0;
+            if (ctx.mirrors && !ctx.mirrors->planes.empty()) // a mirror face: its plane's pictures
+                if (const Material* m = materialOf(mat); m && mirrorParts(*m))
+                    for (size_t k = 0; k < ctx.mirrors->planes.size(); ++k)
+                        if (onMirrorPlane(ctx.mirrors->planes[k].p, p.normal, dot(p.normal, p.verts[0]))) { it.mirror = (int)k; break; }
             if (ctx.translucent) {
                 Vec3 c;
                 for (const Vec3& v : p.verts) c += v;
@@ -486,6 +520,7 @@ bool drawBakedBrushes(const SceneBrushes& brushes, const BakedLight& baked, Text
         std::stable_sort(items.begin(), items.end(), [](const Item& a, const Item& b) {
             if (a.layer != b.layer) return a.layer < b.layer;
             if (*a.material != *b.material) return *a.material < *b.material;
+            if (a.mirror != b.mirror) return a.mirror < b.mirror;
             return a.page < b.page;
         });
 
@@ -638,16 +673,23 @@ bool drawBakedBrushes(const SceneBrushes& brushes, const BakedLight& baked, Text
     }
     Bound bd;
     const std::string* curMat = nullptr;
-    int curPage = -1;
+    int curPage = -1, curMirror = -1;
     for (const Item& it : items) {
         if (!curMat || *curMat != *it.material) {
             release(bd);
             bd = use(*it.material);
             curMat = it.material;
             curPage = -1;
+            curMirror = -1; // use() left no mirror picture bound
             if (!bd.sh.id) continue;
         }
         if (!bd.sh.id) continue;
+        if (it.mirror != curMirror && bd.prog) {
+            rlDrawRenderBatchActive();
+            ShaderLibrary::Program* p = bd.prog;
+            setMirrorPictures(bd.sh, [&](const char* n) { return p->at(n); }, ctx, it.mirror);
+            curMirror = it.mirror;
+        }
         if (it.page != curPage) {
             bindPage(it.page);
             curPage = it.page;

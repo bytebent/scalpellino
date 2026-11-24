@@ -43,6 +43,10 @@ key Esc
 texture Bricks_24
 block -480 480 0 480 512 160
 applytexture
+# a mirror on the wall (v0.12.7, a starter material of the new Bottega)
+texture textures/starter/mirror
+block -300 470 20 300 480 140
+applytexture
 blockshape cylinder 16
 texture textures/walls/Rock_Face
 block 600 -100 0 700 0 200

@@ -1,0 +1,8 @@
+"LightmappedReflective"
+{
+	"%tooltexture" "Tile_13"
+	"$reflecttint" "[0.8 0.85 0.9]"
+	"$refracttint" "[0.7 0.85 0.8]"
+	"$fresnelpower" "3"
+	"$minreflectivity" "0.1"
+}

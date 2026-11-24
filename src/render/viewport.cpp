@@ -944,6 +944,12 @@ void main() {
     bctx.problems = scene.problems;
     bctx.probes = scene.reflections;
     bctx.linearOut = scene.linearOut;
+    bctx.mirrors = scene.mirrors;
+    bctx.clipOn = scene.clipOn;
+    bctx.clipN = scene.clipN;
+    bctx.clipD = scene.clipD;
+    bctx.viewW = std::max(1, rt_.texture.width);
+    bctx.viewH = std::max(1, rt_.texture.height);
     bctx.textures = scene.textures;
     const bool bakedBrushes = lens_ && scene.baked && scene.textures && drawBakedBrushes(scene.brushes, *scene.baked, *scene.textures, bctx);
     // Fog: everything solid from here on is drawn through the fog shader.
@@ -1156,6 +1162,9 @@ void main() {
             ctx.baked = scene.baked;
             ctx.exposure = scene.exposure;
             ctx.linearOut = scene.linearOut;
+            ctx.clipOn = scene.clipOn;
+            ctx.clipN = scene.clipN;
+            ctx.clipD = scene.clipD;
         }
         std::vector<MathPrim> ps;
         for (const auto& sp : scene.prims) ps.push_back(sp.prim);

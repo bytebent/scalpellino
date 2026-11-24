@@ -17,6 +17,7 @@
 #include "core/landing.hpp"
 #include "core/replicate.hpp"
 #include "core/bottega.hpp"
+#include "core/mirror.hpp"
 #include "core/prop.hpp"
 #include "core/bake.hpp"
 #include "core/decal.hpp"
@@ -5014,6 +5015,115 @@ static void testMaterials() {
     }
 }
 
+static void testMirrors() {
+    namespace fs = std::filesystem;
+    // what a LightmappedReflective material needs (Source's defaults: both pictures)
+    Material m;
+    m.shader = "LightmappedReflective";
+    CHECK(isReflectiveMaterial(m) && mirrorParts(m) == (kMirrorReflect | kMirrorRefract));
+    m.params["$refracttexture"] = "none";
+    CHECK(mirrorParts(m) == kMirrorReflect);
+    m.params["$refracttexture"] = "_rt_WaterRefraction";
+    m.params["$minreflectivity"] = "1"; // the Fresnel mix never shows the see-through
+    CHECK(mirrorParts(m) == kMirrorReflect);
+    m.params["$basetexture"] = "Tile_19";
+    m.params["$reflecttexture"] = "something/else";
+    CHECK(mirrorParts(m) == kMirrorBase);
+    Material plain;
+    plain.shader = "LightmappedGeneric";
+    plain.params["$envmap"] = "env_cubemap";
+    CHECK(!isReflectiveMaterial(plain) && mirrorParts(plain) == 0);
+    Material lower;
+    lower.shader = "lightmappedreflective";
+    CHECK(isReflectiveMaterial(lower));
+
+    // the mirrored camera (Source's CReflectiveGlassView): position and view reflected
+    Camera c;
+    c.pos = {0, -300, 150};
+    aimCamera(c, {100, 0, 100});
+    const Camera mc = mirrorCamera(c, {0, -1, 0}, 0); // the plane y = 0, facing -y
+    CHECK(nearV(mc.pos, {0, 300, 150}));
+    const Vec3 f = cameraForward(c), mf = cameraForward(mc);
+    CHECK(nearV(mf, {f.x, -f.y, f.z}, 1e-6));
+    // a proper rotation again (left = up x forward)
+    const Mat3 b = cameraBasis(mc);
+    CHECK(nearV(b.col[1], normalize(cross(b.col[2], b.col[0])), 1e-6));
+
+    // how much of the picture a polygon covers
+    Camera cov;
+    cov.pos = {0, 0, 0};
+    cov.yaw = 0;
+    cov.pitch = 0;
+    cov.fov = 90;
+    cov.width = cov.height = 100;
+    // a square straight ahead filling the view exactly (half width = distance x tan 45)
+    std::vector<Vec3> full{{100, 100, 100}, {100, -100, 100}, {100, -100, -100}, {100, 100, -100}};
+    CHECK(near(pictureCover(full, cov), 1, 1e-9));
+    std::vector<Vec3> quarter{{100, 0, 0}, {100, -100, 0}, {100, -100, -100}, {100, 0, -100}};
+    CHECK(near(pictureCover(quarter, cov), 0.25, 1e-9));
+    std::vector<Vec3> bigger{{100, 500, 500}, {100, -500, 500}, {100, -500, -500}, {100, 500, -500}}; // clipped to the picture
+    CHECK(near(pictureCover(bigger, cov), 1, 1e-9));
+    std::vector<Vec3> behind{{-100, 100, 100}, {-100, -100, 100}, {-100, -100, -100}, {-100, 100, -100}};
+    CHECK(pictureCover(behind, cov) == 0);
+    // half in front of the camera: only that half counts (clipped at the near plane)
+    std::vector<Vec3> across{{-100, 50, -50}, {200, 50, -50}, {200, 50, 50}, {-100, 50, 50}};
+    CHECK(pictureCover(across, cov) > 0 && pictureCover(across, cov) < 1);
+
+    // the planes worth drawing: merged by plane, the camera in front, the largest first, at most N
+    auto face = [](std::vector<Vec3> v, const Vec3& n, int parts) {
+        MirrorFace f;
+        f.verts = std::move(v);
+        f.n = n;
+        f.d = dot(n, f.verts[0]);
+        f.parts = parts;
+        return f;
+    };
+    std::vector<MirrorFace> faces;
+    faces.push_back(face({{100, 0, 0}, {100, -100, 0}, {100, -100, -100}, {100, 0, -100}}, {-1, 0, 0}, kMirrorReflect));   // a quarter
+    faces.push_back(face({{100, 100, 100}, {100, 0, 100}, {100, 0, 0}, {100, 100, 0}}, {-1, 0, 0}, kMirrorRefract));      // same plane
+    faces.push_back(face({{50, 10, 10}, {50, -10, 10}, {50, -10, -10}, {50, 10, -10}}, {-1, 0, 0}, kMirrorReflect));      // a small one, nearer
+    faces.push_back(face({{150, 100, 100}, {150, -100, 100}, {150, -100, -100}, {150, 100, -100}}, {1, 0, 0}, kMirrorReflect)); // seen from behind
+    faces.push_back(face({{100, 0, 0}, {100, -100, 0}, {100, -100, -100}, {100, 0, -100}}, {-1, 0, 0}, kMirrorBase));      // no picture needed
+    size_t dropped = 9;
+    auto planes = mirrorPlanes(faces, cov, 8, &dropped);
+    CHECK(planes.size() == 2 && dropped == 0);
+    CHECK(near(planes[0].d, -100) && planes[0].parts == (kMirrorReflect | kMirrorRefract) && near(planes[0].cover, 0.5, 1e-9));
+    CHECK(near(planes[1].d, -50) && planes[1].cover < 0.1);
+    planes = mirrorPlanes(faces, cov, 1, &dropped);
+    CHECK(planes.size() == 1 && dropped == 1 && near(planes[0].d, -100));
+    CHECK(onMirrorPlane(planes[0], {-1, 0, 0}, -100.2) && !onMirrorPlane(planes[0], {-1, 0, 0}, -101) && !onMirrorPlane(planes[0], {1, 0, 0}, 100));
+
+    // a material without $basetexture shows its %tooltexture in the editor (as Hammer)
+    {
+        const fs::path root = fs::temp_directory_path() / "scal_mirror_test";
+        fs::remove_all(root);
+        writeText(root / "textures/Glass.png", "x");
+        writeText(root / "textures/mirror.vmt", "LightmappedReflective { %tooltexture textures/Glass $refracttexture none }");
+        MaterialIndex ix;
+        ix.scanFolder((root / "textures").string(), root.string(), true);
+        ix.finish();
+        const MaterialIndex::Entry* e = ix.find("textures/mirror");
+        CHECK(e && e->base == "textures/Glass" && mirrorParts(e->mat) == kMirrorReflect);
+        fs::remove_all(root);
+    }
+    // a new Bottega gets the starter materials; an existing one is left alone
+    {
+        const fs::path root = fs::temp_directory_path() / "scal_starter_test";
+        fs::remove_all(root);
+        std::string err;
+        CHECK(bottega::make(root.string(), err));
+        CHECK(fs::exists(root / "textures/starter/mirror.vmt") && fs::exists(root / "textures/starter/polished_stone.vmt"));
+        VmtBlock vb;
+        std::ifstream in(root / "textures/starter/mirror.vmt");
+        const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        CHECK(parseVmt(text, vb) && vb.name == "LightmappedReflective");
+        fs::remove(root / "textures/starter/mirror.vmt");
+        CHECK(bottega::make(root.string(), err)); // repairing an existing Bottega
+        CHECK(!fs::exists(root / "textures/starter/mirror.vmt"));
+        fs::remove_all(root);
+    }
+}
+
 int main() {
     testRenderJob();
     testGrid();
@@ -5065,6 +5175,7 @@ int main() {
     testDecals();
     testDecalOrderFile();
     testProbes();
+    testMirrors();
     testTracer();
     testMapQuakeFormat();
     testMapErrors();

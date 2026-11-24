@@ -4,6 +4,40 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-24 — v0.12.7: mirrors
+- **Core:** `core/mirror.*`: which materials are mirrors and what they need
+  (`mirrorParts`), the mirrored camera (Source's `CReflectiveGlassView`), how much of the
+  picture a polygon covers, the mirror planes worth drawing (merged, ranked, at most 8,
+  tiny ones left out). `%tooltexture` is the editor picture of a material without
+  `$basetexture` (`core/material.cpp`). A new Bottega gets `textures/starter/mirror.vmt` and
+  `polished_stone.vmt` (`core/bottega.cpp`).
+- **Renders:** `render/mirrors.*`: for each mirror plane in view, the scene drawn again into
+  a float target from the mirrored camera (reflection) and, for glass that sees through,
+  from the camera behind the glass; a clip plane in the material, primitive and decal
+  shaders keeps one side. `drawBakedBrushes` finds each mirror face's plane and binds its
+  pictures (units 12 and 13). New built-in shader file `LightmappedReflective.glsl`
+  (Source's maths: Fresnel mix, tints, normal-map ripples, mask, optional lit base). The
+  bake lets see-through reflective glass pass light. Log: "Drawing mirrors" with one line
+  per plane, a warning when planes were left out. The Camera Preview draws them at half
+  its pixels. Help > Controls and README rows.
+- **Checked in Valve's SDK 2013** (scratch folder, not kept): `LightmappedReflective`'s
+  pixel shader and settings, `c_func_reflective_glass.cpp`, `viewrender.cpp`'s reflective
+  and refractive glass views (mirrored camera, 0.1-unit clip planes, one plane per view).
+- **Tests:** core `testMirrors` (parts, the mirrored camera, picture cover, plane merging /
+  ranking / limit, `%tooltexture`, starter materials in a new Bottega only): 5264 checks, 0
+  failed. New UI script `v127_mirrors.script` (starter materials, a mirror wall and a
+  polished floor, reflective glass, Draft half size, the Camera Preview, more than 8
+  planes, light through glass only) with a new test asset `materials/reflective_glass.vmt`;
+  new script expect `previewmirrors`. All 39 UI scripts pass at 1x and 2x; idle 0 ticks at
+  1x and 2x.
+- **Busy maps** (`tests/bench/run.sh ... render`, Normal; the rich map now has a mirror on
+  its wall): rich 2.7 s (2 mirror planes; about 1.4 s of it the mirrors), 1000 boxes
+  15.0 s, 4000 boxes 92.8 s (bake 72.7 s, cubemaps 18.8 s). A first run gave 18.3 / 18.1 /
+  98.3 s with the rich map's drawing taking 15 s; a second run and a separate check (rich
+  map with and without the mirror: 3.9 / 2.1 s) didn't repeat it: the workspace was slow.
+- Screenshots: `m12-50-mirror-render.png`, `m12-51-mirror-log.png`,
+  `m12-52-glass-render.png`, `m12-53-mirror-rich.png`.
+
 ### 2026-11-24 — Batch 8 (v0.12.7 mirrors and glass) discussed
 - Read Source's reflective glass (`c_func_reflective_glass.cpp`, `viewrender.cpp`) and the
   `LightmappedReflective` and `Refract` shaders' settings in Valve's SDK 2013 (scratch folder

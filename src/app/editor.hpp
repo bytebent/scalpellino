@@ -31,6 +31,8 @@
 #include "tools/camera_tool.hpp"
 #include "tools/probe_tool.hpp"
 #include "render/probes.hpp"
+#include "render/mirrors.hpp"
+#include <functional>
 #include "tools/prim_tool.hpp"
 #include "tools/prop_tool.hpp"
 #include "tools/decal_tool.hpp"
@@ -340,6 +342,7 @@ private:
         std::shared_ptr<ProbeAtlas> probes;      // the newest pass's (or the kept ones)
         std::uint64_t probeKey = 0;
         double probeStart = 0;
+        std::shared_ptr<MirrorSet> mirrors;      // mirrors (v0.12.7): this picture's mirror pictures
     };
     // Reflection probes kept in memory, one set per quality, while nothing they show changed
     // (agreed: memory only). The key: the bake's key, the probes, the decals, material edits.
@@ -347,6 +350,12 @@ private:
     std::map<int, KeptProbes> keptProbes_;
     std::shared_ptr<ProbeAtlas> lastProbes_;      // the last built or reused (mirror balls)
     ProbeBuilder probeBuilder_;
+    MirrorBuilder mirrorBuilder_;                 // mirrors (v0.12.7)
+    std::shared_ptr<MirrorSet> previewMirrors_;   // the Camera Preview's
+    // The mirror pictures for camera `cam` drawn w x h (null: no mirrors in view); log lines
+    // go to `log` when given.
+    std::shared_ptr<MirrorSet> mirrorsNow(const Camera& cam, const Scene& lit, int w, int h, bool smooth,
+                                          const std::function<void(const std::string&)>& log = {});
     std::uint64_t probeKey(int quality) const;
     // The probes for the Camera Preview (Draft, one pass) now, kept or made; null: none.
     std::shared_ptr<ProbeAtlas> probesNow(int quality, const Scene& lit, bool smooth);

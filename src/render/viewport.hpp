@@ -37,6 +37,8 @@ public:
     // Draw into a 16-bit float target (building reflection probes: linear light, v0.12.6).
     // Takes effect at the next resize to another size, or now if the kind changes.
     void setFloatTarget(bool on) { if (on != float_) { float_ = on; w_ = h_ = 0; } }
+    // Hands over the target just drawn (mirror pictures, v0.12.7); the next resize makes a new one.
+    RenderTexture2D takeTarget() { RenderTexture2D t = rt_; rt_ = RenderTexture2D{}; w_ = h_ = 0; return t; }
     float scale() const { return scale_; }
     const RenderTexture2D& target() const { return rt_; }
     int width()  const { return w_; }
