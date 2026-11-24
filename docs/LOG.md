@@ -48,6 +48,7 @@ too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
   `m13-07-no-clouds.png` (the same view with and without the cloud plane), `m13-08-editor.png`
   (the selected plane red in the side views, the squares in 3D), `m13-09-bench-rich.png`,
   `m13-10-bench-1000-boxes.png`, `m13-11-bench-4000-boxes.png`.
+- Pushed; CI green (macos, linux, release); the v0.13.0 release is made.
 
 ### 2026-11-24 — Milestone 13 discussed and decided
 - Valve's SDK 2013 water shader and water view code checked (scratch folder, not kept);

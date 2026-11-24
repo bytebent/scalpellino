@@ -10,7 +10,7 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 
 ## Current status
 
-- **Released:** v0.1.0 … v0.12.7b (CI green); **v0.13.0** (milestone 13) built. Milestones 0–11, Random Replicate and Sky Lab are done (see the
+- **Released:** v0.1.0 … v0.13.0 (CI green; v0.13.0 = milestone 13, released 2026-11-24). Milestones 0–11, Random Replicate and Sky Lab are done (see the
   milestone sections below and the log); the user confirmed the choices of M10, Random
   Replicate and v0.10.2 (2026-11-19). **v0.10.3 is built and pushed** (asked by the user
   before Sky Lab): `editor.cpp` split by topic (step 1: code moved unchanged; step 2:
@@ -152,8 +152,8 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   water, `$reflectentities`, `$bumptransform`, built-in ripples), endless planes (`core/plane.*`,
   `scal_plane`; ground, water, clouds; sun and sky light; to the horizon), the `Clouds` shader,
   cloud shadows in the bake, four starter materials. Choices made while building: "v0.13.0,
-  decided without asking" under Open questions. Milestone 13 is done; next on the roadmap:
-  camera effects (lowest priority), discussed with the user first.
+  decided without asking" under Open questions. Released (CI green). Milestone 13 is done;
+  next: report, then camera effects (lowest priority), discussed with the user first.
 - **Review fixes (2026-11-20), merged into `main`** (fast-forward from
   `fix/review-findings` after the user's go-ahead; no new version, so only "Latest build"
   is refreshed): version releases are
