@@ -4,6 +4,17 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-24 — Batch 8 (v0.12.7 mirrors and glass) discussed
+- Read Source's reflective glass (`c_func_reflective_glass.cpp`, `viewrender.cpp`) and the
+  `LightmappedReflective` and `Refract` shaders' settings in Valve's SDK 2013 (scratch folder
+  outside the repo, not kept).
+- 11 questions; the user said yes to every recommendation (PLAN.md "Batch 8 decided with
+  the user"): mirrors made by the material alone, up to 8 per picture, no mirror in a
+  mirror (probes instead), the render's own size (half at Draft), everything shown, flat
+  brush faces only, both kinds of bending glass, light passes in the bake, shown in the
+  Camera Preview, three starter materials (may be removed eventually), two releases. No
+  code changes. Recorded on the review branch (`fix/v0126-review`), the newest code.
+
 ### 2026-11-23 — v0.12.6 review fixes (branch `fix/v0126-review`, not released)
 - The user passed on a review of v0.12.6 by another AI (16 findings, F01-F16). Each was
   checked against the code, then reproduced in the app with scripts and small core

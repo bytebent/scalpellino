@@ -134,6 +134,9 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   open. Choices made: "v0.12.6 review fixes, decided without asking" under Open questions.
   Next: the user's go-ahead to merge (fast-forward, like the 2026-11-20 fixes); then
   v0.12.7 as planned. See the LOG entry.
+- **Batch 8 (v0.12.7 mirrors and glass) discussed (2026-11-24):** the user said yes to all
+  11 recommendations ("Batch 8 decided with the user" under Roadmap item 5). Built on top of
+  the review fixes when the user says go.
 - **Review fixes (2026-11-20), merged into `main`** (fast-forward from
   `fix/review-findings` after the user's go-ahead; no new version, so only "Latest build"
   is refreshed): version releases are
@@ -1132,7 +1135,8 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
         quality follows Render > Quality. See "Batch 7 decided with the user".
      9. **v0.12.7 mirrors and glass:** mirror reflections on flat surfaces, and glass that
         bends what is behind it (Source's `Refract`); both draw the scene into a picture
-        first.
+        first. Agreed 2026-11-24: see "Batch 8 decided with the user" (two releases:
+        v0.12.7 mirrors, v0.12.7b `Refract` glass).
      Then milestone 6: water (cheap water and water, as Source), clouds and endless
      planes, made with the material system. HDR stays a later refinement. Probe, decal
      and mirror details are settled in their own discussions.
@@ -1375,6 +1379,39 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
        stays "later"; (20) the old v0.3.1 release is left as it is (old releases aren't
        used; the note about it was removed from PLAN.md); (21) the rough light preview
        keeps its old fade for now (maybe changed in the far future).
+   - **Batch 8 decided with the user (2026-11-24), v0.12.7 mirrors and glass.** Checked in
+     Valve's SDK 2013 (scratch folder, not kept): `func_reflective_glass` + the
+     `LightmappedReflective` shader draw the scene again from a mirrored camera into
+     `_rt_WaterReflection` (1024 x 1024, clip plane at the glass) and what is behind the glass
+     into `_rt_WaterRefraction`, mixed by Fresnel ($reflecttint, $reflectamount, $refracttint,
+     $refractamount, $normalmap, $envmapmask, $fresnelpower 5, $min/$maxreflectivity); only
+     the first reflective plane in view gets a reflection (`IsReflectiveGlassInView`).
+     `Refract` bends a copy of the picture drawn so far by its normal map ($refractamount,
+     $refracttint, $refracttinttexture, $bluramount 0-2, $envmap...). The user said yes to
+     all 11 recommendations:
+     1. **The material makes the mirror:** a `.vmt` with `LightmappedReflective` on any brush
+        face (no brush entity, unlike Hammer's `func_reflective_glass`).
+     2. **Several mirrors per picture, up to a limit (8), nearest and biggest first;** the rest
+        reflect the probes, and the log says which (Source: one plane per view).
+     3. **A mirror seen inside a mirror shows the probe reflection** (no deeper level).
+     4. **A mirror's picture is the render's own size, halved at Draft** (Source: 1024 x 1024
+        stretched; a difference, noted in the docs).
+     5. **A mirror shows everything a render does:** lit map, props, primitives, decals, sky,
+        fog; shiny things in it reflect the probes.
+     6. **Only flat brush faces become real mirrors;** on terrain, props and primitives a
+        mirror material reflects the probes (water gets real mirrors in milestone 6).
+     7. **Both kinds of bending glass, as Source:** `Refract` bends a copy of the picture so
+        far (cheap; can't bend what is off-screen); `LightmappedReflective` draws what is
+        behind the glass into its own picture and mixes it with the reflection.
+     8. **Mirrors and bending glass let light through in the bake** (as cheap glass; VRAD lets
+        light through glass brush entities and see-through materials).
+     9. **The Camera Preview shows mirrors and bending glass**, at Draft sharpness.
+     10. **Three starter materials in a new Bottega** (a mirror, a polished stone floor, a
+         bending glass pane). The user: fine, but they **may be removed eventually**.
+     11. **Two releases:** v0.12.7 mirrors (with `LightmappedReflective`'s see-through), then
+         v0.12.7b `Refract` glass.
+     Unchanged: the editor's own views show these materials as their base texture; water
+     (milestone 6) reuses the mirror drawing.
    - **Batch 6 decided with the user (2026-11-22), v0.12.5 decals.** Always called
      **decal** in the UI and docs (never "sticker").
      1. **One object** (for now): a decal with info_overlay's features (free size, rotation,
