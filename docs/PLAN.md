@@ -143,6 +143,11 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   normal map. Milestone 12's planned batches (v0.12.1 to v0.12.7b) are done. Next, as planned:
   water, clouds and endless planes (milestone 13 in ARCHITECTURE's table; "milestone 6" in
   the batch list), discussed with the user first; water reuses the mirrors.
+- **Milestone 13 (water, clouds and endless planes) discussed (2026-11-24):** 15 questions;
+  the user chose sun and sky only on endless planes (3), the camera under water later (6),
+  cloud planes separate from Sky Lab's clouds (10) and **one release** (15); my
+  recommendation for the rest ("Milestone 13 decided with the user" under Roadmap item 6).
+  The user said go the same day: **v0.13.0 is being built.**
 - **Review fixes (2026-11-20), merged into `main`** (fast-forward from
   `fix/review-findings` after the user's go-ahead; no new version, so only "Latest build"
   is refreshed): version releases are
@@ -180,6 +185,11 @@ Each archive's SHA-256 is in `cmake/Deps.cmake` (checked at configure time).
 
 ## Open questions (parked)
 
+- **Milestone 13 parked (later, agreed 2026-11-24, question 6):** a camera under water.
+  Source then draws everything through the water's underwater fog and shows the surface from
+  below with its own material (`$bottommaterial`, also `$underwateroverlay`). Until then a
+  camera under water sees the surface from below with the same water shader, no underwater
+  fog.
 - **v0.12.7, decided without asking (confirm with the user):**
   - **A mirror that only reflects is solid to light** (a polished floor or a wall mirror
     letting the light through looked wrong); glass that sees through lets light through, as
@@ -1616,6 +1626,56 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
        multiplayer branch also has per-texel prop lightmaps (a precedent for the
        primitives' lightmaps).
 6. **Water, cloud and endless planes** (confirmed) — materials made with the system above.
+   Milestone 13 in ARCHITECTURE's table (the batch list calls it "milestone 6").
+   - **Milestone 13 decided with the user (2026-11-24).** Checked in Valve's SDK 2013 first
+     (the `Water` shader and the engine's water view code): a water surface is the top face
+     of a brush painted with a Water material (the other faces nodraw); drawn like our
+     mirrors (a reflection from the mirrored camera and a picture of what is under it,
+     mixed by Fresnel and rippled by a normal map); murky with depth (`$fogcolor`,
+     `$fogstart`, `$fogend`); reflects only the map and the sky unless `$reflectentities`;
+     cheap water reflects the probes (`$forcecheap`, or fading in with distance:
+     `$cheapwaterstartdistance` / `$cheapwaterenddistance`); one water height per picture.
+     Endless planes are Bryce's, not Source's. The user's answers (my recommendation where
+     they said nothing):
+     1. **Water on brushes, as Source:** the top face of a brush painted with a water
+        material (pools, rivers, lakes inside the map); Source water materials just work;
+        reuses the mirror drawing.
+     2. **Endless planes are one new object type** carrying any material (water, ground,
+        clouds), a flat layer at a chosen height running to the horizon, saved as our own
+        entity; three quick menu items ("Endless water / ground / cloud plane") make one with
+        a fitting starter material.
+     3. **Light on endless planes: sun and sky only, everywhere, as Bryce** (the user chose
+        this over lightmapping them near the map): no shadows fall on a plane.
+     4. **What water reflects, as Source:** the map's brushes and the sky; props and
+        primitives only with `$reflectentities 1` (the starter water has it on).
+     5. **Murky water, as Source:** what is seen through the surface fades into `$fogcolor`
+        between `$fogstart` and `$fogend`, by how far the view travels under the water.
+     6. **A camera under water: later (parked, written down under Open questions).** For now a
+        camera under water sees the surface from below without Source's underwater fog or
+        `$bottommaterial`.
+     7. **Cheap water, all of Source's:** `$forcecheap` (probes only) and the distance fade
+        from full to cheap water.
+     8. **Water shares the mirror budget:** up to 8 planes per picture, mirrors and water
+        together, the ones covering most of the picture first; the rest become cheap water.
+     9. **Waves: one still normal map** with Source's scale setting (`$bumptransform`); new
+        built-in water ripples (made like the glass ones) when a material names none. No
+        time setting.
+     10. **Cloud planes: a Clouds shader on an endless plane** (see-through cloud shapes made
+         from noise; cover, size, softness, colour; lit by the sun from above, darker
+         underneath). The user: **Sky Lab's clouds and cloud planes are separate things**
+         (a cloud plane doesn't read or change Sky Lab's settings; it only looks alike).
+     11. **Cloud shadows in the bake:** the sun is dimmed by how thick the cloud plane is
+         above each point.
+     12. **Light through the planes in the bake:** water lets light through, a ground plane
+         blocks it, clouds dim the sun (11).
+     13. **In the editor:** side views draw a line across the view at the plane's height; the
+         top view draws nothing (select it in the 3D view or a list); the 3D view a large
+         square of its tool picture around the map, fading out. Select by clicking its line
+         or its surface; height in Properties or by dragging the line in a side view.
+     14. **Starter materials in a new Bottega:** water (clear blue-green, reflects
+         everything), murky_water (brown, with fog), ground (a lit grass or earth texture),
+         clouds. They may be removed later.
+     15. **One release** (v0.13.0), not three.
 7. **Camera effects** (confirmed, lowest priority per the user) — dithering, palette,
    bloom and similar.
 8. **Export** (not confirmed by the user) — `.glb`, optional and last; the user probably will never use it elsewhere.

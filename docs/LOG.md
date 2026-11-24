@@ -4,6 +4,12 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-24 — Milestone 13 discussed and decided
+- Valve's SDK 2013 water shader and water view code checked (scratch folder, not kept);
+  15 numbered questions put to the user. Answers recorded in PLAN.md ("Milestone 13 decided
+  with the user", Roadmap item 6); question 6 (a camera under water) parked under Open
+  questions. One release, v0.13.0. Building starts.
+
 ### 2026-11-24 — v0.12.7b: bending glass (Refract)
 - **Renders:** Source's `Refract` as a new built-in shader file `Refract.glsl` (normal map(s),
   `$refractamount`, tint and tint texture, 4-tap blur, `$fadeoutonsilhouette`, `$envmap` on
