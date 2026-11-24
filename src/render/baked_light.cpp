@@ -284,6 +284,7 @@ void setMaterialCommon(Shader& sh, const std::function<int(const char*)>& loc, c
     rlEnableTexture(rlGetTextureIdDefault());
     rlActiveTextureSlot(kMirrorRefractUnit);
     rlEnableTexture(rlGetTextureIdDefault());
+    i1("frameCopyOn", 0); // Refract (v0.12.7b): set per face
     i1("clipOn", ctx.clipOn ? 1 : 0);
     const float cp[4] = {(float)ctx.clipN.x, (float)ctx.clipN.y, (float)ctx.clipN.z, (float)ctx.clipD};
     SetShaderValue(sh, loc("clipPlane"), cp, SHADER_UNIFORM_VEC4);
@@ -321,8 +322,12 @@ struct Item {
     int page = 0;
     double dist = 0;        // see-through faces: from the camera (far first)
     int mirror = -1;        // a mirror face (v0.12.7): its plane in ctx.mirrors
+    bool refract = false;   // Refract (v0.12.7b): bends a copy of the picture drawn so far
 };
-bool isSeeThrough(const Material* m) { return m && !isReflectiveMaterial(*m) && (m->flag("$translucent") || m->num("$alpha", 1) < 1); }
+bool isSeeThrough(const Material* m) {
+    if (!m || isReflectiveMaterial(*m)) return false;
+    return isRefractMaterial(*m) || m->flag("$translucent") || m->num("$alpha", 1) < 1; // Refract (v0.12.7b): with the see-through faces
+}
 
 bool boxesMeet(const AABB& a, const AABB& b) {
     for (int k = 0; k < 3; ++k)
@@ -496,6 +501,8 @@ bool drawBakedBrushes(const SceneBrushes& brushes, const BakedLight& baked, Text
                 Vec3 c;
                 for (const Vec3& v : p.verts) c += v;
                 it.dist = length(c / (double)p.verts.size() - ctx.camPos);
+                const Material* m = ctx.shaders ? materialOf(mat) : nullptr;
+                it.refract = m && isRefractMaterial(*m);
             }
             items.push_back(it);
         }
@@ -684,6 +691,18 @@ bool drawBakedBrushes(const SceneBrushes& brushes, const BakedLight& baked, Text
             if (!bd.sh.id) continue;
         }
         if (!bd.sh.id) continue;
+        if (it.refract && bd.prog && ctx.copyFrame) {
+            // Refract (v0.12.7b, as Source's frame buffer copy before each renderable): the
+            // picture drawn so far, far see-through faces included
+            rlDrawRenderBatchActive();
+            const unsigned copy = ctx.copyFrame();
+            ShaderLibrary::Program* p = bd.prog;
+            const int on = copy ? 1 : 0;
+            SetShaderValue(bd.sh, p->at("frameCopyOn"), &on, SHADER_UNIFORM_INT);
+            rlActiveTextureSlot(kMirrorRefractUnit);
+            rlEnableTexture(copy ? copy : rlGetTextureIdDefault());
+            rlActiveTextureSlot(0);
+        }
         if (it.mirror != curMirror && bd.prog) {
             rlDrawRenderBatchActive();
             ShaderLibrary::Program* p = bd.prog;

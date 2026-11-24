@@ -59,6 +59,16 @@ static void writeStarterMaterials(const fs::path& dir) {
          "\t\"$minreflectivity\" \"1\"\n"
          "\t\"$refracttexture\" \"none\"\n"
          "}\n"},
+        {"glass_pane.vmt",
+         "\"Refract\"\n{\n"
+         "\t\"%tooltexture\" \"Tile_13\"\n"
+         "\t\"$normalmap\" \"glass_ripple_normal\"\n"
+         "\t\"$refractamount\" \"0.02\"\n"
+         "\t\"$refracttint\" \"[0.85 0.95 0.9]\"\n"
+         "\t\"$bluramount\" \"1\"\n"
+         "\t\"$envmap\" \"env_cubemap\"\n"
+         "\t\"$envmaptint\" \"[0.12 0.12 0.12]\"\n"
+         "}\n"},
         {"polished_stone.vmt",
          "\"LightmappedReflective\"\n{\n"
          "\t\"$basetexture\" \"Tile_19\"\n"

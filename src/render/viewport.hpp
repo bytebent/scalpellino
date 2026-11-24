@@ -101,6 +101,8 @@ private:
     int w_ = 0, h_ = 0;      // logical size
     float scale_ = 1.0f;     // physical pixels per logical pixel
     bool float_ = false;     // float target (probes)
+    RenderTexture2D copy_{}; // Refract (v0.12.7b): the picture drawn so far, copied
+    unsigned copyFrame();    // copies the target into copy_ (same size and kind); its texture
 
     // 2D: world point at the view center, and pixels per world unit.
     double panU_ = 0.0, panV_ = 0.0;

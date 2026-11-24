@@ -91,6 +91,9 @@ struct BakedDrawContext {
     Vec3 clipN;
     double clipD = 0;
     int viewW = 1, viewH = 1;
+    // Refract (v0.12.7b): copies the picture drawn so far into a texture and returns it (0:
+    // can't); unset in the editor's views.
+    std::function<unsigned()> copyFrame;
 };
 
 // Draws the brushes (textured, terrain with its painted layers) lit by `baked`. Inside the

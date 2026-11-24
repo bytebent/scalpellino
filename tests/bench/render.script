@@ -47,6 +47,10 @@ applytexture
 texture textures/starter/mirror
 block -300 470 20 300 480 140
 applytexture
+# a bending glass pane (v0.12.7b, a starter material too)
+texture textures/starter/glass_pane
+block -460 -100 0 -456 200 180
+applytexture
 blockshape cylinder 16
 texture textures/walls/Rock_Face
 block 600 -100 0 700 0 200

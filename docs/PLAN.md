@@ -10,7 +10,7 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
 
 ## Current status
 
-- **Released:** v0.1.0 … v0.12.7 (CI green). Milestones 0–11, Random Replicate and Sky Lab are done (see the
+- **Released:** v0.1.0 … v0.12.7b (CI green). Milestones 0–11, Random Replicate and Sky Lab are done (see the
   milestone sections below and the log); the user confirmed the choices of M10, Random
   Replicate and v0.10.2 (2026-11-19). **v0.10.3 is built and pushed** (asked by the user
   before Sky Lab): `editor.cpp` split by topic (step 1: code moved unchanged; step 2:
@@ -138,8 +138,11 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   **v0.12.7 is built** (the user said go, 2026-11-24): mirrors and reflective glass
   (`core/mirror.*`, `render/mirrors.*`, `LightmappedReflective.glsl`), starter materials,
   `%tooltexture`; its notes also list the v0.12.6 review fixes. Choices made while building:
-  "v0.12.7, decided without asking". Next: v0.12.7b, `Refract` (bending glass) and the glass
-  pane starter material.
+  "v0.12.7, decided without asking". **v0.12.7b is built** (same day): `Refract` (bending
+  glass, a frame copy before each face), the glass pane starter material, a built-in ripple
+  normal map. Milestone 12's planned batches (v0.12.1 to v0.12.7b) are done. Next, as planned:
+  water, clouds and endless planes (milestone 13 in ARCHITECTURE's table; "milestone 6" in
+  the batch list), discussed with the user first; water reuses the mirrors.
 - **Review fixes (2026-11-20), merged into `main`** (fast-forward from
   `fix/review-findings` after the user's go-ahead; no new version, so only "Latest build"
   is refreshed): version releases are
@@ -202,7 +205,23 @@ Each archive's SHA-256 is in `cmake/Deps.cmake` (checked at configure time).
     new Bottega, or a folder made into one); `mirror` (tool picture Tile_13, tint
     0.85/0.87/0.9, see-through off) and `polished_stone` (Tile_19 lit, reflection tint 0.3,
     see-through off). The UI test Bottegas get them too.
-  - **Tests:** the busy-map benchmark's rich map has a mirror on its wall.
+  - **Tests:** the busy-map benchmark's rich map has a mirror on its wall and (v0.12.7b) a
+    glass pane.
+- **v0.12.7b, decided without asking (confirm with the user):**
+  - **Where Refract works:** brush faces in renders and the Camera Preview (a frame copy
+    before each face, far to near). Terrain and props show the probes straight through (no
+    copy there); the editor shows the tool picture.
+  - **The copy:** of the picture as drawn (8-bit: turned back into linear light and divided by
+    the exposure; float pictures as they are), bilinear, clamped at the edges; one copy per
+    face (as Source per renderable), so several panes cost one copy each.
+  - **The shader:** Source's maths; `$bluramount` 1 or more = Source's 4-tap blur (its
+    maximum); it replaces what is behind (alpha 1; Source writes the normal map's alpha);
+    no `$bumpframe` / time animation (still pictures); `$masked`, `$vertexcolormodulate`,
+    `$nowritez`, `$forcealphawrite` not read.
+  - **Starter glass pane:** `$refractamount` 0.02, tint 0.85/0.95/0.9, blur 1, `$envmap
+    env_cubemap` at 0.12, tool picture Tile_13; its ripples from a new built-in normal map
+    `glass_ripple_normal` (256 x 256, sums of sines, made for Scalpellino; a helper map, so
+    not in the texture list).
 
 - **v0.12.6 review fixes, decided without asking (confirm with the user, 2026-11-23):**
   - **Decal order** is kept within -1,000,000 .. 1,000,000 (the file reader's old range):

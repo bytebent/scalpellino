@@ -26,6 +26,8 @@ constexpr double kMirrorMinCover = 0.0005; // planes covering less of the pictur
 // mix then never shows it).
 enum MirrorParts { kMirrorReflect = 1, kMirrorRefract = 2, kMirrorBase = 4 };
 bool isReflectiveMaterial(const Material& m);
+// Source's Refract (v0.12.7b): glass that bends a copy of the picture drawn so far.
+bool isRefractMaterial(const Material& m);
 int mirrorParts(const Material& m); // 0 when not LightmappedReflective
 
 // The mirrored camera (Source's CReflectiveGlassView::AdjustView): plane dot(n, p) = d.

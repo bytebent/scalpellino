@@ -4,6 +4,28 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-24 — v0.12.7b: bending glass (Refract)
+- **Renders:** Source's `Refract` as a new built-in shader file `Refract.glsl` (normal map(s),
+  `$refractamount`, tint and tint texture, 4-tap blur, `$fadeoutonsilhouette`, `$envmap` on
+  top). Refract faces go with the see-through faces (far to near); before each one the
+  picture drawn so far is copied (`Viewport::copyFrame`, a framebuffer blit) and read
+  through `screenBehind()` (back to linear light before exposure). Light passes through in
+  the bake. Terrain, props and the editor: the probes straight through.
+- **Starter material** `textures/starter/glass_pane.vmt` and a built-in ripple normal map
+  `assets/textures/glass_ripple_normal.png` (made for Scalpellino: sums of sines, tileable).
+- **Checked in Valve's SDK 2013** (scratch folder, not kept): `refract_ps2x.fxc` and
+  `refract_dx9_helper.cpp` (defaults: $refractamount 2, $bluramount 0, max blur 1).
+- **Tests:** core 5265 checks, 0 failed (`isRefractMaterial`, the glass pane starter). New UI
+  script `v127b_glass.script` (the starter pane, the shader in the log, light through it,
+  the tint changes the picture, the Camera Preview). All 40 UI scripts pass at 1x and 2x;
+  idle 0 ticks at 1x and 2x.
+- **Busy maps** (Normal; the rich map now also has a glass pane): rich 7.3 s (cubemaps 3.2 s,
+  2 mirror planes), 1000 boxes 14.8 s, 4000 boxes 93.5 s (bake 71.9 s, cubemaps 20.4 s).
+  The rich map's cubemaps took 0.3 s in the run before with nearly the same map: this
+  workspace's software OpenGL varies a lot from run to run.
+- Screenshots: `m12-54-glass-pane.png` (the pane's right edge: bent and tinted on the left,
+  plain on the right), `m12-55-glass-pane-red.png`, `m12-56-glass-rich.png`.
+
 ### 2026-11-24 — v0.12.7: mirrors
 - **Core:** `core/mirror.*`: which materials are mirrors and what they need
   (`mirrorParts`), the mirrored camera (Source's `CReflectiveGlassView`), how much of the

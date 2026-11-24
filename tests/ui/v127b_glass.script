@@ -1,0 +1,59 @@
+# v0.12.7b: bending glass (Source's Refract). What is behind the face comes from a copy of the
+# picture drawn so far, shifted by the normal map and tinted, with an optional blur and a
+# reflection. A new Bottega comes with textures/starter/glass_pane.
+bottega make studio
+copy assets/materials/brick_a.png studio/textures/mat/brick_a.png
+copy assets/materials/lamp.png studio/textures/mat/lamp.png
+rescan
+expect hastexture textures/starter/glass_pane
+expect mat textures/starter/glass_pane $normalmap glass_ripple_normal
+expect hastexture glass_ripple_normal
+tool select
+texture Tile_19
+block -600 -600 -32 600 600 0
+texture textures/mat/brick_a
+block -600 600 0 600 632 400
+block -632 -600 0 -600 600 400
+texture textures/mat/lamp
+block -100 300 0 100 400 200
+# the glass pane between the camera and the lamp box
+texture textures/starter/glass_pane
+block -250 0 0 250 4 260
+key Esc
+tool light
+lightset kind point
+lightset brightness 400
+lightset pos 200 -200 300
+key Return
+tool select
+key Esc
+probe 0 -200 170
+tool camera
+cameraset lens 35
+cameraset size 480 270
+cameraset pos 330 -450 150
+key Return
+cameraedit angles -3 110 0
+tool select
+key Esc
+renderset quality normal
+render
+expect render saved
+expect renderlog shaders: LightmappedGeneric, Refract
+expect renderlog 6 see-through faces block no light
+expect renderlog not warning
+rendercopy m12-54-glass-pane.png
+closedialogs
+# -- the tint changes what is seen through; the blur and the ripples are settings too
+tool texture
+matselect textures/starter/glass_pane
+matset $refracttint [1 0.4 0.4]
+matset $bluramount 0
+tool select
+render
+expect rendersame no
+rendercopy m12-55-glass-pane-red.png
+closedialogs
+# the Camera Preview bends too
+camerapreview
+quit

@@ -5036,6 +5036,9 @@ static void testMirrors() {
     Material lower;
     lower.shader = "lightmappedreflective";
     CHECK(isReflectiveMaterial(lower));
+    Material glass; // Refract (v0.12.7b): bending glass, not a mirror
+    glass.shader = "Refract";
+    CHECK(isRefractMaterial(glass) && !isReflectiveMaterial(glass) && mirrorParts(glass) == 0 && !isRefractMaterial(m));
 
     // the mirrored camera (Source's CReflectiveGlassView): position and view reflected
     Camera c;
@@ -5112,7 +5115,8 @@ static void testMirrors() {
         fs::remove_all(root);
         std::string err;
         CHECK(bottega::make(root.string(), err));
-        CHECK(fs::exists(root / "textures/starter/mirror.vmt") && fs::exists(root / "textures/starter/polished_stone.vmt"));
+        CHECK(fs::exists(root / "textures/starter/mirror.vmt") && fs::exists(root / "textures/starter/polished_stone.vmt") &&
+              fs::exists(root / "textures/starter/glass_pane.vmt"));
         VmtBlock vb;
         std::ifstream in(root / "textures/starter/mirror.vmt");
         const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());

@@ -87,7 +87,8 @@ texture licenses; `releases/` has the notes for each version.
   into `main` on 2026-11-24 (no release of its own; listed in v0.12.7's notes). **v0.12.7
   mirrors** (batch 8, PLAN.md "Batch 8 decided with the user") is built (`core/mirror.*`,
   `render/mirrors.*`, `LightmappedReflective.glsl`, starter materials in a new Bottega,
-  `%tooltexture`). **Next: v0.12.7b `Refract`** (bending glass), as agreed in batch 8.
+  `%tooltexture`). **v0.12.7b `Refract`** (bending glass) followed. Milestone 12's planned batches are done:
+  next: water, clouds and endless planes (discussed with the user first).
 - **How the user runs each batch:** numbered questions, each with options, their
   consequences and your opinion; they answer by number ("yes to the rest" is common);
   record the answers in PLAN.md ("Batch N decided with the user") the same day; build when

@@ -236,6 +236,7 @@ uniform int mirrorReflect;  // 1: reflectTex holds this face's plane's reflectio
 uniform int mirrorRefract;  // 1: refractTex holds what is behind it
 uniform int mirrorWants;    // the material's parts: 1 reflect, 2 see through, 4 base texture
 uniform vec2 viewSize;      // the picture being drawn, in pixels
+uniform int frameCopyOn;    // Refract (v0.12.7b): refractTex holds the picture drawn so far
 uniform int clipOn;         // drawing a mirror's picture: only what is on one side of it
 uniform vec4 clipPlane;     // keep dot(p, xyz) >= w
 vec3 toLinear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c)); }
@@ -364,6 +365,13 @@ vec3 mirrorReflection(vec2 offset) {
         return texture(reflectTex, vec2(1.0 - uv.x, uv.y)).rgb; // the mirrored camera's picture is flipped
     }
     return probesOrSky(reflect(-eyeVector(), worldNormal()));
+}
+// Refract (v0.12.7b): the picture drawn so far at this pixel shifted by `offset` (Source's
+// frame buffer copy), linear before exposure; without one: the probes straight through.
+vec3 screenBehind(vec2 offset) {
+    if (frameCopyOn != 1) return probesOrSky(-eyeVector());
+    vec3 c = texture(refractTex, screenUV() + offset).rgb;
+    return linearOut == 1 ? c : toLinear(c) / max(exposure, 1e-6);
 }
 // What is behind this glass face; without a picture: the probes straight through.
 vec3 mirrorRefraction(vec2 offset) {

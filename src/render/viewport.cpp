@@ -293,6 +293,7 @@ void main() {
 
 Viewport::~Viewport() {
     if (rt_.id) UnloadRenderTexture(rt_);
+    if (copy_.id) UnloadRenderTexture(copy_);
 }
 
 const char* Viewport::title() const {
@@ -355,6 +356,24 @@ RenderTexture2D floatTarget(int w, int h) {
     return t;
 }
 } // namespace
+
+unsigned Viewport::copyFrame() {
+    if (!rt_.id) return 0;
+    const int w = rt_.texture.width, h = rt_.texture.height;
+    if (!copy_.id || copy_.texture.width != w || copy_.texture.height != h || copy_.texture.format != rt_.texture.format) {
+        if (copy_.id) UnloadRenderTexture(copy_);
+        copy_ = float_ ? floatTarget(w, h) : LoadRenderTexture(w, h);
+        if (!copy_.id) return 0;
+        SetTextureFilter(copy_.texture, TEXTURE_FILTER_BILINEAR);
+        SetTextureWrap(copy_.texture, TEXTURE_WRAP_CLAMP);
+    }
+    rlDrawRenderBatchActive();
+    rlBindFramebuffer(RL_READ_FRAMEBUFFER, rt_.id);
+    rlBindFramebuffer(RL_DRAW_FRAMEBUFFER, copy_.id);
+    rlBlitFramebuffer(0, 0, w, h, 0, 0, w, h, 0x00004000); // GL_COLOR_BUFFER_BIT
+    rlEnableFramebuffer(rt_.id);
+    return copy_.texture.id;
+}
 
 void Viewport::resize(int w, int h, float scale) {
     w = std::max(w, 1);
@@ -950,6 +969,7 @@ void main() {
     bctx.clipD = scene.clipD;
     bctx.viewW = std::max(1, rt_.texture.width);
     bctx.viewH = std::max(1, rt_.texture.height);
+    if (lens_) bctx.copyFrame = [this] { return copyFrame(); }; // Refract (v0.12.7b): pictures only
     bctx.textures = scene.textures;
     const bool bakedBrushes = lens_ && scene.baked && scene.textures && drawBakedBrushes(scene.brushes, *scene.baked, *scene.textures, bctx);
     // Fog: everything solid from here on is drawn through the fog shader.

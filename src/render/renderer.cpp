@@ -174,7 +174,7 @@ BakeInput bakeInput(const Document& doc, ModelLibrary& models, SkyLibrary& skies
             // reflective glass that sees through (v0.12.7) lets light through, as VRAD lets light
             // through glass brush entities and see-through materials; a mirror that only
             // reflects (a polished floor, a bathroom mirror) is solid to light
-            bm.translucent = m.flag("$translucent") || m.num("$alpha", 1) < 1 || (mirrorParts(m) & kMirrorRefract);
+            bm.translucent = m.flag("$translucent") || m.num("$alpha", 1) < 1 || (mirrorParts(m) & kMirrorRefract) || isRefractMaterial(m);
             bm.alphaTest = m.flag("$alphatest") && !bm.translucent;
             bm.alphaRef = m.num("$alphatestreference", 0.5);
             const bool glows = bm.emit.x > 0 || bm.emit.y > 0 || bm.emit.z > 0;

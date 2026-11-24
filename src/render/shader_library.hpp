@@ -14,6 +14,7 @@
 //   vec3 mirrorReflection(vec2 offset), mirrorRefraction(vec2 offset)  (v0.12.7) a mirror
 //                      face's reflection / what is behind it (linear), or the probes when
 //                      it has no picture; int mirrorWants: the material's parts (1, 2, 4)
+//   vec3 screenBehind(vec2 offset)  (v0.12.7b) Refract: the picture drawn so far, shifted
 //   vec3 envmap(vec3 dir)  the reflection (linear): with `$envmap env_cubemap` and probes in
 //                      the map, its 4 nearest reflection probes blended (v0.12.6); else
 //                      the map's sky (cheap chrome)

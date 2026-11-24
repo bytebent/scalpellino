@@ -36,6 +36,7 @@ std::vector<std::array<double, 2>> clip2(const std::vector<std::array<double, 2>
 } // namespace
 
 bool isReflectiveMaterial(const Material& m) { return lower(m.shader) == "lightmappedreflective"; }
+bool isRefractMaterial(const Material& m) { return lower(m.shader) == "refract"; }
 
 int mirrorParts(const Material& m) {
     if (!isReflectiveMaterial(m)) return 0;

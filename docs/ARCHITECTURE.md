@@ -432,8 +432,21 @@ Source's `LightmappedReflective` (agreed with the user 2026-11-24, "Batch 8 deci
   entities and see-through materials); a mirror that only reflects is solid.
 - **`%tooltexture`** (Hammer's): the picture the editor shows for a material without
   `$basetexture`.
-- **Starter materials:** a new Bottega gets `textures/starter/mirror.vmt` and
-  `polished_stone.vmt` (agreed; they may be removed in a later version).
+- **Starter materials:** a new Bottega gets `textures/starter/mirror.vmt`,
+  `polished_stone.vmt` and (v0.12.7b) `glass_pane.vmt` (agreed; they may be removed in a
+  later version).
+- **Bending glass (v0.12.7b, Source's `Refract`):** drawn with the see-through faces, far to
+  near; just before each such face the picture drawn so far is copied (a framebuffer blit,
+  `Viewport::copyFrame`; Source copies its frame buffer before each renderable that needs
+  it) and the shader reads it at its own place shifted by the normal map's x, y times its
+  alpha times `$refractamount` (picture widths), tinted ($refracttint gamma, or 2 x tint x
+  $refracttinttexture), optionally blurred (Source's 4 taps for 9, 1/512 apart), with
+  `$fadeoutonsilhouette` and an `$envmap` reflection on top (x normal alpha, tint,
+  contrast, saturation); it replaces what is behind (alpha 1). A copy of an 8-bit picture is
+  turned back into linear light before exposure (`screenBehind`). It can only bend what is
+  already drawn (as Source). On terrain and props, and in the editor, there is no copy: the
+  probes straight through. Lets light through in the bake. A built-in ripple normal map
+  (`glass_ripple_normal`, made for Scalpellino) serves the starter pane.
 
 ### Snap to Land / Ground and Multi-Replicate (v0.9.2, from Bryce)
 - **Snap to Land** (Cmd+J, Transform menu; `core/landing`): selected primitives drop
@@ -835,7 +848,7 @@ docs/         this file, roadmap
 | 10b | Random Replicate (Bryce): random offset / turn / size ranges for props and primitives | done (v0.10.1) |
 | 10c | Sky Lab (Bryce, all of it): generated skies (sun, moon, stars, clouds, atmosphere) with live preview in the 3D view, baked to panoramas in Bottega's `skies/`; settings kept in the map; tick box to lock the sun to the map's sun light; eclipses. Steps: v0.10.4 window / bake / sky modes / sun / haze / lock, v0.10.5 clouds, v0.10.6 night sky and effects | done (v0.10.6) |
 | 11 | Cameras and Camera Preview: camera objects (many, one active), options and presets, the on-request preview in a docked panel (editor look until M12 replaces it). Steps: v0.11.0 camera objects and options, v0.11.1 presets and the preview | done (v0.11.0, v0.11.1) |
-| 12 | Render, the Source look, with materials: render window, terminal log, light baking, reflection probes, mirrors, the material system (GLSL shaders from Bottega's `shaders/`, reflection kind per material), PNG to `renders/`. Steps: v0.12.0 pipeline, v0.12.1 direct light and shadows, v0.12.2 bounces, v0.12.3 props and the light grid, v0.12.4 materials, v0.12.4b bump maps, v0.12.5 decals, v0.12.6 probes, v0.12.7 mirrors and glass | in progress (v0.12.7) |
+| 12 | Render, the Source look, with materials: render window, terminal log, light baking, reflection probes, mirrors, the material system (GLSL shaders from Bottega's `shaders/`, reflection kind per material), PNG to `renders/`. Steps: v0.12.0 pipeline, v0.12.1 direct light and shadows, v0.12.2 bounces, v0.12.3 props and the light grid, v0.12.4 materials, v0.12.4b bump maps, v0.12.5 decals, v0.12.6 probes, v0.12.7 mirrors, v0.12.7b bending glass | done (v0.12.7b) |
 | 13 | Water, cloud and endless planes: materials made with the system above | |
 | 14 | Camera effects (lowest priority): dithering, palette, bloom | |
 | 15 | Export: `.glb`, optional and last (not confirmed by the user) | |
