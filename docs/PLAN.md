@@ -154,7 +154,9 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   cloud shadows in the bake, four starter materials. Choices made while building: "v0.13.0,
   decided without asking" under Open questions. Released (CI green). Milestone 13 is done;
   the user liked it (2026-11-27). Next: camera effects (lowest priority), discussed with the
-  user first.
+  user first. **2026-11-27: the user dropped camera effects and the `.glb` export** (Roadmap
+  items 7 and 8); the roadmap's planned milestones are all done. Next: the user is choosing
+  among the "later / maybe" and parked items.
 - **Review fixes (2026-11-20), merged into `main`** (fast-forward from
   `fix/review-findings` after the user's go-ahead; no new version, so only "Latest build"
   is refreshed): version releases are
@@ -999,7 +1001,7 @@ Each archive's SHA-256 is in `cmake/Deps.cmake` (checked at configure time).
   Land handles selected objects lowest first, so stacked ones land on their new spots.
 - **Bottega:** decided with the user; see its section.
 - **Primitives extras, later:** "align to slope" for Snap to Land; hiding primitives / visgroups; the Transform dialog on
-  objects; Bryce's other shapes (pyramid, endless ground plane) if wanted.
+  objects; Bryce's other shapes (pyramid; the endless ground plane came with v0.13.0) if wanted.
 - **World extras, later:** hiding lights / lights in visgroups; moving lights together
   with brushes in one drag; aiming a light at a clicked point; lights in the Transform
   dialog.
@@ -1737,10 +1739,10 @@ a combination and a non-blocking Multi-Replicate window (v0.9.3).
          everything), murky_water (brown, with fog), ground (a lit grass or earth texture),
          clouds. They may be removed later.
      15. **One release** (v0.13.0), not three.
-7. **Camera effects** (confirmed, lowest priority per the user) — dithering, palette,
-   bloom and similar.
-8. **Export** (not confirmed by the user) — `.glb`, optional and last; the user probably will never use it elsewhere.
-   Godot not a goal.
+7. **Camera effects — dropped (the user, 2026-11-27):** "we don't need camera effects"
+   (dithering, palette, bloom and similar). Not to be built or suggested.
+8. **Export — dropped for now (the user, 2026-11-27):** no `.glb` export; "we might change
+   this in the far future". Godot not a goal.
 - **Later / maybe:** a ray-tracing renderer (Bryce look; real reflections and bending
   glass), `.wad` textures, Lua generators, texture tags.
 

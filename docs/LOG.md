@@ -4,6 +4,12 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-27 — Camera effects and the .glb export dropped (docs only)
+- The user: no camera effects; no `.glb` export ("we might change this in the far future").
+  Roadmap items 7 and 8 and ARCHITECTURE's milestones 14 and 15 marked dropped. The user asked
+  for an overview of the "later / maybe" and parked items, with an opinion on each, to choose
+  what comes next.
+
 ### 2026-11-27 — The user on v0.13.0 (docs only)
 - The user: "it's great!" No changes asked. The choices under "v0.13.0, decided without
   asking" stand until the user says otherwise.

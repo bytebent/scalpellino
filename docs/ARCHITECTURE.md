@@ -916,6 +916,6 @@ docs/         this file, roadmap
 | 11 | Cameras and Camera Preview: camera objects (many, one active), options and presets, the on-request preview in a docked panel (editor look until M12 replaces it). Steps: v0.11.0 camera objects and options, v0.11.1 presets and the preview | done (v0.11.0, v0.11.1) |
 | 12 | Render, the Source look, with materials: render window, terminal log, light baking, reflection probes, mirrors, the material system (GLSL shaders from Bottega's `shaders/`, reflection kind per material), PNG to `renders/`. Steps: v0.12.0 pipeline, v0.12.1 direct light and shadows, v0.12.2 bounces, v0.12.3 props and the light grid, v0.12.4 materials, v0.12.4b bump maps, v0.12.5 decals, v0.12.6 probes, v0.12.7 mirrors, v0.12.7b bending glass | done (v0.12.7b) |
 | 13 | Water, cloud and endless planes: materials made with the system above: Source's Water shader on brushes and endless planes (reflection, murk, cheap water), endless planes (water, ground, clouds; sun and sky light), cloud shadows in the bake | done (v0.13.0) |
-| 14 | Camera effects (lowest priority): dithering, palette, bloom | |
-| 15 | Export: `.glb`, optional and last (not confirmed by the user) | |
+| 14 | Camera effects (lowest priority): dithering, palette, bloom | dropped (the user, 2026-11-27) |
+| 15 | Export: `.glb`, optional and last (not confirmed by the user) | dropped for now (the user, 2026-11-27; maybe in the far future) |
 | later / maybe | ray-tracing renderer (Bryce look), `.wad` textures, Lua generators, texture tags | |
