@@ -4,6 +4,10 @@ What was done, step by step, newest first. Recent work lives here; when this fil
 long, move the oldest entries to [`LOG-archive.md`](LOG-archive.md) (newest first there
 too). Status, plan and open questions are in [`PLAN.md`](PLAN.md).
 
+### 2026-11-27 — The user on v0.13.0 (docs only)
+- The user: "it's great!" No changes asked. The choices under "v0.13.0, decided without
+  asking" stand until the user says otherwise.
+
 ### 2026-11-24 — v0.13.0: water, clouds and endless planes (milestone 13)
 - **Water** (Source's `Water` shader, new built-in `Water.glsl`): water materials go through the
   mirror pictures (`core/mirror.*`: `isWaterMaterial`, `kMirrorWater`, `kMirrorEntities`,

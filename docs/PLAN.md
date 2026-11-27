@@ -153,7 +153,8 @@ Design: [`ARCHITECTURE.md`](ARCHITECTURE.md). Rules: [`../CLAUDE.md`](../CLAUDE.
   `scal_plane`; ground, water, clouds; sun and sky light; to the horizon), the `Clouds` shader,
   cloud shadows in the bake, four starter materials. Choices made while building: "v0.13.0,
   decided without asking" under Open questions. Released (CI green). Milestone 13 is done;
-  next: report, then camera effects (lowest priority), discussed with the user first.
+  the user liked it (2026-11-27). Next: camera effects (lowest priority), discussed with the
+  user first.
 - **Review fixes (2026-11-20), merged into `main`** (fast-forward from
   `fix/review-findings` after the user's go-ahead; no new version, so only "Latest build"
   is refreshed): version releases are
